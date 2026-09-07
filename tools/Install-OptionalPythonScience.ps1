@@ -1,6 +1,13 @@
 param(
   # Domain formats with heavy dependencies: mass spec, astronomy, seismic,
-  # neuro, DICOM, geospatial. Off by default because they are a large download.
+  # neuro, DICOM, geospatial, Access, DuckDB. INSTALL-DATA-FORMATS.bat now
+  # passes this by default - the decision was that the full set is what this
+  # build is for - and offers /lite to leave it out.
+  #
+  # Note what this switch still does NOT install: the [vlm] extra, which is
+  # transformers plus torch. That is not a dataset format, it is the vision
+  # model for reading charts out of papers, and torch alone is larger than
+  # every other extra combined. It stays a separate, deliberate install.
   [switch]$AllFormats
 )
 $ErrorActionPreference='Stop'
