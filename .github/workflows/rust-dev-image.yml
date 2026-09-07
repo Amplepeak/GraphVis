@@ -1,0 +1,29 @@
+name: Publish Prewarmed Rust Dev Image
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'native/Cargo.toml'
+      - 'native/Cargo.lock'
+      - 'native/crates/**/Cargo.toml'
+      - 'rust-toolchain.toml'
+      - 'infra/Dockerfile.rust-dev'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require lockfile
+        run: test -f native/Cargo.lock
+      - name: Login GHCR
+        run: echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+      - name: Build prewarmed image
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/graphvis-rust-dev:rust-1.98.0"
+          docker build -f infra/Dockerfile.rust-dev -t "$IMAGE" .
+          docker push "$IMAGE"

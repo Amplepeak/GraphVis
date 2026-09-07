@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/graphvis-core",
+  "crates/graphvis-smart",
+  "crates/graphvis-data",
+  "crates/graphvis-render",
+  "crates/graphvis-flight",
+  "crates/graphvis-ffi",
+]
+
+[workspace.package]
+version = "18.4.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.98"
+
+[workspace.dependencies]
+anyhow = "1"
+arrow = { version = "59.2", features = ["ipc", "csv", "json"] }
+arrow-flight = { version = "59.2", features = ["flight-sql"] }
+arrow-ipc = "59.2"
+bytemuck = { version = "1.23", features = ["derive"] }
+datafusion = { version = "55", features = ["parquet", "compression"] }
+futures = "0.3"
+glam = "0.30"
+parking_lot = "0.12"
+pollster = "0.4"
+raw-window-handle = "0.6"
+rayon = "1.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
+tonic = "0.14"
+uuid = { version = "1", features = ["v4", "serde"] }
+wgpu = "30"
+
+[profile.dev]
+incremental = true
+codegen-units = 128
+debug = 0
+
+[profile.fast]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+
+[profile.release]
+lto = "thin"
+codegen-units = 8
+strip = "symbols"
+# NOT "abort". graphvis-ffi is a cdylib loaded into the Qt process, and it
+# parses user-chosen files: with abort, any panic anywhere in Arrow/DataFusion
+# takes the whole application down instantly with no message and no log line.
+# Unwinding lets the catch_unwind guards at the extern "C" boundary in
+# graphvis-ffi turn a panic into an error string the user can read. It costs
+# some binary size; a library must not be able to kill its host process.
+panic = "unwind"
+
+[workspace.lints.rust]
+dead_code = "warn"
+unused = "warn"
+
+[workspace.lints.clippy]
+all = "warn"

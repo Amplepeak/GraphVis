@@ -1,0 +1,18 @@
+{
+  "name": "GraphVis 18.4 Rust Fast Dev",
+  "build": {
+    "dockerfile": "../infra/Dockerfile.rust-dev",
+    "context": ".."
+  },
+  "mounts": [
+    "source=graphvis-cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=graphvis-cargo-git,target=/usr/local/cargo/git,type=volume",
+    "source=graphvis-cargo-target,target=/workspace/.cache/cargo-target,type=volume",
+    "source=graphvis-sccache,target=/workspace/.cache/sccache,type=volume"
+  ],
+  "containerEnv": {
+    "CARGO_TARGET_DIR": "/workspace/.cache/cargo-target",
+    "SCCACHE_DIR": "/workspace/.cache/sccache"
+  },
+  "postCreateCommand": "bash scripts/fast-env.sh --print && cargo --version"
+}

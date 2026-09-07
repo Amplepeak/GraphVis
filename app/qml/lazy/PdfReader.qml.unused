@@ -1,0 +1,65 @@
+// Everything in this file depends on the Qt PDF module (QtQuick.Pdf).
+//
+// It is deliberately NOT part of the GraphVis QML module's type list. It is
+// loaded at runtime by URL through a Loader, exactly like lazy/VtkViewport.qml.
+// A QML file's imports are resolved when the file that *references its type* is
+// compiled, so importing QtQuick.Pdf directly in LiteratureWorkspace.qml made
+// the whole workspace - and therefore ClassicShell and Main - fail to load with
+//   module "QtQuick.Pdf" is not installed
+// on builds whose Qt has no PDF module. Behind a Loader the failure is confined
+// to this one file and the rest of the application still starts.
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Pdf
+
+Item {
+    id: reader
+
+    property url source
+
+    readonly property string docTitle: pdfDoc.title
+    readonly property string docAuthor: pdfDoc.author
+    readonly property int pageCount: pdfDoc.pageCount
+    readonly property int currentPage: view.currentPage
+
+    PdfDocument { id: pdfDoc; source: reader.source }
+
+    ColumnLayout {
+        anchors.fill: parent; spacing: 0
+
+        Rectangle {
+            Layout.fillWidth: true; height: 50; color: "#0d141d"
+            RowLayout {
+                anchors.fill: parent; anchors.margins: 7
+                ToolButton { text: "‹"; enabled: view.backEnabled; onClicked: view.back() }
+                ToolButton { text: "›"; enabled: view.forwardEnabled; onClicked: view.forward() }
+                Label {
+                    text: view.currentPage >= 0 ? "Page " + (view.currentPage + 1) + " / " + pdfDoc.pageCount : "PDF Reader"
+                    color: "#d7e2ec"
+                }
+                Item { Layout.fillWidth: true }
+                TextField { id: search; placeholderText: "Search in paper"; Layout.preferredWidth: 260; onAccepted: view.searchForward() }
+                Label { text: view.searchModel ? view.searchModel.count + " matches" : ""; color: "#71879a" }
+                ToolButton { text: "↑"; onClicked: view.searchBack() }
+                ToolButton { text: "↓"; onClicked: view.searchForward() }
+                ToolButton { text: "−"; onClicked: view.renderScale = Math.max(.35, view.renderScale / 1.15) }
+                Label { text: Math.round(view.renderScale * 100) + "%"; color: "#9db0c1" }
+                ToolButton { text: "+"; onClicked: view.renderScale = Math.min(5, view.renderScale * 1.15) }
+                ToolButton { text: "Fit"; onClicked: view.scaleToWidth(view.width, view.height) }
+                ToolButton { text: "Copy"; onClicked: view.copySelectionToClipboard() }
+            }
+        }
+
+        Item {
+            Layout.fillWidth: true; Layout.fillHeight: true
+            PdfMultiPageView {
+                id: view
+                anchors.fill: parent
+                document: pdfDoc
+                searchString: search.text
+                visible: reader.source.toString() !== ""
+            }
+        }
+    }
+}

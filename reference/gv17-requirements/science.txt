@@ -1,0 +1,10 @@
+# Statistics, ML, signal and advanced render helpers
+sympy>=1.12
+scikit-image>=0.22
+scikit-learn>=1.4
+statsmodels>=0.14
+lifelines>=0.30
+SciencePlots>=2.1
+wordcloud>=1.9
+squarify>=0.4.4
+matplotlib-venn>=0.11

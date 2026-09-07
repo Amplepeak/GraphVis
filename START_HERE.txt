@@ -1,0 +1,63 @@
+GRAPHVIS: START HERE (WINDOWS)
+================================
+
+FIRST, CHECK WHICH DOWNLOAD YOU HAVE
+
+If the folder contains Install.exe:
+  This is an end-user release.
+  1. Double-click Install.exe.
+  2. Launch GraphVis from the Start menu or desktop shortcut.
+  3. To remove it completely later, double-click Uninstall.bat in the same
+     extracted release folder. It leaves the original ZIP untouched.
+
+If the folder contains CMakeLists.txt, native, app, and tools, but NO Install.exe:
+  This is SOURCE CODE, not an installable end-user release. The app has not
+  been compiled yet. Do not expect install.bat to launch GraphVis immediately.
+
+USING SOURCE CODE (DEVELOPER PATH)
+
+1. Stay connected to the internet. The first setup downloads several GB of
+   native build dependencies and can take a long time.
+2. Install Windows App Installer from the Microsoft Store. This supplies the
+   'winget' command used by install.bat.
+3. Install Visual Studio 2022 Build Tools with the 'Desktop development with
+   C++' workload. This supplies the Microsoft C++ compiler required by Qt,
+   VTK, and Rust builds.
+4. Double-click install.bat. Leave its window open until it says [OK].
+5. Double-click run.bat to build and launch a development copy.
+6. Double-click build.bat only when you want to create an end-user ZIP. The
+   result will be under dist\GraphVis-18.4.0-Windows.zip.
+
+WHICH SCRIPT DO I RUN?
+
+Everything in this folder does one job. You normally need only the first three.
+
+  install.bat              Set up the build toolchain. Run once.
+  run.bat                  Build and launch a development copy.
+  build.bat                Make the end-user release (dist\...Install.exe + ZIP).
+
+  WATCH-BUILD.bat          Leave running: rebuilds automatically as files
+                           change and writes full-log.txt. The daily loop.
+  BUILD-AND-DIAGNOSE.bat   One full build + self-tests + launch, all logged to
+                           full-log.txt. Use when something is wrong.
+  diagnose.bat             Launch the already-built app and capture its startup
+                           log, without rebuilding.
+  verify-build.bat         Check a staged or installed copy against its
+                           runtime-manifest.sha256.
+  COLLECT-CRASH-REPORT.bat Gather logs after a crash into crash-report.txt.
+
+  INSTALL-DATA-FORMATS.bat Add the Python science add-on (149 dataset formats).
+  BACKUP.bat               Zip the source into backups\, excluding build output.
+  CLEAN-SPACE.bat          Free disk space. /intermediates keeps the fast
+                           rebuild, /buildtree removes more, /all removes most.
+
+The .sh files are the Linux equivalents of install/run/build and must be run on
+a Linux machine.
+
+IMPORTANT
+
+install.bat sets up developer tools; it does not install the finished app.
+The finished app installer is Install.exe inside the Windows release ZIP.
+
+If a window reports an error, take a screenshot or copy its final lines; the
+window now stays open so the cause is visible.

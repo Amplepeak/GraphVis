@@ -1,0 +1,64 @@
+name: Linux Native Release
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v18.*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_TARGET_DIR: "${{ github.workspace }}/.cache/cargo-target"
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.cache/vcpkg-binaries,readwrite"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require deterministic lockfile
+        run: test -f native/Cargo.lock
+
+      - name: Install Linux build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential ninja-build cmake curl zip unzip tar pkg-config \
+            autoconf automake libtool bison flex python3 nasm \
+            libgl1-mesa-dev libglu1-mesa-dev libx11-dev libxext-dev \
+            libxrender-dev libxrandr-dev libxi-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libfontconfig1-dev libfreetype6-dev
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.98.0
+          rustc --version
+          cargo --version
+
+      - name: Checkout pinned vcpkg
+        run: |
+          # From vcpkg.json, never restated - a baseline and a checkout that
+          # disagree make every package fail with "no version database entry".
+          commit="$(sed -n 's/.*"builtin-baseline"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' vcpkg.json | head -1)"
+          [ -n "$commit" ] || { echo 'vcpkg.json has no builtin-baseline' >&2; exit 1; }
+          root="$RUNNER_TEMP/vcpkg"
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$root"
+          git -C "$root" fetch --depth 1 origin "$commit"
+          git -C "$root" checkout --detach "$commit"
+          "$root/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$root" >> "$GITHUB_ENV"
+
+      - name: Packaging acceptance
+        run: |
+          python3 tests/packaging_devex_acceptance.py
+          python3 tests/architecture_audit.py
+          python3 scripts/verify_release_layout.py
+
+      - name: Build public Linux archive
+        run: ./tools/Build-LinuxRelease.sh
+
+      - name: Verify public archive
+        run: python3 scripts/verify_release_layout.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GraphVis-18.4.0-Linux
+          path: dist/GraphVis-18.4.0-Linux.tar.gz

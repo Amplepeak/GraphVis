@@ -1,0 +1,4 @@
+-r core.txt
+-r io.txt
+-r science.txt
+-r literature.txt

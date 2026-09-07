@@ -1,0 +1,49 @@
+[build-system]
+requires=["setuptools>=75","wheel"]
+build-backend="setuptools.build_meta"
+[project]
+name="graphvis-science-service"
+version="18.4.0"
+requires-python=">=3.11"
+dependencies=["numpy>=1.26","scipy>=1.11","pandas>=2.1","pyarrow>=18","scikit-learn>=1.6","statsmodels>=0.14","Pillow>=10",
+              # h5py is a core dependency, not optional: MATLAB v7.3 (.mat) is
+              # an HDF5 file and .mat is the single most common scientific format.
+              "h5py>=3.11"]
+[project.optional-dependencies]
+literature=["PyMuPDF>=1.24","pdfplumber>=0.11","pymupdf4llm>=0.0.17","scikit-image>=0.24"]
+vlm=["transformers>=4.45","torch>=2.4"]
+# Dataset import. "io" covers the formats most scientific users actually have -
+# MATLAB, HDF5, NetCDF, Excel, instrument and statistics-package files - and is
+# installed by default with the service. Each reader is imported lazily, so a
+# missing package only affects its own format.
+io=["h5py>=3.11","xarray>=2024.1","h5netcdf>=1.3","openpyxl>=3.1","xlrd>=2.0",
+    "odfpy>=1.4","pyxlsb>=1.0","lxml>=5.0","pyyaml>=6.0","tables>=3.9",
+    "nptdms>=1.9","soundfile>=0.12","pyreadstat>=1.2","lasio>=0.31",
+    # Business and finance. All pure-Python, so they add no build burden:
+    # dBase tables, Avro, MessagePack, OFX/QFX and SWIFT MT940 bank
+    # statements, and tables lifted out of Word reports.
+    "dbfread>=2.0","fastavro>=1.9","msgpack>=1.0","ofxtools>=0.9",
+    "mt-940>=4.26","python-docx>=1.1"]
+# Marine, oceanographic and diving instruments. Sea-Bird CNV, Ocean Data View,
+# RBR .rsk, NMEA, GPX/KML, bathymetric XYZ, dive-computer logs (UDDF, Subsurface,
+# DAN DL7, Suunto SML) and the genomics and molecular-structure readers are all
+# parsed here with no third party at all; only these three binaries need a
+# package, and each is imported lazily.
+marine=["dolfyn>=1.4","cfgrib>=0.9","fitparse>=1.2"]
+# Domain formats with heavier or platform-specific dependencies.
+io_extra=["pyteomics>=4.7","fcsparser>=0.2.8","astropy>=6.0","uproot>=5.3",
+          "obspy>=1.4","pyedflib>=0.1.36","mne>=1.7","pyabf>=2.3","pynwb>=2.8",
+          "pydicom>=2.4","nibabel>=5.2","tifffile>=2024.1","geopandas>=1.0",
+          "jcamp>=1.2",
+          # Heavier or platform-specific business formats. duckdb, pyreadr and
+          # numbers-parser ship large binary wheels; pyodbc additionally needs
+          # the Microsoft Access Database Engine installed to read .mdb/.accdb,
+          # and only on Windows. pdfplumber is shared with the literature
+          # extra and is what pulls tables out of published financial reports.
+          "duckdb>=1.0","pyreadr>=0.5","numbers-parser>=4.4","pyodbc>=5.1",
+          "pdfplumber>=0.11"]
+[project.scripts]
+graphvis-python-science="graphvis_science.service:main"
+[tool.setuptools.packages.find]
+where=["."]
+include=["graphvis_science*"]

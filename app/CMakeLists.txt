@@ -1,0 +1,288 @@
+qt_add_executable(graphvis
+  src/main.cpp
+  src/NativeApi.cpp
+  src/NativeApi.h
+  src/AppController.cpp
+  src/AppController.h
+  src/NativeViewportWindow.cpp
+  src/NativeViewportWindow.h
+  src/ProjectWorkspace.cpp
+  src/ProjectWorkspace.h
+  src/SplashWindow.cpp
+  src/SplashWindow.h
+)
+
+# --------------------------------------------------------------------------
+# 2-D plot renderer (native/plot2d)
+#
+# Unlike the VTK backend, this is linked straight into the executable rather
+# than being a lazily-loaded QML plugin: 2-D plotting is the core of a graph
+# editor, not a specialist view, so the indirection would buy nothing.
+# See docs/PORT-PLAN.md for the renderer adapter design.
+# --------------------------------------------------------------------------
+set(GRAPHVIS_PLOT2D_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../native/plot2d)
+set(GRAPHVIS_PLOT2D_SOURCES
+  ${GRAPHVIS_PLOT2D_DIR}/src/QtPlotBackend.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/Expression.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/PublicationProfile.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/ArrowTable.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/PlotCanvas.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/PlotSelfTest.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/include/ColourVision.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/Expression.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/PublicationProfile.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/PlotSpec.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/PlotBackend.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/QtPlotBackend.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/ArrowTable.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/PlotCanvas.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/PlotSelfTest.h
+)
+
+# VtkViewport.qml is a RESOURCE, not a QML_FILE, and that is deliberate: listing
+# it under QML_FILES would make `import GraphVis.VTK` a build-time dependency of
+# the main application module and defeat the whole point of loading VTK lazily.
+#
+# The cost is that nothing - not qmllint, not qmlcachegen - ever looks at this
+# file, so a plain syntax error in it is invisible until a user selects VTK/PBR
+# and gets nothing but a Loader.Error. It shipped for months with two property
+# names that started with a capital letter, which QML does not allow. If you
+# edit that file, read it carefully; the build will not help you.
+set_source_files_properties(
+  qml/lazy/VtkViewport.qml
+  PROPERTIES
+    QT_RESOURCE_ALIAS lazy/VtkViewport.qml
+)
+
+set_source_files_properties(
+  ../assets/branding/graphvis_icon.png
+  PROPERTIES
+    QT_RESOURCE_ALIAS assets/graphvis_icon.png
+)
+
+# Theme is a QML singleton: one source of colour/typography for every panel,
+# and the mechanism behind the theme catalogue.
+set_source_files_properties(
+  qml/Theme.qml
+  PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+)
+
+# The GraphVis 17 graph catalogue (318 entries / 30 categories), generated from
+# src/graphvis/rendering/graph_library.py. Embedded so AppController can read it
+# at :/qt/qml/GraphVis/catalogue/graph_catalogue.json with no path lookup.
+set_source_files_properties(
+  ../config/graph_catalogue.json
+  PROPERTIES
+    QT_RESOURCE_ALIAS catalogue/graph_catalogue.json
+)
+
+foreach(_qml_file
+    qml/Main.qml
+    qml/Theme.qml
+    qml/components/TopBar.qml
+    qml/components/ThemePicker.qml
+    qml/components/ColourVisionBar.qml
+    qml/components/ProjectPanel.qml
+    qml/components/RenderProgressBadge.qml
+    qml/components/PreviewReadyNotice.qml
+    qml/components/ControlSidebar.qml
+    qml/components/DataWorkspace.qml
+    qml/components/MappingPanel.qml
+    qml/components/AnalysisPanel.qml
+    qml/components/LiteraturePanel.qml
+    qml/components/PublicationPanel.qml
+    qml/components/StatusStrip.qml
+    qml/components/GraphLibrary.qml
+    qml/components/GvGroupBox.qml
+    qml/components/DockPanel.qml
+    qml/components/ScanPanel.qml
+    qml/workspaces/ClassicShell.qml
+    qml/workspaces/HomeWorkspace.qml
+    qml/workspaces/LiteratureWorkspace.qml
+    qml/workspaces/VisualizeWorkspace.qml
+    qml/experimental/ExperimentalShell.qml
+)
+  string(REGEX REPLACE "^qml/" "" _alias "${_qml_file}")
+
+  set_source_files_properties(
+    ${_qml_file}
+    PROPERTIES
+      QT_RESOURCE_ALIAS "${_alias}"
+  )
+endforeach()
+
+qt_add_qml_module(graphvis
+  URI GraphVis
+  VERSION 18.4
+
+  # C++ QML types. PlotCanvas carries QML_ELEMENT and becomes GraphVis.PlotCanvas.
+  SOURCES
+    ${GRAPHVIS_PLOT2D_SOURCES}
+
+  # Pin the prefix. Without it the prefix depends on Qt policy QTP0001, and if
+  # that resolves to OLD the module lands at qrc:/GraphVis/ instead of
+  # qrc:/qt/qml/GraphVis/. The engine only searches qrc:/qt/qml, so the module
+  # then fails to load with: Module "GraphVis" contains no type named "Main".
+  # main.cpp also refers to qrc:/qt/qml/GraphVis/assets/graphvis_icon.png.
+  RESOURCE_PREFIX "/qt/qml"
+
+  QML_FILES
+    qml/Main.qml
+    qml/Theme.qml
+    qml/components/TopBar.qml
+    qml/components/ThemePicker.qml
+    qml/components/ColourVisionBar.qml
+    qml/components/ProjectPanel.qml
+    qml/components/RenderProgressBadge.qml
+    qml/components/PreviewReadyNotice.qml
+    qml/components/ControlSidebar.qml
+    qml/components/DataWorkspace.qml
+    qml/components/MappingPanel.qml
+    qml/components/AnalysisPanel.qml
+    qml/components/LiteraturePanel.qml
+    qml/components/PublicationPanel.qml
+    qml/components/StatusStrip.qml
+    qml/components/GraphLibrary.qml
+    qml/components/GvGroupBox.qml
+    qml/components/DockPanel.qml
+    qml/components/ScanPanel.qml
+    qml/workspaces/ClassicShell.qml
+    qml/workspaces/HomeWorkspace.qml
+    qml/workspaces/LiteratureWorkspace.qml
+    qml/workspaces/VisualizeWorkspace.qml
+    qml/experimental/ExperimentalShell.qml
+
+  RESOURCES
+    ../assets/branding/graphvis_icon.png
+    qml/lazy/VtkViewport.qml
+    ../config/graph_catalogue.json
+)
+
+target_include_directories(graphvis PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${GRAPHVIS_PLOT2D_DIR}/include
+)
+
+if(TARGET Arrow::arrow_shared)
+  set(GRAPHVIS_APP_ARROW_TARGET Arrow::arrow_shared)
+elseif(TARGET Arrow::arrow_static)
+  set(GRAPHVIS_APP_ARROW_TARGET Arrow::arrow_static)
+else()
+  message(FATAL_ERROR "Apache Arrow C++ target not found for the GraphVis executable")
+endif()
+
+target_link_libraries(graphvis PRIVATE
+  Qt6::Core
+  Qt6::Gui
+  Qt6::Quick
+  Qt6::Qml
+  Qt6::QuickControls2
+  Qt6::Concurrent
+  Qt6::Svg
+  ${GRAPHVIS_APP_ARROW_TARGET}
+)
+
+if(TARGET graphvis_rust)
+  add_dependencies(graphvis graphvis_rust)
+endif()
+
+if(WIN32)
+  target_compile_definitions(graphvis PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+  )
+
+  target_link_libraries(graphvis PRIVATE
+    user32
+  )
+
+  set_target_properties(graphvis PROPERTIES
+    WIN32_EXECUTABLE TRUE
+  )
+
+  # --------------------------------------------------------------------------
+  # Windows application manifest
+  # --------------------------------------------------------------------------
+
+  set(GRAPHVIS_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/graphvis.manifest"
+  )
+
+  set(GRAPHVIS_MANIFEST_RC
+    "${CMAKE_CURRENT_BINARY_DIR}/graphvis_manifest.rc"
+  )
+
+  file(WRITE
+    "${GRAPHVIS_MANIFEST_RC}"
+    "1 24 \"${GRAPHVIS_MANIFEST}\"\n"
+  )
+
+  set_property(
+    SOURCE "${GRAPHVIS_MANIFEST_RC}"
+    PROPERTY OBJECT_DEPENDS "${GRAPHVIS_MANIFEST}"
+  )
+
+  target_sources(graphvis PRIVATE
+    "${GRAPHVIS_MANIFEST_RC}"
+  )
+
+  target_link_options(graphvis PRIVATE
+    "/MANIFEST:NO"
+    "/MANIFESTUAC:NO"
+  )
+endif()
+
+# --------------------------------------------------------------------------
+# Install executable
+# --------------------------------------------------------------------------
+
+install(TARGETS graphvis
+  RUNTIME DESTINATION .
+  BUNDLE DESTINATION .
+)
+
+# --------------------------------------------------------------------------
+# Windows runtime deployment
+#
+# These DLLs are produced DURING the build: vcpkg's applocal deploy copies Qt,
+# VTK and their dependencies next to the freshly linked executable, and the Qt
+# platform/imageformat plugins into subdirectories of the build root.
+#
+# A configure-time file(GLOB) therefore sees an EMPTY directory on a clean tree.
+# That is invisible in build/windows-fast, which was already populated when
+# CMake last reconfigured, but on a clean build/windows-release - the tree the
+# end-user installer is built from - it silently ships no qwindows.dll, and the
+# installed app dies with "no Qt platform plugin could be initialized".
+#
+# install(CODE) defers the glob to install time, when the files actually exist.
+# --------------------------------------------------------------------------
+
+if(WIN32)
+  # vcpkg's own bin directory is populated at configure time, so a normal
+  # install(DIRECTORY) is correct and cheapest here.
+  install(DIRECTORY
+    "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin/"
+    DESTINATION .
+    FILES_MATCHING PATTERN "*.dll"
+  )
+
+  install(CODE "
+    # Runtime DLLs copied beside the executable by the applocal deploy step.
+    file(GLOB _gv_root_dlls \"${CMAKE_BINARY_DIR}/*.dll\")
+    if(_gv_root_dlls)
+      file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}\" TYPE SHARED_LIBRARY FILES \${_gv_root_dlls})
+    endif()
+
+    # Qt plugin directories. Missing ones are simply skipped.
+    foreach(_gv_plugin_dir platforms imageformats iconengines styles tls networkinformation generic)
+      file(GLOB _gv_plugin_dlls \"${CMAKE_BINARY_DIR}/\${_gv_plugin_dir}/*.dll\")
+      if(_gv_plugin_dlls)
+        file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/\${_gv_plugin_dir}\" TYPE SHARED_LIBRARY FILES \${_gv_plugin_dlls})
+      endif()
+    endforeach()
+  ")
+endif()
+
+# Sources added: ProjectWorkspace (project folders), SplashWindow (startup).
+# LOD preview overlays added.

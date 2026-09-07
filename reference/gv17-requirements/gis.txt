@@ -1,0 +1,5 @@
+# Optional GIS/mapping stack
+geopandas>=0.14
+contextily>=1.6
+shapely>=2.0
+OWSLib>=0.31

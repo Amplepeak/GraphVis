@@ -1,0 +1,3 @@
+# Optional alternate Qt binding for third-party tools/plugins only.
+# GraphVis itself uses PySide6.
+PyQt6>=6.6,<7

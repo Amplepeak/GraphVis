@@ -1,0 +1,3339 @@
+{
+ "schema": "graphvis.catalogue/1",
+ "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
+ "category_count": 30,
+ "entry_count": 318,
+ "engine_count": 135,
+ "categories": [
+  {
+   "name": "Line Plots",
+   "entries": [
+    {
+     "category": "Line Plots",
+     "name": "plot",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "2-D line plot",
+     "preview": "╱╲__╱",
+     "thumbnail": "plot_25a6e2ff08.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "plot3",
+     "engine": "3D Line",
+     "scale": null,
+     "advanced": false,
+     "description": "3-D line trajectory",
+     "preview": "↗⤴",
+     "thumbnail": "plot3_737f08b07d.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "stairs",
+     "engine": "Stairs",
+     "scale": null,
+     "advanced": false,
+     "description": "Step/stair plot",
+     "preview": "_┌─┐_",
+     "thumbnail": "stairs_946ff238ce.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "errorbar",
+     "engine": "Error Bar",
+     "scale": null,
+     "advanced": false,
+     "description": "Line/markers with uncertainty bars",
+     "preview": "•│•│•",
+     "thumbnail": "errorbar_e5fce611ac.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "area",
+     "engine": "Area",
+     "scale": null,
+     "advanced": false,
+     "description": "Filled area under a curve",
+     "preview": "▁▃▆█",
+     "thumbnail": "area_edf97c32b1.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "stackedplot",
+     "engine": "Stacked Lines",
+     "scale": null,
+     "advanced": false,
+     "description": "Multiple numeric series stacked vertically",
+     "preview": "≈≈≈",
+     "thumbnail": "stackedplot_d1770b5f43.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "loglog",
+     "engine": "Line Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": false,
+     "description": "Line plot with logarithmic X and Y axes",
+     "preview": "log↗log",
+     "thumbnail": "loglog_289eaa209f.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "semilogx",
+     "engine": "Line Chart",
+     "scale": "Semi-Log X",
+     "advanced": false,
+     "description": "Line plot with logarithmic X axis",
+     "preview": "logx↗",
+     "thumbnail": "semilogx_df7d98ab71.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "semilogy",
+     "engine": "Line Chart",
+     "scale": "Semi-Log Y",
+     "advanced": false,
+     "description": "Line plot with logarithmic Y axis",
+     "preview": "↗logy",
+     "thumbnail": "semilogy_20d6cd069c.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "fplot",
+     "engine": "Function Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Evaluate and draw y=f(x) from a symbolic expression",
+     "preview": "f(x)",
+     "thumbnail": "fplot_8fb6eafe2b.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "fplot3",
+     "engine": "Function 3D Parametric",
+     "scale": null,
+     "advanced": true,
+     "description": "Evaluate x(t);y(t);z(t) from symbolic expressions",
+     "preview": "f(t)³",
+     "thumbnail": "fplot3_d7ec017a9a.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "fimplicit",
+     "engine": "Implicit Function",
+     "scale": null,
+     "advanced": true,
+     "description": "Plot the zero-level contour F(x,y)=0",
+     "preview": "F=0",
+     "thumbnail": "fimplicit_1578d6522f.png"
+    },
+    {
+     "category": "Line Plots",
+     "name": "fimplicit3",
+     "engine": "Implicit Surface",
+     "scale": null,
+     "advanced": true,
+     "description": "Plot the zero-level isosurface F(x,y,z)=0",
+     "preview": "F=0³",
+     "thumbnail": "fimplicit3_86fb33e00c.png"
+    }
+   ]
+  },
+  {
+   "name": "Scatter & Bubble Charts",
+   "entries": [
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "scatter",
+     "engine": "4D / 5D Scatter",
+     "scale": null,
+     "advanced": false,
+     "description": "2-D scatter with optional colour/size dimensions",
+     "preview": "· • ·•",
+     "thumbnail": "scatter_7bee2d64f4.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "scatter3",
+     "engine": "3D Scatter",
+     "scale": null,
+     "advanced": false,
+     "description": "3-D scatter cloud",
+     "preview": "·↗•",
+     "thumbnail": "scatter3_c15f400e4e.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "bubblechart",
+     "engine": "4D / 5D Scatter",
+     "scale": null,
+     "advanced": false,
+     "description": "Scatter where the fifth variable controls marker size",
+     "preview": "o O ◎",
+     "thumbnail": "bubblechart_063b288af4.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "bubblechart3",
+     "engine": "3D Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D scatter with bubble size mapping",
+     "preview": "o↗O",
+     "thumbnail": "bubblechart3_2235fedc86.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "swarmchart",
+     "engine": "Swarm",
+     "scale": null,
+     "advanced": false,
+     "description": "Jittered distribution scatter",
+     "preview": "••••",
+     "thumbnail": "swarmchart_ee46d84488.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "swarmchart3",
+     "engine": "3D Swarm",
+     "scale": null,
+     "advanced": true,
+     "description": "Jittered 3-D distribution scatter",
+     "preview": "••³",
+     "thumbnail": "swarmchart3_629819cb2a.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "binscatter",
+     "engine": "Hexbin Density",
+     "scale": null,
+     "advanced": false,
+     "description": "Binned 2-D density/mean relationship",
+     "preview": "⬢⬡⬢",
+     "thumbnail": "binscatter_3ff66c8e6b.png"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "plotmatrix",
+     "engine": "Plot Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Pairwise scatter matrix for numeric variables",
+     "preview": "▦",
+     "thumbnail": "plotmatrix_aeaeaba548.png"
+    }
+   ]
+  },
+  {
+   "name": "Data Distribution Plots",
+   "entries": [
+    {
+     "category": "Data Distribution Plots",
+     "name": "histogram",
+     "engine": "Histogram",
+     "scale": null,
+     "advanced": false,
+     "description": "1-D frequency distribution",
+     "preview": "▂▅█▆▃",
+     "thumbnail": "histogram_091aad4420.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "histogram2",
+     "engine": "2D Histogram",
+     "scale": null,
+     "advanced": false,
+     "description": "2-D binned frequency map",
+     "preview": "▦",
+     "thumbnail": "histogram2_44c541006d.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "scatterhistogram",
+     "engine": "Scatter + Marginals",
+     "scale": null,
+     "advanced": true,
+     "description": "Scatter plot with marginal histograms",
+     "preview": "▥•▤",
+     "thumbnail": "scatterhistogram_d071c0bef9.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "boxchart",
+     "engine": "Box Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Box-and-whisker distribution summary",
+     "preview": "—▣—",
+     "thumbnail": "boxchart_c6ca4c76c4.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "violinplot",
+     "engine": "Violin Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Kernel-density distribution shape",
+     "preview": "◖◗",
+     "thumbnail": "violinplot_ed3b51fc55.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "raincloudplot",
+     "engine": "Raincloud",
+     "scale": null,
+     "advanced": true,
+     "description": "Violin + box + jittered observations",
+     "preview": "☁••",
+     "thumbnail": "raincloudplot_dd598ccdc6.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "pareto",
+     "engine": "Pareto Front",
+     "scale": null,
+     "advanced": false,
+     "description": "Non-dominated performance frontier",
+     "preview": "⌜↗",
+     "thumbnail": "pareto_4e4e34aaed.png"
+    }
+   ]
+  },
+  {
+   "name": "Discrete Data Plots",
+   "entries": [
+    {
+     "category": "Discrete Data Plots",
+     "name": "bar",
+     "engine": "Bar",
+     "scale": null,
+     "advanced": false,
+     "description": "Vertical bars",
+     "preview": "▂▅█",
+     "thumbnail": "bar_960c6f9f9e.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "barh",
+     "engine": "Horizontal Bar",
+     "scale": null,
+     "advanced": false,
+     "description": "Horizontal bars",
+     "preview": "▰▰",
+     "thumbnail": "barh_be7447b5a9.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "bar3",
+     "engine": "3D Bar",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D bars using X/Y/Z mappings",
+     "preview": "▥³",
+     "thumbnail": "bar3_70782f8e68.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "bar3h",
+     "engine": "3D Horizontal Bar",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D horizontal bars",
+     "preview": "▰³",
+     "thumbnail": "bar3h_f39da9bc49.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "stem",
+     "engine": "Stem",
+     "scale": null,
+     "advanced": false,
+     "description": "Discrete stem plot",
+     "preview": "│•│•",
+     "thumbnail": "stem_c5c159d1da.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "stem3",
+     "engine": "3D Stem",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D stem plot",
+     "preview": "│•³",
+     "thumbnail": "stem3_ad5b66ae41.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "stairs",
+     "engine": "Stairs",
+     "scale": null,
+     "advanced": false,
+     "description": "Step/stair plot",
+     "preview": "_┌─┐_",
+     "thumbnail": "stairs_6f0965b37d.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "pie",
+     "engine": "Pie",
+     "scale": null,
+     "advanced": false,
+     "description": "Part-to-whole pie chart",
+     "preview": "◔",
+     "thumbnail": "pie_d782eda895.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "piechart",
+     "engine": "Pie",
+     "scale": null,
+     "advanced": false,
+     "description": "Part-to-whole pie chart",
+     "preview": "◕",
+     "thumbnail": "piechart_09af779d13.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "donutchart",
+     "engine": "Donut",
+     "scale": null,
+     "advanced": false,
+     "description": "Part-to-whole donut chart",
+     "preview": "◎",
+     "thumbnail": "donutchart_a78848d0d6.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "wordcloud",
+     "engine": "Word Cloud",
+     "scale": null,
+     "advanced": true,
+     "description": "Word-frequency cloud from text/categorical fields",
+     "preview": "Aa Bb",
+     "thumbnail": "wordcloud_74f3468db1.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "bubblecloud",
+     "engine": "Bubble Cloud",
+     "scale": null,
+     "advanced": true,
+     "description": "Categorical bubbles sized by numeric weights",
+     "preview": "oOo",
+     "thumbnail": "bubblecloud_fbbece5801.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "heatmap",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": false,
+     "description": "Interpolated response heatmap",
+     "preview": "▦",
+     "thumbnail": "heatmap_78e66e6cc3.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "parallelplot",
+     "engine": "Parallel Coordinates",
+     "scale": null,
+     "advanced": true,
+     "description": "Parallel-coordinate view of numeric variables",
+     "preview": "╲│╱│",
+     "thumbnail": "parallelplot_ae4af031bf.png"
+    },
+    {
+     "category": "Discrete Data Plots",
+     "name": "spy",
+     "engine": "Spy Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Matrix sparsity/nonzero pattern",
+     "preview": "·▪··",
+     "thumbnail": "spy_413d1e06b3.png"
+    }
+   ]
+  },
+  {
+   "name": "Geographic Plots",
+   "entries": [
+    {
+     "category": "Geographic Plots",
+     "name": "geoplot",
+     "engine": "Geo Line",
+     "scale": null,
+     "advanced": true,
+     "description": "Latitude/longitude line plot",
+     "preview": "⌖╱",
+     "thumbnail": "geoplot_2a9f6368e7.png"
+    },
+    {
+     "category": "Geographic Plots",
+     "name": "geoscatter",
+     "engine": "Geo Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Latitude/longitude scatter plot",
+     "preview": "⌖•",
+     "thumbnail": "geoscatter_fab9d2b571.png"
+    },
+    {
+     "category": "Geographic Plots",
+     "name": "geodensityplot",
+     "engine": "Geo Density",
+     "scale": null,
+     "advanced": true,
+     "description": "Latitude/longitude density plot",
+     "preview": "⌖▒",
+     "thumbnail": "geodensityplot_4fd360d6bc.png"
+    },
+    {
+     "category": "Geographic Plots",
+     "name": "geobubble",
+     "engine": "Geo Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Latitude/longitude bubble plot",
+     "preview": "⌖O",
+     "thumbnail": "geobubble_f1f24cb982.png"
+    },
+    {
+     "category": "Geographic Plots",
+     "name": "geobubblechart",
+     "engine": "Geo Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Latitude/longitude bubble plot",
+     "preview": "⌖O",
+     "thumbnail": "geobubblechart_c2316026cc.png"
+    }
+   ]
+  },
+  {
+   "name": "Polar Plots",
+   "entries": [
+    {
+     "category": "Polar Plots",
+     "name": "polarplot",
+     "engine": "Polar Line",
+     "scale": null,
+     "advanced": false,
+     "description": "Polar line: angle versus radius",
+     "preview": "◌↗",
+     "thumbnail": "polarplot_6d16371003.png"
+    },
+    {
+     "category": "Polar Plots",
+     "name": "polarhistogram",
+     "engine": "Polar Histogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Angular histogram",
+     "preview": "✺",
+     "thumbnail": "polarhistogram_c91b672e07.png"
+    },
+    {
+     "category": "Polar Plots",
+     "name": "polarscatter",
+     "engine": "Polar Scatter",
+     "scale": null,
+     "advanced": false,
+     "description": "Polar scatter: angle versus radius",
+     "preview": "◌•",
+     "thumbnail": "polarscatter_b0350885f5.png"
+    },
+    {
+     "category": "Polar Plots",
+     "name": "polarbubblechart",
+     "engine": "Polar Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Polar scatter with bubble-size mapping",
+     "preview": "◌O",
+     "thumbnail": "polarbubblechart_b4a9d44dc3.png"
+    },
+    {
+     "category": "Polar Plots",
+     "name": "compass",
+     "engine": "Compass",
+     "scale": null,
+     "advanced": true,
+     "description": "Polar vector arrows",
+     "preview": "↗↘",
+     "thumbnail": "compass_74c1196255.png"
+    },
+    {
+     "category": "Polar Plots",
+     "name": "rose",
+     "engine": "Polar Histogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Rose/angular histogram",
+     "preview": "✾",
+     "thumbnail": "rose_8c675f81e6.png"
+    }
+   ]
+  },
+  {
+   "name": "Contour Plots",
+   "entries": [
+    {
+     "category": "Contour Plots",
+     "name": "contour",
+     "engine": "2D Contour",
+     "scale": null,
+     "advanced": false,
+     "description": "Contour lines over an interpolated field",
+     "preview": "≋≋",
+     "thumbnail": "contour_1fd1320c8a.png"
+    },
+    {
+     "category": "Contour Plots",
+     "name": "contourf",
+     "engine": "2D Contour",
+     "scale": null,
+     "advanced": false,
+     "description": "Filled contour map",
+     "preview": "▧",
+     "thumbnail": "contourf_623f927885.png"
+    },
+    {
+     "category": "Contour Plots",
+     "name": "contour3",
+     "engine": "3D Contour",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D contour projection",
+     "preview": "≋³",
+     "thumbnail": "contour3_3633eee95a.png"
+    },
+    {
+     "category": "Contour Plots",
+     "name": "fcontour",
+     "engine": "Function Contour",
+     "scale": null,
+     "advanced": true,
+     "description": "Contour a symbolic f(x,y) expression",
+     "preview": "f≋",
+     "thumbnail": "fcontour_9871b0b10e.png"
+    },
+    {
+     "category": "Contour Plots",
+     "name": "pcolor",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": false,
+     "description": "Pseudocolour field",
+     "preview": "▦",
+     "thumbnail": "pcolor_11f960085c.png"
+    }
+   ]
+  },
+  {
+   "name": "Vector Fields",
+   "entries": [
+    {
+     "category": "Vector Fields",
+     "name": "quiver",
+     "engine": "Quiver Field",
+     "scale": null,
+     "advanced": true,
+     "description": "2-D vector arrows from mapped fields",
+     "preview": "↗↘↖",
+     "thumbnail": "quiver_ea536c8681.png"
+    },
+    {
+     "category": "Vector Fields",
+     "name": "quiver3",
+     "engine": "3D Quiver",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D U/V/W vector arrows",
+     "preview": "↗³",
+     "thumbnail": "quiver3_bfe45713be.png"
+    },
+    {
+     "category": "Vector Fields",
+     "name": "feather",
+     "engine": "Feather",
+     "scale": null,
+     "advanced": true,
+     "description": "Vector sequence anchored on a 1-D baseline",
+     "preview": "➤➤",
+     "thumbnail": "feather_d888710c0e.png"
+    },
+    {
+     "category": "Vector Fields",
+     "name": "streamplot",
+     "engine": "Stream Field",
+     "scale": null,
+     "advanced": true,
+     "description": "2-D streamlines through a vector field",
+     "preview": "〰➜",
+     "thumbnail": "streamplot_e988e46f76.png"
+    },
+    {
+     "category": "Vector Fields",
+     "name": "streamline",
+     "engine": "Stream Field",
+     "scale": null,
+     "advanced": true,
+     "description": "2-D streamlines through a vector field",
+     "preview": "〰➜",
+     "thumbnail": "streamline_4b5d0e2497.png"
+    },
+    {
+     "category": "Vector Fields",
+     "name": "streamslice",
+     "engine": "Stream Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Streamlines on a planar field slice",
+     "preview": "≈➜",
+     "thumbnail": "streamslice_69d84e2db3.png"
+    },
+    {
+     "category": "Vector Fields",
+     "name": "streamparticles",
+     "engine": "Stream Particles",
+     "scale": null,
+     "advanced": true,
+     "description": "Animated particles advancing along a mapped path",
+     "preview": "••➜",
+     "thumbnail": "streamparticles_4c00f738d4.png"
+    }
+   ]
+  },
+  {
+   "name": "Surface & Mesh Plots",
+   "entries": [
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "surf",
+     "engine": "3D Topography / Surface",
+     "scale": null,
+     "advanced": false,
+     "description": "Opaque 3-D response surface",
+     "preview": "▱³",
+     "thumbnail": "surf_158ea3bab9.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "surfc",
+     "engine": "Surface + Contours",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D surface with contour projection",
+     "preview": "▱≋",
+     "thumbnail": "surfc_81611c92ef.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "surfl",
+     "engine": "3D Topography / Surface",
+     "scale": null,
+     "advanced": true,
+     "description": "Lit/shaded 3-D surface",
+     "preview": "▱☀",
+     "thumbnail": "surfl_945f54d060.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "mesh",
+     "engine": "3D Mesh",
+     "scale": null,
+     "advanced": false,
+     "description": "Wireframe 3-D response mesh",
+     "preview": "#³",
+     "thumbnail": "mesh_7c609cd4a8.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "meshc",
+     "engine": "Surface + Contours",
+     "scale": null,
+     "advanced": true,
+     "description": "Wireframe mesh with contour projection",
+     "preview": "#≋",
+     "thumbnail": "meshc_da37888bc5.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "meshz",
+     "engine": "3D Mesh",
+     "scale": null,
+     "advanced": true,
+     "description": "Wireframe mesh with base curtain",
+     "preview": "#⌟",
+     "thumbnail": "meshz_3ea98ef963.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "waterfall",
+     "engine": "Waterfall",
+     "scale": null,
+     "advanced": true,
+     "description": "Waterfall lines across a response surface",
+     "preview": "≋≋³",
+     "thumbnail": "waterfall_6f7dab0ccb.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "ribbon",
+     "engine": "Ribbon",
+     "scale": null,
+     "advanced": true,
+     "description": "Ribbon slices through a response surface",
+     "preview": "▥",
+     "thumbnail": "ribbon_6aaac0d21d.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "fsurf",
+     "engine": "Function Surface",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D surface z=f(x,y) from a symbolic expression",
+     "preview": "f▱",
+     "thumbnail": "fsurf_fac01803fe.png"
+    },
+    {
+     "category": "Surface & Mesh Plots",
+     "name": "fmesh",
+     "engine": "Function Mesh",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D wire mesh z=f(x,y) from a symbolic expression",
+     "preview": "f#",
+     "thumbnail": "fmesh_7fb851c7b0.png"
+    }
+   ]
+  },
+  {
+   "name": "Volume Visualization",
+   "entries": [
+    {
+     "category": "Volume Visualization",
+     "name": "isosurface",
+     "engine": "Isosurface",
+     "scale": null,
+     "advanced": true,
+     "description": "Marching-cubes surface from a 3-D scalar volume",
+     "preview": "◫³",
+     "thumbnail": "isosurface_f90b609194.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "isocaps",
+     "engine": "Isocaps",
+     "scale": null,
+     "advanced": true,
+     "description": "Isosurface with boundary cap contours",
+     "preview": "◫⌁",
+     "thumbnail": "isocaps_24e62bd7f1.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "isonormals",
+     "engine": "Isonormals",
+     "scale": null,
+     "advanced": true,
+     "description": "Isosurface with sampled surface normals",
+     "preview": "◫↗",
+     "thumbnail": "isonormals_9efbdfb21a.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "volshow",
+     "engine": "Volume Show",
+     "scale": null,
+     "advanced": true,
+     "description": "Opacity-mapped voxel volume rendering",
+     "preview": "▣³",
+     "thumbnail": "volshow_1b18cb191e.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "patch",
+     "engine": "Patch",
+     "scale": null,
+     "advanced": true,
+     "description": "Triangular patch mesh from topology or XYZ points",
+     "preview": "△▱",
+     "thumbnail": "patch_6e9ca2f9ec.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "slice",
+     "engine": "Volume Slice",
+     "scale": null,
+     "advanced": true,
+     "description": "Orthogonal scalar-volume slices",
+     "preview": "▤³",
+     "thumbnail": "slice_25e6e80b8e.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "contourslice",
+     "engine": "Contour Slice",
+     "scale": null,
+     "advanced": true,
+     "description": "Contour lines on orthogonal volume slices",
+     "preview": "≋▤",
+     "thumbnail": "contourslice_56cc862dc4.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "streamribbon",
+     "engine": "Stream Ribbon",
+     "scale": null,
+     "advanced": true,
+     "description": "Ribbon-like 3-D trajectories from U/V/W fields",
+     "preview": "〰▰",
+     "thumbnail": "streamribbon_ed8e1e52fd.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "streamtube",
+     "engine": "Stream Tube",
+     "scale": null,
+     "advanced": true,
+     "description": "Tube-like 3-D trajectories from U/V/W fields",
+     "preview": "〰◯",
+     "thumbnail": "streamtube_2fdffa8186.png"
+    },
+    {
+     "category": "Volume Visualization",
+     "name": "coneplot",
+     "engine": "Cone Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D direction/magnitude cone-style vector field",
+     "preview": "▲→",
+     "thumbnail": "coneplot_2eade2e300.png"
+    }
+   ]
+  },
+  {
+   "name": "Animation & Dynamic Display",
+   "entries": [
+    {
+     "category": "Animation & Dynamic Display",
+     "name": "animatedline",
+     "engine": "Animated Line",
+     "scale": null,
+     "advanced": true,
+     "description": "Time-progressive line playback",
+     "preview": "↗▶",
+     "thumbnail": "animatedline_369bbafd3c.png"
+    },
+    {
+     "category": "Animation & Dynamic Display",
+     "name": "comet",
+     "engine": "Comet",
+     "scale": null,
+     "advanced": true,
+     "description": "2-D moving head with fading trail",
+     "preview": "☄",
+     "thumbnail": "comet_6be0f251af.png"
+    },
+    {
+     "category": "Animation & Dynamic Display",
+     "name": "comet3",
+     "engine": "Comet 3D",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D moving head with fading trail",
+     "preview": "☄³",
+     "thumbnail": "comet3_f7cd169588.png"
+    }
+   ]
+  },
+  {
+   "name": "Advanced Line & Signal Plots",
+   "entries": [
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "stepmid",
+     "engine": "Step Mid",
+     "scale": null,
+     "advanced": true,
+     "description": "Midpoint step plot",
+     "preview": "_┐_┌_",
+     "thumbnail": "stepmid_17ce106521.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "connectedscatter",
+     "engine": "Connected Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Scatter observations connected in acquisition order",
+     "preview": "•─•╱•",
+     "thumbnail": "connectedscatter_b5c0b52626.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "lollipop",
+     "engine": "Lollipop",
+     "scale": null,
+     "advanced": true,
+     "description": "Stem-like lollipop chart",
+     "preview": "○│○│",
+     "thumbnail": "lollipop_6c0cb30584.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "fillbetween",
+     "engine": "Fill Between",
+     "scale": null,
+     "advanced": true,
+     "description": "Fill the region between two mapped series",
+     "preview": "≈▒≈",
+     "thumbnail": "fillbetween_b3c7ec6cb6.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "eventplot",
+     "engine": "Event Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Event/raster plot for event positions",
+     "preview": "│ ││  │",
+     "thumbnail": "eventplot_da1da8451a.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "cumsum",
+     "engine": "Cumulative Sum",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative response versus X",
+     "preview": "↗Σ",
+     "thumbnail": "cumsum_ab619a6fbf.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "rollingmean",
+     "engine": "Rolling Mean",
+     "scale": null,
+     "advanced": true,
+     "description": "Rolling-mean trend",
+     "preview": "≈μ",
+     "thumbnail": "rollingmean_d9d859217e.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "rollingmedian",
+     "engine": "Rolling Median",
+     "scale": null,
+     "advanced": true,
+     "description": "Robust rolling-median trend",
+     "preview": "≈med",
+     "thumbnail": "rollingmedian_7b4c8526bc.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "movingstd",
+     "engine": "Moving Std",
+     "scale": null,
+     "advanced": true,
+     "description": "Moving standard-deviation envelope",
+     "preview": "σ≈",
+     "thumbnail": "movingstd_949d19bb32.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "derivative",
+     "engine": "Derivative",
+     "scale": null,
+     "advanced": true,
+     "description": "Numerical dY/dX",
+     "preview": "dy/dx",
+     "thumbnail": "derivative_90b0b0d802.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "integral",
+     "engine": "Integral",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative trapezoidal integral",
+     "preview": "∫",
+     "thumbnail": "integral_b1f2fb43ba.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "slopegraph",
+     "engine": "Slope Graph",
+     "scale": null,
+     "advanced": true,
+     "description": "Compare paired endpoints",
+     "preview": "╱╲",
+     "thumbnail": "slopegraph_9208057217.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "dotplot",
+     "engine": "Dot Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "One-dimensional dot/rank plot",
+     "preview": "••••",
+     "thumbnail": "dotplot_04ff67d1de.png"
+    }
+   ]
+  },
+  {
+   "name": "Statistical & Diagnostic Plots",
+   "entries": [
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "kde",
+     "engine": "KDE Density",
+     "scale": null,
+     "advanced": true,
+     "description": "Kernel-density estimate",
+     "preview": "⌒",
+     "thumbnail": "kde_45fe7b4cde.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "ecdf",
+     "engine": "ECDF",
+     "scale": null,
+     "advanced": true,
+     "description": "Empirical cumulative distribution",
+     "preview": "└─┐",
+     "thumbnail": "ecdf_fbfeb6e1ff.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cumhist",
+     "engine": "Cumulative Histogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative histogram",
+     "preview": "▂▅█",
+     "thumbnail": "cumhist_6a26dd4a68.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "qqplot",
+     "engine": "Q-Q Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Normal quantile-quantile diagnostic",
+     "preview": "•╱•",
+     "thumbnail": "qqplot_b96767b82d.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "probplot",
+     "engine": "Probability Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Normal probability plot",
+     "preview": "P↗",
+     "thumbnail": "probplot_57098a2797.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "ridgeline",
+     "engine": "Ridgeline",
+     "scale": null,
+     "advanced": true,
+     "description": "Stacked density ridges for numeric series",
+     "preview": "≋≋≋",
+     "thumbnail": "ridgeline_7c91b49a06.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "stripplot",
+     "engine": "Strip Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Jittered strip distribution",
+     "preview": "••••",
+     "thumbnail": "stripplot_fd365905ad.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "beeswarm",
+     "engine": "Beeswarm",
+     "scale": null,
+     "advanced": true,
+     "description": "Density-aware jittered swarm",
+     "preview": "••••",
+     "thumbnail": "beeswarm_01d4c298b3.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "corrmatrix",
+     "engine": "Correlation Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Numeric correlation matrix",
+     "preview": "▦ρ",
+     "thumbnail": "corrmatrix_a483d62716.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "covmatrix",
+     "engine": "Covariance Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Numeric covariance matrix",
+     "preview": "▦Σ",
+     "thumbnail": "covmatrix_8d8ebbf761.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "residualplot",
+     "engine": "Residual Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Residuals around a fitted trend",
+     "preview": "•—•",
+     "thumbnail": "residualplot_1a88a1e72e.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "blandaltman",
+     "engine": "Bland-Altman",
+     "scale": null,
+     "advanced": true,
+     "description": "Agreement plot: mean versus difference",
+     "preview": "±Δ",
+     "thumbnail": "blandaltman_caf335209b.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "calibrationplot",
+     "engine": "Calibration Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Observed versus predicted calibration",
+     "preview": "•╱",
+     "thumbnail": "calibrationplot_b744477027.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "confidenceellipse",
+     "engine": "Confidence Ellipse",
+     "scale": null,
+     "advanced": true,
+     "description": "Scatter with covariance confidence ellipse",
+     "preview": "◯•",
+     "thumbnail": "confidenceellipse_6287a2930a.png"
+    }
+   ]
+  },
+  {
+   "name": "Signal Processing Plots",
+   "entries": [
+    {
+     "category": "Signal Processing Plots",
+     "name": "spectrogram",
+     "engine": "Spectrogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Short-time Fourier spectrogram",
+     "preview": "▦ƒ",
+     "thumbnail": "spectrogram_2933e990c6.png"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "psd",
+     "engine": "Power Spectral Density",
+     "scale": null,
+     "advanced": true,
+     "description": "Welch power spectral density",
+     "preview": "PSD",
+     "thumbnail": "psd_80efef3139.png"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "autocorr",
+     "engine": "Autocorrelation",
+     "scale": null,
+     "advanced": true,
+     "description": "Autocorrelation versus lag",
+     "preview": "Rxx",
+     "thumbnail": "autocorr_ac7a8e5817.png"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "crosscorr",
+     "engine": "Cross Correlation",
+     "scale": null,
+     "advanced": true,
+     "description": "Cross-correlation between X/Y series",
+     "preview": "Rxy",
+     "thumbnail": "crosscorr_ac575e40e7.png"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "lagplot",
+     "engine": "Lag Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Y(t) versus Y(t-lag)",
+     "preview": "t↔t-1",
+     "thumbnail": "lagplot_865ec775d5.png"
+    }
+   ]
+  },
+  {
+   "name": "Multivariate Plots",
+   "entries": [
+    {
+     "category": "Multivariate Plots",
+     "name": "radar",
+     "engine": "Radar Chart",
+     "scale": null,
+     "advanced": true,
+     "description": "Radial comparison of normalized numeric variables",
+     "preview": "✳",
+     "thumbnail": "radar_e2f5652864.png"
+    },
+    {
+     "category": "Multivariate Plots",
+     "name": "andrews",
+     "engine": "Andrews Curves",
+     "scale": null,
+     "advanced": true,
+     "description": "Andrews multivariate curves",
+     "preview": "∿∿",
+     "thumbnail": "andrews_1dd9f4c450.png"
+    },
+    {
+     "category": "Multivariate Plots",
+     "name": "ternary",
+     "engine": "Ternary Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Three-component simplex scatter",
+     "preview": "△•",
+     "thumbnail": "ternary_02f7bf1629.png"
+    }
+   ]
+  },
+  {
+   "name": "Publication & Statistical Plots",
+   "entries": [
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "forest",
+     "engine": "Forest Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Effect estimates with confidence intervals",
+     "preview": "—◆—",
+     "thumbnail": "forest_b6b1a0caee.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "volcano",
+     "engine": "Volcano Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Effect size versus -log10 significance",
+     "preview": "∧••",
+     "thumbnail": "volcano_aac54d5520.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "roc",
+     "engine": "ROC Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Receiver-operating characteristic with AUC",
+     "preview": "⌜╱",
+     "thumbnail": "roc_2e6ba2c90f.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "controlchart",
+     "engine": "Control Chart",
+     "scale": null,
+     "advanced": true,
+     "description": "Process series with mean and 3σ control limits",
+     "preview": "≈┄",
+     "thumbnail": "controlchart_6c1d6bb0ab.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "manhattan",
+     "engine": "Manhattan Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Genomic/ordered position versus -log10 p-value",
+     "preview": "▁▃▇▂",
+     "thumbnail": "manhattan_3e531494e6.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "populationpyramid",
+     "engine": "Population Pyramid",
+     "scale": null,
+     "advanced": true,
+     "description": "Mirrored paired horizontal bars",
+     "preview": "◀▶",
+     "thumbnail": "populationpyramid_255d8e1601.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "treemap",
+     "engine": "Treemap",
+     "scale": null,
+     "advanced": true,
+     "description": "Hierarchical/weighted rectangle composition",
+     "preview": "▦",
+     "thumbnail": "treemap_cbaf953079.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "sunburst",
+     "engine": "Sunburst",
+     "scale": null,
+     "advanced": true,
+     "description": "Nested categorical composition",
+     "preview": "◎◉",
+     "thumbnail": "sunburst_43d634af15.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "sankey",
+     "engine": "Sankey Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Weighted flow diagram",
+     "preview": "⇒⇢",
+     "thumbnail": "sankey_91804664c7.png"
+    },
+    {
+     "category": "Publication & Statistical Plots",
+     "name": "venn",
+     "engine": "Venn Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Set-overlap summary",
+     "preview": "◯◯",
+     "thumbnail": "venn_1fa644a8ec.png"
+    }
+   ]
+  },
+  {
+   "name": "Spatial & Specialized",
+   "entries": [
+    {
+     "category": "Spatial & Specialized",
+     "name": "windrose",
+     "engine": "Wind Rose",
+     "scale": null,
+     "advanced": true,
+     "description": "Direction-frequency polar histogram",
+     "preview": "✺",
+     "thumbnail": "windrose_460dd52043.png"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "spider",
+     "engine": "Radar Chart",
+     "scale": null,
+     "advanced": true,
+     "description": "Spider/radar multivariate chart",
+     "preview": "✳",
+     "thumbnail": "spider_b7789b96c6.png"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "radial",
+     "engine": "Polar Line",
+     "scale": null,
+     "advanced": true,
+     "description": "Radial/polar line plot",
+     "preview": "◌",
+     "thumbnail": "radial_bd7a722a34.png"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "piper",
+     "engine": "Piper Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Hydrochemical trilinear diagram",
+     "preview": "◇△",
+     "thumbnail": "piper_744098fc2c.png"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "pie-map",
+     "engine": "Geo Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Map-positioned proportional-symbol view",
+     "preview": "⌖◔",
+     "thumbnail": "pie-map_f821fdc9db.png"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "bar-map",
+     "engine": "Geo Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Map-positioned magnitude symbols",
+     "preview": "⌖▥",
+     "thumbnail": "bar-map_f891275495.png"
+    }
+   ]
+  },
+  {
+   "name": "Time Series & Trend",
+   "entries": [
+    {
+     "category": "Time Series & Trend",
+     "name": "time-series line",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Chronological Y versus time/X line",
+     "preview": "t↗",
+     "thumbnail": "time-series_line_606cfe89b3.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "step response",
+     "engine": "Stairs",
+     "scale": null,
+     "advanced": false,
+     "description": "Step response / zero-order-hold trajectory",
+     "preview": "_┌─┐",
+     "thumbnail": "step_response_44ce5b6cfd.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "impulse response",
+     "engine": "Stem",
+     "scale": null,
+     "advanced": true,
+     "description": "Discrete impulse-response stems",
+     "preview": "│•│•",
+     "thumbnail": "impulse_response_2f1ded1ac2.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "running total",
+     "engine": "Cumulative Sum",
+     "scale": null,
+     "advanced": true,
+     "description": "Running cumulative total",
+     "preview": "Σ↗",
+     "thumbnail": "running_total_49dfb62894.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "moving average",
+     "engine": "Rolling Mean",
+     "scale": null,
+     "advanced": true,
+     "description": "Rolling mean trend",
+     "preview": "μ≈",
+     "thumbnail": "moving_average_f87b280048.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "moving median",
+     "engine": "Rolling Median",
+     "scale": null,
+     "advanced": true,
+     "description": "Rolling median trend",
+     "preview": "med≈",
+     "thumbnail": "moving_median_4b527db728.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "moving variability",
+     "engine": "Moving Std",
+     "scale": null,
+     "advanced": true,
+     "description": "Moving standard deviation envelope",
+     "preview": "σ≈",
+     "thumbnail": "moving_variability_3de27b16c4.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "rate of change",
+     "engine": "Derivative",
+     "scale": null,
+     "advanced": true,
+     "description": "Numerical rate of change",
+     "preview": "dy/dt",
+     "thumbnail": "rate_of_change_33914ce9f6.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "cumulative integral",
+     "engine": "Integral",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative trapezoidal integral",
+     "preview": "∫",
+     "thumbnail": "cumulative_integral_c0869a0a71.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "event raster",
+     "engine": "Event Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Event timing/raster visualization",
+     "preview": "│ ││",
+     "thumbnail": "event_raster_aedb0e1a3d.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "trend band",
+     "engine": "Fill Between",
+     "scale": null,
+     "advanced": true,
+     "description": "Trend with an uncertainty/envelope band",
+     "preview": "≈▒≈",
+     "thumbnail": "trend_band_f5168d2092.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "paired slope",
+     "engine": "Slope Graph",
+     "scale": null,
+     "advanced": true,
+     "description": "Paired before/after slope graph",
+     "preview": "╱╲",
+     "thumbnail": "paired_slope_ef4b349124.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "connected observations",
+     "engine": "Connected Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Observations connected in acquisition order",
+     "preview": "•─•",
+     "thumbnail": "connected_observations_82f4e59a49.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "horizon-style trend",
+     "engine": "Area",
+     "scale": null,
+     "advanced": true,
+     "description": "Compact filled time-series trend",
+     "preview": "▁▃▆",
+     "thumbnail": "horizon-style_trend_fe77e49291.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stacked time series",
+     "engine": "Stacked Lines",
+     "scale": null,
+     "advanced": true,
+     "description": "Multiple aligned time-series panels",
+     "preview": "≈≈≈",
+     "thumbnail": "stacked_time_series_444ac77faf.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "log time series",
+     "engine": "Line Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Time-series with logarithmic response",
+     "preview": "t↗log",
+     "thumbnail": "log_time_series_0b6f004e07.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "log-log kinetics",
+     "engine": "Line Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Log-log kinetic/power-law view",
+     "preview": "log↗log",
+     "thumbnail": "log-log_kinetics_bf080b8915.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "change-point overview",
+     "engine": "Derivative",
+     "scale": null,
+     "advanced": true,
+     "description": "Derivative view highlighting abrupt transitions",
+     "preview": "Δ↗",
+     "thumbnail": "change-point_overview_32aac58eae.png"
+    }
+   ]
+  },
+  {
+   "name": "Spectroscopy & Chromatography",
+   "entries": [
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "spectrum",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Generic intensity spectrum",
+     "preview": "⌒⌒",
+     "thumbnail": "spectrum_178722106c.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "mass spectrum",
+     "engine": "Stem",
+     "scale": null,
+     "advanced": false,
+     "description": "Mass-to-charge peaks as stems",
+     "preview": "│•│•",
+     "thumbnail": "mass_spectrum_2ec0a3ca61.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chromatogram",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Signal intensity versus retention time",
+     "preview": "⌒⌒",
+     "thumbnail": "chromatogram_c7fae7744e.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "absorbance spectrum",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Absorbance versus wavelength/frequency",
+     "preview": "A(λ)",
+     "thumbnail": "absorbance_spectrum_bbc2b76820.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "emission spectrum",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Emission intensity spectrum",
+     "preview": "I(λ)",
+     "thumbnail": "emission_spectrum_ea0929cf6f.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "raman spectrum",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Raman intensity versus shift",
+     "preview": "I(Δν)",
+     "thumbnail": "raman_spectrum_d05bb7f57a.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "ftir spectrum",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "FTIR absorbance/transmittance spectrum",
+     "preview": "IR⌒",
+     "thumbnail": "ftir_spectrum_b3d1cbe73f.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "xrd pattern",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Diffraction intensity versus 2θ",
+     "preview": "I(2θ)",
+     "thumbnail": "xrd_pattern_bea973982c.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "peak-stick spectrum",
+     "engine": "Stem",
+     "scale": null,
+     "advanced": true,
+     "description": "Stick representation of detected peaks",
+     "preview": "│││",
+     "thumbnail": "peak-stick_spectrum_5db6e9ecf0.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "spectral heatmap",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": true,
+     "description": "Spectral intensity as a two-dimensional field",
+     "preview": "▦λ",
+     "thumbnail": "spectral_heatmap_1365463936.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "spectral contour",
+     "engine": "2D Contour",
+     "scale": null,
+     "advanced": true,
+     "description": "Contour view of a spectral field",
+     "preview": "≋λ",
+     "thumbnail": "spectral_contour_d195279e6a.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "waterfall spectra",
+     "engine": "Waterfall",
+     "scale": null,
+     "advanced": true,
+     "description": "Offset family of spectra",
+     "preview": "≋≋³",
+     "thumbnail": "waterfall_spectra_310a0340ff.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "stacked spectra",
+     "engine": "Stacked Lines",
+     "scale": null,
+     "advanced": true,
+     "description": "Multiple spectra in vertically stacked panels",
+     "preview": "≈≈",
+     "thumbnail": "stacked_spectra_8ff0b7d603.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "peak area view",
+     "engine": "Integral",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative/peak integration view",
+     "preview": "∫peak",
+     "thumbnail": "peak_area_view_7986be7bee.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "peak derivative",
+     "engine": "Derivative",
+     "scale": null,
+     "advanced": true,
+     "description": "Derivative spectroscopy view",
+     "preview": "dI/dx",
+     "thumbnail": "peak_derivative_b38e0a97b7.png"
+    }
+   ]
+  },
+  {
+   "name": "Statistical Inference & Effect",
+   "entries": [
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "effect-size forest",
+     "engine": "Forest Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Effect estimates and confidence intervals",
+     "preview": "—◆—",
+     "thumbnail": "effect-size_forest_64e8d65642.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "caterpillar plot",
+     "engine": "Forest Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Sorted estimates with confidence intervals",
+     "preview": "—◆—",
+     "thumbnail": "caterpillar_plot_574f31be62.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "funnel plot",
+     "engine": "Volcano Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Effect versus precision-style diagnostic",
+     "preview": "▽••",
+     "thumbnail": "funnel_plot_322f760f88.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "mean confidence plot",
+     "engine": "Error Bar",
+     "scale": null,
+     "advanced": false,
+     "description": "Means with confidence/error bars",
+     "preview": "•│•",
+     "thumbnail": "mean_confidence_plot_9c5de5281f.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "median interval plot",
+     "engine": "Error Bar",
+     "scale": null,
+     "advanced": true,
+     "description": "Median estimates with intervals",
+     "preview": "◆│",
+     "thumbnail": "median_interval_plot_8bbb232867.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "estimation plot",
+     "engine": "Bland-Altman",
+     "scale": null,
+     "advanced": true,
+     "description": "Difference/estimation style comparison",
+     "preview": "Δ•",
+     "thumbnail": "estimation_plot_cdbb3848bf.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "agreement plot",
+     "engine": "Bland-Altman",
+     "scale": null,
+     "advanced": false,
+     "description": "Bland-Altman agreement view",
+     "preview": "±Δ",
+     "thumbnail": "agreement_plot_59f1ae4eef.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "normal Q-Q",
+     "engine": "Q-Q Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Quantile-quantile normality diagnostic",
+     "preview": "•╱•",
+     "thumbnail": "normal_Q-Q_28ddc3e368.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "P-P probability",
+     "engine": "Probability Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Probability diagnostic plot",
+     "preview": "P↗",
+     "thumbnail": "P-P_probability_bf4e629636.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "empirical CDF",
+     "engine": "ECDF",
+     "scale": null,
+     "advanced": false,
+     "description": "Empirical cumulative distribution",
+     "preview": "└─┐",
+     "thumbnail": "empirical_CDF_d63c6e82e4.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "density curve",
+     "engine": "KDE Density",
+     "scale": null,
+     "advanced": false,
+     "description": "Kernel-density estimate",
+     "preview": "⌒",
+     "thumbnail": "density_curve_94ef7ff195.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "cumulative frequency",
+     "engine": "Cumulative Histogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative histogram/frequency",
+     "preview": "▂▅█",
+     "thumbnail": "cumulative_frequency_308081d856.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "half violin",
+     "engine": "Violin Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Compact violin distribution view",
+     "preview": "◖",
+     "thumbnail": "half_violin_cf9ffd1093.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "boxen-style summary",
+     "engine": "Box Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Quantile-rich box-style summary",
+     "preview": "▣▣",
+     "thumbnail": "boxen-style_summary_9877796c89.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "jitter plot",
+     "engine": "Strip Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Jittered individual observations",
+     "preview": "••••",
+     "thumbnail": "jitter_plot_681e9f4c82.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "beeswarm distribution",
+     "engine": "Beeswarm",
+     "scale": null,
+     "advanced": true,
+     "description": "Density-aware observation swarm",
+     "preview": "••••",
+     "thumbnail": "beeswarm_distribution_bac0276b44.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "raincloud distribution",
+     "engine": "Raincloud",
+     "scale": null,
+     "advanced": false,
+     "description": "Violin + box + points",
+     "preview": "☁••",
+     "thumbnail": "raincloud_distribution_5fe07e7799.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "volcano significance",
+     "engine": "Volcano Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Effect versus -log10 significance",
+     "preview": "∧••",
+     "thumbnail": "volcano_significance_b9b127f639.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "ROC diagnostic",
+     "engine": "ROC Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Receiver-operating characteristic",
+     "preview": "⌜╱",
+     "thumbnail": "ROC_diagnostic_c9d37d7c8e.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "calibration curve",
+     "engine": "Calibration Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Observed versus predicted calibration",
+     "preview": "•╱",
+     "thumbnail": "calibration_curve_0b4141c586.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "residual diagnostic",
+     "engine": "Residual Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Residuals around fitted trend",
+     "preview": "•—•",
+     "thumbnail": "residual_diagnostic_20465160b8.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "confidence ellipse scatter",
+     "engine": "Confidence Ellipse",
+     "scale": null,
+     "advanced": true,
+     "description": "Scatter with covariance ellipse",
+     "preview": "◯•",
+     "thumbnail": "confidence_ellipse_scatter_4ebb5baa68.png"
+    }
+   ]
+  },
+  {
+   "name": "Matrix, Correlation & Multivariate",
+   "entries": [
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "correlogram",
+     "engine": "Correlation Matrix",
+     "scale": null,
+     "advanced": false,
+     "description": "Correlation matrix heatmap",
+     "preview": "▦ρ",
+     "thumbnail": "correlogram_878edf9747.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "covariance map",
+     "engine": "Covariance Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Covariance matrix heatmap",
+     "preview": "▦Σ",
+     "thumbnail": "covariance_map_c6fc190d90.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "pair plot",
+     "engine": "Plot Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Pairwise scatter/histogram matrix",
+     "preview": "▦•",
+     "thumbnail": "pair_plot_e98e00b496.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "scatter matrix",
+     "engine": "Plot Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Pairwise scatter matrix",
+     "preview": "▦•",
+     "thumbnail": "scatter_matrix_29a7daabfe.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "parallel coordinates",
+     "engine": "Parallel Coordinates",
+     "scale": null,
+     "advanced": true,
+     "description": "Parallel-coordinate multivariate view",
+     "preview": "╲│╱",
+     "thumbnail": "parallel_coordinates_9db9cdb6fe.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "radar multivariate",
+     "engine": "Radar Chart",
+     "scale": null,
+     "advanced": true,
+     "description": "Normalized radial comparison",
+     "preview": "✳",
+     "thumbnail": "radar_multivariate_07ee4124a4.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "spider multivariate",
+     "engine": "Radar Chart",
+     "scale": null,
+     "advanced": true,
+     "description": "Spider/radar variable comparison",
+     "preview": "✳",
+     "thumbnail": "spider_multivariate_08c1d85eec.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "Andrews curves",
+     "engine": "Andrews Curves",
+     "scale": null,
+     "advanced": true,
+     "description": "Andrews multivariate curves",
+     "preview": "∿∿",
+     "thumbnail": "Andrews_curves_3fdb3b11d8.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "PCA-style scores",
+     "engine": "4D / 5D Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Score-like multivariate scatter",
+     "preview": "PC•",
+     "thumbnail": "PCA-style_scores_85ba9a96bd.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "PCA-style loadings",
+     "engine": "Quiver Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Loading-vector style arrows",
+     "preview": "PC↗",
+     "thumbnail": "PCA-style_loadings_4cfa523c58.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "cluster heatmap",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": true,
+     "description": "Matrix heatmap for clustered variables/samples",
+     "preview": "▦",
+     "thumbnail": "cluster_heatmap_78c066dd5e.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "distance matrix",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": true,
+     "description": "Pairwise-distance matrix",
+     "preview": "▦d",
+     "thumbnail": "distance_matrix_32584af366.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "confusion matrix",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": true,
+     "description": "Classification confusion matrix",
+     "preview": "▦C",
+     "thumbnail": "confusion_matrix_486502d3d2.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "sparsity matrix",
+     "engine": "Spy Matrix",
+     "scale": null,
+     "advanced": true,
+     "description": "Nonzero/sparsity pattern",
+     "preview": "·▪··",
+     "thumbnail": "sparsity_matrix_0a8007299a.png"
+    },
+    {
+     "category": "Matrix, Correlation & Multivariate",
+     "name": "simplex composition",
+     "engine": "Ternary Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Three-component ternary composition",
+     "preview": "△•",
+     "thumbnail": "simplex_composition_e0c53d786b.png"
+    }
+   ]
+  },
+  {
+   "name": "Quality, Process & Reliability",
+   "entries": [
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "Shewhart chart",
+     "engine": "Control Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Process values with control limits",
+     "preview": "≈┄",
+     "thumbnail": "Shewhart_chart_011eff1f25.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "individuals control chart",
+     "engine": "Control Chart",
+     "scale": null,
+     "advanced": true,
+     "description": "Individuals process-control chart",
+     "preview": "I┄",
+     "thumbnail": "individuals_control_chart_9d3ae6f08b.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "run chart",
+     "engine": "Line Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Process metric in run order",
+     "preview": "run↗",
+     "thumbnail": "run_chart_f529bfb75b.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "process capability histogram",
+     "engine": "Histogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Process distribution/capability view",
+     "preview": "▂▅█",
+     "thumbnail": "process_capability_histogram_cef5d18085.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "quality Pareto",
+     "engine": "Pareto Front",
+     "scale": null,
+     "advanced": false,
+     "description": "Ranked/upper-bound Pareto view",
+     "preview": "⌜↗",
+     "thumbnail": "quality_Pareto_a754184dc1.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "variability plot",
+     "engine": "Box Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Grouped variability summary",
+     "preview": "—▣—",
+     "thumbnail": "variability_plot_ab26d3557e.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multi-vari plot",
+     "engine": "Stacked Lines",
+     "scale": null,
+     "advanced": true,
+     "description": "Multiple factor/series variation view",
+     "preview": "≈≈≈",
+     "thumbnail": "multi-vari_plot_62bc6a6acf.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "reliability survival",
+     "engine": "ECDF",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative reliability/failure distribution",
+     "preview": "R(t)",
+     "thumbnail": "reliability_survival_6804016d5c.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "failure-rate trend",
+     "engine": "Derivative",
+     "scale": null,
+     "advanced": true,
+     "description": "Rate-of-change/failure-rate view",
+     "preview": "λ(t)",
+     "thumbnail": "failure-rate_trend_e96705e558.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "cumulative failures",
+     "engine": "Cumulative Sum",
+     "scale": null,
+     "advanced": true,
+     "description": "Cumulative failure count",
+     "preview": "Σfail",
+     "thumbnail": "cumulative_failures_840a62b9e0.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "process density",
+     "engine": "KDE Density",
+     "scale": null,
+     "advanced": true,
+     "description": "Smooth process distribution",
+     "preview": "⌒",
+     "thumbnail": "process_density_a62197201d.png"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "process correlation",
+     "engine": "Connected Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Connected relationship in process order",
+     "preview": "•─•",
+     "thumbnail": "process_correlation_6a86dbc2a7.png"
+    }
+   ]
+  },
+  {
+   "name": "Flow, Network & Composition",
+   "entries": [
+    {
+     "category": "Flow, Network & Composition",
+     "name": "alluvial flow",
+     "engine": "Sankey Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Alluvial weighted-flow view",
+     "preview": "⇒⇢",
+     "thumbnail": "alluvial_flow_efc8639dff.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "flow diagram",
+     "engine": "Sankey Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Weighted source-to-target flow",
+     "preview": "⇒",
+     "thumbnail": "flow_diagram_27aa004f98.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "energy flow",
+     "engine": "Sankey Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Energy/material flow balance",
+     "preview": "E⇒",
+     "thumbnail": "energy_flow_25bf7d0b99.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "material balance flow",
+     "engine": "Sankey Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Mass-balance flow diagram",
+     "preview": "m⇒",
+     "thumbnail": "material_balance_flow_4c11b0dec5.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "hierarchical treemap",
+     "engine": "Treemap",
+     "scale": null,
+     "advanced": true,
+     "description": "Weighted hierarchical rectangles",
+     "preview": "▦",
+     "thumbnail": "hierarchical_treemap_c639be0462.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "nested sunburst",
+     "engine": "Sunburst",
+     "scale": null,
+     "advanced": true,
+     "description": "Nested hierarchical composition",
+     "preview": "◎◉",
+     "thumbnail": "nested_sunburst_edea95bb97.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "set overlap",
+     "engine": "Venn Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Set-overlap summary",
+     "preview": "◯◯",
+     "thumbnail": "set_overlap_654b3ec6b4.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "composition pie",
+     "engine": "Pie",
+     "scale": null,
+     "advanced": false,
+     "description": "Part-to-whole pie chart",
+     "preview": "◔",
+     "thumbnail": "composition_pie_0c1144f9d1.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "composition donut",
+     "engine": "Donut",
+     "scale": null,
+     "advanced": false,
+     "description": "Part-to-whole donut chart",
+     "preview": "◎",
+     "thumbnail": "composition_donut_6fb6ab8849.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "bubble composition",
+     "engine": "Bubble Cloud",
+     "scale": null,
+     "advanced": true,
+     "description": "Weighted bubble composition",
+     "preview": "oOo",
+     "thumbnail": "bubble_composition_0950aba86e.png"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "word frequency",
+     "engine": "Word Cloud",
+     "scale": null,
+     "advanced": true,
+     "description": "Word-frequency cloud",
+     "preview": "Aa Bb",
+     "thumbnail": "word_frequency_e9920c3763.png"
+    }
+   ]
+  },
+  {
+   "name": "Advanced Spatial & GIS",
+   "entries": [
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "latitude-longitude line",
+     "engine": "Geo Line",
+     "scale": null,
+     "advanced": true,
+     "description": "Coordinate-based geographic line",
+     "preview": "⌖╱",
+     "thumbnail": "latitude-longitude_line_98b1f9cce8.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "latitude-longitude scatter",
+     "engine": "Geo Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Coordinate-based geographic scatter",
+     "preview": "⌖•",
+     "thumbnail": "latitude-longitude_scatter_168f41c584.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "spatial density",
+     "engine": "Geo Density",
+     "scale": null,
+     "advanced": true,
+     "description": "Geographic density map",
+     "preview": "⌖▒",
+     "thumbnail": "spatial_density_1856a7fa28.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "proportional symbol map",
+     "engine": "Geo Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Geographic bubble/proportional symbols",
+     "preview": "⌖O",
+     "thumbnail": "proportional_symbol_map_1a7a587a6a.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "point map",
+     "engine": "Geo Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Geographic point map",
+     "preview": "⌖·",
+     "thumbnail": "point_map_553d9ccbd2.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "track map",
+     "engine": "Geo Line",
+     "scale": null,
+     "advanced": true,
+     "description": "Geographic trajectory/track",
+     "preview": "⌖↗",
+     "thumbnail": "track_map_4818823192.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "map heat field",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": true,
+     "description": "Coordinate heat field",
+     "preview": "⌖▦",
+     "thumbnail": "map_heat_field_c0773c45b3.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "map contour field",
+     "engine": "2D Contour",
+     "scale": null,
+     "advanced": true,
+     "description": "Coordinate contour field",
+     "preview": "⌖≋",
+     "thumbnail": "map_contour_field_89e7b60bbe.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "direction rose",
+     "engine": "Wind Rose",
+     "scale": null,
+     "advanced": true,
+     "description": "Direction-frequency wind rose",
+     "preview": "✺",
+     "thumbnail": "direction_rose_7d25e462e8.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "radial direction plot",
+     "engine": "Polar Histogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Angular frequency/radial distribution",
+     "preview": "✾",
+     "thumbnail": "radial_direction_plot_cbfcf73f3d.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "hydrochemical Piper",
+     "engine": "Piper Diagram",
+     "scale": null,
+     "advanced": true,
+     "description": "Piper hydrochemical trilinear view",
+     "preview": "◇△",
+     "thumbnail": "hydrochemical_Piper_4960282b99.png"
+    },
+    {
+     "category": "Advanced Spatial & GIS",
+     "name": "geospatial bubble layer",
+     "engine": "Geo Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "Magnitude-encoded geographic layer",
+     "preview": "⌖O",
+     "thumbnail": "geospatial_bubble_layer_3f55a381ec.png"
+    }
+   ]
+  },
+  {
+   "name": "Engineering 3D & Field",
+   "entries": [
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D trajectory",
+     "engine": "3D Line",
+     "scale": null,
+     "advanced": false,
+     "description": "Three-dimensional trajectory",
+     "preview": "↗⤴",
+     "thumbnail": "3D_trajectory_0f892e7628.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D point cloud",
+     "engine": "3D Scatter",
+     "scale": null,
+     "advanced": false,
+     "description": "Three-dimensional point cloud",
+     "preview": "·↗•",
+     "thumbnail": "3D_point_cloud_f5a6deba10.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D bubble cloud",
+     "engine": "3D Bubble",
+     "scale": null,
+     "advanced": true,
+     "description": "3-D bubble-size mapped scatter",
+     "preview": "o↗O",
+     "thumbnail": "3D_bubble_cloud_7fb0bf77ba.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D response surface",
+     "engine": "3D Topography / Surface",
+     "scale": null,
+     "advanced": false,
+     "description": "Interpolated XYZ response surface",
+     "preview": "▱³",
+     "thumbnail": "3D_response_surface_7efa19fa6f.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D wireframe",
+     "engine": "3D Mesh",
+     "scale": null,
+     "advanced": true,
+     "description": "Wireframe response mesh",
+     "preview": "#³",
+     "thumbnail": "3D_wireframe_476952c5cc.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "surface with contours",
+     "engine": "Surface + Contours",
+     "scale": null,
+     "advanced": true,
+     "description": "Surface plus base contours",
+     "preview": "▱≋",
+     "thumbnail": "surface_with_contours_0d9d0b8ee4.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D waterfall field",
+     "engine": "Waterfall",
+     "scale": null,
+     "advanced": true,
+     "description": "Waterfall slices through response surface",
+     "preview": "≋≋³",
+     "thumbnail": "3D_waterfall_field_4c18e01bef.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D ribbon field",
+     "engine": "Ribbon",
+     "scale": null,
+     "advanced": true,
+     "description": "Ribbon response slices",
+     "preview": "▥³",
+     "thumbnail": "3D_ribbon_field_2ecc6faa65.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D vector arrows",
+     "engine": "3D Quiver",
+     "scale": null,
+     "advanced": true,
+     "description": "U/V/W vector arrows",
+     "preview": "↗³",
+     "thumbnail": "3D_vector_arrows_0f8477dd7f.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D stream tube",
+     "engine": "Stream Tube",
+     "scale": null,
+     "advanced": true,
+     "description": "Tube-like vector trajectories",
+     "preview": "〰◯",
+     "thumbnail": "3D_stream_tube_492bc511f4.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D stream ribbon",
+     "engine": "Stream Ribbon",
+     "scale": null,
+     "advanced": true,
+     "description": "Ribbon-like vector trajectories",
+     "preview": "〰▰",
+     "thumbnail": "3D_stream_ribbon_1cad845dfa.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "3D cone field",
+     "engine": "Cone Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Cone-style direction/magnitude vectors",
+     "preview": "▲→",
+     "thumbnail": "3D_cone_field_285dc8a9dc.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "scalar isosurface",
+     "engine": "Isosurface",
+     "scale": null,
+     "advanced": true,
+     "description": "Constant-value surface from scalar volume",
+     "preview": "◫³",
+     "thumbnail": "scalar_isosurface_4ee3e3f4a3.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "orthogonal volume slices",
+     "engine": "Volume Slice",
+     "scale": null,
+     "advanced": true,
+     "description": "Orthogonal scalar-volume slices",
+     "preview": "▤³",
+     "thumbnail": "orthogonal_volume_slices_eee65ebfc3.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "voxel volume",
+     "engine": "Volume Show",
+     "scale": null,
+     "advanced": true,
+     "description": "Opacity-mapped voxel volume",
+     "preview": "▣³",
+     "thumbnail": "voxel_volume_c127fb03a5.png"
+    },
+    {
+     "category": "Engineering 3D & Field",
+     "name": "surface normals",
+     "engine": "Isonormals",
+     "scale": null,
+     "advanced": true,
+     "description": "Isosurface with normal vectors",
+     "preview": "◫↗",
+     "thumbnail": "surface_normals_bef414c3e2.png"
+    }
+   ]
+  },
+  {
+   "name": "Electrochemical & Bioprocess",
+   "entries": [
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "polarization curve",
+     "engine": "Polarisation & Power Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cell voltage/current with power density",
+     "preview": "V-I",
+     "thumbnail": "polarization_curve_31da5a87c2.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "power density curve",
+     "engine": "Polarisation & Power Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Power-density performance curve",
+     "preview": "P-I",
+     "thumbnail": "power_density_curve_1f5ca5ac3c.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "Nyquist impedance",
+     "engine": "EIS: Nyquist",
+     "scale": null,
+     "advanced": false,
+     "description": "Complex-plane impedance arc",
+     "preview": "Z′◡Z″",
+     "thumbnail": "Nyquist_impedance_b0c37102c4.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "Bode impedance",
+     "engine": "EIS: Bode",
+     "scale": null,
+     "advanced": false,
+     "description": "Magnitude/phase versus frequency",
+     "preview": "|Z|ƒ",
+     "thumbnail": "Bode_impedance_0dfb2b78eb.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "Gompertz hydrogen kinetics",
+     "engine": "Gompertz H₂ Kinetics",
+     "scale": null,
+     "advanced": false,
+     "description": "Modified Gompertz cumulative-H2 kinetics",
+     "preview": "H₂⌒",
+     "thumbnail": "Gompertz_hydrogen_kinetics_22761ef595.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "sCOD profile",
+     "engine": "sCOD Degradation Profile",
+     "scale": null,
+     "advanced": false,
+     "description": "sCOD degradation trajectory/profile",
+     "preview": "COD↘",
+     "thumbnail": "sCOD_profile_a26ecc0a84.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "VFA profile",
+     "engine": "VFA Concentration Profile",
+     "scale": null,
+     "advanced": false,
+     "description": "VFA concentration profile",
+     "preview": "VFA↗",
+     "thumbnail": "VFA_profile_2aeb37ba17.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "global sensitivity map",
+     "engine": "Global Sensitivity",
+     "scale": null,
+     "advanced": false,
+     "description": "SRC and Spearman sensitivity view",
+     "preview": "SRC",
+     "thumbnail": "global_sensitivity_map_d16d6a2e94.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "marginal response panel",
+     "engine": "1D Marginal Responses",
+     "scale": null,
+     "advanced": false,
+     "description": "Robust parameter-response marginals",
+     "preview": "μ±",
+     "thumbnail": "marginal_response_panel_407670aca9.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "performance envelope",
+     "engine": "Performance Ceiling",
+     "scale": null,
+     "advanced": false,
+     "description": "Upper attainable performance envelope",
+     "preview": "⌜",
+     "thumbnail": "performance_envelope_d10235f04f.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "operating Pareto front",
+     "engine": "Pareto Front",
+     "scale": null,
+     "advanced": false,
+     "description": "Non-dominated operating frontier",
+     "preview": "⌜↗",
+     "thumbnail": "operating_Pareto_front_adc1caa4e3.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "parameter heatmap",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": false,
+     "description": "Response field over two parameters",
+     "preview": "▦",
+     "thumbnail": "parameter_heatmap_fbf11c1c99.png"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "parameter contour",
+     "engine": "2D Contour",
+     "scale": null,
+     "advanced": false,
+     "description": "Response contours over two parameters",
+     "preview": "≋",
+     "thumbnail": "parameter_contour_afca77230d.png"
+    }
+   ]
+  },
+  {
+   "name": "Presentation & Comparison",
+   "entries": [
+    {
+     "category": "Presentation & Comparison",
+     "name": "grouped columns",
+     "engine": "Bar",
+     "scale": null,
+     "advanced": false,
+     "description": "Grouped/vertical comparison bars",
+     "preview": "▂▅█",
+     "thumbnail": "grouped_columns_317891a27d.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "horizontal comparison",
+     "engine": "Horizontal Bar",
+     "scale": null,
+     "advanced": false,
+     "description": "Horizontal comparison bars",
+     "preview": "▰▰",
+     "thumbnail": "horizontal_comparison_9f75d89f9d.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "lollipop comparison",
+     "engine": "Lollipop",
+     "scale": null,
+     "advanced": true,
+     "description": "Lollipop magnitude comparison",
+     "preview": "○│○",
+     "thumbnail": "lollipop_comparison_2c3aa11c18.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "dot comparison",
+     "engine": "Dot Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Compact dot/rank comparison",
+     "preview": "••••",
+     "thumbnail": "dot_comparison_aa23740c4f.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "before-after",
+     "engine": "Slope Graph",
+     "scale": null,
+     "advanced": true,
+     "description": "Before/after paired comparison",
+     "preview": "╱╲",
+     "thumbnail": "before-after_e625f5466f.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "small multiples",
+     "engine": "Stacked Lines",
+     "scale": null,
+     "advanced": true,
+     "description": "Aligned small-multiple line panels",
+     "preview": "≈≈≈",
+     "thumbnail": "small_multiples_cabcd935bc.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "filled comparison",
+     "engine": "Area",
+     "scale": null,
+     "advanced": true,
+     "description": "Filled area comparison",
+     "preview": "▁▃▆",
+     "thumbnail": "filled_comparison_728b76c977.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "ranked Pareto",
+     "engine": "Pareto Front",
+     "scale": null,
+     "advanced": true,
+     "description": "Ranked performance frontier",
+     "preview": "⌜↗",
+     "thumbnail": "ranked_Pareto_8ca26860ad.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "scatter with marginals",
+     "engine": "Scatter + Marginals",
+     "scale": null,
+     "advanced": true,
+     "description": "Scatter with marginal distributions",
+     "preview": "▥•▤",
+     "thumbnail": "scatter_with_marginals_211d06bbae.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "density scatter",
+     "engine": "Hexbin Density",
+     "scale": null,
+     "advanced": true,
+     "description": "High-density relationship view",
+     "preview": "⬢⬡",
+     "thumbnail": "density_scatter_2bef76fa28.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "bubble comparison",
+     "engine": "4D / 5D Scatter",
+     "scale": null,
+     "advanced": true,
+     "description": "Bubble-size/colour encoded comparison",
+     "preview": "o O ◎",
+     "thumbnail": "bubble_comparison_60ab0ce3ab.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "parallel comparison",
+     "engine": "Parallel Coordinates",
+     "scale": null,
+     "advanced": true,
+     "description": "Multivariate parallel-axis comparison",
+     "preview": "╲│╱",
+     "thumbnail": "parallel_comparison_0ad1983c67.png"
+    }
+   ]
+  },
+  {
+   "name": "Fluid & Field Dynamics",
+   "entries": [
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "vorticity map",
+     "engine": "Vorticity Map",
+     "scale": null,
+     "advanced": true,
+     "description": "Curl of the response gradient: rotational structure of the field",
+     "preview": "↻↺",
+     "thumbnail": "vorticity_map_f9f5fa3c3c.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "swirl strength",
+     "engine": "Vorticity Map",
+     "scale": null,
+     "advanced": true,
+     "description": "Signed swirl intensity with flow arrows",
+     "preview": "↻±",
+     "thumbnail": "swirl_strength_8dc6366c72.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "divergence map",
+     "engine": "Divergence Map",
+     "scale": null,
+     "advanced": true,
+     "description": "Sources and sinks of the response gradient field",
+     "preview": "✳",
+     "thumbnail": "divergence_map_2a20ec0374.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "source-sink field",
+     "engine": "Divergence Map",
+     "scale": null,
+     "advanced": true,
+     "description": "Positive/negative flux regions of the field",
+     "preview": "◉◎",
+     "thumbnail": "source-sink_field_c5a51f8d8d.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "phase portrait",
+     "engine": "Phase Portrait",
+     "scale": null,
+     "advanced": true,
+     "description": "Streamlines with u/v nullclines of the gradient system",
+     "preview": "∮",
+     "thumbnail": "phase_portrait_2a0871a215.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "dynamical nullclines",
+     "engine": "Phase Portrait",
+     "scale": null,
+     "advanced": true,
+     "description": "Nullcline intersections locating stationary points",
+     "preview": "✕∮",
+     "thumbnail": "dynamical_nullclines_9bdfcea582.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "flow texture",
+     "engine": "Flow Texture (LIC)",
+     "scale": null,
+     "advanced": true,
+     "description": "Line-integral-convolution flow imaging over the response",
+     "preview": "≈≋",
+     "thumbnail": "flow_texture_dcb3fa06b1.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "LIC streaks",
+     "engine": "Flow Texture (LIC)",
+     "scale": null,
+     "advanced": true,
+     "description": "Dense directional streak texture of the vector field",
+     "preview": "〰",
+     "thumbnail": "LIC_streaks_9854aa46ba.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "velocity vectors",
+     "engine": "Quiver Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Discrete velocity/force arrows over the domain",
+     "preview": "↗↘",
+     "thumbnail": "velocity_vectors_9f0de97bf1.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "flow streamlines",
+     "engine": "Stream Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Continuous streamlines of the gradient flow",
+     "preview": "S≈",
+     "thumbnail": "flow_streamlines_ac7c27f63d.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "stream function view",
+     "engine": "Stream Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Streamline topology of a 2-D flow",
+     "preview": "ψ≈",
+     "thumbnail": "stream_function_view_5eadb19501.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "3D velocity field",
+     "engine": "3D Quiver",
+     "scale": null,
+     "advanced": true,
+     "description": "Volumetric velocity arrows (u, v, w components)",
+     "preview": "⇗⇘",
+     "thumbnail": "3D_velocity_field_ca7e8f0fb9.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "3D streamtubes",
+     "engine": "Stream Tube",
+     "scale": null,
+     "advanced": true,
+     "description": "Flux-carrying tubes along 3-D streamlines",
+     "preview": "◎≈",
+     "thumbnail": "3D_streamtubes_912dac1d03.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "3D stream ribbons",
+     "engine": "Stream Ribbon",
+     "scale": null,
+     "advanced": true,
+     "description": "Twist-revealing ribbons along 3-D streamlines",
+     "preview": "~≋",
+     "thumbnail": "3D_stream_ribbons_4c5a4accbc.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "cone velocity glyphs",
+     "engine": "Cone Plot",
+     "scale": null,
+     "advanced": true,
+     "description": "Direction cones for 3-D vector data",
+     "preview": "▲▲",
+     "thumbnail": "cone_velocity_glyphs_a9077f6b40.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "advected particles",
+     "engine": "Stream Particles",
+     "scale": null,
+     "advanced": true,
+     "description": "Animated particles advected by the field",
+     "preview": "···→",
+     "thumbnail": "advected_particles_a10b483f11.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "gradient magnitude",
+     "engine": "2D Heatmap",
+     "scale": null,
+     "advanced": true,
+     "description": "Scalar magnitude of the response gradient",
+     "preview": "▤∇",
+     "thumbnail": "gradient_magnitude_45af292307.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "potential field",
+     "engine": "2D Contour",
+     "scale": null,
+     "advanced": true,
+     "description": "Equipotential contours of the response",
+     "preview": "◌◌",
+     "thumbnail": "potential_field_79cb7e064c.png"
+    }
+   ]
+  },
+  {
+   "name": "Tensor & Structure Analysis",
+   "entries": [
+    {
+     "category": "Tensor & Structure Analysis",
+     "name": "tensor glyph field",
+     "engine": "Tensor Glyph Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Hessian eigen-ellipse glyphs revealing local curvature structure",
+     "preview": "◬◭",
+     "thumbnail": "tensor_glyph_field_e8f6d922a8.png"
+    },
+    {
+     "category": "Tensor & Structure Analysis",
+     "name": "curvature ellipses",
+     "engine": "Tensor Glyph Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Principal-curvature ellipses over the response surface",
+     "preview": "⬭⬬",
+     "thumbnail": "curvature_ellipses_f7c9b8cd5d.png"
+    },
+    {
+     "category": "Tensor & Structure Analysis",
+     "name": "stress-tensor view",
+     "engine": "Tensor Glyph Field",
+     "scale": null,
+     "advanced": true,
+     "description": "2×2 symmetric tensor ellipses (stress/strain style)",
+     "preview": "σ⬭",
+     "thumbnail": "stress-tensor_view_7636653e83.png"
+    },
+    {
+     "category": "Tensor & Structure Analysis",
+     "name": "anisotropy field",
+     "engine": "Tensor Glyph Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Local anisotropy orientation and magnitude",
+     "preview": "⇱⇲",
+     "thumbnail": "anisotropy_field_77d399deec.png"
+    },
+    {
+     "category": "Tensor & Structure Analysis",
+     "name": "principal directions",
+     "engine": "Tensor Glyph Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Eigenvector orientation field of the Hessian",
+     "preview": "✚⤫",
+     "thumbnail": "principal_directions_9fe4c54cb4.png"
+    },
+    {
+     "category": "Tensor & Structure Analysis",
+     "name": "ridge-valley structure",
+     "engine": "Tensor Glyph Field",
+     "scale": null,
+     "advanced": true,
+     "description": "Convex ridges vs concave valleys via eigenvalue sign",
+     "preview": "∧∨",
+     "thumbnail": "ridge-valley_structure_444ddeb522.png"
+    }
+   ]
+  },
+  {
+   "name": "Spectral & Signal Imaging",
+   "entries": [
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "spectral heatmap",
+     "engine": "Spectrogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Time–frequency magnitude imaging of a signal",
+     "preview": "▦♪",
+     "thumbnail": "spectral_heatmap_c3e06263b6.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "time-frequency map",
+     "engine": "Spectrogram",
+     "scale": null,
+     "advanced": true,
+     "description": "Short-time spectral evolution heatmap",
+     "preview": "▦t",
+     "thumbnail": "time-frequency_map_87669f715e.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "power spectrum",
+     "engine": "Power Spectral Density",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Welch power spectral density",
+     "preview": "⌒⌄",
+     "thumbnail": "power_spectrum_c56c367850.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "harmonic content",
+     "engine": "Power Spectral Density",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Harmonic/spectral peak inspection",
+     "preview": "♪▁",
+     "thumbnail": "harmonic_content_237f944455.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "autocorrelogram",
+     "engine": "Autocorrelation",
+     "scale": null,
+     "advanced": true,
+     "description": "Lag correlation structure of a series",
+     "preview": "≡⇢",
+     "thumbnail": "autocorrelogram_b3122f3fb0.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "cross-correlogram",
+     "engine": "Cross Correlation",
+     "scale": null,
+     "advanced": true,
+     "description": "Lagged coupling between two series",
+     "preview": "≡≡",
+     "thumbnail": "cross-correlogram_b78951af61.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "impedance spectrum",
+     "engine": "EIS: Bode",
+     "scale": "Logarithmic Scale",
+     "advanced": false,
+     "description": "Frequency-resolved impedance magnitude/phase",
+     "preview": "|Z|∠",
+     "thumbnail": "impedance_spectrum_82a1049333.png"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "complex-plane impedance",
+     "engine": "EIS: Nyquist",
+     "scale": null,
+     "advanced": false,
+     "description": "Nyquist complex-impedance arc with Rs/Rct",
+     "preview": "⌒Ω",
+     "thumbnail": "complex-plane_impedance_6782670914.png"
+    }
+   ]
+  }
+ ]
+}

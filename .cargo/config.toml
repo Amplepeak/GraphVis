@@ -1,0 +1,19 @@
+[build]
+target-dir = "../.cache/cargo-target"
+incremental = true
+
+[net]
+retry = 3
+git-fetch-with-cli = true
+
+[registries.crates-io]
+protocol = "sparse"
+
+[alias]
+ci-check = "check --workspace --all-targets --all-features --locked"
+ci-clippy = "clippy --workspace --all-targets --all-features --locked -- -D warnings"
+ci-test = "test --workspace --all-features --locked"
+
+# Linker selection is intentionally NOT hard-coded here. scripts/fast-env.sh and
+# scripts/Enable-FastBuild.ps1 choose mold/lld only when available, otherwise
+# they fall back to the platform default linker without changing build semantics.

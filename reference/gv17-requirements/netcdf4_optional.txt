@@ -1,0 +1,3 @@
+# Optional alternate NetCDF backend. GraphVis does not require this package;
+# xarray + h5netcdf/scipy cover normal NetCDF ingestion.
+netCDF4>=1.7

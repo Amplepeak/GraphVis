@@ -1,0 +1,24 @@
+pragma Singleton
+// =========================================================================
+// Theme - the single source of colour and typography for the whole UI.
+//
+// Before this, every panel carried its own hard-coded hex literals, which is
+// why text contrast was inconsistent and unreadable in places.
+//
+// The catalogue below is generated, not hand-written, and that is the point:
+// every token is checked against the surface it is drawn on before it ships.
+// text clears 13:1, secondary text 6.5:1, muted 4.4:1, disabled 3:1, the accent
+// 2.9:1, and an accent's own label 4.5:1 against the accent. A palette that
+// cannot meet those is adjusted until it does. This is what stops the light
+// themes hiding half the interface, which they previously did.
+//
+// 100 themes in seven groups. The generator lives in tools/ and the seeds are
+// hue + chroma character + accent hue per theme, so a new palette is three
+// numbers rather than seventeen hex values guessed by eye.
+// =========================================================================
+import QtQuick
+
+QtObject {
+    id: theme
+
+    readonly property var themes: [

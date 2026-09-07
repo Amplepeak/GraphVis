@@ -1,0 +1,84 @@
+    ]
+
+    readonly property int themeCount: themes.length
+    property int currentIndex: 0
+
+    readonly property var current: themes[Math.max(0, Math.min(currentIndex, themes.length - 1))]
+    readonly property string name: current.name
+    readonly property string group: current.group
+
+    function themeNameAt(i)   { return themes[Math.max(0, Math.min(i, themes.length - 1))].name }
+    function themeGroupAt(i)  { return themes[Math.max(0, Math.min(i, themes.length - 1))].group }
+    function groupAt(i)       { return themeGroupAt(i) }
+    // "" for an ordinary theme, otherwise the colour vision deficiency it is
+    // designed for: protanopia, deuteranopia, tritanopia or achromatopsia.
+    function themeCvdAt(i)    { return themes[Math.max(0, Math.min(i, themes.length - 1))].cvd || "" }
+    function cvdLabel(kind) {
+        if (kind === "protanopia")    return "Protanopia · red-blind"
+        if (kind === "deuteranopia")  return "Deuteranopia · green-blind"
+        if (kind === "tritanopia")    return "Tritanopia · blue-blind"
+        if (kind === "achromatopsia") return "Achromatopsia · no colour vision"
+        return ""
+    }
+    function themeAccentAt(i) { return themes[Math.max(0, Math.min(i, themes.length - 1))].accent }
+    function themeSurfaceAt(i){ return themes[Math.max(0, Math.min(i, themes.length - 1))].surface }
+    function themeTextAt(i)   { return themes[Math.max(0, Math.min(i, themes.length - 1))].text }
+    function themeIsLightAt(i){ return themes[Math.max(0, Math.min(i, themes.length - 1))].light }
+
+    // Group names in catalogue order, for a picker that shows sections rather
+    // than one flat list of a hundred names.
+    readonly property var groups: {
+        var seen = {}, out = []
+        for (var i = 0; i < themes.length; ++i) {
+            var g = themes[i].group
+            if (!seen[g]) { seen[g] = true; out.push(g) }
+        }
+        return out
+    }
+
+    function indicesInGroup(groupName) {
+        var out = []
+        for (var i = 0; i < themes.length; ++i)
+            if (themes[i].group === groupName) out.push(i)
+        return out
+    }
+
+    // --------------------------------------------------------------- tokens
+    readonly property color background:    current.bg
+    readonly property color surface:       current.surface
+    readonly property color surfaceAlt:    current.surfaceAlt
+    readonly property color border:        current.border
+    readonly property color borderStrong:  current.borderStrong
+
+    readonly property color text:          current.text
+    readonly property color textSecondary: current.text2
+    readonly property color textMuted:     current.muted
+    // Disabled text stays above the WCAG 3:1 floor against `surface`, so a
+    // greyed-out control is still readable. Unreadable disabled labels were a
+    // specific complaint about the previous look.
+    readonly property color textDisabled:  current.disabled
+
+    readonly property color accent:        current.accent
+    readonly property color onAccent:      current.onAccent
+    readonly property color positive:      current.positive
+    readonly property color warning:       current.warning
+    readonly property color danger:        current.danger
+
+    readonly property bool isLight: current.light
+    // Empty unless this theme is designed for a colour vision deficiency.
+    readonly property string cvd: current.cvd || ""
+    readonly property string cvdLabelCurrent: cvdLabel(cvd)
+
+    // ----------------------------------------------------------- typography
+    readonly property string fontFamily: "Segoe UI"
+    readonly property int fontSizeSmall: 11
+    readonly property int fontSizeBody: 13
+    readonly property int fontSizeTitle: 16
+    readonly property int fontSizeDisplay: 34
+
+    // -------------------------------------------------------------- spacing
+    readonly property int gapTight: 4
+    readonly property int gap: 8
+    readonly property int gapWide: 16
+    readonly property int radius: 8
+}

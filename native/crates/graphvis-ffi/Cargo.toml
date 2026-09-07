@@ -1,0 +1,21 @@
+[package]
+name = "graphvis-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+graphvis-core = { path = "../graphvis-core" }
+graphvis-data = { path = "../graphvis-data" }
+graphvis-render = { path = "../graphvis-render" }
+graphvis-smart = { path = "../graphvis-smart" }
+parking_lot.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

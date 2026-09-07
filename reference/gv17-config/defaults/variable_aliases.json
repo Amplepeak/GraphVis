@@ -1,0 +1,15 @@
+{
+    "lhs_flow": "Flow Rate / Dilution [day⁻¹] (dil)",
+    "lhs_area": "Anodic Surface Area [m²] (a_sur_A)",
+    "lhs_scod": "Influent sCOD [mg/L] (si)",
+    "lhs_kdm": "Decay Rate Constant k_dm [day⁻¹]",
+    "applied_voltage": "Applied Voltage [V]",
+    "vhpr": "Volumetric Hydrogen Production Rate [m³ H₂ m⁻³ day⁻¹] (vhpr)",
+    "sCOD": "Soluble COD [mg/L]",
+    "VFA": "Volatile Fatty Acids [mg/L]",
+    "total_VHPR_mean": "Total System VHPR",
+    "df_VHPR_mean": "Dark Fermentation VHPR",
+    "mec_VHPR_mean": "MEC Stage VHPR",
+    "scod_profile": "sCOD Degradation Profile [mg/L]",
+    "vfa_profile": "VFA Concentration Profile [mg/L]"
+}

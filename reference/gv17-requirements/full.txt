@@ -1,0 +1,8 @@
+-r recommended.txt
+-r connectors.txt
+-r gpu.txt
+-r gis.txt
+-r ai.txt
+-r instruments.txt
+-r qt_compat.txt
+-r netcdf4_optional.txt

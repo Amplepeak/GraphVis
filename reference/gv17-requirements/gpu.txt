@@ -1,0 +1,5 @@
+# Optional GPU/advanced 3D stack
+vispy>=0.14
+plotly>=5.20
+pyvista>=0.43
+pyvistaqt>=0.11

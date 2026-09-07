@@ -1,0 +1,20 @@
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
+def require(cond,msg):
+    if not cond: raise AssertionError(msg)
+main=(ROOT/'app/src/main.cpp').read_text()
+root_cmake=(ROOT/'CMakeLists.txt').read_text()
+app_cmake=(ROOT/'app/CMakeLists.txt').read_text()
+visual=(ROOT/'app/qml/workspaces/VisualizeWorkspace.qml').read_text()
+lazy_vtk=(ROOT/'app/qml/lazy/VtkViewport.qml').read_text()
+dev_run=(ROOT/'tools/Dev-Run.ps1').read_text()
+require('startup.log' in main and 'QQmlApplicationEngine created zero root objects' in main,'startup/QML failure logging is missing')
+require('MessageBoxW' in main,'Windows startup failure dialog is missing')
+require('engine.addImportPath' in main and '/qml' in main,'deployed QML plugin path is not registered')
+require(root_cmake.index('qt_standard_project_setup(REQUIRES 6.8)') < root_cmake.index('add_subdirectory(native/vtk_backend)'),'Qt project setup must precede VTK QML module')
+require('import GraphVis.VTK' not in visual,'VTK is eagerly imported by normal Visualize workspace')
+require('import GraphVis.VTK 1.0' in lazy_vtk and 'qrc:/qt/qml/GraphVis/lazy/VtkViewport.qml' in visual,'VTK lazy wrapper is not wired')
+require('qml/lazy/VtkViewport.qml' in app_cmake and 'QT_RESOURCE_ALIAS lazy/VtkViewport.qml' in app_cmake,'lazy VTK wrapper is not packaged')
+require('GraphVis exited during startup' in dev_run and 'startup.log' in dev_run,'developer run path does not preserve startup diagnostics')
+require(not (ROOT/'Start_GraphVis.bat').exists(),'end-user/source Start wrapper returned')
+print('GraphVis 18.4 startup recovery acceptance: PASS')

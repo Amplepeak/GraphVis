@@ -1,0 +1,219 @@
+// Graph Library — the GraphVis 17 catalogue, native.
+//
+// 318 entries across 30 categories come from app.graphCategories, which
+// AppController loads from the embedded config/graph_catalogue.json. Search
+// uses app.searchGraphs(), a port of graph_library.search_entries(). Hovering
+// an entry shows its real pre-rendered GraphVis thumbnail from
+// share/graphvis/assets/graph_previews_compact.
+//
+// Selecting an entry stages it; it is not rendered until Apply is pressed,
+// matching GraphVis 17's deliberate-apply behaviour.
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import GraphVis
+
+Rectangle {
+    id: root
+    required property var app
+
+    property var staged: null
+    signal applyRequested(var entry)
+    // A scan recommendation carries both the graph and its axis mapping.
+    signal scanApplied(string graph, var mappings)
+
+    color: Theme.background
+
+    // Rows are a plain JavaScript array, not a ListModel.
+    //
+    // ListModel builds its roles from the first appended object, and a header
+    // row has no catalogue entry. Appending `entry: null` made Qt log
+    //   "entry is null. Adding an object with a null member does not create a
+    //    role for it"
+    // once per row - 36 times per refresh in the field log - and left the
+    // `entry` role undefined for the rows that followed. A JS array model has
+    // no roles at all, so the problem cannot occur.
+    property var rows: []
+
+    function refresh() {
+        var out = []
+        var q = searchField.text.trim()
+
+        if (q.length === 0 && !advancedToggle.checked) {
+            // No query: the category tree, non-advanced entries only.
+            for (var c = 0; c < app.graphCategories.length; ++c) {
+                var cat = app.graphCategories[c]
+                var kept = []
+                for (var i = 0; i < cat.entries.length; ++i)
+                    if (!cat.entries[i].advanced) kept.push(cat.entries[i])
+                if (kept.length === 0) continue
+                out.push({ header: true, label: cat.name, count: kept.length, entry: undefined })
+                for (var k = 0; k < kept.length; ++k)
+                    out.push({ header: false, label: kept[k].engine, count: 0, entry: kept[k] })
+            }
+            rows = out
+            return
+        }
+
+        var results = app.searchGraphs(q, advancedToggle.checked, 400)
+        var lastCat = ""
+        for (var r = 0; r < results.length; ++r) {
+            var e = results[r]
+            if (q.length === 0 && e.category !== lastCat) {
+                out.push({ header: true, label: e.category, count: 0, entry: undefined })
+                lastCat = e.category
+            }
+            out.push({ header: false, label: e.engine, count: 0, entry: e })
+        }
+        rows = out
+    }
+
+    Component.onCompleted: refresh()
+
+    ColumnLayout {
+        anchors.fill: parent; anchors.margins: 8; spacing: 6
+
+        RowLayout {
+            Layout.fillWidth: true
+            Label { text: "GRAPH LIBRARY"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
+            Item { Layout.fillWidth: true }
+            Label { text: app.graphEntryCount + " graphs"; color: Theme.textMuted; font.pixelSize: 11 }
+        }
+
+        TextField {
+            id: searchField
+            Layout.fillWidth: true
+            placeholderText: "Search graphs…"
+            onTextChanged: root.refresh()
+        }
+
+        CheckBox {
+            id: advancedToggle
+            checked: false
+            onToggled: root.refresh()
+            // The Basic style draws its label in a dark colour that is
+            // unreadable on this panel, so the label is styled explicitly.
+            contentItem: Text {
+                text: "Include advanced (" + root.app.advancedEntryCount + " more)"
+                color: Theme.textSecondary
+                font.pixelSize: 11
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: advancedToggle.indicator.width + 6
+            }
+        }
+
+        ListView {
+            id: view
+            Layout.fillWidth: true; Layout.fillHeight: true
+            clip: true
+            model: root.rows
+            currentIndex: -1
+            ScrollBar.vertical: ScrollBar {}
+
+            delegate: Item {
+                width: view.width
+                height: modelData.header ? 26 : 34
+
+                Label {
+                    visible: modelData.header
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: modelData.label + (modelData.count > 0 ? "  (" + modelData.count + ")" : "")
+                    color: Theme.textMuted; font.pixelSize: 10; font.bold: true
+                }
+
+                Rectangle {
+                    visible: !modelData.header
+                    anchors.fill: parent; anchors.rightMargin: 4
+                    radius: 5
+                    color: root.staged && modelData.entry && root.staged.engine === modelData.entry.engine
+                           && root.staged.category === modelData.entry.category
+                           ? Theme.surfaceAlt : (hover.hovered ? Theme.surfaceAlt : "transparent")
+
+                    RowLayout {
+                        anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6; spacing: 8
+
+                        Image {
+                            Layout.preferredWidth: 46; Layout.preferredHeight: 28
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true; cache: true
+                            source: modelData.entry ? app.graphThumbnail(modelData.entry.thumbnail, true) : ""
+                            visible: status === Image.Ready
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 0
+                            Label {
+                                text: modelData.label + (modelData.entry && modelData.entry.scale ? " · " + modelData.entry.scale : "")
+                                color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true
+                            }
+                            Label {
+                                text: modelData.entry ? modelData.entry.description : ""
+                                color: Theme.textMuted; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true
+                            }
+                        }
+                        Label {
+                            text: modelData.entry && modelData.entry.advanced ? "adv" : ""
+                            color: Theme.textMuted; font.pixelSize: 9
+                        }
+                    }
+
+                    HoverHandler { id: hover }
+                    TapHandler { onTapped: { if (modelData.entry) { root.staged = modelData.entry; root.app.notify("Staged: " + modelData.entry.engine) } } }
+                }
+            }
+        }
+
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+
+        // Smart Suite: let the scanner pick the graph and its mapping.
+        ScanPanel {
+            id: scan
+            Layout.fillWidth: true
+            Layout.preferredHeight: scanOpen.checked ? 300 : 0
+            visible: scanOpen.checked
+            app: root.app
+            onRecommendationChosen: (graph, mappings) => root.scanApplied(graph, mappings)
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            CheckBox {
+                id: scanOpen
+                text: "Smart Suite"
+                checked: false
+            }
+            Item { Layout.fillWidth: true }
+            Label {
+                visible: root.app.scanRecommendations.length > 0
+                text: root.app.scanRecommendations.length + " suggested"
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+            }
+        }
+
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+
+        RowLayout {
+            Layout.fillWidth: true
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 0
+                Label {
+                    text: root.staged ? root.staged.engine : "No graph staged"
+                    color: Theme.text; font.pixelSize: 12; font.bold: true
+                    elide: Text.ElideRight; Layout.fillWidth: true
+                }
+                Label {
+                    text: root.staged ? root.staged.category : "Pick a graph, then Apply"
+                    color: Theme.textMuted; font.pixelSize: 10
+                    elide: Text.ElideRight; Layout.fillWidth: true
+                }
+            }
+            Button {
+                text: "▶"
+                ToolTip.visible: hovered
+                ToolTip.text: "Apply the staged graph"
+                enabled: root.staged !== null
+                onClicked: root.applyRequested(root.staged)
+            }
+        }
+    }
+}

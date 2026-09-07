@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-fast",
+      "displayName": "GraphVis 18 Fast UI Development",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-fast",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "GRAPHVIS_FAST_DEV": "ON",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/stage-fast",
+        "GRAPHVIS_FAST_LINKER": "ON"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "GraphVis 18 Full Native Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_APPLOCAL_DEPS": "ON",
+        "GRAPHVIS_FAST_DEV": "OFF",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/stage",
+        "GRAPHVIS_FAST_LINKER": "ON",
+        "GRAPHVIS_BUILD_FLIGHT": "OFF"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "GraphVis 18 Linux Public Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "GRAPHVIS_FAST_DEV": "OFF",
+        "GRAPHVIS_BUILD_FLIGHT": "OFF",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/stage-linux",
+        "GRAPHVIS_FAST_LINKER": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-fast",
+      "configurePreset": "windows-fast"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
+    }
+  ]
+}

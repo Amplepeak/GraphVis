@@ -1,0 +1,31 @@
+# Build trees and toolchain. All regenerated; none of it belongs in history.
+.tooling/
+.cache/
+build/
+dist/
+vcpkg_installed/
+
+# Python: virtualenv, byte-code, and setuptools output. services/python/build
+# and the .egg-info held a stale duplicate of the whole package, which is how a
+# search comes back with two answers.
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+services/python/build/
+
+# Rust
+native/target/
+
+# Diagnostic output, regenerated on every run
+full-log.txt
+startup-*.txt
+crash-report.txt
+backups/
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

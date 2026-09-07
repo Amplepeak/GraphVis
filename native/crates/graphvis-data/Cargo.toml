@@ -1,0 +1,18 @@
+[package]
+name = "graphvis-data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+arrow.workspace = true
+arrow-ipc.workspace = true
+datafusion.workspace = true
+futures.workspace = true
+graphvis-core = { path = "../graphvis-core" }
+parking_lot.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

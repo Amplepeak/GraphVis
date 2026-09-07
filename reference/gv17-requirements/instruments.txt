@@ -1,0 +1,2 @@
+# Optional legacy National Instruments TDM/TDX decoder
+TDMtermite>=2.0

@@ -1,0 +1,137 @@
+name: Windows Native Release
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v18.*"]
+
+jobs:
+  build:
+    runs-on: windows-2025
+    env:
+      CARGO_TARGET_DIR: "${{ github.workspace }}\\.cache\\cargo-target"
+      SCCACHE_DIR: "${{ github.workspace }}\\.cache\\sccache"
+      VCPKG_BINARY_CACHE: "${{ github.workspace }}\\.cache\\vcpkg-binaries"
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}\\.cache\\vcpkg-binaries,readwrite"
+      RUSTC_WRAPPER: sccache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require deterministic lockfiles
+        shell: pwsh
+        run: |
+          if (-not (Test-Path native/Cargo.lock)) { throw "native/Cargo.lock must be committed before release CI." }
+          if (-not (Test-Path vcpkg.json)) { throw "vcpkg.json missing" }
+
+      - name: Install pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.98.0
+          rustc --version
+          cargo --version
+
+      - name: Restore Cargo registries and build target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/cargo-target
+          key: cargo-win-rust1.98-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: cargo-win-rust1.98-
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/vcpkg-binaries
+          key: vcpkg-win-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-win-
+
+      - name: Install pinned sccache binary
+        shell: pwsh
+        run: |
+          $ver='0.16.0'
+          $zip="$env:RUNNER_TEMP\\sccache.zip"
+          $url="https://github.com/mozilla/sccache/releases/download/v$ver/sccache-v$ver-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $expected='b8514ed7552e148b0a032114f745118dcb801791adafafeaf9935e4bfb0edf1b'
+          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -ne $expected){ throw 'sccache checksum mismatch' }
+          Expand-Archive $zip "$env:RUNNER_TEMP\\sccache" -Force
+          $exe=Get-ChildItem "$env:RUNNER_TEMP\\sccache" -Recurse -Filter sccache.exe | Select-Object -First 1
+          Copy-Item $exe.FullName "$env:RUNNER_TEMP\\sccache.exe"
+          Add-Content $env:GITHUB_PATH $env:RUNNER_TEMP
+
+      - name: Checkout pinned vcpkg
+        shell: pwsh
+        run: |
+          # From vcpkg.json, never restated - a baseline and a checkout that
+          # disagree make every package fail with "no version database entry".
+          $commit=(Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          if(-not $commit){throw 'vcpkg.json has no builtin-baseline'}
+          $root="$env:RUNNER_TEMP\\vcpkg"
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git $root
+          pushd $root
+          git fetch --depth 1 origin $commit
+          git checkout --detach $commit
+          .\\bootstrap-vcpkg.bat -disableMetrics
+          popd
+          "VCPKG_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install free NSIS compiler
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $nsis = @('C:\\Program Files (x86)\\NSIS','C:\\Program Files\\NSIS') | Where-Object { Test-Path (Join-Path $_ 'makensis.exe') } | Select-Object -First 1
+          if (-not $nsis) { throw 'makensis.exe not found after NSIS install' }
+          Add-Content $env:GITHUB_PATH $nsis
+
+      - name: Packaging and migration acceptance
+        shell: pwsh
+        run: |
+          python tests/packaging_devex_acceptance.py
+          python tests/startup_recovery_acceptance.py
+          python tests/smart_render_acceptance.py
+          python tests/devops_acceleration_acceptance.py
+          python tests/architecture_audit.py
+          python scripts/verify_release_layout.py
+
+      - name: Deterministic Rust audit
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path native/Cargo.toml --all -- --check
+          cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --manifest-path native/Cargo.toml --workspace --all-features --locked
+
+      - name: Build and package with poisoned-cache fallback
+        shell: pwsh
+        run: ./scripts/Build-WithCacheFallback.ps1
+
+      - name: Verify staged runtime and public ZIP
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/stage/graphvis.exe',
+            'build/stage/graphvis_ffi.dll',
+            'build/stage/qml/GraphVis/VTK/qmldir',
+            'build/stage/runtime-manifest.sha256',
+            'dist/GraphVis-18.4.0-Windows/Install.exe',
+            'dist/GraphVis-18.4.0-Windows/Install.bat',
+            'dist/GraphVis-18.4.0-Windows/README.md',
+            'dist/GraphVis-18.4.0-Windows/Support/Repair.bat',
+            'dist/GraphVis-18.4.0-Windows/Support/Uninstall.bat',
+            'dist/GraphVis-18.4.0-Windows.zip'
+          )
+          foreach ($path in $required) { if (-not (Test-Path $path)) { throw "Missing release file: $path" } }
+          $vtkPlugin = Get-ChildItem 'build/stage/qml/GraphVis/VTK' -Filter '*Plugin*.dll' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $vtkPlugin) { throw 'VTK QML plugin DLL is missing from staged runtime' }
+          python scripts/verify_release_layout.py
+
+      - name: Compiler cache statistics
+        if: always()
+        shell: pwsh
+        run: if(Get-Command sccache -ErrorAction SilentlyContinue){sccache --show-stats}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GraphVis-18.4.0-Windows
+          path: dist/GraphVis-18.4.0-Windows.zip

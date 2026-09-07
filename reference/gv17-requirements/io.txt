@@ -1,0 +1,12 @@
+# Scientific/data format support used by the recommended install.
+# NetCDF is handled through xarray + h5netcdf/scipy, both of which have
+# reliable Python 3.12 Windows wheels. The optional netCDF4 C-extension is
+# deliberately not required for GraphVis startup.
+pyarrow>=15.0
+xarray>=2024.1
+h5netcdf>=1.3
+nptdms>=1.9
+lxml>=5.0
+soundfile>=0.12
+pyteomics>=4.7
+fcsparser>=0.2.8
