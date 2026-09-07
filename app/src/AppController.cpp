@@ -15,6 +15,7 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QSettings>
+#include <QCryptographicHash>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
@@ -799,31 +800,15 @@ void AppController::handleScienceReply(const QJsonObject& obj){
     const QString error=obj.value(QStringLiteral("error")).toString();
 
     if(op==QStringLiteral("dataset.scan")){
-        scanning_=false;
-        if(ok){
-            const QJsonObject scan=obj.value(QStringLiteral("scan")).toObject();
-            scanRecommendations_=scan.value(QStringLiteral("recommendations")).toArray().toVariantList();
-            scanSummary_=QVariantMap{
-                {QStringLiteral("dataset_name"),scan.value(QStringLiteral("dataset_name")).toString()},
-                {QStringLiteral("analysis_seconds"),scan.value(QStringLiteral("analysis_seconds")).toDouble()},
-                {QStringLiteral("time_budget_seconds"),scan.value(QStringLiteral("time_budget_seconds")).toDouble()},
-                {QStringLiteral("budget_exhausted"),scan.value(QStringLiteral("budget_exhausted")).toBool()},
-                {QStringLiteral("examined_pairs"),scan.value(QStringLiteral("examined_pairs")).toInt()},
-                {QStringLiteral("count"),scanRecommendations_.size()},
-            };
-            scanSummary_.insert(QStringLiteral("literature_used"),
-                                obj.value(QStringLiteral("literature_used")).toInt());
-            setStatus(scanRecommendations_.isEmpty()
-                      ? QStringLiteral("Scan finished but found no usable mappings")
-                      : QStringLiteral("Scan complete: %1 recommended graphs in %2 s")
-                            .arg(scanRecommendations_.size())
-                            .arg(scan.value(QStringLiteral("analysis_seconds")).toDouble(),0,'f',1));
-        }else{
-            scanRecommendations_.clear();
-            scanSummary_=QVariantMap{{QStringLiteral("error"),error}};
-            setStatus(QStringLiteral("Scan failed: %1").arg(error));
+        if(ok&&!pendingScanCachePath_.isEmpty()){
+            // Cache the reply, not the summary: a later version that reads more
+            // fields out of it still gets them from an entry written today.
+            QFile out(pendingScanCachePath_);
+            if(out.open(QIODevice::WriteOnly|QIODevice::Truncate))
+                out.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
         }
-        emit scanChanged();
+        pendingScanCachePath_.clear();
+        applyScanReply(obj,false);
         return;
     }
 
@@ -955,7 +940,81 @@ bool AppController::estimateSurface(const QString& x,const QString& y,const QStr
                               .arg(estimator.isEmpty()?QStringLiteral("auto"):estimator));
 }
 
-void AppController::scanDataset(double budgetSeconds,bool useLiterature){
+QString AppController::scanCacheDir() const{
+    // Project-local when a project is open, so a project folder carries its own
+    // scans and copying the folder copies them too. Otherwise the shared cache.
+    const QString base=(project_&&project_->isOpen())
+        ? project_->root()+QStringLiteral("/.graphvis/scan-cache")
+        : QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+              +QStringLiteral("/18.4/scan-cache");
+    QDir().mkpath(base);
+    return base;
+}
+
+QString AppController::scanCacheKey(const QJsonObject& request) const{
+    // Everything the scan's answer depends on. The Arrow file's size and mtime
+    // stand in for its contents: re-importing the source rewrites both, and
+    // hashing 200 MB on every scan would cost more than the scan saves.
+    const QFileInfo info(request.value(QStringLiteral("arrow_path")).toString());
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(info.absoluteFilePath().toUtf8());
+    hash.addData(QByteArray::number(info.size()));
+    hash.addData(QByteArray::number(info.lastModified().toMSecsSinceEpoch()));
+    hash.addData(QByteArray::number(request.value(QStringLiteral("budget_seconds")).toDouble()));
+    // The literature block is part of the question, so a paper analysed after
+    // the first scan produces a different key rather than a stale hit.
+    hash.addData(QJsonDocument(request.value(QStringLiteral("literature")).toArray())
+                     .toJson(QJsonDocument::Compact));
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+void AppController::applyScanReply(const QJsonObject& obj,bool cached){
+    scanning_=false;
+    if(obj.value(QStringLiteral("ok")).toBool()){
+        const QJsonObject scan=obj.value(QStringLiteral("scan")).toObject();
+        scanRecommendations_=scan.value(QStringLiteral("recommendations")).toArray().toVariantList();
+        scanSummary_=QVariantMap{
+            {QStringLiteral("dataset_name"),scan.value(QStringLiteral("dataset_name")).toString()},
+            {QStringLiteral("analysis_seconds"),scan.value(QStringLiteral("analysis_seconds")).toDouble()},
+            {QStringLiteral("time_budget_seconds"),scan.value(QStringLiteral("time_budget_seconds")).toDouble()},
+            {QStringLiteral("budget_exhausted"),scan.value(QStringLiteral("budget_exhausted")).toBool()},
+            {QStringLiteral("examined_pairs"),scan.value(QStringLiteral("examined_pairs")).toInt()},
+            {QStringLiteral("count"),scanRecommendations_.size()},
+            {QStringLiteral("cached"),cached},
+        };
+        scanSummary_.insert(QStringLiteral("literature_used"),
+                            obj.value(QStringLiteral("literature_used")).toInt());
+        if(scanRecommendations_.isEmpty())
+            setStatus(QStringLiteral("Scan finished but found no usable mappings"));
+        else if(cached)
+            setStatus(QStringLiteral("Scan complete: %1 recommended graphs (cached)")
+                          .arg(scanRecommendations_.size()));
+        else
+            setStatus(QStringLiteral("Scan complete: %1 recommended graphs in %2 s")
+                          .arg(scanRecommendations_.size())
+                          .arg(scan.value(QStringLiteral("analysis_seconds")).toDouble(),0,'f',1));
+    }else{
+        scanRecommendations_.clear();
+        scanSummary_=QVariantMap{{QStringLiteral("error"),
+                                  obj.value(QStringLiteral("error")).toString()}};
+        setStatus(QStringLiteral("Scan failed: %1")
+                      .arg(obj.value(QStringLiteral("error")).toString()));
+    }
+    emit scanChanged();
+}
+
+int AppController::clearScanCache(){
+    QDir dir(scanCacheDir());
+    int removed=0;
+    const QStringList entries=dir.entryList(QStringList{QStringLiteral("*.json")},QDir::Files);
+    for(const QString& name:entries)
+        if(dir.remove(name)) ++removed;
+    setStatus(removed==0 ? QStringLiteral("No cached scans to clear")
+                         : QStringLiteral("Cleared %1 cached scan(s)").arg(removed));
+    return removed;
+}
+
+void AppController::scanDataset(double budgetSeconds,bool useLiterature,bool force){
     if(activeDatasetId_.isEmpty()){setStatus(QStringLiteral("Import or select a dataset first"));return;}
     const QString arrow=nativeArrowPath();
     if(arrow.isEmpty()||!QFileInfo::exists(arrow)){setStatus(QStringLiteral("The active dataset has no Arrow file yet"));return;}
@@ -975,8 +1034,25 @@ void AppController::scanDataset(double budgetSeconds,bool useLiterature){
                 literatureAnalysis_.value(QStringLiteral("semantic_context")).toMap())}};
         request.insert(QStringLiteral("literature"),QJsonArray{entry});
     }
+    // A hit answers in a millisecond instead of seconds, and costs nothing when
+    // it misses: any change to the data, the budget or the literature rewrites
+    // the key. A malformed or truncated entry is ignored, not repaired.
+    const QString cachePath=scanCacheDir()+QLatin1Char('/')+scanCacheKey(request)
+                            +QStringLiteral(".json");
+    if(!force){
+        QFile cached(cachePath);
+        if(cached.open(QIODevice::ReadOnly)){
+            const QJsonObject hit=QJsonDocument::fromJson(cached.readAll()).object();
+            if(hit.value(QStringLiteral("ok")).toBool()){
+                applyScanReply(hit,true);
+                return;
+            }
+        }
+    }
+
     if(startScienceOp(request,QStringLiteral("dataset.scan"),
                       QStringLiteral("Scanning dataset (%1 s budget)").arg(int(budgetSeconds)))){
+        pendingScanCachePath_=cachePath;
         scanning_=true;
         scanRecommendations_.clear();
         scanSummary_.clear();

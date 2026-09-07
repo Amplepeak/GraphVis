@@ -45,7 +45,8 @@ PanelScroll {
         }
         return r
     }
-Label {
+
+    Label {
         text: "Analysis & Experiment Design"
         font.pixelSize: 17; font.bold: true; color: Theme.text; Layout.margins: 12
     }

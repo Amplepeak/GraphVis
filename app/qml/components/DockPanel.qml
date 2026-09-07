@@ -15,7 +15,13 @@ Item {
     id: root
 
     property string title: ""
+    // Some content cannot travel: a viewport that embeds a native window is
+    // reparented across QWindows by tearing it out, which is not something to
+    // do behind the user's back. Such a panel keeps its header and loses only
+    // the pop-out control.
+    property bool floatable: true
     property bool floating: false
+    onFloatableChanged: if (!root.floatable) root.floating = false
     property int floatingWidth: 820
     property int floatingHeight: 620
     default property alias content: contentHost.data
@@ -50,6 +56,7 @@ Item {
                     elide: Text.ElideRight
                 }
                 ToolButton {
+                    visible: root.floatable
                     implicitWidth: 26
                     implicitHeight: 22
                     ToolTip.visible: hovered

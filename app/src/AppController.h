@@ -210,8 +210,15 @@ public:
 
     // Deep scan of the active dataset. budgetSeconds is a soft thinking
     // budget: larger budgets widen column breadth and pair sampling.
-    Q_INVOKABLE void scanDataset(double budgetSeconds,bool useLiterature=true);
+    //
+    // A scan of a 200k-row dataset costs seconds of real thinking, and the
+    // answer only changes when the data does. force skips the cache; the
+    // rescan button in ProjectPanel passes true.
+    Q_INVOKABLE void scanDataset(double budgetSeconds,bool useLiterature=true,bool force=false);
     Q_INVOKABLE void clearScan();
+    // Drops every cached scan for the open project (or the shared cache when
+    // no project is open). Returns the number of files removed.
+    Q_INVOKABLE int clearScanCache();
 
 signals:
     void stateChanged();
@@ -260,6 +267,13 @@ private:
     QVariantList scanRecommendations_;
     QVariantMap scanSummary_;
     bool scanning_=false;
+    // Scan cache. The key fingerprints the Arrow file (path, size, mtime), the
+    // budget, and the literature context, so any change to the inputs misses.
+    QString scanCacheDir() const;
+    QString scanCacheKey(const QJsonObject& request) const;
+    void applyScanReply(const QJsonObject& obj,bool cached);
+    // Where the in-flight scan's reply will be written on success.
+    QString pendingScanCachePath_;
     int themeIndex_=0;
     int displayMode_=1;
     void loadGraphCatalogue();

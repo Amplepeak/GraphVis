@@ -40,7 +40,21 @@ Rectangle {
         }
         StackLayout {
             Layout.fillWidth:true; Layout.fillHeight:true; currentIndex:tabs.currentIndex
-            GraphLibrary { app:root.app; onApplyRequested:(entry)=>root.graphSelected(entry); onScanApplied:(g,m)=>root.scanRecommendation(g,m) }
+            // 318 catalogue entries browsed through a 400 px sidebar. Torn out,
+            // the library gets a window of its own and the canvas keeps the
+            // width; the grid, the search text and the staged entry survive the
+            // trip because the item is reparented, not rebuilt.
+            DockPanel {
+                title: "Graph Library"
+                floatingWidth: 560
+                floatingHeight: 780
+                GraphLibrary {
+                    anchors.fill: parent
+                    app: root.app
+                    onApplyRequested: (entry) => root.graphSelected(entry)
+                    onScanApplied: (g, m) => root.scanRecommendation(g, m)
+                }
+            }
             ProjectPanel { app:root.app }
             DataWorkspace { app:root.app }
             MappingPanel { id:mapping; app:root.app; onApplyRequested:root.applyMapping(xValue,yValue,zValue,colorValue,pointSize,pointOpacity,invertOpacity,voxelBins,smartRender,smartProfile) }

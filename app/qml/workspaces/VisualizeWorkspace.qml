@@ -62,84 +62,92 @@ SplitView {
         }
         }
     }
-    Rectangle {
-        SplitView.fillWidth:true; SplitView.minimumWidth:360
-        color:Theme.background; border.color:Theme.border; radius:Theme.radius
-        StackLayout {
-            anchors.fill:parent
-            currentIndex: app.rendererMode==="Qt 2-D" ? 2 : (app.rendererMode==="VTK / PBR" ? 1 : 0)
-            Item {
-                WindowContainer { anchors.fill:parent; window:app.viewportWindow }
-                Rectangle { anchors{right:parent.right;bottom:parent.bottom;margins:12} width:nativeLabel.implicitWidth+20;height:30;radius:5;color:Qt.rgba(Theme.surfaceAlt.r, Theme.surfaceAlt.g, Theme.surfaceAlt.b, Theme.overlayAlpha);border.color:Theme.borderStrong;Label{id:nativeLabel;anchors.centerIn:parent;text:"Rust / WGPU · persistent direct surface";color:Theme.textSecondary} }
-            }
-            Loader {
-                id:vtkLoader
-                active: app.rendererMode === "VTK / PBR"
-                source: active ? "qrc:/qt/qml/GraphVis/lazy/VtkViewport.qml" : ""
-                onLoaded: {
-                    item.controller = root.app
-                    item.mappingSource = sidebar
+    // The canvas is a dock too, so a second monitor can hold the plot while the
+    // controls stay on the first. The Rust/WGPU and VTK viewports embed a
+    // native window in this item, and reparenting that across QWindows is not
+    // something to do silently - the tear-out is offered for the Qt 2-D canvas.
+    DockPanel {
+        id: canvasDock
+        title: "Canvas"
+        floatable: root.app.rendererMode === "Qt 2-D"
+        floatingWidth: 1040
+        floatingHeight: 760
+        SplitView.fillWidth: true
+        SplitView.minimumWidth: 360
+
+        Rectangle {
+            anchors.fill: parent
+            color:Theme.background; border.color:Theme.border; radius:Theme.radius
+            StackLayout {
+                anchors.fill:parent
+                currentIndex: app.rendererMode==="Qt 2-D" ? 2 : (app.rendererMode==="VTK / PBR" ? 1 : 0)
+                Item {
+                    WindowContainer { anchors.fill:parent; window:app.viewportWindow }
+                    StatusPill { anchors{right:parent.right;bottom:parent.bottom;margins:12} text:"Rust / WGPU · persistent direct surface" }
                 }
-                onStatusChanged: {
-                    if(status === Loader.Error)
-                        root.app.notify("VTK/PBR viewport could not load. See the GraphVis startup log for QML/plugin details.")
-                }
-            }
-            Item {
-                PlotCanvas {
-                    id: plot
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    arrowPath: root.app.activeArrowPath
-                    backgroundColor: Theme.background
-                    foregroundColor: Theme.text
-                    gridColor: Theme.border
-                    // The series palette follows the persisted plot setting,
-                    // never the theme - see components/ColourVisionBar.qml.
-                    colourVision: root.app.plotColourVision
-                }
-                // Ready notice, sitting ABOVE the overlay row rather than in the
-                // same corner. Both used to anchor to the bottom right with
-                // near-identical margins - plot is inset only 6 px - so the
-                // "Full-resolution render ready / Show it" card landed on top
-                // of the Export PDF button and the status pill and made them
-                // unclickable for as long as it was up.
-                PreviewReadyNotice {
-                    canvas: plot
-                    anchors {
-                        right: plot.right
-                        bottom: overlayRow.top
-                        rightMargin: 8; bottomMargin: 8
+                Loader {
+                    id:vtkLoader
+                    active: app.rendererMode === "VTK / PBR"
+                    source: active ? "qrc:/qt/qml/GraphVis/lazy/VtkViewport.qml" : ""
+                    onLoaded: {
+                        item.controller = root.app
+                        item.mappingSource = sidebar
+                    }
+                    onStatusChanged: {
+                        if(status === Loader.Error)
+                            root.app.notify("VTK/PBR viewport could not load. See the GraphVis startup log for QML/plugin details.")
                     }
                 }
-
-                RowLayout {
-                    id: overlayRow
-                    anchors{right:parent.right;bottom:parent.bottom;margins:12}
-                    spacing: 8
-                    // Progress, outside the preview. Only appears when the full
-                    // render is long enough to be worth mentioning.
-                    RenderProgressBadge { canvas: plot }
-                    Button {
-                        text: "Export PDF"
-                        enabled: plot.pointCount > 0
-                        ToolTip.visible: hovered
-                        ToolTip.text: "True vector PDF with embedded fonts, drawn by the same backend as the screen"
-                        onClicked: {
-                            var target = root.app.exportPath(plot.engine, "pdf")
-                            if (plot.exportPdf(target)) root.app.notify("Exported " + target)
-                            else root.app.notify("PDF export failed")
+                Item {
+                    PlotCanvas {
+                        id: plot
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        arrowPath: root.app.activeArrowPath
+                        backgroundColor: Theme.background
+                        foregroundColor: Theme.text
+                        gridColor: Theme.border
+                        // The series palette follows the persisted plot setting,
+                        // never the theme - see components/ColourVisionBar.qml.
+                        colourVision: root.app.plotColourVision
+                    }
+                    // Ready notice, sitting ABOVE the overlay row rather than in the
+                    // same corner. Both used to anchor to the bottom right with
+                    // near-identical margins - plot is inset only 6 px - so the
+                    // "Full-resolution render ready / Show it" card landed on top
+                    // of the Export PDF button and the status pill and made them
+                    // unclickable for as long as it was up.
+                    PreviewReadyNotice {
+                        canvas: plot
+                        anchors {
+                            right: plot.right
+                            bottom: overlayRow.top
+                            rightMargin: 8; bottomMargin: 8
                         }
                     }
-                    Rectangle {
-                        Layout.preferredWidth: plotLabel.implicitWidth+20
-                        Layout.preferredHeight: 30
-                        radius:5; color:Qt.rgba(Theme.surfaceAlt.r, Theme.surfaceAlt.g, Theme.surfaceAlt.b, Theme.overlayAlpha); border.color:Theme.borderStrong
-                        Label{
-                            id:plotLabel; anchors.centerIn:parent
+
+                    RowLayout {
+                        id: overlayRow
+                        anchors{right:parent.right;bottom:parent.bottom;margins:12}
+                        spacing: 8
+                        // Progress, outside the preview. Only appears when the full
+                        // render is long enough to be worth mentioning.
+                        RenderProgressBadge { canvas: plot }
+                        Button {
+                            text: "Export PDF"
+                            enabled: plot.pointCount > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: "True vector PDF with embedded fonts, drawn by the same backend as the screen"
+                            onClicked: {
+                                var target = root.app.exportPath(plot.engine, "pdf")
+                                if (plot.exportPdf(target)) root.app.notify("Exported " + target)
+                                else root.app.notify("PDF export failed")
+                            }
+                        }
+                        StatusPill {
                             text: plot.engineSupported ? ("Qt 2-D · " + plot.message)
                                                        : plot.message
-                            color: plot.engineSupported ? Theme.textSecondary : Theme.warning
+                            textColor: plot.engineSupported ? Theme.textSecondary : Theme.warning
                         }
                     }
                 }

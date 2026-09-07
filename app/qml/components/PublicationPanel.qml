@@ -15,11 +15,9 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import GraphVis
 
-ScrollView {
+PanelScroll {
     id: root
-    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-    ScrollBar.vertical.policy: ScrollBar.AsNeeded
-    clip: true
+    spacing: 10
 
     required property var app
     // The live canvas. Null until the Visualize workspace has built one, which
@@ -53,171 +51,167 @@ ScrollView {
         onAccepted: root.app.exportProjectState(selectedFile)
     }
 
-    ColumnLayout {
-        width: root.availableWidth
-        spacing: 10
 
-        Label {
-            text: "Publication Studio"
-            font.pixelSize: 17; font.bold: true
-            color: Theme.text
-            Layout.margins: 12
-        }
+    Label {
+        text: "Publication Studio"
+        font.pixelSize: 17; font.bold: true
+        color: Theme.text
+        Layout.margins: 12
+    }
 
-        GvGroupBox {
-            title: "Journal profile"
-            Layout.fillWidth: true
-            Layout.margins: 8
+    GvGroupBox {
+        title: "Journal profile"
+        Layout.fillWidth: true
+        Layout.margins: 8
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: Theme.gap
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: Theme.gap
 
-                ComboBox {
-                    Layout.fillWidth: true
-                    model: root.canvas ? root.canvas.publicationProfiles() : []
-                    currentIndex: Math.max(0, model.indexOf(root.profileName))
-                    onActivated: root.profileName = currentText
-                }
+            ComboBox {
+                Layout.fillWidth: true
+                model: root.canvas ? root.canvas.publicationProfiles() : []
+                currentIndex: Math.max(0, model.indexOf(root.profileName))
+                onActivated: root.profileName = currentText
+            }
 
-                GridLayout {
-                    Layout.fillWidth: true
-                    visible: root.profile !== null
-                    columns: 2
-                    columnSpacing: Theme.gapWide
-                    rowSpacing: 3
+            GridLayout {
+                Layout.fillWidth: true
+                visible: root.profile !== null
+                columns: 2
+                columnSpacing: Theme.gapWide
+                rowSpacing: 3
 
-                    Label { text: "Width"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
-                    Label {
-                        text: root.profile ? root.profile.widthMm.toFixed(1) + " mm  ("
-                                             + root.profile.widthIn.toFixed(2) + " in)" : ""
-                        color: Theme.text; font.pixelSize: Theme.fontSizeSmall
-                    }
-                    Label { text: "Resolution"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
-                    Label {
-                        text: root.profile ? root.profile.dpi + " dpi" : ""
-                        color: Theme.text; font.pixelSize: Theme.fontSizeSmall
-                    }
-                    Label { text: "Body text"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
-                    Label {
-                        text: root.profile ? root.profile.baseFontSize + " pt " + root.profile.fontFamily : ""
-                        color: Theme.text; font.pixelSize: Theme.fontSizeSmall
-                    }
-                    Label { text: "Line weight"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
-                    Label {
-                        text: root.profile ? root.profile.lineWidth + " pt  ·  " + root.profile.colorSpace : ""
-                        color: Theme.text; font.pixelSize: Theme.fontSizeSmall
-                    }
-                }
-
-                // The journal's own guidance, carried through from the profile.
-                // It says what the baseline is and that the journal's current
-                // instructions take precedence over any of it.
+                Label { text: "Width"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
                 Label {
-                    Layout.fillWidth: true
-                    visible: root.profile !== null && root.profile.notes !== ""
-                    text: root.profile ? root.profile.notes : ""
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSizeSmall
-                    wrapMode: Text.WordWrap
+                    text: root.profile ? root.profile.widthMm.toFixed(1) + " mm  ("
+                                         + root.profile.widthIn.toFixed(2) + " in)" : ""
+                    color: Theme.text; font.pixelSize: Theme.fontSizeSmall
+                }
+                Label { text: "Resolution"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
+                Label {
+                    text: root.profile ? root.profile.dpi + " dpi" : ""
+                    color: Theme.text; font.pixelSize: Theme.fontSizeSmall
+                }
+                Label { text: "Body text"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
+                Label {
+                    text: root.profile ? root.profile.baseFontSize + " pt " + root.profile.fontFamily : ""
+                    color: Theme.text; font.pixelSize: Theme.fontSizeSmall
+                }
+                Label { text: "Line weight"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
+                Label {
+                    text: root.profile ? root.profile.lineWidth + " pt  ·  " + root.profile.colorSpace : ""
+                    color: Theme.text; font.pixelSize: Theme.fontSizeSmall
                 }
             }
-        }
 
-        GvGroupBox {
-            title: "Export"
-            Layout.fillWidth: true
-            Layout.leftMargin: 8; Layout.rightMargin: 8
-
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: Theme.gap
-
-                Label {
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeSmall
-                    text: "The figure is re-drawn at the profile's measurements and from the full "
-                        + "dataset — the on-screen point budget does not apply to an export."
-                }
-
-                Button {
-                    Layout.fillWidth: true
-                    text: "Export figure…"
-                    enabled: root.ready
-                    onClicked: figureDialog.open()
-                }
-                Label {
-                    Layout.fillWidth: true
-                    visible: !root.ready
-                    text: "Draw a graph first — there is nothing to export yet."
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap
-                    Button {
-                        Layout.fillWidth: true
-                        text: "Quick PDF"
-                        enabled: root.ready
-                        onClicked: {
-                            var target = root.app.exportPath(root.canvas.engine, "pdf")
-                            if (root.canvas.exportWithProfile(target, root.profileName, "pdf"))
-                                root.app.notify("Exported " + target)
-                            else
-                                root.app.notify("PDF export failed")
-                        }
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        text: "Quick SVG"
-                        enabled: root.ready
-                        onClicked: {
-                            var target = root.app.exportPath(root.canvas.engine, "svg")
-                            if (root.canvas.exportWithProfile(target, root.profileName, "svg"))
-                                root.app.notify("Exported " + target)
-                            else
-                                root.app.notify("SVG export failed")
-                        }
-                    }
-                }
+            // The journal's own guidance, carried through from the profile.
+            // It says what the baseline is and that the journal's current
+            // instructions take precedence over any of it.
+            Label {
+                Layout.fillWidth: true
+                visible: root.profile !== null && root.profile.notes !== ""
+                text: root.profile ? root.profile.notes : ""
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+                wrapMode: Text.WordWrap
             }
         }
+    }
 
-        GvGroupBox {
-            title: "Reproducibility"
-            Layout.fillWidth: true
-            Layout.leftMargin: 8; Layout.rightMargin: 8; Layout.bottomMargin: 10
+    GvGroupBox {
+        title: "Export"
+        Layout.fillWidth: true
+        Layout.leftMargin: 8; Layout.rightMargin: 8
 
-            ColumnLayout {
-                anchors.fill: parent
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: Theme.gap
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeSmall
+                text: "The figure is re-drawn at the profile's measurements and from the full "
+                    + "dataset — the on-screen point budget does not apply to an export."
+            }
+
+            Button {
+                Layout.fillWidth: true
+                text: "Export figure…"
+                enabled: root.ready
+                onClicked: figureDialog.open()
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: !root.ready
+                text: "Draw a graph first — there is nothing to export yet."
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
                 spacing: Theme.gap
-
                 Button {
                     Layout.fillWidth: true
-                    text: "Show the script that redraws this figure"
+                    text: "Quick PDF"
                     enabled: root.ready
                     onClicked: {
-                        scriptText.text = root.canvas.reproducibleScript(root.profileName)
-                        scriptSheet.open()
+                        var target = root.app.exportPath(root.canvas.engine, "pdf")
+                        if (root.canvas.exportWithProfile(target, root.profileName, "pdf"))
+                            root.app.notify("Exported " + target)
+                        else
+                            root.app.notify("PDF export failed")
                     }
                 }
                 Button {
                     Layout.fillWidth: true
-                    text: "Export graph recipe + provenance"
-                    onClicked: recipeDialog.open()
+                    text: "Quick SVG"
+                    enabled: root.ready
+                    onClicked: {
+                        var target = root.app.exportPath(root.canvas.engine, "svg")
+                        if (root.canvas.exportWithProfile(target, root.profileName, "svg"))
+                            root.app.notify("Exported " + target)
+                        else
+                            root.app.notify("SVG export failed")
+                    }
                 }
-                Label {
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSizeSmall
-                    text: "The recipe is the Rust AppState snapshot, not settings reconstructed from "
-                        + "the controls, so it records what was actually drawn."
+            }
+        }
+    }
+
+    GvGroupBox {
+        title: "Reproducibility"
+        Layout.fillWidth: true
+        Layout.leftMargin: 8; Layout.rightMargin: 8; Layout.bottomMargin: 10
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: Theme.gap
+
+            Button {
+                Layout.fillWidth: true
+                text: "Show the script that redraws this figure"
+                enabled: root.ready
+                onClicked: {
+                    scriptText.text = root.canvas.reproducibleScript(root.profileName)
+                    scriptSheet.open()
                 }
+            }
+            Button {
+                Layout.fillWidth: true
+                text: "Export graph recipe + provenance"
+                onClicked: recipeDialog.open()
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+                text: "The recipe is the Rust AppState snapshot, not settings reconstructed from "
+                    + "the controls, so it records what was actually drawn."
             }
         }
     }

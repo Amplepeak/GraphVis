@@ -63,10 +63,29 @@ ColumnLayout {
             onClicked: root.app.scanDataset(root.budgets[budgetBox.currentIndex].seconds,
                                             useLiterature.checked)
         }
+        // A scan of the same data, budget and paper is cached and comes back
+        // instantly. Rescan forces the work to be redone.
+        Button {
+            text: "Rescan"
+            ToolTip.visible: hovered
+            ToolTip.text: "Ignore the cached result and scan again"
+            enabled: !root.app.busy && root.app.activeDatasetId !== ""
+            onClicked: root.app.scanDataset(root.budgets[budgetBox.currentIndex].seconds,
+                                            useLiterature.checked, true)
+        }
         Button {
             text: "Clear"
+            ToolTip.visible: hovered
+            ToolTip.text: "Clear the results shown here"
             enabled: root.app.scanRecommendations.length > 0
             onClicked: root.app.clearScan()
+        }
+        Button {
+            text: "⌫"
+            implicitWidth: 34
+            ToolTip.visible: hovered
+            ToolTip.text: "Delete every cached scan for this project"
+            onClicked: root.app.clearScanCache()
         }
     }
 
@@ -80,7 +99,8 @@ ColumnLayout {
             if (root.app.scanSummary.error) return String(root.app.scanSummary.error)
             if (root.app.scanRecommendations.length > 0)
                 return root.app.scanRecommendations.length + " recommendations · "
-                     + Number(root.app.scanSummary.analysis_seconds).toFixed(1) + " s · "
+                     + (root.app.scanSummary.cached ? "cached · "
+                        : Number(root.app.scanSummary.analysis_seconds).toFixed(1) + " s · ")
                      + root.app.scanSummary.examined_pairs + " pairs examined"
                      + (root.app.scanSummary.budget_exhausted ? " · budget reached" : "")
                      + (root.app.scanSummary.literature_used > 0 ? " · paper used as context" : "")
