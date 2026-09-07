@@ -2,6 +2,7 @@
 #include "ArrowTable.h"
 #include "ColourVision.h"
 #include "PublicationProfile.h"
+#include "Units.h"
 
 #include "QtPlotBackend.h"
 
@@ -66,10 +67,38 @@ QVector<double> decimate(const QVector<double>& in,int budget){
 // disagree about colour, dash pattern, marker rules or which columns were
 // chosen, and the full render would quietly differ from the preview it replaced
 // in ways nobody would think to check. A budget of 0 means no decimation.
+// The conversion from a column's own unit to the requested display unit, or
+// nullptr when there is none. A target the source cannot reach is ignored
+// rather than silently scaling by one, so a mistyped unit shows the data
+// unchanged instead of a plausible wrong number.
+const Units::Conversion* displayConversion(const QString& columnLabel,const QString& target,
+                                           Units::Conversion& storage){
+    if(target.isEmpty()) return nullptr;
+    const QString source=Units::extractUnit(columnLabel);
+    if(source.isEmpty()) return nullptr;
+    const QVector<Units::Conversion> options=Units::conversionsFor(source);
+    for(const Units::Conversion& c:options){
+        if(Units::normaliseUnit(c.target).compare(Units::normaliseUnit(target),
+                                                  Qt::CaseInsensitive)==0){
+            storage=c;
+            return &storage;
+        }
+    }
+    return nullptr;
+}
+
+void applyConversion(QVector<double>& values,const Units::Conversion* conversion){
+    if(!conversion) return;
+    for(double& v:values) v=conversion->apply(v);
+}
+
 int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringList& yNames,
-                    int colourVision,int budget,PlotSpec& spec){
+                    int colourVision,int budget,PlotSpec& spec,
+                    const QString& xUnit=QString(),const QString& yUnit=QString()){
     spec.series.clear();
-    const QVector<double> xs=decimate(table.column(xName),budget);
+    QVector<double> xs=decimate(table.column(xName),budget);
+    Units::Conversion xStore;
+    applyConversion(xs,displayConversion(xName,xUnit,xStore));
     const ColourVision vision=colourVisionFromInt(colourVision);
     const QVector<QColor> palette=seriesPalette(vision);
     const QVector<QVector<qreal>> dashes=seriesDashPatterns(vision);
@@ -78,9 +107,14 @@ int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringLi
     for(const QString& yName:yNames){
         if(!table.hasColumn(yName)) continue;
         PlotSeries s;
-        s.label=yName;
+        s.label=Units::axisLabel(yName);
         s.x=xs;
         s.y=decimate(table.column(yName),budget);
+        Units::Conversion yStore;
+        if(const Units::Conversion* c=displayConversion(yName,yUnit,yStore)){
+            applyConversion(s.y,c);
+            s.label=Units::replaceUnit(Units::displayName(yName),c->target);
+        }
         s.color=palette.at(idx%palette.size());
         if(!dashes.isEmpty()) s.dashPattern=dashes.at(idx%dashes.size());
         ++idx;
@@ -139,6 +173,8 @@ PlotCanvas::~PlotCanvas(){
 GV_SETTER(setArrowPath,arrowPath_,QString)
 GV_SETTER(setXColumn,xColumn_,QString)
 GV_SETTER(setYColumns,yColumns_,QStringList)
+GV_SETTER(setXUnit,xUnit_,QString)
+GV_SETTER(setYUnit,yUnit_,QString)
 
 void PlotCanvas::setEngine(const QString& v){
     if(spec_.engine==v) return;
@@ -209,7 +245,8 @@ void PlotCanvas::rebuild(){
     }
     if(yNames.isEmpty()){ message_=QStringLiteral("Need at least two numeric columns to plot"); emit stateChanged(); return; }
 
-    pointCount_=buildPlotSeries(table,xName,yNames,colourVision_,kInteractivePointBudget,spec_);
+    pointCount_=buildPlotSeries(table,xName,yNames,colourVision_,kInteractivePointBudget,spec_,
+                                xUnit_,yUnit_);
 
     // How many points there would have been without the budget. The difference
     // between this and pointCount_ is the whole reason the full-resolution
@@ -222,8 +259,15 @@ void PlotCanvas::rebuild(){
     resolvedX_=xName;
     resolvedY_=yNames;
 
-    spec_.xAxis.label=xName;
-    spec_.yAxis.label=yNames.size()==1?yNames.first():QStringLiteral("value");
+    // "Pressure [kPa]" reads as "Pressure (kPa)", and a converted axis says the
+    // unit it is actually drawn in rather than the one the file was written in.
+    spec_.xAxis.label=xUnit_.isEmpty()
+        ? Units::axisLabel(xName)
+        : Units::replaceUnit(Units::displayName(xName),xUnit_);
+    spec_.yAxis.label=yNames.size()==1
+        ? (yUnit_.isEmpty() ? Units::axisLabel(yNames.first())
+                            : Units::replaceUnit(Units::displayName(yNames.first()),yUnit_))
+        : QStringLiteral("value");
     if(spec_.title.isEmpty()) spec_.title=spec_.engine;
     message_=spec_.series.isEmpty()?QStringLiteral("Selected columns have no numeric data")
                                    :QStringLiteral("%1 · %2 points").arg(spec_.engine).arg(pointCount_);
@@ -272,8 +316,87 @@ PlotSpec PlotCanvas::specWithFullData() const {
     ArrowTable table;
     if(arrowPath_.isEmpty()||!table.load(arrowPath_)) return full;   // preview is all there is
     PlotSpec candidate=spec_;
-    if(buildPlotSeries(table,resolvedX_,resolvedY_,colourVision_,0,candidate)<=0) return full;
+    if(buildPlotSeries(table,resolvedX_,resolvedY_,colourVision_,0,candidate,xUnit_,yUnit_)<=0)
+        return full;
     return candidate;
+}
+
+QString PlotCanvas::xSourceUnit() const {
+    return Units::extractUnit(resolvedX_.isEmpty()?xColumn_:resolvedX_);
+}
+
+QString PlotCanvas::ySourceUnit() const {
+    const QStringList& names=resolvedY_.isEmpty()?yColumns_:resolvedY_;
+    return names.isEmpty()?QString():Units::extractUnit(names.first());
+}
+
+QStringList PlotCanvas::unitOptions(const QString& column) const {
+    QStringList out;
+    const QVector<Units::Conversion> options=Units::conversionsFor(Units::extractUnit(column));
+    out.reserve(options.size());
+    for(const Units::Conversion& c:options) out.append(c.target);
+    return out;
+}
+
+QVariantMap PlotCanvas::figureState() const {
+    return QVariantMap{
+        {QStringLiteral("engine"),spec_.engine},
+        {QStringLiteral("variant"),spec_.variant},
+        {QStringLiteral("title"),spec_.title},
+        {QStringLiteral("xColumn"),xColumn_},
+        {QStringLiteral("yColumns"),QVariant(yColumns_)},
+        {QStringLiteral("logX"),spec_.xAxis.log10},
+        {QStringLiteral("logY"),spec_.yAxis.log10},
+        {QStringLiteral("xUnit"),xUnit_},
+        {QStringLiteral("yUnit"),yUnit_},
+        {QStringLiteral("colourVision"),colourVision_},
+        {QStringLiteral("background"),spec_.style.background.name(QColor::HexArgb)},
+        {QStringLiteral("foreground"),spec_.style.foreground.name(QColor::HexArgb)},
+        {QStringLiteral("grid"),spec_.style.gridColor.name(QColor::HexArgb)},
+    };
+}
+
+void PlotCanvas::applyFigureState(const QVariantMap& state){
+    // Every field is optional. A figure written by an older build simply does
+    // not carry the newer ones, and the canvas keeps what it already had rather
+    // than resetting to a default the user never chose.
+    const auto text=[&state](const char* key,const QString& fallback){
+        const QVariant v=state.value(QString::fromLatin1(key));
+        return v.isValid()?v.toString():fallback;
+    };
+    const auto flag=[&state](const char* key,bool fallback){
+        const QVariant v=state.value(QString::fromLatin1(key));
+        return v.isValid()?v.toBool():fallback;
+    };
+
+    spec_.engine=text("engine",spec_.engine);
+    spec_.variant=text("variant",spec_.variant);
+    spec_.title=text("title",spec_.title);
+    xColumn_=text("xColumn",xColumn_);
+    if(state.contains(QStringLiteral("yColumns")))
+        yColumns_=state.value(QStringLiteral("yColumns")).toStringList();
+    spec_.xAxis.log10=flag("logX",spec_.xAxis.log10);
+    spec_.yAxis.log10=flag("logY",spec_.yAxis.log10);
+    xUnit_=text("xUnit",xUnit_);
+    yUnit_=text("yUnit",yUnit_);
+    if(state.contains(QStringLiteral("colourVision")))
+        colourVision_=state.value(QStringLiteral("colourVision")).toInt();
+
+    // A colour is restored only if it parses. A malformed hex string in a
+    // hand-edited manifest must not turn the plot black.
+    const auto colour=[&state](const char* key,const QColor& fallback){
+        const QColor c(state.value(QString::fromLatin1(key)).toString());
+        return c.isValid()?c:fallback;
+    };
+    spec_.style.background=colour("background",spec_.style.background);
+    spec_.style.foreground=colour("foreground",spec_.style.foreground);
+    spec_.style.gridColor=colour("grid",spec_.style.gridColor);
+
+    dirty_=true;
+    rebuild();
+    update();
+    emit sourceChanged();
+    emit styleChanged();
 }
 
 bool PlotCanvas::exportPdf(const QString& filePath,double widthIn,double heightIn,int dpi){

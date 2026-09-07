@@ -244,6 +244,72 @@ def dispatch(req: dict) -> dict:
         from graphvis_science.analysis.surfaces import ESTIMATOR_CATEGORIES
         return {"ok":True,"categories":[{"name":n,"estimators":list(v)} for n,v in ESTIMATOR_CATEGORIES]}
 
+    # ------------------------------------------------------------------ figures
+    # The .gvfig / .gvis package, ported from GraphVis 17. A figure that can be
+    # reopened as a figure rather than only exported as a picture: the ZIP holds
+    # the canvas state and the Arrow payloads it was drawn from.
+    if op=="figure.save":
+        from graphvis_science.data.figure import save_figure
+        try:
+            return save_figure(req["path"], req.get("spec") or {},
+                               req.get("datasets") or [], req.get("metadata") or {})
+        except OSError as exc:
+            return {"ok":False,"error":f"could not write the figure: {exc}"}
+
+    if op=="figure.load":
+        from graphvis_science.data.figure import load_figure, FigureError
+        try:
+            return load_figure(req["path"], req.get("out_dir") or "")
+        except FigureError as exc:
+            return {"ok":False,"error":str(exc)}
+        except OSError as exc:
+            return {"ok":False,"error":f"could not read the figure: {exc}"}
+
+    # -------------------------------------------------------------------- batch
+    # Folder-scale processing. scan lists what the importer can actually read in
+    # a folder; run processes them and optionally writes a report.
+    if op=="batch.scan":
+        from graphvis_science.data import batch as batch_mod
+        try:
+            paths=batch_mod.scan(req["folder"], bool(req.get("recursive")))
+        except (NotADirectoryError, OSError) as exc:
+            return {"ok":False,"error":str(exc)}
+        return {"ok":True,"paths":paths,"count":len(paths),
+                "operations":list(batch_mod.OPERATIONS)}
+
+    if op=="batch.run":
+        from graphvis_science.data import batch as batch_mod
+        paths=req.get("paths") or []
+        if not paths:
+            try:
+                paths=batch_mod.scan(req["folder"], bool(req.get("recursive")))
+            except (KeyError, NotADirectoryError, OSError) as exc:
+                return {"ok":False,"error":f"nothing to process: {exc}"}
+        if not paths:
+            return {"ok":False,"error":"no readable datasets were found in that folder"}
+        try:
+            result=batch_mod.run(paths, req.get("operation") or "summary",
+                                 req.get("out_dir") or "")
+        except ValueError as exc:
+            return {"ok":False,"error":str(exc)}
+        report=""
+        report_error=""
+        if req.get("report_path"):
+            try:
+                report=batch_mod.write_report(result, req["report_path"],
+                                              req.get("report_format") or "html",
+                                              req.get("title") or "GraphVis Batch Report")
+            except (RuntimeError, ValueError, OSError) as exc:
+                # A missing report writer must not discard a run that worked.
+                report_error=str(exc)
+        return {"ok":True,
+                "successes":result.successes,
+                "failures":result.failures,
+                "report":report,
+                "report_error":report_error,
+                "items":[{"path":i.path,"ok":i.ok,"summary":i.summary,"payload":i.payload}
+                         for i in result.items]}
+
     if op=="io.formats":
         from graphvis_science.data.importer import ALL_EXT, format_groups
         return {"ok": True, "extensions": list(ALL_EXT), "groups": format_groups()}

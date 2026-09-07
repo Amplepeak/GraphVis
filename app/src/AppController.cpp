@@ -840,6 +840,95 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         return;
     }
 
+    if(op==QStringLiteral("figure.save")){
+        if(ok){
+            const QStringList missing=obj.value(QStringLiteral("missing")).toVariant().toStringList();
+            const QString saved=obj.value(QStringLiteral("path")).toString();
+            setStatus(missing.isEmpty()
+                      ? QStringLiteral("Saved %1 (%2 dataset(s))")
+                            .arg(QFileInfo(saved).fileName())
+                            .arg(obj.value(QStringLiteral("datasets")).toInt())
+                      : QStringLiteral("Saved %1, but %2 had no data file to store")
+                            .arg(QFileInfo(saved).fileName(),missing.join(QStringLiteral(", "))));
+        }else{
+            setStatus(QStringLiteral("Could not save the figure: %1").arg(error));
+        }
+        return;
+    }
+
+    if(op==QStringLiteral("figure.load")){
+        if(!ok){setStatus(QStringLiteral("Could not open the figure: %1").arg(error));return;}
+        const QVariantMap state=obj.value(QStringLiteral("spec")).toObject().toVariantMap();
+        const QJsonArray payloads=obj.value(QStringLiteral("datasets")).toArray();
+        // Datasets first, canvas state after: the state names columns, and
+        // those columns only exist once the payloads are imported. The signal
+        // is queued behind the import queue for exactly that reason.
+        for(const QJsonValue& v:payloads){
+            const QString arrow=v.toObject().value(QStringLiteral("arrow_path")).toString();
+            if(!arrow.isEmpty()&&!importQueue_.contains(arrow)) importQueue_.append(arrow);
+        }
+        const int count=payloads.size();
+        QTimer::singleShot(0,this,[this,state,count]{
+            pumpImportQueue();
+            QTimer::singleShot(0,this,[this,state]{ emit figureLoaded(state); });
+        });
+        setStatus(count==0
+                  ? QStringLiteral("Figure opened - it carried no datasets")
+                  : QStringLiteral("Figure opened - restoring %1 dataset(s)").arg(count));
+        return;
+    }
+
+    if(op==QStringLiteral("batch.scan")){
+        if(ok){
+            batchItems_.clear();
+            const QStringList paths=obj.value(QStringLiteral("paths")).toVariant().toStringList();
+            for(const QString& p:paths)
+                batchItems_.append(QVariantMap{{QStringLiteral("path"),p},
+                                               {QStringLiteral("ok"),QVariant()},
+                                               {QStringLiteral("summary"),QString()}});
+            batchResult_=QVariantMap{{QStringLiteral("count"),paths.size()},
+                                     {QStringLiteral("scanned"),true}};
+            setStatus(paths.isEmpty()
+                      ? QStringLiteral("No readable datasets in that folder")
+                      : QStringLiteral("%1 readable dataset(s) found").arg(paths.size()));
+        }else{
+            batchItems_.clear();
+            batchResult_=QVariantMap{{QStringLiteral("error"),error}};
+            setStatus(QStringLiteral("Could not scan that folder: %1").arg(error));
+        }
+        emit batchChanged();
+        return;
+    }
+
+    if(op==QStringLiteral("batch.run")){
+        if(ok){
+            batchItems_=obj.value(QStringLiteral("items")).toArray().toVariantList();
+            const QString report=obj.value(QStringLiteral("report")).toString();
+            const QString reportError=obj.value(QStringLiteral("report_error")).toString();
+            batchResult_=QVariantMap{
+                {QStringLiteral("successes"),obj.value(QStringLiteral("successes")).toInt()},
+                {QStringLiteral("failures"),obj.value(QStringLiteral("failures")).toInt()},
+                {QStringLiteral("report"),report},
+                {QStringLiteral("report_error"),reportError}};
+            QString message=QStringLiteral("Batch finished: %1 ok, %2 failed")
+                                .arg(obj.value(QStringLiteral("successes")).toInt())
+                                .arg(obj.value(QStringLiteral("failures")).toInt());
+            // A report writer that is not installed must not read as a failed
+            // run, because the run itself worked.
+            if(!reportError.isEmpty())
+                message+=QStringLiteral(" - report not written: %1").arg(reportError);
+            else if(!report.isEmpty())
+                message+=QStringLiteral(" - report at %1").arg(QFileInfo(report).fileName());
+            setStatus(message);
+        }else{
+            batchItems_.clear();
+            batchResult_=QVariantMap{{QStringLiteral("error"),error}};
+            setStatus(QStringLiteral("Batch failed: %1").arg(error));
+        }
+        emit batchChanged();
+        return;
+    }
+
     if(op.startsWith(QLatin1String("analysis."))||op==QLatin1String("surface.estimate")){
         analysisResult_=obj.toVariantMap();
         emit analysisChanged();
@@ -1012,6 +1101,81 @@ int AppController::clearScanCache(){
     setStatus(removed==0 ? QStringLiteral("No cached scans to clear")
                          : QStringLiteral("Cleared %1 cached scan(s)").arg(removed));
     return removed;
+}
+
+bool AppController::saveFigure(const QUrl& url,const QVariantMap& canvasState){
+    const QString path=cleanLocalPath(url);
+    if(path.isEmpty()){setStatus(QStringLiteral("Choose where to save the figure"));return false;}
+
+    // Every loaded dataset travels with the figure, not just the active one: a
+    // figure that reopens without the series beside it is half a figure, and
+    // the Arrow files are stored verbatim so this costs no conversion.
+    QJsonArray payloads;
+    for(const QVariant& entry:std::as_const(datasets_)){
+        const QVariantMap ds=entry.toMap();
+        const QString arrow=ds.value(QStringLiteral("arrow_ipc_path")).toString();
+        if(arrow.isEmpty()) continue;
+        payloads.append(QJsonObject{{"name",ds.value(QStringLiteral("name")).toString()},
+                                    {"arrow_path",arrow}});
+    }
+    if(payloads.isEmpty()){setStatus(QStringLiteral("Import a dataset before saving a figure"));return false;}
+
+    QJsonObject request{{"op","figure.save"},
+                        {"path",path},
+                        {"spec",QJsonObject::fromVariantMap(canvasState)},
+                        {"datasets",payloads},
+                        {"metadata",QJsonObject{
+                            {"application",QStringLiteral("GraphVis 18.4")},
+                            {"active_dataset",activeDatasetId_}}}};
+    return startScienceOp(request,QStringLiteral("figure.save"),
+                          QStringLiteral("Saving %1").arg(QFileInfo(path).fileName()));
+}
+
+bool AppController::openFigure(const QUrl& url){
+    const QString path=cleanLocalPath(url);
+    if(path.isEmpty()||!QFileInfo::exists(path)){
+        setStatus(QStringLiteral("That figure file is not there"));return false;
+    }
+    const QString cache=QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+                        +QStringLiteral("/18.4/arrow-cache");
+    QDir().mkpath(cache);
+    QJsonObject request{{"op","figure.load"},{"path",path},{"out_dir",cache}};
+    return startScienceOp(request,QStringLiteral("figure.load"),
+                          QStringLiteral("Opening %1").arg(QFileInfo(path).fileName()));
+}
+
+bool AppController::scanBatchFolder(const QUrl& folder,bool recursive){
+    const QString path=cleanLocalPath(folder);
+    if(path.isEmpty()){setStatus(QStringLiteral("Choose a folder"));return false;}
+    QJsonObject request{{"op","batch.scan"},{"folder",path},{"recursive",recursive}};
+    return startScienceOp(request,QStringLiteral("batch.scan"),
+                          QStringLiteral("Scanning %1").arg(QFileInfo(path).fileName()));
+}
+
+bool AppController::runBatch(const QUrl& folder,const QString& operation,
+                             bool recursive,const QString& reportFormat){
+    const QString path=cleanLocalPath(folder);
+    if(path.isEmpty()){setStatus(QStringLiteral("Choose a folder"));return false;}
+
+    QJsonObject request{{"op","batch.run"},
+                        {"folder",path},
+                        {"recursive",recursive},
+                        {"operation",operation.isEmpty()?QStringLiteral("summary"):operation},
+                        {"out_dir",QStandardPaths::writableLocation(
+                             QStandardPaths::AppLocalDataLocation)
+                             +QStringLiteral("/18.4/arrow-cache")}};
+    if(!reportFormat.isEmpty()){
+        // The report lands beside the folder it describes, which is where
+        // someone looking for it will look.
+        const QString name=QStringLiteral("%1-batch-report.%2")
+                               .arg(QDir(path).dirName(),reportFormat.toLower());
+        request.insert(QStringLiteral("report_path"),QDir(path).filePath(name));
+        request.insert(QStringLiteral("report_format"),reportFormat.toLower());
+        request.insert(QStringLiteral("title"),
+                       QStringLiteral("GraphVis batch report - %1").arg(QDir(path).dirName()));
+    }
+    return startScienceOp(request,QStringLiteral("batch.run"),
+                          QStringLiteral("Processing %1").arg(QDir(path).dirName()));
 }
 
 void AppController::scanDataset(double budgetSeconds,bool useLiterature,bool force){

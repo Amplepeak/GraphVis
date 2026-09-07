@@ -28,6 +28,7 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/src/ArrowTable.cpp
   ${GRAPHVIS_PLOT2D_DIR}/src/PlotCanvas.cpp
   ${GRAPHVIS_PLOT2D_DIR}/src/PlotSelfTest.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/Units.cpp
   ${GRAPHVIS_PLOT2D_DIR}/include/ColourVision.h
   ${GRAPHVIS_PLOT2D_DIR}/include/Expression.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PublicationProfile.h
@@ -37,6 +38,7 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/include/ArrowTable.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotCanvas.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotSelfTest.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/Units.h
 )
 
 # VtkViewport.qml is a RESOURCE, not a QML_FILE, and that is deliberate: listing
@@ -96,6 +98,7 @@ foreach(_qml_file
     qml/components/GraphLibrary.qml
     qml/components/GvGroupBox.qml
     qml/components/StatusPill.qml
+    qml/components/UnitSelector.qml
     qml/components/PanelScroll.qml
     qml/components/DockPanel.qml
     qml/components/ScanPanel.qml
@@ -148,6 +151,7 @@ qt_add_qml_module(graphvis
     qml/components/GraphLibrary.qml
     qml/components/GvGroupBox.qml
     qml/components/StatusPill.qml
+    qml/components/UnitSelector.qml
     qml/components/PanelScroll.qml
     qml/components/DockPanel.qml
     qml/components/ScanPanel.qml

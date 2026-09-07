@@ -56,6 +56,9 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList scanRecommendations READ scanRecommendations NOTIFY scanChanged)
     Q_PROPERTY(QVariantMap scanSummary READ scanSummary NOTIFY scanChanged)
     Q_PROPERTY(bool scanning READ scanning NOTIFY scanChanged)
+    // Last batch run: successes, failures, the report path and any items.
+    Q_PROPERTY(QVariantMap batchResult READ batchResult NOTIFY batchChanged)
+    Q_PROPERTY(QVariantList batchItems READ batchItems NOTIFY batchChanged)
     // True once an opened paper has been analysed, so its variables and
     // plot intent can steer the scan (Phase 4).
     Q_PROPERTY(bool literatureContextAvailable READ literatureContextAvailable NOTIFY literatureChanged)
@@ -114,6 +117,8 @@ public:
     QVariantList scanRecommendations() const{return scanRecommendations_;}
     QVariantMap scanSummary() const{return scanSummary_;}
     bool scanning() const{return scanning_;}
+    QVariantMap batchResult() const{return batchResult_;}
+    QVariantList batchItems() const{return batchItems_;}
     int themeIndex() const{return themeIndex_;}
     int displayMode() const{return displayMode_;}
     void setDisplayMode(int value);
@@ -216,6 +221,22 @@ public:
     // rescan button in ProjectPanel passes true.
     Q_INVOKABLE void scanDataset(double budgetSeconds,bool useLiterature=true,bool force=false);
     Q_INVOKABLE void clearScan();
+
+    // The .gvfig / .gvis figure package, ported from GraphVis 17. A figure you
+    // can reopen and revise rather than only export as a picture: the container
+    // holds the canvas state and the Arrow payloads it was drawn from.
+    //
+    // canvasState comes from PlotCanvas::figureState(), because the canvas
+    // lives in QML and this object never sees it.
+    Q_INVOKABLE bool saveFigure(const QUrl& url,const QVariantMap& canvasState);
+    Q_INVOKABLE bool openFigure(const QUrl& url);
+
+    // Folder-scale batch processing. scanBatchFolder lists what the importer
+    // can actually read there; runBatch processes them and, given a report
+    // path, writes an HTML, Word or PDF report of what worked.
+    Q_INVOKABLE bool scanBatchFolder(const QUrl& folder,bool recursive=false);
+    Q_INVOKABLE bool runBatch(const QUrl& folder,const QString& operation,
+                              bool recursive=false,const QString& reportFormat=QString());
     // Drops every cached scan for the open project (or the shared cache when
     // no project is open). Returns the number of files removed.
     Q_INVOKABLE int clearScanCache();
@@ -236,6 +257,11 @@ signals:
     void plotColourVisionChanged();
     void smartRenderChanged();
     void scanChanged();
+    // A loaded figure's canvas state, for QML to hand to PlotCanvas. The
+    // datasets it carried are imported first, so by the time this fires the
+    // columns the state names are there to be selected.
+    void figureLoaded(const QVariantMap& canvasState);
+    void batchChanged();
     void themeIndexChanged();
     void displayModeChanged();
 private:
@@ -274,6 +300,11 @@ private:
     void applyScanReply(const QJsonObject& obj,bool cached);
     // Where the in-flight scan's reply will be written on success.
     QString pendingScanCachePath_;
+
+    // Batch state. A figure needs none: the reply carries everything and is
+    // applied on arrival.
+    QVariantMap batchResult_;
+    QVariantList batchItems_;
     int themeIndex_=0;
     int displayMode_=1;
     void loadGraphCatalogue();

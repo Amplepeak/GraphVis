@@ -31,6 +31,15 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(QString variant READ variant WRITE setVariant NOTIFY sourceChanged)
     Q_PROPERTY(QString xColumn READ xColumn WRITE setXColumn NOTIFY sourceChanged)
     Q_PROPERTY(QStringList yColumns READ yColumns WRITE setYColumns NOTIFY sourceChanged)
+    // Display units. The column label carries the source unit - "Pressure
+    // [kPa]" - and setting a target unit rescales what is drawn without
+    // touching the data or re-importing anything. Empty means "as imported".
+    Q_PROPERTY(QString xUnit READ xUnit WRITE setXUnit NOTIFY sourceChanged)
+    Q_PROPERTY(QString yUnit READ yUnit WRITE setYUnit NOTIFY sourceChanged)
+    // The unit read out of each axis's column, so QML can offer the
+    // conversions that exist rather than a fixed list.
+    Q_PROPERTY(QString xSourceUnit READ xSourceUnit NOTIFY stateChanged)
+    Q_PROPERTY(QString ySourceUnit READ ySourceUnit NOTIFY stateChanged)
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY sourceChanged)
     Q_PROPERTY(bool logX READ logX WRITE setLogX NOTIFY sourceChanged)
     Q_PROPERTY(bool logY READ logY WRITE setLogY NOTIFY sourceChanged)
@@ -74,6 +83,21 @@ public:
     QString variant() const { return spec_.variant; }
     QString xColumn() const { return xColumn_; }
     QStringList yColumns() const { return yColumns_; }
+    QString xUnit() const { return xUnit_; }
+    QString yUnit() const { return yUnit_; }
+    QString xSourceUnit() const;
+    QString ySourceUnit() const;
+    // Every unit this column's own unit can be converted to, target names only.
+    // Empty for a column with no unit in its label, which is the common case.
+    Q_INVOKABLE QStringList unitOptions(const QString& column) const;
+
+    // The canvas state a .gvfig stores, and the reverse. Everything the user
+    // chose - engine, variant, title, columns, log axes, display units, colour
+    // vision and the three theme colours. Deliberately a plain map: the figure
+    // package stores it verbatim, so adding a field here needs no change on
+    // either side of the pipe.
+    Q_INVOKABLE QVariantMap figureState() const;
+    Q_INVOKABLE void applyFigureState(const QVariantMap& state);
     QString title() const { return spec_.title; }
     bool logX() const { return spec_.xAxis.log10; }
     bool logY() const { return spec_.yAxis.log10; }
@@ -115,6 +139,8 @@ public:
     void setVariant(const QString& v);
     void setXColumn(const QString& v);
     void setYColumns(const QStringList& v);
+    void setXUnit(const QString& v);
+    void setYUnit(const QString& v);
     void setTitle(const QString& v);
     void setLogX(bool v);
     void setLogY(bool v);
@@ -159,6 +185,8 @@ private:
     QString arrowPath_;
     QString xColumn_;
     QStringList yColumns_;
+    QString xUnit_;
+    QString yUnit_;
     QStringList available_;
     QString message_;
     bool engineSupported_=true;

@@ -51,6 +51,72 @@ PanelScroll {
         onAccepted: root.app.exportProjectState(selectedFile)
     }
 
+    // The editable figure package. Not an export - a PDF is finished and a
+    // .gvfig is not - so it has its own pair of dialogs and its own group.
+    FileDialog {
+        id: figureSaveDialog
+        title: "Save editable figure"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["GraphVis figure (*.gvfig)", "GraphVis figure, older name (*.gvis)"]
+        onAccepted: root.app.saveFigure(selectedFile, root.canvas.figureState())
+    }
+    FileDialog {
+        id: figureOpenDialog
+        title: "Open figure"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["GraphVis figure (*.gvfig *.gvis)"]
+        onAccepted: root.app.openFigure(selectedFile)
+    }
+
+    GvGroupBox {
+        title: "Editable figure"
+        Layout.fillWidth: true
+        Layout.margins: 8
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: Theme.gap
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeSmall
+                text: "A .gvfig holds the data and every choice that produced this figure, "
+                    + "so it reopens as a figure you can revise. A PDF or PNG is finished. "
+                    + "Figures written by GraphVis 17 open here too."
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                Button {
+                    Layout.fillWidth: true
+                    text: "Save figure…"
+                    enabled: root.ready && !root.app.busy
+                    ToolTip.visible: hovered
+                    ToolTip.text: root.ready ? "Write a .gvfig you can reopen and edit"
+                                             : "Draw a figure first"
+                    onClicked: figureSaveDialog.open()
+                }
+                Button {
+                    Layout.fillWidth: true
+                    text: "Open figure…"
+                    enabled: !root.app.busy
+                    onClicked: figureOpenDialog.open()
+                }
+            }
+            Label {
+                visible: !root.app.scienceServiceAvailable
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: Theme.warning
+                font.pixelSize: Theme.fontSizeSmall
+                text: "Saving and opening figures uses the science add-on. "
+                    + "Run INSTALL-DATA-FORMATS.bat to enable it."
+            }
+        }
+    }
+
 
     Label {
         text: "Publication Studio"

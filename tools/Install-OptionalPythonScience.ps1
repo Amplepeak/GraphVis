@@ -23,7 +23,7 @@ if(-not (Test-Path (Join-Path $EnvDir 'Scripts\python.exe'))){ & py -3.12 -m ven
 # [marine] rides along with the default install: two of its three packages are
 # small and the readers it enables (CTD casts, dive computers, GPS tracks) are
 # core to the ocean and diving work this build is used for.
-$extras = if($AllFormats){'[literature,io,marine,io_extra]'}else{'[literature,io,marine]'}
+$extras = if($AllFormats){'[literature,io,marine,reports,io_extra]'}else{'[literature,io,marine,reports]'}
 
 # The requirement must be built as ONE string.
 #

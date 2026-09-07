@@ -328,4 +328,126 @@ PanelScroll {
             }
         }
     }
+
+    // ------------------------------------------------------------- batch
+    // GraphVis 17's folder-scale processing. Point it at a folder and every
+    // dataset in it is read once, with a report of what worked. The file
+    // filter is the importer's own list of 149 formats rather than a
+    // hard-coded set, so a format added to the reader is picked up here
+    // without anyone remembering to update a second list.
+    FolderDialog {
+        id: batchFolderDialog
+        title: "Choose a folder to process"
+        onAccepted: root.app.runBatch(selectedFolder, batchOperation.currentValue,
+                                      batchRecursive.checked,
+                                      batchReport.currentIndex === 0 ? ""
+                                                                     : batchReport.currentValue)
+    }
+    FolderDialog {
+        id: batchScanDialog
+        title: "Choose a folder to look in"
+        onAccepted: root.app.scanBatchFolder(selectedFolder, batchRecursive.checked)
+    }
+
+    GvGroupBox {
+        title: "Batch a folder"
+        Layout.fillWidth: true
+        Layout.margins: 8
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: Theme.gap
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                Label { text: "Do"; color: Theme.textSecondary }
+                ComboBox {
+                    id: batchOperation
+                    Layout.fillWidth: true
+                    textRole: "label"
+                    valueRole: "key"
+                    model: [
+                        { key: "summary",  label: "Summarise each file" },
+                        { key: "describe", label: "Describe every numeric column" },
+                        { key: "convert",  label: "Convert each file to Arrow" }
+                    ]
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                Label { text: "Report"; color: Theme.textSecondary }
+                ComboBox {
+                    id: batchReport
+                    Layout.fillWidth: true
+                    textRole: "label"
+                    valueRole: "key"
+                    model: [
+                        { key: "",     label: "No report" },
+                        { key: "html", label: "HTML report" },
+                        { key: "docx", label: "Word report" },
+                        { key: "pdf",  label: "PDF report" }
+                    ]
+                }
+            }
+            CheckBox {
+                id: batchRecursive
+                text: "Include subfolders"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                Button {
+                    Layout.fillWidth: true
+                    text: "What is in there?"
+                    enabled: !root.app.busy
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Count the readable datasets without processing anything"
+                    onClicked: batchScanDialog.open()
+                }
+                Button {
+                    Layout.fillWidth: true
+                    text: root.app.busy ? "Working…" : "Run on a folder…"
+                    enabled: !root.app.busy
+                    onClicked: batchFolderDialog.open()
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: Theme.fontSizeSmall
+                color: root.app.batchResult.error ? Theme.warning : Theme.textMuted
+                text: {
+                    var r = root.app.batchResult
+                    if (r.error) return String(r.error)
+                    if (r.scanned) return r.count + " readable dataset(s) in that folder"
+                    if (r.successes !== undefined) {
+                        var line = r.successes + " succeeded, " + r.failures + " failed"
+                        if (r.report_error) return line + " · report not written: " + r.report_error
+                        if (r.report) return line + " · report written beside the folder"
+                        return line
+                    }
+                    if (!root.app.scienceServiceAvailable)
+                        return "Batch processing uses the science add-on."
+                    return "Every dataset in the folder is read once. One unreadable file is "
+                         + "reported and skipped rather than ending the run."
+                }
+            }
+            // Only the failures are listed. A run over 200 files that lists all
+            // 200 buries the four that need attention.
+            Repeater {
+                model: root.app.batchItems.filter(function (i) { return i.ok === false })
+                delegate: Label {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.warning
+                    text: "✕ " + modelData.path.split(/[\\/]/).pop() + " — " + modelData.summary
+                }
+            }
+        }
+    }
+
 }

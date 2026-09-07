@@ -15,6 +15,17 @@ SplitView {
     // met.
     readonly property alias canvas: plot
     orientation:Qt.Horizontal
+
+    // Opening a .gvfig restores the canvas. The controller imports the figure's
+    // datasets first and only then emits this, so the columns the state names
+    // exist by the time they are selected.
+    Connections {
+        target: root.app
+        function onFigureLoaded(canvasState) {
+            plot.applyFigureState(canvasState)
+            root.app.rendererMode = "Qt 2-D"
+        }
+    }
     // The controls dock can be torn out into its own window, restoring the
     // flexibility GraphVis 17 had. The sidebar keeps its state either way.
     DockPanel {
@@ -130,6 +141,13 @@ SplitView {
                         id: overlayRow
                         anchors{right:parent.right;bottom:parent.bottom;margins:12}
                         spacing: 8
+                        // Display units. A column labelled "Pressure [kPa]" can be
+                        // drawn in Pa without re-importing anything - the data is
+                        // untouched and only the axis is rescaled. Each selector
+                        // appears only when that axis has a unit to convert from,
+                        // which for most datasets means neither of them does.
+                        UnitSelector { axis: "X"; canvas: plot }
+                        UnitSelector { axis: "Y"; canvas: plot }
                         // Progress, outside the preview. Only appears when the full
                         // render is long enough to be worth mentioning.
                         RenderProgressBadge { canvas: plot }
