@@ -1285,6 +1285,23 @@ QPointF project(const Projection& p,double x,double y,double z,double* depth=nul
 
 } // namespace
 
+// The unit bounding cube, drawn faintly first so a projection reads as a
+// projection. Both 3-D entry points - draw3D and the vector/volume family -
+// opened with the same twelve edges, the same 0.6 pen and the same corner
+// table; the two copies had already drifted apart in whether the loop body
+// carried braces.
+void drawBoundingCube(QPainter* p,const Projection& proj,const QColor& gridColor){
+    QPen box(gridColor);
+    box.setWidthF(0.6);
+    p->setPen(box);
+    const double c[8][3]={{-0.5,-0.5,-0.5},{0.5,-0.5,-0.5},{0.5,0.5,-0.5},{-0.5,0.5,-0.5},
+                          {-0.5,-0.5, 0.5},{0.5,-0.5, 0.5},{0.5,0.5, 0.5},{-0.5,0.5, 0.5}};
+    const int edges[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+    for(const auto& e:edges)
+        p->drawLine(project(proj,c[e[0]][0],c[e[0]][1],c[e[0]][2]),
+                    project(proj,c[e[1]][0],c[e[1]][1],c[e[1]][2]));
+}
+
 void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
     if(spec.series.size()<3) return;
     const QVector<double>& xs=spec.series.at(0).y;
@@ -1300,18 +1317,7 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
 
     p->save();
 
-    // The bounding cube, so the projection is legible as a projection. Drawn
-    // first and faintly: it is orientation, not data.
-    QPen box(spec.style.gridColor);
-    box.setWidthF(0.6);
-    p->setPen(box);
-    const double c[8][3]={{-0.5,-0.5,-0.5},{0.5,-0.5,-0.5},{0.5,0.5,-0.5},{-0.5,0.5,-0.5},
-                          {-0.5,-0.5, 0.5},{0.5,-0.5, 0.5},{0.5,0.5, 0.5},{-0.5,0.5, 0.5}};
-    const int edges[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-    for(const auto& e:edges){
-        p->drawLine(project(proj,c[e[0]][0],c[e[0]][1],c[e[0]][2]),
-                    project(proj,c[e[1]][0],c[e[1]][1],c[e[1]][2]));
-    }
+    drawBoundingCube(p,proj,spec.style.gridColor);
 
     p->setFont(font(spec,spec.style.axisLabelSize));
     p->setPen(spec.style.foreground);
@@ -1825,15 +1831,7 @@ void QtPlotBackend::draw3DField(QPainter* p,const QRectF& target,const PlotSpec&
     const Projection proj=makeProjection(target,-35.0,24.0);
 
     p->save();
-    QPen box(spec.style.gridColor);
-    box.setWidthF(0.6);
-    p->setPen(box);
-    const double c[8][3]={{-0.5,-0.5,-0.5},{0.5,-0.5,-0.5},{0.5,0.5,-0.5},{-0.5,0.5,-0.5},
-                          {-0.5,-0.5, 0.5},{0.5,-0.5, 0.5},{0.5,0.5, 0.5},{-0.5,0.5, 0.5}};
-    const int edges[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-    for(const auto& e:edges)
-        p->drawLine(project(proj,c[e[0]][0],c[e[0]][1],c[e[0]][2]),
-                    project(proj,c[e[1]][0],c[e[1]][1],c[e[1]][2]));
+    drawBoundingCube(p,proj,spec.style.gridColor);
 
     const QString& engine=spec.engine;
     const bool tensor=engine==QLatin1String("Tensor Glyph Field");
