@@ -70,7 +70,7 @@ SplitView {
             currentIndex: app.rendererMode==="Qt 2-D" ? 2 : (app.rendererMode==="VTK / PBR" ? 1 : 0)
             Item {
                 WindowContainer { anchors.fill:parent; window:app.viewportWindow }
-                Rectangle { anchors{right:parent.right;bottom:parent.bottom;margins:12} width:nativeLabel.implicitWidth+20;height:30;radius:5;color:Qt.rgba(Theme.surfaceAlt.r, Theme.surfaceAlt.g, Theme.surfaceAlt.b, 0.69);border.color:Theme.borderStrong;Label{id:nativeLabel;anchors.centerIn:parent;text:"Rust / WGPU · persistent direct surface";color:Theme.textSecondary} }
+                Rectangle { anchors{right:parent.right;bottom:parent.bottom;margins:12} width:nativeLabel.implicitWidth+20;height:30;radius:5;color:Qt.rgba(Theme.surfaceAlt.r, Theme.surfaceAlt.g, Theme.surfaceAlt.b, Theme.overlayAlpha);border.color:Theme.borderStrong;Label{id:nativeLabel;anchors.centerIn:parent;text:"Rust / WGPU · persistent direct surface";color:Theme.textSecondary} }
             }
             Loader {
                 id:vtkLoader
@@ -134,7 +134,7 @@ SplitView {
                     Rectangle {
                         Layout.preferredWidth: plotLabel.implicitWidth+20
                         Layout.preferredHeight: 30
-                        radius:5; color:Qt.rgba(Theme.surfaceAlt.r, Theme.surfaceAlt.g, Theme.surfaceAlt.b, 0.69); border.color:Theme.borderStrong
+                        radius:5; color:Qt.rgba(Theme.surfaceAlt.r, Theme.surfaceAlt.g, Theme.surfaceAlt.b, Theme.overlayAlpha); border.color:Theme.borderStrong
                         Label{
                             id:plotLabel; anchors.centerIn:parent
                             text: plot.engineSupported ? ("Qt 2-D · " + plot.message)

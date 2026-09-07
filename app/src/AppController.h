@@ -59,6 +59,12 @@ class AppController final : public QObject {
     // True once an opened paper has been analysed, so its variables and
     // plot intent can steer the scan (Phase 4).
     Q_PROPERTY(bool literatureContextAvailable READ literatureContextAvailable NOTIFY literatureChanged)
+    // The reply from the most recent analysis.* or surface.* operation, exactly
+    // as the service sent it. The panels read what they need out of it rather
+    // than each result type needing its own property.
+    Q_PROPERTY(QVariantMap analysisResult READ analysisResult NOTIFY analysisChanged)
+    Q_PROPERTY(QString analysisKind READ analysisKind NOTIFY analysisChanged)
+    Q_PROPERTY(bool analysisOk READ analysisOk NOTIFY analysisChanged)
     // Persisted UI theme index. Kept in C++ so QML needs no QtCore module,
     // whose absence from the deployed layout stopped the app from starting.
     Q_PROPERTY(int themeIndex READ themeIndex WRITE setThemeIndex NOTIFY themeIndexChanged)
@@ -89,6 +95,20 @@ public:
     QString workspaceMode() const{return workspaceMode_;}
     QUrl literatureUrl() const{return literatureUrl_;}
     QVariantMap literatureAnalysis() const{return literatureAnalysis_;}
+    QVariantMap analysisResult() const{return analysisResult_;}
+    QString analysisKind() const{return analysisKind_;}
+    bool analysisOk() const{return analysisResult_.value(QStringLiteral("ok")).toBool();}
+
+    // One entry point for every analysis operation the service exposes:
+    // limits, forecast, fft, weibull, regression, pca, doe, advisor, domain.
+    // `options` is merged into the request, so a caller passes only what that
+    // operation needs (predictors for a regression, bounds for a design).
+    Q_INVOKABLE bool runAnalysis(const QString& kind,const QVariantMap& options=QVariantMap());
+    // Scattered x/y/z to a regular grid through one of the sixteen estimators.
+    // The result is an ordinary three-column Arrow file, so it imports and
+    // draws like any other dataset.
+    Q_INVOKABLE bool estimateSurface(const QString& x,const QString& y,const QString& z,
+                                     const QString& estimator,int resolution=160);
     bool scienceServiceAvailable() const;
     QVariantMap smartRenderPlan() const{return smartRenderPlan_;}
     QVariantList scanRecommendations() const{return scanRecommendations_;}
@@ -203,6 +223,7 @@ signals:
     void experimentalUiChanged();
     void workspaceModeChanged();
     void literatureChanged();
+    void analysisChanged();
     void scienceServiceAvailabilityChanged();
     void importLogChanged();
     void plotColourVisionChanged();
@@ -261,6 +282,8 @@ private:
     QString workspaceMode_=QStringLiteral("Home");
     QUrl literatureUrl_;
     QVariantMap literatureAnalysis_;
+    QVariantMap analysisResult_;
+    QString analysisKind_;
     QFutureWatcher<QString> importWatcher_;
     QFutureWatcher<QString> queryWatcher_;
     QProcess scienceProcess_;

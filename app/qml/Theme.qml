@@ -229,6 +229,9 @@ QtObject {
     readonly property int fontSizeDisplay: 34
 
     // -------------------------------------------------------------- spacing
+    // Alpha for a translucent overlay pill sitting over the plot. Four sites
+    // used to hard-code 0.69, which is a number nobody can match by eye.
+    readonly property real overlayAlpha: 0.69
     readonly property int gapTight: 4
     readonly property int gap: 8
     readonly property int gapWide: 16

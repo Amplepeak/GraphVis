@@ -855,6 +855,37 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         return;
     }
 
+    if(op.startsWith(QLatin1String("analysis."))||op==QLatin1String("surface.estimate")){
+        analysisResult_=obj.toVariantMap();
+        emit analysisChanged();
+        if(!ok){
+            setStatus(QStringLiteral("%1 failed: %2").arg(analysisKind_,error));
+            return;
+        }
+        // A surface comes back as a three-column Arrow grid. Queue it like any
+        // other dataset and the existing field engines draw it - no new
+        // geometry path for an estimated surface.
+        if(op==QLatin1String("surface.estimate")){
+            const QString grid=obj.value(QStringLiteral("path")).toString();
+            const QString method=obj.value(QStringLiteral("method")).toString();
+            if(!grid.isEmpty()&&QFileInfo::exists(grid)){
+                QTimer::singleShot(0,this,[this,grid]{
+                    importQueue_.prepend(grid);
+                    pumpImportQueue();
+                });
+                setStatus(QStringLiteral("%1 surface ready (%2 of %3 cells estimated)")
+                              .arg(method)
+                              .arg(obj.value(QStringLiteral("estimated")).toInt())
+                              .arg(obj.value(QStringLiteral("cells")).toInt()));
+            }else{
+                setStatus(QStringLiteral("%1 produced no grid file").arg(method));
+            }
+            return;
+        }
+        setStatus(QStringLiteral("%1 complete").arg(analysisKind_));
+        return;
+    }
+
     // literature.extract, and anything added later that fills the same slot.
     literatureAnalysis_=obj.toVariantMap();
     emit literatureChanged();
@@ -864,6 +895,64 @@ void AppController::handleScienceReply(const QJsonObject& obj){
 
 bool AppController::literatureContextAvailable() const{
     return !literatureAnalysis_.value(QStringLiteral("semantic_context")).toMap().isEmpty();
+}
+
+// =========================================================================
+// Analysis and surface estimation
+//
+// These reach modules that were written, tested and completely unreachable:
+// the service exposed no operation for them and the Analysis tab carried three
+// permanently disabled buttons. limits, forecast, fft, weibull, regression,
+// pca, doe, advisor and domain all answer through one request shape.
+// =========================================================================
+bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
+    if(activeDatasetId_.isEmpty()){
+        setStatus(QStringLiteral("Import or select a dataset first"));
+        return false;
+    }
+    const QString arrow=nativeArrowPath();
+    if(arrow.isEmpty()||!QFileInfo::exists(arrow)){
+        setStatus(QStringLiteral("The active dataset has no Arrow file yet"));
+        return false;
+    }
+    const QString op=QStringLiteral("analysis.")+kind;
+    QJsonObject request{{"op",op},{"arrow_path",arrow}};
+    // Whatever the caller supplied travels as-is: an operation asks for the
+    // columns and settings it needs and ignores the rest.
+    for(auto it=options.constBegin();it!=options.constEnd();++it)
+        request.insert(it.key(),QJsonValue::fromVariant(it.value()));
+
+    analysisKind_=kind;
+    return startScienceOp(request,op,QStringLiteral("Running %1").arg(kind));
+}
+
+bool AppController::estimateSurface(const QString& x,const QString& y,const QString& z,
+                                    const QString& estimator,int resolution){
+    if(activeDatasetId_.isEmpty()){
+        setStatus(QStringLiteral("Import or select a dataset first"));
+        return false;
+    }
+    const QString arrow=nativeArrowPath();
+    if(arrow.isEmpty()||!QFileInfo::exists(arrow)){
+        setStatus(QStringLiteral("The active dataset has no Arrow file yet"));
+        return false;
+    }
+    if(x.isEmpty()||y.isEmpty()||z.isEmpty()){
+        setStatus(QStringLiteral("A surface needs three mapped columns"));
+        return false;
+    }
+    const QString cache=QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+                        +QStringLiteral("/18.4/arrow-cache");
+    QDir().mkpath(cache);
+    QJsonObject request{{"op","surface.estimate"},{"arrow_path",arrow},
+                        {"x",x},{"y",y},{"z",z},
+                        {"estimator",estimator.isEmpty()?QStringLiteral("Auto (data-aware)"):estimator},
+                        {"resolution",qBound(16,resolution,600)},
+                        {"out_dir",cache}};
+    analysisKind_=QStringLiteral("surface");
+    return startScienceOp(request,QStringLiteral("surface.estimate"),
+                          QStringLiteral("Estimating surface (%1)")
+                              .arg(estimator.isEmpty()?QStringLiteral("auto"):estimator));
 }
 
 void AppController::scanDataset(double budgetSeconds,bool useLiterature){

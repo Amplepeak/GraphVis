@@ -95,6 +95,8 @@ foreach(_qml_file
     qml/components/StatusStrip.qml
     qml/components/GraphLibrary.qml
     qml/components/GvGroupBox.qml
+    qml/components/StatusPill.qml
+    qml/components/PanelScroll.qml
     qml/components/DockPanel.qml
     qml/components/ScanPanel.qml
     qml/workspaces/ClassicShell.qml
@@ -145,6 +147,8 @@ qt_add_qml_module(graphvis
     qml/components/StatusStrip.qml
     qml/components/GraphLibrary.qml
     qml/components/GvGroupBox.qml
+    qml/components/StatusPill.qml
+    qml/components/PanelScroll.qml
     qml/components/DockPanel.qml
     qml/components/ScanPanel.qml
     qml/workspaces/ClassicShell.qml

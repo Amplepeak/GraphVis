@@ -794,21 +794,35 @@ double normalQuantile(double p){
            (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1.0);
 }
 
-// Per-axis span, so a radar chart can compare columns whose units differ.
-// Plotting raw values on a shared radius compares nothing.
-struct Bounds2 {
+// The span of one column.
+//
+// This existed twice under two names - Bounds and Bounds - with two builders,
+// boundsOf and boundsFor. They measure the same thing and differ only in what
+// they map it onto: a radar chart wants [0,1] clamped, a 3-D projection wants
+// [-0.5,+0.5] unclamped. Both normalisations live here now.
+struct Bounds {
     double lo=0, hi=1;
+    bool valid=false;
+    // Centred on zero, for the orthographic projection: a cube from -0.5 to
+    // +0.5 rotates about its own middle.
+    double norm(double v) const { return hi>lo ? (v-lo)/(hi-lo)-0.5 : 0.0; }
+    // Clamped to [0,1], so a radar chart can compare columns whose units
+    // differ. Plotting raw values on a shared radius compares nothing.
     double scale(double v) const {
         if(!finite(v)||!(hi>lo)) return 0.0;
         return qBound(0.0,(v-lo)/(hi-lo),1.0);
     }
 };
 
-Bounds2 boundsFor(const QVector<double>& v){
-    Bounds2 b;
+Bounds boundsOf(const QVector<double>& v){
+    Bounds b;
     double lo=std::numeric_limits<double>::infinity(),hi=-lo;
     for(double x:v) if(finite(x)){ lo=qMin(lo,x); hi=qMax(hi,x); }
-    if(finite(lo)&&finite(hi)&&hi>lo){ b.lo=lo; b.hi=hi; }
+    if(!finite(lo)||!finite(hi)) return b;
+    // A flat column still needs a usable span, or every point lands on one
+    // line. boundsFor used to leave it at the default [0,1] instead.
+    if(qFuzzyCompare(lo,hi)) hi=lo+1.0;
+    b.lo=lo; b.hi=hi; b.valid=true;
     return b;
 }
 
@@ -1267,22 +1281,6 @@ QPointF project(const Projection& p,double x,double y,double z,double* depth=nul
     const double sy=-(x*p.cosAz+y*p.sinAz)*p.sinEl+z*p.cosEl;
     if(depth) *depth=(x*p.cosAz+y*p.sinAz)*p.cosEl+z*p.sinEl;
     return QPointF(p.origin.x()+sx*p.scale,p.origin.y()-sy*p.scale);
-}
-
-struct Bounds {
-    double lo=0, hi=1;
-    bool valid=false;
-    double norm(double v) const { return hi>lo ? (v-lo)/(hi-lo)-0.5 : 0.0; }
-};
-
-Bounds boundsOf(const QVector<double>& v){
-    Bounds b;
-    double lo=std::numeric_limits<double>::infinity(),hi=-lo;
-    for(double x:v) if(finite(x)){ lo=qMin(lo,x); hi=qMax(hi,x); }
-    if(!finite(lo)||!finite(hi)) return b;
-    if(qFuzzyCompare(lo,hi)) hi=lo+1.0;
-    b.lo=lo; b.hi=hi; b.valid=true;
-    return b;
 }
 
 } // namespace
@@ -3381,8 +3379,8 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
         // units compares nothing.
         const int axes=in.series.size();
         if(axes>=3){
-            QVector<Bounds2> spans;
-            for(const PlotSeries& s:in.series) spans.append(boundsFor(s.y));
+            QVector<Bounds> spans;
+            for(const PlotSeries& s:in.series) spans.append(boundsOf(s.y));
             int rows=std::numeric_limits<int>::max();
             for(const PlotSeries& s:in.series) rows=qMin(rows,int(s.y.size()));
             rows=qMin(rows,8);          // more outlines than this is unreadable
@@ -3638,8 +3636,8 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
         out.legendVisible=false;
         const int axes=in.series.size();
         if(axes>=2){
-            QVector<Bounds2> spans;
-            for(const PlotSeries& s:in.series) spans.append(boundsFor(s.y));
+            QVector<Bounds> spans;
+            for(const PlotSeries& s:in.series) spans.append(boundsOf(s.y));
             int rows=std::numeric_limits<int>::max();
             for(const PlotSeries& s:in.series) rows=qMin(rows,int(s.y.size()));
             // A hundred polylines is already a smear; beyond that the plot is
@@ -4033,7 +4031,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
         // can be overlaid on a measurement rather than plotted beside it.
         double lo=-10.0, hi=10.0;
         if(!in.series.isEmpty()){
-            const Bounds2 span=boundsFor(in.series.first().y);
+            const Bounds span=boundsOf(in.series.first().y);
             if(span.hi>span.lo){ lo=span.lo; hi=span.hi; }
         }
 

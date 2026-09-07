@@ -39,7 +39,7 @@ Rectangle {
     RowLayout {
         anchors.fill:parent; anchors.margins:10; spacing:10
         Rectangle {
-            Layout.preferredWidth:78; Layout.fillHeight:true; radius:16; color:Qt.rgba(Theme.surface.r, Theme.surface.g, Theme.surface.b, 0.69); border.color:Theme.border
+            Layout.preferredWidth:78; Layout.fillHeight:true; radius:16; color:Qt.rgba(Theme.surface.r, Theme.surface.g, Theme.surface.b, Theme.overlayAlpha); border.color:Theme.border
             ColumnLayout {
                 anchors.fill:parent; anchors.margins:9; spacing:8
                 Repeater {
