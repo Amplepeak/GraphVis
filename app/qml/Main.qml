@@ -178,7 +178,23 @@ ApplicationWindow {
     FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:app.importNameFilters();onAccepted:app.importDataset(selectedFile)}
     FileDialog{id:literatureDialog;title:"Open literature";nameFilters:app.literatureNameFilters();onAccepted:app.openLiterature(selectedFile)}
 
-    header:TopBar{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open()}
+    header:TopBar{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onAddOnsRequested:addOnsDialog.open()}
+
+    // Add-ons gets a window of its own rather than a ninth sidebar tab: it is
+    // something you visit twice a year, not something you work in.
+    Dialog {
+        id: addOnsDialog
+        title: "GraphVis add-ons"
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(760, root.width - 80)
+        height: Math.min(720, root.height - 80)
+        standardButtons: Dialog.Close
+        AddOnsPanel {
+            anchors.fill: parent
+            app: root.app
+        }
+    }
 
     Loader {
         anchors{left:parent.left;right:parent.right;top:parent.top;bottom:status.top}

@@ -99,6 +99,8 @@ foreach(_qml_file
     qml/components/GvGroupBox.qml
     qml/components/StatusPill.qml
     qml/components/UnitSelector.qml
+    qml/components/SolverPanel.qml
+    qml/components/AddOnsPanel.qml
     qml/components/PanelScroll.qml
     qml/components/DockPanel.qml
     qml/components/ScanPanel.qml
@@ -152,6 +154,8 @@ qt_add_qml_module(graphvis
     qml/components/GvGroupBox.qml
     qml/components/StatusPill.qml
     qml/components/UnitSelector.qml
+    qml/components/SolverPanel.qml
+    qml/components/AddOnsPanel.qml
     qml/components/PanelScroll.qml
     qml/components/DockPanel.qml
     qml/components/ScanPanel.qml

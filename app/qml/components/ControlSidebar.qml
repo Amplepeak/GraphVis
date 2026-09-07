@@ -28,7 +28,8 @@ Rectangle {
         TabBar {
             id: tabs; Layout.fillWidth:true
             TabButton{text:"Graphs"} TabButton{text:"Project"} TabButton{text:"Data"} TabButton{text:"Map"}
-            TabButton{text:"Analysis"} TabButton{text:"Literature"} TabButton{text:"Publish"}
+            TabButton{text:"Analysis"} TabButton{text:"Solver"}
+            TabButton{text:"Literature"} TabButton{text:"Publish"}
         }
         // Colour vision, stated above the graph chooser rather than buried in
         // settings: it changes what every graph below will look like.
@@ -59,6 +60,7 @@ Rectangle {
             DataWorkspace { app:root.app }
             MappingPanel { id:mapping; app:root.app; onApplyRequested:root.applyMapping(xValue,yValue,zValue,colorValue,pointSize,pointOpacity,invertOpacity,voxelBins,smartRender,smartProfile) }
             AnalysisPanel { app:root.app }
+            SolverPanel { app:root.app }
             LiteraturePanel { app:root.app }
             PublicationPanel { app:root.app; canvas:root.canvas }
         }

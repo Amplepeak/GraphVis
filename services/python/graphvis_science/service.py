@@ -265,6 +265,78 @@ def dispatch(req: dict) -> dict:
         except OSError as exc:
             return {"ok":False,"error":f"could not read the figure: {exc}"}
 
+    # ------------------------------------------------------------------- solver
+    # The MATLAB Engine API path from GraphVis 17's sim_bridge. Every other
+    # engine is a shell command and runs natively through QProcess; this one
+    # cannot, because it runs the script in a live MATLAB session and reads the
+    # workspace back with no files in between - which is the whole point of it
+    # for a parameter sweep.
+    if op=="solver.matlab":
+        import os
+        import numpy as np
+        import pandas as pd
+        script=req.get("script") or ""
+        if not os.path.exists(script):
+            return {"ok":False,"error":f"script not found: {script}"}
+        try:
+            import matlab.engine  # type: ignore
+        except Exception:
+            return {"ok":False,"error":
+                    "The MATLAB Engine API for Python is not installed. Install it from your "
+                    "MATLAB copy: cd matlabroot/extern/engines/python && python setup.py install. "
+                    "The batch preset runs a .m file without it."}
+        workdir=req.get("workdir") or os.path.dirname(script) or os.getcwd()
+        engine=matlab.engine.start_matlab()
+        try:
+            engine.cd(workdir, nargout=0)
+            engine.eval("run('%s')"%script.replace(os.sep,"/"), nargout=0)
+            names=[str(v) for v in (engine.eval("who", nargout=1) or [])]
+            series={}
+            skipped=[]
+            for var in names:
+                try:
+                    value=np.squeeze(np.asarray(engine.workspace[str(var)], dtype=float))
+                except Exception:
+                    # A struct, a cell array or a string. Named, not silently lost.
+                    skipped.append(str(var)); continue
+                if value.ndim==0:
+                    series[str(var)]=np.asarray([float(value)])
+                elif value.ndim==1:
+                    series[str(var)]=value
+                else:
+                    # A sweep matrix becomes one column per column, which is what
+                    # the mapping combos and the 3-D engines can actually bind to.
+                    if value.ndim==2 and value.shape[1]<=64:
+                        for i in range(value.shape[1]):
+                            series[f"{var}_c{i+1}"]=value[:,i]
+                    else:
+                        skipped.append(f"{var} ({value.ndim}-D)")
+        finally:
+            try: engine.quit()
+            except Exception: pass
+
+        if not series:
+            return {"ok":True,"arrow_path":"","columns":0,
+                    "variables":names,"skipped":skipped}
+        # Only the variables that share the longest length can be one table.
+        # The rest are reported rather than padded into a misleading frame.
+        length=max(v.size for v in series.values())
+        columns={k:v for k,v in series.items() if v.size==length}
+        skipped+= [f"{k} (length {v.size}, not {length})"
+                   for k,v in series.items() if v.size!=length]
+
+        import pyarrow as pa, pyarrow.ipc as ipc
+        out_dir=req.get("out_dir") or workdir
+        os.makedirs(out_dir, exist_ok=True)
+        stem=os.path.splitext(os.path.basename(script))[0] or "matlab"
+        out_path=os.path.join(out_dir, f"matlab_{stem}.arrow")
+        table=pa.Table.from_pandas(pd.DataFrame(columns), preserve_index=False)
+        with pa.OSFile(out_path,"wb") as sink:
+            with ipc.new_file(sink, table.schema) as writer:
+                writer.write_table(table)
+        return {"ok":True,"arrow_path":out_path,"rows":int(length),
+                "columns":len(columns),"variables":names,"skipped":skipped}
+
     # -------------------------------------------------------------------- batch
     # Folder-scale processing. scan lists what the importer can actually read in
     # a folder; run processes them and optionally writes a report.

@@ -1,0 +1,77 @@
+{
+  "_comment": [
+    "The optional parts of GraphVis, in one place.",
+    "",
+    "Everything here is genuinely optional: heavy, slow, or wanted by a minority.",
+    "The installer offers this list at install time and the Add-ons panel in the",
+    "application reads the same file, so a component added here appears in both",
+    "without a code change in either.",
+    "",
+    "extra   - the pip extra in services/python/pyproject.toml",
+    "probe   - a module whose importability means the component is present",
+    "default - offered pre-ticked by the installer",
+    "size_mb - rough download, so the choice is an informed one"
+  ],
+  "components": [
+    {
+      "key": "io",
+      "name": "Everyday scientific formats",
+      "extra": "io",
+      "probe": "h5py",
+      "default": true,
+      "size_mb": 220,
+      "summary": "MATLAB .mat, HDF5, NetCDF, Excel, TDMS, instrument and statistics files, and the business and finance readers.",
+      "cost": "Nothing noticeable. These are what most datasets are."
+    },
+    {
+      "key": "marine",
+      "name": "Marine and diving instruments",
+      "extra": "marine",
+      "probe": "dolfyn",
+      "default": true,
+      "size_mb": 60,
+      "summary": "CTD casts, ADCP, RBR, NMEA, GPX and dive-computer logs.",
+      "cost": "Small. Most of this group needs no package at all."
+    },
+    {
+      "key": "literature",
+      "name": "Literature extraction",
+      "extra": "literature",
+      "probe": "fitz",
+      "default": true,
+      "size_mb": 150,
+      "summary": "Pull text, tables and numbers out of published PDFs.",
+      "cost": "Adds a few seconds to the first extraction of a session."
+    },
+    {
+      "key": "reports",
+      "name": "Word and PDF reports",
+      "extra": "reports",
+      "probe": "reportlab",
+      "default": true,
+      "size_mb": 15,
+      "summary": "Batch runs can write a Word or PDF report instead of only HTML.",
+      "cost": "Negligible."
+    },
+    {
+      "key": "io_extra",
+      "name": "Domain formats",
+      "extra": "io_extra",
+      "probe": "astropy",
+      "default": true,
+      "size_mb": 900,
+      "summary": "Mass spectrometry, astronomy, seismic, neuroscience, DICOM, geospatial, Access and DuckDB.",
+      "cost": "A large download. Nothing is slower once it is installed - every reader is imported only when a file of that type is opened."
+    },
+    {
+      "key": "vlm",
+      "name": "Chart reading from papers",
+      "extra": "vlm",
+      "probe": "torch",
+      "default": false,
+      "size_mb": 2800,
+      "summary": "A vision model that reads the data back out of a chart in a paper that published no table.",
+      "cost": "By far the largest component, bigger than everything else combined, and the model takes tens of seconds to load the first time it is used in a session. Worth it only if you actually need numbers out of published figures."
+    }
+  ]
+}

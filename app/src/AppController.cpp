@@ -77,6 +77,68 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     // reason start-up feels slow.
     QTimer::singleShot(0,this,[this]{ project_->reopenLast(); });
     reportStartup(QStringLiteral("Preparing the workspace"),0.62);
+    // The optional-components script. -List answers with one line of JSON on
+    // stdout; an install or a remove is pip talking for several minutes, and
+    // that goes to the panel as it arrives.
+    connect(&componentProcess_,&QProcess::readyReadStandardOutput,this,[this]{
+        const QByteArray chunk=componentProcess_.readAllStandardOutput();
+        if(componentMode_==QLatin1String("list")){
+            componentOutput_+=chunk;
+            return;
+        }
+        for(const QString& line:QString::fromLocal8Bit(chunk)
+                                   .split(QLatin1Char('\n'),Qt::SkipEmptyParts))
+            componentTail_.append(line.trimmed());
+        while(componentTail_.size()>300) componentTail_.removeFirst();
+        emit componentsChanged();
+    });
+    connect(&componentProcess_,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,
+            [this](int code,QProcess::ExitStatus){
+        const QString mode=componentMode_;
+        componentMode_.clear();
+        if(mode==QLatin1String("list")){
+            const QJsonDocument doc=QJsonDocument::fromJson(componentOutput_.trimmed());
+            if(doc.isArray()){
+                components_=doc.array().toVariantList();
+            }else{
+                // A single component would come back as a bare object rather
+                // than an array of one; ConvertTo-Json does that.
+                components_=doc.isObject()?QVariantList{doc.object().toVariantMap()}:QVariantList{};
+                if(!doc.isObject())
+                    setStatus(QStringLiteral("Could not read the add-on list"));
+            }
+        }else{
+            // Exit code 2 means some component failed while the rest installed,
+            // which the script has already said in words on the merged channel.
+            setStatus(code==0 ? QStringLiteral("Add-ons updated")
+                              : QStringLiteral("Add-on change finished with problems - see the log below"));
+            // Re-read, so the panel shows what is actually there now rather
+            // than what was asked for.
+            QTimer::singleShot(0,this,&AppController::refreshComponents);
+        }
+        emit componentsChanged();
+    });
+
+    // The solver bridge's own process. Its output is shown as it arrives - an
+    // engine run is minutes long and a blank panel looks like a hang - and the
+    // tail is capped so a chatty solver cannot grow this without bound.
+    connect(&solverProcess_,&QProcess::readyRead,this,[this]{
+        const QString chunk=QString::fromLocal8Bit(solverProcess_.readAll());
+        for(const QString& line:chunk.split(QLatin1Char('\n'),Qt::SkipEmptyParts))
+            solverTail_.append(line.trimmed());
+        while(solverTail_.size()>200) solverTail_.removeFirst();
+        emit solverChanged();
+    });
+    connect(&solverProcess_,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
+        // FailedToStart is already reported by runSolver's waitForStarted, and
+        // Crashed after a kill is the cancel we asked for.
+        if(error==QProcess::FailedToStart||solverCancelled_) return;
+        solverTail_.append(QStringLiteral("[GraphVis] %1").arg(solverProcess_.errorString()));
+        emit solverChanged();
+    });
+    connect(&solverProcess_,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,
+            [this](int code,QProcess::ExitStatus){ collectSolverOutputs(code); });
+
     connect(&scienceProcess_,&QProcess::readyReadStandardOutput,this,[this]{
         scienceOutput_+=scienceProcess_.readAllStandardOutput();
         // Drain every complete line. The service answers one request at a time,
@@ -878,6 +940,34 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         return;
     }
 
+    if(op==QStringLiteral("solver.matlab")){
+        if(ok){
+            const QString arrow=obj.value(QStringLiteral("arrow_path")).toString();
+            const QStringList skipped=obj.value(QStringLiteral("skipped")).toVariant().toStringList();
+            solverResult_=QVariantMap{
+                {QStringLiteral("exitCode"),0},
+                {QStringLiteral("cancelled"),false},
+                {QStringLiteral("files"),arrow.isEmpty()?QStringList():QStringList{arrow}},
+                {QStringLiteral("variables"),obj.value(QStringLiteral("variables")).toVariant()},
+                {QStringLiteral("skipped"),skipped}};
+            if(!arrow.isEmpty()){
+                QTimer::singleShot(0,this,[this,arrow]{
+                    if(!importQueue_.contains(arrow)) importQueue_.append(arrow);
+                    pumpImportQueue();
+                });
+                setStatus(QStringLiteral("MATLAB finished - importing %1 workspace variable(s)")
+                              .arg(obj.value(QStringLiteral("columns")).toInt()));
+            }else{
+                setStatus(QStringLiteral("MATLAB finished but its workspace held nothing numeric"));
+            }
+        }else{
+            solverResult_=QVariantMap{{QStringLiteral("error"),error}};
+            setStatus(QStringLiteral("MATLAB run failed: %1").arg(error));
+        }
+        emit solverChanged();
+        return;
+    }
+
     if(op==QStringLiteral("batch.scan")){
         if(ok){
             batchItems_.clear();
@@ -1101,6 +1191,251 @@ int AppController::clearScanCache(){
     setStatus(removed==0 ? QStringLiteral("No cached scans to clear")
                          : QStringLiteral("Cleared %1 cached scan(s)").arg(removed));
     return removed;
+}
+
+// ---------------------------------------------------------- optional components
+//
+// The heavy or rarely-wanted parts of the science add-on - the domain format
+// readers, the chart-reading vision model - are a choice at install time and a
+// choice afterwards. Both go through tools/Manage-OptionalComponents.ps1 and
+// the component list it reads, so what "installed" means is decided in exactly
+// one place rather than separately by the installer and by this panel.
+QString AppController::componentScriptPath() const {
+    const QString appDir=QCoreApplication::applicationDirPath();
+    // Deployed beside the executable, or up in the source tree when running
+    // straight out of the build directory - the same two-root search the
+    // graph previews use.
+    const QStringList candidates{
+        appDir+QStringLiteral("/tools/Manage-OptionalComponents.ps1"),
+        appDir+QStringLiteral("/../../tools/Manage-OptionalComponents.ps1"),
+        appDir+QStringLiteral("/../../../tools/Manage-OptionalComponents.ps1")};
+    for(const QString& path:candidates)
+        if(QFileInfo::exists(path)) return QFileInfo(path).absoluteFilePath();
+    return QString();
+}
+
+bool AppController::startComponentScript(const QStringList& arguments,const QString& mode){
+    if(componentProcess_.state()!=QProcess::NotRunning){
+        setStatus(QStringLiteral("An add-on change is already running"));return false;
+    }
+    const QString script=componentScriptPath();
+    if(script.isEmpty()){
+        setStatus(QStringLiteral("Manage-OptionalComponents.ps1 is not beside this build"));
+        return false;
+    }
+    componentMode_=mode;
+    componentOutput_.clear();
+    if(mode!=QLatin1String("list")) componentTail_.clear();
+
+    QStringList args{QStringLiteral("-NoProfile"),
+                     QStringLiteral("-ExecutionPolicy"),QStringLiteral("Bypass"),
+                     QStringLiteral("-File"),script};
+    args+=arguments;
+    componentProcess_.setProcessChannelMode(mode==QLatin1String("list")
+                                            ? QProcess::SeparateChannels
+                                            : QProcess::MergedChannels);
+    componentProcess_.start(QStringLiteral("powershell.exe"),args);
+    if(!componentProcess_.waitForStarted(5000)){
+        setStatus(QStringLiteral("Could not run PowerShell: %1").arg(componentProcess_.errorString()));
+        componentMode_.clear();
+        return false;
+    }
+    emit componentsChanged();
+    return true;
+}
+
+void AppController::refreshComponents(){
+    startComponentScript({QStringLiteral("-List")},QStringLiteral("list"));
+}
+
+bool AppController::installComponents(const QStringList& keys){
+    if(keys.isEmpty()) return false;
+    setStatus(QStringLiteral("Installing %1").arg(keys.join(QStringLiteral(", "))));
+    return startComponentScript({QStringLiteral("-Install"),keys.join(QLatin1Char(','))},
+                                QStringLiteral("change"));
+}
+
+bool AppController::removeComponents(const QStringList& keys){
+    if(keys.isEmpty()) return false;
+    setStatus(QStringLiteral("Removing %1").arg(keys.join(QStringLiteral(", "))));
+    return startComponentScript({QStringLiteral("-Remove"),keys.join(QLatin1Char(','))},
+                                QStringLiteral("change"));
+}
+
+// ---------------------------------------------------------------- solver bridge
+//
+// GraphVis 17 ran external computational engines - MATLAB, ANSYS MAPDL, COMSOL,
+// AQUASIM, or any CLI solver - and then picked up whatever files the run left
+// behind. The templates below are v17's, unchanged, because they encode which
+// flags actually put each engine into batch mode.
+//
+// {script} is the model file the user chose and {workdir} the directory the run
+// happens in. Both are substituted before the command is executed.
+QVariantList AppController::solverPresets() const {
+    const auto preset=[](const char* name,const QString& command,
+                         const char* outputs,const char* hint){
+        return QVariant(QVariantMap{{QStringLiteral("name"),QString::fromUtf8(name)},
+                                    {QStringLiteral("command"),command},
+                                    {QStringLiteral("outputs"),QString::fromUtf8(outputs)},
+                                    {QStringLiteral("hint"),QString::fromUtf8(hint)}});
+    };
+    return QVariantList{
+        preset("Python script",
+               QStringLiteral("python \"{script}\""),
+               "*.csv;*.npy;*.npz;*.mat;*.json",
+               "Any Python model or ODE solver. Write results to files in the working directory."),
+        preset("MATLAB script (batch)",
+               QStringLiteral("matlab -batch \"run('{script}')\""),
+               "*.csv;*.mat;*.txt",
+               "Runs headless and exits. For the in-process Engine API instead, "
+               "use Run through the MATLAB engine below."),
+        preset("ANSYS MAPDL (batch)",
+               QStringLiteral("mapdl -b -i \"{script}\" -o \"{workdir}/mapdl_run.out\""),
+               "*.csv;*.txt;*.out",
+               "Needs ANSYS MAPDL on PATH. Export tabular results with /OUTPUT or *VWRITE."),
+        preset("COMSOL Multiphysics (batch)",
+               QStringLiteral("comsolbatch -inputfile \"{script}\""),
+               "*.csv;*.txt",
+               "Needs COMSOL on PATH. Add an Export node writing CSV or TXT."),
+        preset("AQUASIM (command line)",
+               QStringLiteral("aquasimc \"{script}\""),
+               "*.txt;*.csv;*.lis",
+               "Needs the AQUASIM CLI. Configure result lists as plain-text output."),
+        preset("Generic command / other engine",
+               QStringLiteral("\"{script}\""),
+               "*.csv;*.txt;*.json;*.npy;*.mat",
+               "Any executable or shell command. Edit the template freely."),
+    };
+}
+
+bool AppController::runSolver(const QString& command,const QUrl& workdir,const QUrl& script,
+                              const QString& outputPatterns,int timeoutSeconds){
+    if(solverProcess_.state()!=QProcess::NotRunning){
+        setStatus(QStringLiteral("A solver run is already going"));return false;
+    }
+    if(command.trimmed().isEmpty()){
+        setStatus(QStringLiteral("Give the engine a command to run"));return false;
+    }
+    const QString scriptPath=cleanLocalPath(script);
+    QString dir=cleanLocalPath(workdir);
+    if(dir.isEmpty()) dir=QFileInfo(scriptPath).absolutePath();
+    if(dir.isEmpty()||!QFileInfo(dir).isDir()){
+        setStatus(QStringLiteral("Choose a working directory for the run"));return false;
+    }
+
+    QString resolved=command;
+    resolved.replace(QStringLiteral("{script}"),QDir::toNativeSeparators(scriptPath));
+    resolved.replace(QStringLiteral("{workdir}"),QDir::toNativeSeparators(dir));
+
+    solverTail_.clear();
+    solverResult_.clear();
+    solverCancelled_=false;
+    solverWorkdir_=dir;
+    solverPatterns_=outputPatterns.trimmed().isEmpty()?QStringLiteral("*.csv"):outputPatterns;
+    // One second of slack, because a file written in the same second the run
+    // started is the run's own output and must not be treated as pre-existing.
+    solverStarted_=QDateTime::currentDateTime().addSecs(-1);
+
+    solverProcess_.setWorkingDirectory(dir);
+    solverProcess_.setProcessChannelMode(QProcess::MergedChannels);
+
+    // A shell, deliberately: the templates are user-editable and carry quoting,
+    // redirection and flags that only a shell interprets. The command comes
+    // from this application's own preset list or from the user's own typing,
+    // never from a file or a network reply.
+#ifdef Q_OS_WIN
+    solverProcess_.start(QStringLiteral("cmd.exe"),{QStringLiteral("/c"),resolved});
+#else
+    solverProcess_.start(QStringLiteral("/bin/sh"),{QStringLiteral("-c"),resolved});
+#endif
+    if(!solverProcess_.waitForStarted(5000)){
+        setStatus(QStringLiteral("Could not start the engine: %1").arg(solverProcess_.errorString()));
+        solverResult_=QVariantMap{{QStringLiteral("error"),solverProcess_.errorString()}};
+        emit solverChanged();
+        return false;
+    }
+
+    // The run is not allowed to hang the session forever. v17 used the same
+    // hour default and the same "kill, then report" behaviour.
+    const int limitMs=qBound(5,timeoutSeconds,86400)*1000;
+    QTimer::singleShot(limitMs,this,[this]{
+        if(solverProcess_.state()!=QProcess::NotRunning){
+            solverTail_.append(QStringLiteral("[GraphVis] time limit reached - the engine was stopped"));
+            solverCancelled_=true;
+            solverProcess_.kill();
+        }
+    });
+
+    setStatus(QStringLiteral("Engine running in %1").arg(QDir(dir).dirName()));
+    emit solverChanged();
+    return true;
+}
+
+void AppController::cancelSolver(){
+    if(solverProcess_.state()==QProcess::NotRunning) return;
+    solverCancelled_=true;
+    solverTail_.append(QStringLiteral("[GraphVis] cancelled"));
+    solverProcess_.kill();
+    emit solverChanged();
+}
+
+void AppController::collectSolverOutputs(int exitCode){
+    // Only files the run itself wrote. A folder full of last week's CSVs must
+    // not arrive as this run's results, which is what the timestamp is for.
+    QStringList patterns;
+    for(const QString& raw:solverPatterns_.split(QLatin1Char(';'),Qt::SkipEmptyParts)){
+        const QString p=raw.trimmed();
+        if(!p.isEmpty()) patterns.append(p);
+    }
+    if(patterns.isEmpty()) patterns.append(QStringLiteral("*.csv"));
+
+    QStringList fresh;
+    const QDir dir(solverWorkdir_);
+    const QFileInfoList entries=dir.entryInfoList(patterns,QDir::Files,QDir::Name);
+    for(const QFileInfo& info:entries)
+        if(info.lastModified()>=solverStarted_&&!fresh.contains(info.absoluteFilePath()))
+            fresh.append(info.absoluteFilePath());
+
+    solverResult_=QVariantMap{
+        {QStringLiteral("exitCode"),exitCode},
+        {QStringLiteral("cancelled"),solverCancelled_},
+        {QStringLiteral("files"),fresh},
+        {QStringLiteral("seconds"),solverStarted_.secsTo(QDateTime::currentDateTime())}};
+
+    if(solverCancelled_){
+        setStatus(QStringLiteral("Engine run stopped"));
+    }else if(fresh.isEmpty()){
+        // An engine that exits 0 and writes nothing has almost always written
+        // somewhere else, so say which patterns were looked for.
+        setStatus(exitCode==0
+                  ? QStringLiteral("Engine finished but wrote no files matching %1")
+                        .arg(patterns.join(QStringLiteral("; ")))
+                  : QStringLiteral("Engine exited with code %1 and wrote no output").arg(exitCode));
+    }else{
+        for(const QString& path:fresh)
+            if(!importQueue_.contains(path)) importQueue_.append(path);
+        setStatus(QStringLiteral("Engine finished - importing %1 output file(s)").arg(fresh.size()));
+        QTimer::singleShot(0,this,&AppController::pumpImportQueue);
+    }
+    emit solverChanged();
+}
+
+bool AppController::runMatlabScript(const QUrl& script,const QUrl& workdir){
+    const QString path=cleanLocalPath(script);
+    if(path.isEmpty()||!QFileInfo::exists(path)){
+        setStatus(QStringLiteral("Choose a .m script to run"));return false;
+    }
+    QString dir=cleanLocalPath(workdir);
+    if(dir.isEmpty()) dir=QFileInfo(path).absolutePath();
+    const QString cache=QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+                        +QStringLiteral("/18.4/arrow-cache");
+    QDir().mkpath(cache);
+    return startScienceOp(QJsonObject{{"op","solver.matlab"},
+                                      {"script",path},
+                                      {"workdir",dir},
+                                      {"out_dir",cache}},
+                          QStringLiteral("solver.matlab"),
+                          QStringLiteral("Running %1 in MATLAB").arg(QFileInfo(path).fileName()));
 }
 
 bool AppController::saveFigure(const QUrl& url,const QVariantMap& canvasState){

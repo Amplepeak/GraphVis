@@ -8,6 +8,7 @@ ToolBar {
     required property var app
     signal importRequested()
     signal literatureRequested()
+    signal addOnsRequested()
     height: 58
 
     // The toolbar carries more controls than fit on a 1280-wide window, and a
@@ -135,6 +136,16 @@ ToolBar {
             ToolTip.text: "Window mode. F11 toggles fullscreen, Esc leaves it."
         }
 
+        // Optional components - domain formats, chart reading. Always reachable,
+        // because a user who does not know these exist cannot ask for them.
+        ToolButton {
+            visible: !root.tiny
+            text: root.narrow ? "⊕" : "⊕ Add-ons"
+            onClicked: root.addOnsRequested()
+            ToolTip.visible: hovered
+            ToolTip.text: "Install or remove the optional science components"
+        }
+
         // Very narrow windows get both pickers in one popup rather than losing
         // them off the right-hand edge.
         ToolButton {
@@ -181,6 +192,12 @@ ToolBar {
                 text: "F11 toggles fullscreen · Esc leaves it"
                 color: Theme.textMuted
                 font.pixelSize: 11
+            }
+            MenuSeparator { Layout.fillWidth: true }
+            Button {
+                Layout.fillWidth: true
+                text: "Add-ons…"
+                onClicked: { viewPopup.close(); root.addOnsRequested() }
             }
         }
     }

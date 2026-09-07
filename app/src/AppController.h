@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QFutureWatcher>
+#include <QDateTime>
 #include <QProcess>
 #include <QUrl>
 #include <QVariantList>
@@ -59,6 +60,17 @@ class AppController final : public QObject {
     // Last batch run: successes, failures, the report path and any items.
     Q_PROPERTY(QVariantMap batchResult READ batchResult NOTIFY batchChanged)
     Q_PROPERTY(QVariantList batchItems READ batchItems NOTIFY batchChanged)
+    // The solver bridge: an external computational engine running as a
+    // cancellable job, with the tail of its own output while it runs.
+    Q_PROPERTY(bool solverRunning READ solverRunning NOTIFY solverChanged)
+    Q_PROPERTY(QString solverOutput READ solverOutput NOTIFY solverChanged)
+    Q_PROPERTY(QVariantMap solverResult READ solverResult NOTIFY solverChanged)
+    // The optional science components, and whether each is installed. Read
+    // from tools/optional-components.json by the same script the installer
+    // uses, so the list cannot drift between the two.
+    Q_PROPERTY(QVariantList optionalComponents READ optionalComponents NOTIFY componentsChanged)
+    Q_PROPERTY(bool componentsBusy READ componentsBusy NOTIFY componentsChanged)
+    Q_PROPERTY(QString componentsOutput READ componentsOutput NOTIFY componentsChanged)
     // True once an opened paper has been analysed, so its variables and
     // plot intent can steer the scan (Phase 4).
     Q_PROPERTY(bool literatureContextAvailable READ literatureContextAvailable NOTIFY literatureChanged)
@@ -119,6 +131,12 @@ public:
     bool scanning() const{return scanning_;}
     QVariantMap batchResult() const{return batchResult_;}
     QVariantList batchItems() const{return batchItems_;}
+    bool solverRunning() const{return solverProcess_.state()!=QProcess::NotRunning;}
+    QString solverOutput() const{return solverTail_.join(QLatin1Char('\n'));}
+    QVariantMap solverResult() const{return solverResult_;}
+    QVariantList optionalComponents() const{return components_;}
+    bool componentsBusy() const{return componentProcess_.state()!=QProcess::NotRunning;}
+    QString componentsOutput() const{return componentTail_.join(QLatin1Char('\n'));}
     int themeIndex() const{return themeIndex_;}
     int displayMode() const{return displayMode_;}
     void setDisplayMode(int value);
@@ -237,6 +255,28 @@ public:
     Q_INVOKABLE bool scanBatchFolder(const QUrl& folder,bool recursive=false);
     Q_INVOKABLE bool runBatch(const QUrl& folder,const QString& operation,
                               bool recursive=false,const QString& reportFormat=QString());
+
+    // The solver bridge, ported from GraphVis 17's automation/sim_bridge.
+    // Engine-agnostic on purpose: the command is a user-editable template with
+    // {script} and {workdir} substituted, so no vendor is hard-wired.
+    //
+    // Whatever files the run produced are queued through the ordinary import
+    // path, which means all 149 formats, not a special case for each engine.
+    Q_INVOKABLE QVariantList solverPresets() const;
+    Q_INVOKABLE bool runSolver(const QString& command,const QUrl& workdir,const QUrl& script,
+                               const QString& outputPatterns=QString(),int timeoutSeconds=3600);
+    Q_INVOKABLE void cancelSolver();
+    // The MATLAB Engine API path has no shell command: it runs the .m file in a
+    // shared engine and pulls the workspace with no intermediate files. That
+    // needs Python, so it goes through the science service.
+    Q_INVOKABLE bool runMatlabScript(const QUrl& script,const QUrl& workdir=QUrl());
+
+    // Optional components. The heavy or rarely-wanted parts - domain formats,
+    // chart reading - are chosen at install time and can be added or dropped
+    // at any point afterwards without reinstalling anything else.
+    Q_INVOKABLE void refreshComponents();
+    Q_INVOKABLE bool installComponents(const QStringList& keys);
+    Q_INVOKABLE bool removeComponents(const QStringList& keys);
     // Drops every cached scan for the open project (or the shared cache when
     // no project is open). Returns the number of files removed.
     Q_INVOKABLE int clearScanCache();
@@ -262,6 +302,8 @@ signals:
     // columns the state names are there to be selected.
     void figureLoaded(const QVariantMap& canvasState);
     void batchChanged();
+    void solverChanged();
+    void componentsChanged();
     void themeIndexChanged();
     void displayModeChanged();
 private:
@@ -305,6 +347,26 @@ private:
     // applied on arrival.
     QVariantMap batchResult_;
     QVariantList batchItems_;
+
+    // Solver bridge.
+    QProcess solverProcess_;
+    QStringList solverTail_;
+    QString solverPatterns_;
+    QString solverWorkdir_;
+    QDateTime solverStarted_;
+    QVariantMap solverResult_;
+    bool solverCancelled_=false;
+    void collectSolverOutputs(int exitCode);
+
+    // Optional components.
+    QProcess componentProcess_;
+    QStringList componentTail_;
+    QVariantList components_;
+    // "list" while reading the catalogue, "change" while installing or removing.
+    QString componentMode_;
+    QByteArray componentOutput_;
+    bool startComponentScript(const QStringList& arguments,const QString& mode);
+    QString componentScriptPath() const;
     int themeIndex_=0;
     int displayMode_=1;
     void loadGraphCatalogue();
