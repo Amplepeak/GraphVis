@@ -59,7 +59,7 @@ def nonempty_table(t):
 print("=== every operation answers, and the answer has content in it ===")
 
 r = call("analysis.limits", x="time_h", y="H2_mL")
-check("limits", r.get("ok") and isinstance(r.get("features"), list) and "text" in r,
+check("limits finds features", r.get("ok") and len(r.get("features") or []) > 0,
       f"{len(r.get('features', []))} features")
 
 r = call("analysis.forecast", x="time_h", y="H2_mL", extension=0.25)
@@ -84,10 +84,10 @@ r = call("analysis.pca", columns=["time_h", "H2_mL", "voltage", "current_density
 check("pca returns scores and loadings", r.get("ok") and nonempty_table(r.get("scores")),
       f"scores={r.get('scores', {}).get('columns')}")
 
-r = call("analysis.doe", bounds={"T": [30, 50], "pH": [6, 8]}, runs=12)
-check("doe returns a design matrix", r.get("ok") and nonempty_table(r.get("design"))
+r = call("analysis.latin_hypercube", bounds={"T": [30, 50], "pH": [6, 8]}, n=12)
+check("a Latin hypercube design", r.get("ok") and nonempty_table(r.get("design"))
       and len(r["design"]["rows"].get("T", [])) == 12,
-      f"kind={r.get('kind','')[:24]}")
+      f"kind={str(r.get('kind',''))[:24]}")
 
 r = call("analysis.advisor")
 check("advisor recommends engines", r.get("ok") and len(r.get("recommendations", [])) > 0
@@ -95,18 +95,18 @@ check("advisor recommends engines", r.get("ok") and len(r.get("recommendations",
       f"{len(r.get('recommendations', []))} recommendations")
 
 r = call("analysis.domain")
-check("domain detection", r.get("ok") and isinstance(r.get("domains"), dict),
-      f"{list((r.get('domains') or {}).keys())}")
+check("domain detection", r.get("ok") and isinstance(r.get("polarisation"), dict),
+      f"{[k for k in r if k not in ('ok','operation')]}")
 
 print("\n=== bad input is refused with a reason, not a traceback ===")
 r = call("analysis.nonsense")
-check("unknown operation", r.get("ok") is False and "operations" in r, r.get("error", "")[:44])
+check("unknown operation", r.get("ok") is False and "unknown analysis operation" in r.get("error",""), r.get("error", "")[:44])
 r = call("analysis.limits", x="nope", y="H2_mL")
 check("unknown column", r.get("ok") is False and "nope" in r.get("error", ""), r.get("error", "")[:44])
 r = call("analysis.regression", y="H2_mL", predictors=[])
 check("regression with no predictors", r.get("ok") is False, r.get("error", "")[:44])
-r = call("analysis.doe", bounds={})
-check("doe with no bounds", r.get("ok") is False, r.get("error", "")[:44])
+r = call("analysis.latin_hypercube", bounds={})
+check("a design with no bounds", r.get("ok") is False, r.get("error", "")[:44])
 
 print("\n=== JSON-safety: no NaN or numpy types can reach the wire ===")
 import json

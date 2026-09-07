@@ -13,8 +13,12 @@ echo   Everyday formats     MATLAB .mat, HDF5, NetCDF, Excel, TDMS, business
 echo   Marine and diving    CTD, ADCP, RBR, NMEA, GPX, dive computers
 echo   Literature           text, tables and numbers out of published PDFs
 echo   Reports              Word and PDF batch reports
+echo   Symbolic maths       exact derivatives, models typed as expressions
+echo   Dimensional analysis mA/cm2 and mg/L/h converted properly
+echo   Uncertainty          carry a fit's errors into what you calculate
 echo   Domain formats       mass spec, astronomy, seismic, neuro, DICOM,
-echo                        geospatial, Access, DuckDB   (a large download)
+echo                        geospatial, Access, DuckDB
+echo   Survival analysis    Kaplan-Meier, log-rank, Cox   (a large download)
 echo   Chart reading        a vision model that reads data back out of a
 echo                        published figure  (~2.8 GB, and slow to load)
 echo.
@@ -27,13 +31,13 @@ set "GVCHOICE="
 set /p "GVCHOICE=Choose 1-4 (Enter for 1): "
 if not defined GVCHOICE set "GVCHOICE=1"
 
-if "%GVCHOICE%"=="1" set "GVKEYS=io,marine,literature,reports,io_extra"
-if "%GVCHOICE%"=="2" set "GVKEYS=io,marine,literature,reports,io_extra,vlm"
-if "%GVCHOICE%"=="3" set "GVKEYS=io,marine,literature,reports"
+if "%GVCHOICE%"=="1" set "GVKEYS=io,marine,literature,reports,symbolic,units,uncertainty,io_extra"
+if "%GVCHOICE%"=="2" set "GVKEYS=io,marine,literature,reports,symbolic,units,uncertainty,io_extra,survival,vlm"
+if "%GVCHOICE%"=="3" set "GVKEYS=io,marine,literature,reports,symbolic,units,uncertainty"
 if "%GVCHOICE%"=="4" goto choose
 if not defined GVKEYS (
   echo Not one of 1-4. Using the recommended set.
-  set "GVKEYS=io,marine,literature,reports,io_extra"
+  set "GVKEYS=io,marine,literature,reports,symbolic,units,uncertainty,io_extra"
 )
 goto install
 
@@ -43,7 +47,11 @@ call :ask io "Everyday scientific formats" Y
 call :ask marine "Marine and diving instruments" Y
 call :ask literature "Literature extraction" Y
 call :ask reports "Word and PDF reports" Y
+call :ask symbolic "Symbolic maths" Y
+call :ask units "Dimensional analysis" Y
+call :ask uncertainty "Uncertainty propagation" Y
 call :ask io_extra "Domain formats (large download)" Y
+call :ask survival "Survival analysis" N
 call :ask vlm "Chart reading (~2.8 GB)" N
 if not defined GVKEYS (
   echo.

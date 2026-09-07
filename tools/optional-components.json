@@ -72,6 +72,46 @@
       "size_mb": 2800,
       "summary": "A vision model that reads the data back out of a chart in a paper that published no table.",
       "cost": "By far the largest component, bigger than everything else combined, and the model takes tens of seconds to load the first time it is used in a session. Worth it only if you actually need numbers out of published figures."
+    },
+    {
+      "key": "symbolic",
+      "name": "Symbolic maths",
+      "extra": "symbolic",
+      "probe": "sympy",
+      "default": true,
+      "size_mb": 45,
+      "summary": "Exact derivatives of a plotted function, and models typed as an expression rather than chosen from a list.",
+      "cost": "Nothing at rest. The first expression parsed in a session takes about a second while SymPy loads."
+    },
+    {
+      "key": "units",
+      "name": "Dimensional analysis",
+      "extra": "units",
+      "probe": "pint",
+      "default": true,
+      "size_mb": 8,
+      "summary": "Compound units - mA/cm2, mg/L/h - converted properly, and a check that two columns are the same kind of quantity before you plot one against the other.",
+      "cost": "Negligible. Axis labels and the everyday conversions work without it."
+    },
+    {
+      "key": "uncertainty",
+      "name": "Uncertainty propagation",
+      "extra": "uncertainty",
+      "probe": "uncertainties",
+      "default": true,
+      "size_mb": 46,
+      "summary": "Carry a fit's standard errors through into whatever you calculate from them, and see which input is responsible for how much of the final error.",
+      "cost": "Negligible. Shares SymPy with the symbolic component."
+    },
+    {
+      "key": "survival",
+      "name": "Survival analysis",
+      "extra": "survival",
+      "probe": "lifelines",
+      "default": false,
+      "size_mb": 120,
+      "summary": "Kaplan-Meier curves, the log-rank test and Cox proportional hazards.",
+      "cost": "A moderate download, and only wanted if you have time-to-event data. The three operations say so plainly when it is absent."
     }
   ]
 }

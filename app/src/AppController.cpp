@@ -68,6 +68,16 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
         const QByteArray c=QDir::toNativeSeparators(cache).toUtf8();
         runtime_=api.runtimeNew(c.constData());
         viewport_.setRuntime(runtime_);
+        // A native library built from a different tree than this executable
+        // resolves every symbol and then behaves in ways nothing explains -
+        // an old graphvis_ffi left in the install folder is the usual cause.
+        // Asking costs one call and turns a mystery into a sentence.
+        if(!api.versionMatches())
+            nativeCoreError_=QStringLiteral(
+                "The native core reports version %1 but this build is %2. "
+                "An old graphvis_ffi library is next to the executable; "
+                "re-run build.bat or reinstall.")
+                .arg(api.nativeVersion(),QCoreApplication::applicationVersion());
     }else{
         nativeCoreError_=api.error();
     }
@@ -179,7 +189,11 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
         scienceOutput_.clear();
     });
     refreshState();
-    if(runtime_)
+    // A loaded-but-mismatched core sets the error text without clearing the
+    // runtime, so it is reported rather than hidden behind "ready".
+    if(runtime_&&!nativeCoreError_.isEmpty())
+        setStatus(nativeCoreError_);
+    else if(runtime_)
         setStatus(QStringLiteral("GraphVis 18.4 ready — fast offline startup; update checks are manual"));
     else
         setStatus(QStringLiteral("Native core unavailable: %1 — data import and queries are disabled")
@@ -1019,6 +1033,14 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         return;
     }
 
+    if(op==QStringLiteral("analysis.catalogue")){
+        analysisCatalogue_=ok ? obj.value(QStringLiteral("operations")).toArray().toVariantList()
+                              : QVariantList();
+        if(!ok) setStatus(QStringLiteral("Could not read the analysis catalogue: %1").arg(error));
+        emit analysisCatalogueChanged();
+        return;
+    }
+
     if(op.startsWith(QLatin1String("analysis."))||op==QLatin1String("surface.estimate")){
         analysisResult_=obj.toVariantMap();
         emit analysisChanged();
@@ -1050,11 +1072,25 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         return;
     }
 
-    // literature.extract, and anything added later that fills the same slot.
-    literatureAnalysis_=obj.toVariantMap();
-    emit literatureChanged();
-    setStatus(ok?QStringLiteral("Literature intelligence complete")
-                :QStringLiteral("Literature service error: %1").arg(error));
+    if(op==QStringLiteral("cache.clear")){
+        // Housekeeping. It has no result to show, and the status line already
+        // says how many cached scans were removed.
+        if(!ok) setStatus(QStringLiteral("Could not clear the service cache: %1").arg(error));
+        return;
+    }
+
+    if(op.startsWith(QLatin1String("literature."))){
+        literatureAnalysis_=obj.toVariantMap();
+        emit literatureChanged();
+        setStatus(ok?QStringLiteral("Literature intelligence complete")
+                    :QStringLiteral("Literature service error: %1").arg(error));
+        return;
+    }
+
+    // An operation with no branch above. This used to fall through into the
+    // literature slot, so anything added later silently overwrote the analysed
+    // paper with its own reply; saying so is better than corrupting a panel.
+    if(!ok) setStatus(QStringLiteral("%1 failed: %2").arg(op,error));
 }
 
 bool AppController::literatureContextAvailable() const{
@@ -1082,6 +1118,16 @@ QString AppController::requireActiveArrow(){
     return arrow;
 }
 
+void AppController::refreshAnalysisCatalogue(){
+    if(!analysisCatalogue_.isEmpty()) return;      // the same answer every time
+    // Deliberately not through requireActiveArrow: what the service can do
+    // does not depend on which dataset is open, and the panel should be able
+    // to show its operations before anything is loaded.
+    startScienceOp(QJsonObject{{"op","analysis.catalogue"}},
+                   QStringLiteral("analysis.catalogue"),
+                   QStringLiteral("Reading the analysis catalogue"));
+}
+
 bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
     const QString arrow=requireActiveArrow();
     if(arrow.isEmpty()) return false;
@@ -1097,7 +1143,8 @@ bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
 }
 
 bool AppController::estimateSurface(const QString& x,const QString& y,const QString& z,
-                                    const QString& estimator,int resolution){
+                                    const QString& estimator,int resolution,
+                                    const QString& imputation){
     const QString arrow=requireActiveArrow();
     if(arrow.isEmpty()) return false;
     if(x.isEmpty()||y.isEmpty()||z.isEmpty()){
@@ -1112,6 +1159,11 @@ bool AppController::estimateSurface(const QString& x,const QString& y,const QStr
                         {"estimator",estimator.isEmpty()?QStringLiteral("Auto (data-aware)"):estimator},
                         {"resolution",qBound(16,resolution,600)},
                         {"out_dir",cache}};
+    // Failed cells inside the data's own footprint - a simulation sweep with
+    // holes in it - can be filled; cells outside the convex hull are never
+    // touched, so this changes no extrapolation policy. Off unless chosen.
+    if(!imputation.isEmpty())
+        request.insert(QStringLiteral("imputation"),imputation);
     analysisKind_=QStringLiteral("surface");
     return startScienceOp(request,QStringLiteral("surface.estimate"),
                           QStringLiteral("Estimating surface (%1)")
@@ -1187,6 +1239,12 @@ int AppController::clearScanCache(){
     const QStringList entries=dir.entryList(QStringList{QStringLiteral("*.json")},QDir::Files);
     for(const QString& name:entries)
         if(dir.remove(name)) ++removed;
+    // The service is long-lived and holds a geometry cache of its own -
+    // triangulations and neighbour graphs, tens of megabytes per surface. It
+    // is released here rather than only on restart. Best effort: if the
+    // service is not running there is nothing cached to release either.
+    if(scienceServiceAvailable())
+        startScienceOp(QJsonObject{{"op","cache.clear"}},QStringLiteral("cache.clear"),QString());
     setStatus(removed==0 ? QStringLiteral("No cached scans to clear")
                          : QStringLiteral("Cleared %1 cached scan(s)").arg(removed));
     return removed;
@@ -1519,7 +1577,12 @@ void AppController::scanDataset(double budgetSeconds,bool useLiterature,bool for
     QJsonObject request{{"op","dataset.scan"},
                         {"arrow_path",arrow},
                         {"name",activeDataset().value(QStringLiteral("name")).toString()},
-                        {"budget_seconds",budgetSeconds}};
+                        {"budget_seconds",budgetSeconds},
+                        // The scanner writes its progress here and picks it up
+                        // on the next attempt. A three-day budget is allowed,
+                        // and without this a scan interrupted on day two starts
+                        // again from nothing.
+                        {"cache_dir",scanCacheDir()}};
 
     // Phase 4: an analysed paper contributes its variables and inferred plot
     // type, so the scanner ranks graphs the paper actually implies rather than

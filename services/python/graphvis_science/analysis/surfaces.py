@@ -22,6 +22,7 @@ from collections import OrderedDict
 import hashlib
 import math
 import threading
+import warnings
 
 import numpy as np
 from scipy.interpolate import (CloughTocher2DInterpolator, LinearNDInterpolator,
@@ -894,7 +895,12 @@ def _mirror_fill(z: np.ndarray, target: np.ndarray) -> np.ndarray:
 
     by_rows = _fill_axis(base)
     by_cols = _fill_axis(base.T).T
-    stacked = np.nanmean(np.stack([by_rows, by_cols]), axis=0)
+    # A cell that neither pass could mirror is all-NaN here, and nanmean warns
+    # about it on stderr. That cell is handled two lines below by the nearest
+    # fill, so the warning is noise on a case that is already covered.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        stacked = np.nanmean(np.stack([by_rows, by_cols]), axis=0)
     remaining = ~np.isfinite(stacked)
     if remaining.any():
         stacked[remaining] = _fill_nan_nearest_grid(np.where(remaining, np.nan, stacked))[remaining]

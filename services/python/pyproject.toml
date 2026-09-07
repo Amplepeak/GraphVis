@@ -33,6 +33,18 @@ marine=["dolfyn>=1.4","cfgrib>=0.9","fitparse>=1.2"]
 # Batch report output. Both are pure Python and small, and without them a
 # folder-scale run can only write its report as HTML.
 reports=["python-docx>=1.1","reportlab>=4.0"]
+# Symbolic maths. Needed by the function-plot operations that return an exact
+# derivative, and by anything that takes a model as a typed expression - the
+# Monte-Carlo propagation and the uncertainty calculator both do.
+symbolic=["sympy>=1.12"]
+# Dimensional analysis: compound units (mA/cm2, mg/L/h) and whether two columns
+# are even the same kind of quantity.
+units=["pint>=0.23"]
+# Uncertainty propagation through a fitted model, with the share of the error
+# each input is responsible for. sympy parses the expression.
+uncertainty=["uncertainties>=3.2","sympy>=1.12"]
+# Survival analysis: Kaplan-Meier, log-rank and Cox proportional hazards.
+survival=["lifelines>=0.29"]
 # Domain formats with heavier or platform-specific dependencies.
 io_extra=["pyteomics>=4.7","fcsparser>=0.2.8","astropy>=6.0","uproot>=5.3",
           "obspy>=1.4","pyedflib>=0.1.36","mne>=1.7","pyabf>=2.3","pynwb>=2.8",

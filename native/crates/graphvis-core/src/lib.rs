@@ -31,15 +31,11 @@ pub struct AxisRange {
     pub padding_fraction: f64,
 }
 
-impl AxisRange {
-    pub fn sanitized(self, fallback: (f64, f64)) -> Self {
-        let valid = self.min.is_finite() && self.max.is_finite() && self.min <= self.max;
-        let (lo, hi) = if valid { (self.min, self.max) } else { fallback };
-        let span = (hi - lo).abs();
-        let pad = if span > 0.0 { span * self.padding_fraction.clamp(0.0, 1.0) } else { 1.0 };
-        Self { min: lo - pad, max: hi + pad, ..self }
-    }
-}
+// AxisRange::sanitized() lived here and had no caller. The axis limits the user
+// sets are the C++ canvas's own - PlotCanvas applies them when it paints - so
+// PlotSpec::ranges is only ever carried through the state and written to the
+// saved document; the field stays for that, the padding logic that nothing
+// reached does not.
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VariableMapping {

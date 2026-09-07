@@ -627,21 +627,16 @@ def scan_dataset(dataset: Any, literature: Iterable[Any] | None = None, *, progr
     return result
 
 
-def cache_path(cache_dir: str | Path, dataset: Any, literature_fp: str | None = None) -> Path:
-    root = Path(cache_dir); root.mkdir(parents=True, exist_ok=True)
-    dfp = dataset_fingerprint(dataset)
-    if literature_fp:
-        return root / f"{dfp}_{literature_fp[:16]}.json"
-    return root / f"{dfp}.json"  # dataset-only cache path
-
-
-def save_scan(result: dict[str, Any], cache_dir: str | Path, dataset: Any) -> Path:
-    lfp = str(result.get("literature_fingerprint") or literature_fingerprint(None))
-    path = cache_path(cache_dir, dataset, lfp)
-    path.write_text(json.dumps(result, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    return path
-
-
+# The finished-scan cache used to live here as cache_path/save_scan/
+# load_cached_scan, and nothing called any of the three: the application caches
+# a finished scan itself, in AppController::scanDataset, keyed on the Arrow
+# file's size and modification time, the budget and the literature block, and
+# stored in the project folder when a project is open. Two caches for one answer
+# is one cache too many, and the one that was reachable is the one that knows
+# about projects - so this half is gone rather than duplicated.
+#
+# The checkpoint below is a different thing and is wired: it is what lets a long
+# scan - the budget goes up to three days - resume instead of starting again.
 def checkpoint_path(cache_dir: str | Path, dataset: Any, literature_fp: str | None = None) -> Path:
     root = Path(cache_dir); root.mkdir(parents=True, exist_ok=True)
     lfp = str(literature_fp or literature_fingerprint(None))
@@ -682,29 +677,7 @@ def clear_scan_checkpoint(dataset: Any, cache_dir: str | Path,
         pass
 
 
-def load_cached_scan(dataset: Any, cache_dir: str | Path, literature: Iterable[Any] | None = None) -> dict[str, Any] | None:
-    wanted_lfp = literature_fingerprint(literature)
-    candidates = [cache_path(cache_dir, dataset, wanted_lfp), cache_path(cache_dir, dataset)]
-    for path in candidates:
-        if not path.exists():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if data.get("dataset_fingerprint") != dataset_fingerprint(dataset):
-            continue
-        if data.get("literature_fingerprint") != wanted_lfp:
-            continue
-        return data
-    return None
-
-
-def best_mapping_for_graph(scan_result: dict[str, Any] | None, graph: str) -> dict[str, str | None]:
-    if not scan_result:
-        return {}
-    matches = [r for r in scan_result.get("recommendations", []) if r.get("graph") == graph]
-    if not matches:
-        return {}
-    matches.sort(key=lambda r: float(r.get("score", 0.0)), reverse=True)
-    return dict(matches[0].get("mappings") or {})
+# The panel picks a recommendation itself - ScanPanel.qml reads the mappings
+# straight off the row the user tapped - so best_mapping_for_graph, which asked
+# the service to re-find the highest-scoring row of a list the UI already holds,
+# was a round trip for an answer already in hand. Removed rather than wired.

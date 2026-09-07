@@ -12,6 +12,29 @@ def _load_frame(path: str):
     return table.to_pandas(types_mapper=None)
 
 
+def _figure_asset(req: dict):
+    """A figure plus the calibration needed to read numbers off it.
+
+    De-rendering needs to know where the axes are and what they span. A vision
+    model supplies that when the VLM component is installed; without one the
+    request carries it, which is the same information typed rather than guessed
+    - and it means de-rendering works with no model at all.
+    """
+    from graphvis_science.literature.intelligence import FigureAsset
+    from graphvis_science.literature.vlm import VLMObservation
+
+    observation = VLMObservation(
+        plot_type=str(req.get("plot_type") or "line"),
+        x_scale=str(req.get("x_scale") or "linear"),
+        y_scale=str(req.get("y_scale") or "linear"),
+        x_range=tuple(float(v) for v in req["x_range"]) if req.get("x_range") else None,
+        y_range=tuple(float(v) for v in req["y_range"]) if req.get("y_range") else None,
+        plot_bbox=[float(v) for v in req["bbox"]] if req.get("bbox") else None,
+    )
+    return FigureAsset(page=int(req.get("page") or 1), path=str(req["image_path"]),
+                       caption=str(req.get("caption") or ""), observation=observation)
+
+
 def dispatch(req: dict) -> dict:
     op=req.get("op", "health")
     if op=="health":
@@ -27,6 +50,47 @@ def dispatch(req: dict) -> dict:
         for d in getattr(result,"datasets",[]):
             datasets.append({"name":getattr(d,"name","dataset"),"rows":len(d.df),"columns":list(map(str,d.df.columns))})
         return {"ok":True,"title":getattr(result,"title",""),"datasets":datasets,"text_chars":len(getattr(result,"text","")),"saved_paths":list(getattr(result,"saved_paths",[]) or []),"parameters":dict(getattr(result,"parameters",{}) or {}),"semantic_context":dict(getattr(result,"semantic_context",{}) or {}),"warnings":list(getattr(result,"warnings",[]) or [])}
+    if op=="literature.extractions":
+        # Everything extracted from a paper before now. Each extraction already
+        # writes a sidecar next to its dataset; nothing ever read them back, so
+        # a session that ended took its extractions with it.
+        from graphvis_science.literature.extractor import load_extraction_sidecars
+        return {"ok": True, "extractions": load_extraction_sidecars()}
+    if op=="literature.derender":
+        # Trace one coloured series out of a figure and write it as a CSV
+        # beside the image. This is the reason the de-renderer exists - getting
+        # the numbers back out of a published plot - and it had no caller.
+        from graphvis_science.literature.derender import ChartDerenderer
+        from graphvis_science.literature.intelligence import LiteratureIntelligencePipeline
+        figure = _figure_asset(req)
+        colour = tuple(int(c) for c in (req.get("rgb") or (0, 0, 0)))[:3]
+        if len(colour) != 3:
+            return {"ok": False, "error": "rgb needs three channel values, 0-255"}
+        pipeline = LiteratureIntelligencePipeline()
+        try:
+            frame = pipeline.derender_coloured_series(
+                figure, colour, tolerance=float(req.get("tolerance") or 45.0),
+                backend=str(req.get("backend") or "fastplotlib"))
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "rows": int(len(frame)),
+                "columns": [str(c) for c in frame.columns],
+                "csv_path": figure.reconstructed_data,
+                "script_path": figure.reconstructed_code}
+    if op=="literature.heatmap":
+        # A heatmap or image panel as a numeric matrix, so a colour-mapped
+        # figure becomes a dataset rather than a picture.
+        from graphvis_science.literature.derender import ChartDerenderer
+        box = req.get("bbox")
+        if not box or len(box) != 4:
+            return {"ok": False, "error": "bbox needs four pixel values: left, top, right, bottom"}
+        derenderer = ChartDerenderer(str(req["image_path"]))
+        matrix = derenderer.extract_heatmap_matrix(
+            tuple(int(v) for v in box), width=int(req.get("width") or 160),
+            height=int(req.get("height") or 120),
+            grayscale=bool(req.get("grayscale", True)))
+        return {"ok": True, "shape": [int(s) for s in matrix.shape],
+                "values": matrix.tolist()}
     if op=="io.import":
         # Convert any supported scientific format into Arrow IPC. The native
         # core reads Arrow/CSV/Parquet itself; everything else arrives here.
@@ -36,173 +100,37 @@ def dispatch(req: dict) -> dict:
         except ImportError_ as exc:
             return {"ok": False, "error": str(exc), "supported": list(ALL_EXT)}
     # ------------------------------------------------------------------ analysis
-    # These modules were written, tested and imported cleanly, and had no route
-    # from the application: the service exposed no operation for any of them and
-    # AnalysisPanel.qml carried three permanently disabled buttons whose own
-    # tooltips said the wiring was "intentionally disabled until an operation
-    # contract is selected". This is that contract.
+    # One dispatch for every analysis operation, declared in
+    # graphvis_science/operations.py.
     #
-    # One shape for all of them: name the Arrow file and the columns, get JSON
-    # back. Anything returning a curve returns it as x/y arrays the plot
-    # catalogue can draw directly.
+    # This was seventy lines of hand-written if-blocks, and it advertised six
+    # operations that did not exist - `psd`, `spectrogram`, `autocorrelation`,
+    # `cluster`, `classify`, `regress` - because a getattr that misses looks
+    # exactly like a feature not yet written. It also guessed at result field
+    # names and returned empty replies when it guessed wrong. The registry is
+    # checked by a test that resolves every target and runs every operation.
+    if op == "analysis.catalogue":
+        from graphvis_science.operations import catalogue
+        return {"ok": True, "operations": catalogue()}
+
     if op.startswith("analysis."):
-        import numpy as np
-        import pandas as pd
-        what=op.split(".",1)[1]
-        df=_load_frame(req["arrow_path"])
-
-        def column(key, required=True):
-            name=req.get(key)
-            if name is None and not required: return None
-            if name not in df.columns:
-                raise KeyError(f"column '{name}' is not in this dataset")
-            return df[name].to_numpy(dtype=float)
-
-        def numbers(a):
-            """JSON has no NaN. Non-finite becomes null, which every consumer
-            here already reads as a gap rather than as a zero.
-
-            Vectorised deliberately. Written as
-            ``[None if not np.isfinite(v) else float(v) for v in arr]`` this
-            dispatched a NumPy ufunc per element, and on a 200k-row PCA that
-            one line was 94% of the whole operation - 2.1 s of a 2.3 s call,
-            against 0.1 s for the PCA itself. isfinite runs once over the
-            array, tolist() converts in C, and the null patching touches only
-            the elements that need it - usually none."""
-            if a is None: return []
-            arr=np.asarray(a, dtype=float).ravel()
-            out=arr.tolist()
-            finite=np.isfinite(arr)
-            if not finite.all():
-                for i in np.flatnonzero(~finite):
-                    out[int(i)]=None
-            return out
-
-        def frame_out(f):
-            """A DataFrame as columns plus column-wise rows. Several of these
-            engines return their real answer as a table, not as scalars."""
-            if f is None or not isinstance(f, pd.DataFrame) or f.empty:
-                return {"columns":[], "rows":{}}
-            out={}
-            for c in f.columns:
-                col=f[c]
-                if pd.api.types.is_numeric_dtype(col):
-                    out[str(c)]=numbers(col.to_numpy())
-                else:
-                    # Same reason as numbers(): one vectorised isna instead of
-                    # a pandas call per element.
-                    values=col.astype(str).tolist()
-                    missing=col.isna().to_numpy()
-                    if missing.any():
-                        for i in np.flatnonzero(missing):
-                            values[int(i)]=None
-                    out[str(c)]=values
-            return {"columns":[str(c) for c in f.columns], "rows":out}
-
-        def scalars(d):
-            out={}
-            for k,v in (d or {}).items():
-                try: out[str(k)]=None if v is None or not np.isfinite(float(v)) else float(v)
-                except (TypeError, ValueError): out[str(k)]=str(v)
-            return out
-
+        from graphvis_science.operations import OperationError, run
+        what = op.split(".", 1)[1]
         try:
-            if what=="limits":
-                from graphvis_science.analysis.limits import analyse_limits
-                r=analyse_limits(column("x"), column("y"), req.get("options"))
-                feats=[]
-                for f in (r.features or []):
-                    # A feature is a horizontal/vertical rule, a band, a curve or
-                    # a point - each carries a different subset of the fields.
-                    feats.append({"kind":f.kind,"label":f.label,"group":getattr(f,"group",""),
-                                  "value":(None if f.value is None else float(f.value)),
-                                  "x":numbers(f.x),"y":numbers(f.y),
-                                  "lo":numbers(f.lo),"hi":numbers(f.hi)})
-                return {"ok":True,"features":feats,
-                        "summary":list(r.summary or []),"notes":list(r.notes or []),
-                        "text":r.text()}
-
-            if what=="forecast":
-                from graphvis_science.analysis.predictive import forecast_series
-                b=forecast_series(column("x"), column("y"),
-                                  extension=float(req.get("extension") or 0.20),
-                                  confidence=float(req.get("confidence") or 0.95))
-                return {"ok":True,"model":b.model,"r2":float(b.r2),
-                        "x":numbers(b.x),"y":numbers(b.y),
-                        "lower":numbers(b.lower),"upper":numbers(b.upper),
-                        "original_x_max":float(b.original_x_max),
-                        "extrapolated":numbers(b.extrapolated)}
-
-            if what in ("fft","psd","spectrogram","autocorrelation"):
-                from graphvis_science.analysis.signal import SignalEngine
-                fn=getattr(SignalEngine, what, None)
-                if fn is None:
-                    return {"ok":False,"error":f"signal operation '{what}' is not available",
-                            "operations":[m for m in dir(SignalEngine) if not m.startswith("_")]}
-                r=fn(column("y"), column("x", required=False))
-                return {"ok":True,"name":r.name,"x":numbers(r.x),"y":numbers(r.y),
-                        "table":frame_out(r.table),"details":scalars(r.details)}
-
-            if what=="weibull":
-                from graphvis_science.analysis.reliability import ReliabilityEngine
-                r=ReliabilityEngine.weibull(column("y"), confidence=float(req.get("confidence") or 0.95))
-                return {"ok":True,"name":r.name,"table":frame_out(r.table),
-                        "details":scalars(r.details)}
-
-            if what=="regression":
-                from graphvis_science.analysis.regression import RegressionEngine
-                preds=req.get("predictors") or []
-                if not preds: return {"ok":False,"error":"regression needs at least one predictor column"}
-                missing=[c for c in [req.get("y"),*preds] if c not in df.columns]
-                if missing: return {"ok":False,"error":f"columns not in this dataset: {', '.join(missing)}"}
-                r=RegressionEngine.linear(df, req["y"], preds, robust=bool(req.get("robust")))
-                # coefficients is a DataFrame, not a mapping - treating it as one
-                # is what raised "The truth value of a DataFrame is ambiguous".
-                return {"ok":True,"name":r.name,"coefficients":frame_out(r.coefficients),
-                        "metrics":scalars(r.metrics),
-                        "predictions":numbers(r.predictions),"residuals":numbers(r.residuals)}
-
-            if what in ("pca","cluster","classify","regress"):
-                from graphvis_science.analysis.ml import MultivariateEngine
-                fn=getattr(MultivariateEngine, what, None)
-                if fn is None:
-                    return {"ok":False,"error":f"multivariate operation '{what}' is not available",
-                            "operations":[m for m in dir(MultivariateEngine) if not m.startswith("_")]}
-                r=(fn(df, req.get("columns"), n_components=req.get("components"),
-                      scale=bool(req.get("scale",True))) if what=="pca" else fn(df, req.get("columns")))
-                return {"ok":True,"name":r.name,"table":frame_out(r.table),
-                        "scores":frame_out(r.scores),"loadings":frame_out(r.loadings),
-                        "metrics":scalars(r.metrics),"details":scalars(r.details)}
-
-            if what=="doe":
-                from graphvis_science.analysis.doe import DOEEngine
-                bounds={k:(float(v[0]),float(v[1])) for k,v in (req.get("bounds") or {}).items()}
-                if not bounds: return {"ok":False,"error":"a design needs at least one named bound"}
-                kind=(req.get("design") or "latin_hypercube")
-                fn=getattr(DOEEngine, kind, None)
-                if fn is None:
-                    return {"ok":False,"error":f"unknown design '{kind}'",
-                            "designs":[m for m in dir(DOEEngine) if not m.startswith("_")]}
-                r=fn(bounds, int(req.get("runs") or 16))
-                return {"ok":True,"kind":r.kind,"design":frame_out(r.design),
-                        "diagnostics":scalars(r.diagnostics)}
-
-            if what=="advisor":
-                from graphvis_science.analysis.electro import intelligent_visualization_advisor
-                return {"ok":True,"recommendations":[{"engine":c,"why":w}
-                                                     for c,w in intelligent_visualization_advisor(df)]}
-
-            if what=="domain":
-                from graphvis_science.analysis.electro import detect_domain_data
-                return {"ok":True,"domains":detect_domain_data(df)}
-
-            return {"ok":False,"error":f"unknown analysis operation '{what}'",
-                    "operations":["limits","forecast","fft","psd","weibull","regression",
-                                  "pca","doe","advisor","domain"]}
-        except KeyError as exc:
-            return {"ok":False,"error":str(exc).strip("'")}
-        except Exception as exc:
-            return {"ok":False,"error":f"{what} failed: {exc}"}
+            df = _load_frame(req["arrow_path"])
+        except (KeyError, OSError) as exc:
+            return {"ok": False, "error": f"could not read the dataset: {exc}"}
+        try:
+            payload = run(what, df, req)
+        except OperationError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:                      # noqa: BLE001
+            # The engines raise ValueError for data they cannot work with -
+            # too few points, a singular matrix - and that is an answer, not a
+            # crash. It reaches the user as a sentence either way.
+            return {"ok": False, "error": f"{what} failed: {exc}"}
+        payload["ok"] = True
+        return payload
 
     if op=="surface.estimate":
         # Scattered x/y/z -> a regular grid, using any of the sixteen estimators
@@ -240,6 +168,22 @@ def dispatch(req: dict) -> dict:
         except Exception as exc:
             return {"ok":False,"error":f"{estimator} failed: {exc}"}
 
+        # A failed cell inside the data's own footprint is different from a cell
+        # outside the convex hull: the first is a gap in a simulation sweep that
+        # can reasonably be filled, the second is extrapolation. impute_surface_
+        # invalid fills only the first, and records which cells it touched -
+        # which is why it is offered here and why it is off unless asked for.
+        imputation=str(req.get("imputation") or "")
+        imputed=0
+        if imputation:
+            from graphvis_science.analysis.surfaces import IMPUTATION_MODES, impute_surface_invalid
+            if imputation not in IMPUTATION_MODES:
+                return {"ok":False,"error":f"unknown imputation '{imputation}'",
+                        "imputation_modes":list(IMPUTATION_MODES)}
+            before=np.ma.getmaskarray(grid.Z).sum()
+            grid=impute_surface_invalid(grid, imputation)
+            imputed=int(before-np.ma.getmaskarray(grid.Z).sum())
+
         # A masked cell is a cell with no defensible estimate - outside the
         # convex hull, say. It travels as NaN, which the engines already read
         # as a gap rather than as a zero.
@@ -260,11 +204,14 @@ def dispatch(req: dict) -> dict:
                 "structured":bool(grid.structured),
                 "nx":int(np.asarray(grid.X).shape[1]),"ny":int(np.asarray(grid.X).shape[0]),
                 "cells":int(z.size),"estimated":int(finite.sum()),
+                "imputation":imputation,"imputed":imputed,
                 "notes":list(grid.notes or [])}
 
     if op=="surface.estimators":
-        from graphvis_science.analysis.surfaces import ESTIMATOR_CATEGORIES
-        return {"ok":True,"categories":[{"name":n,"estimators":list(v)} for n,v in ESTIMATOR_CATEGORIES]}
+        from graphvis_science.analysis.surfaces import ESTIMATOR_CATEGORIES, IMPUTATION_MODES
+        return {"ok":True,
+                "categories":[{"name":n,"estimators":list(v)} for n,v in ESTIMATOR_CATEGORIES],
+                "imputation_modes":list(IMPUTATION_MODES)}
 
     # ------------------------------------------------------------------ figures
     # The .gvfig / .gvis package, ported from GraphVis 17. A figure that can be
@@ -433,9 +380,44 @@ def dispatch(req: dict) -> dict:
         df = _load_frame(req["arrow_path"])
         ds = _ArrowDataset(req["arrow_path"], req.get("name") or "dataset", df)
         lit = [_LiteratureContext(e) for e in (req.get("literature") or []) if isinstance(e, dict)]
-        result = scan_dataset(ds, lit or None,
-                              time_budget_seconds=float(req.get("budget_seconds") or 30.0))
-        return {"ok": True, "scan": result, "literature_used": len(lit)}
+        budget = float(req.get("budget_seconds") or 30.0)
+
+        # A scan's budget goes up to three days, and a scan that is interrupted
+        # after two of them should not start again from nothing. The scanner has
+        # always taken a checkpoint callback and a resume state; nothing passed
+        # them, so every interrupted scan was lost. With a cache directory in the
+        # request - the application sends its own scan-cache folder - the work is
+        # written as it goes and picked up on the next attempt.
+        resume, checkpoint, cache_dir = None, None, str(req.get("cache_dir") or "")
+        if cache_dir:
+            from graphvis_science.analysis.intelligent_scan import (
+                clear_scan_checkpoint, load_scan_checkpoint, save_scan_checkpoint)
+            try:
+                resume = load_scan_checkpoint(ds, cache_dir, lit or None)
+            except Exception:                          # noqa: BLE001
+                resume = None                          # a bad checkpoint is not a failed scan
+
+            def checkpoint(state):                     # noqa: F811 - deliberate rebind
+                try:
+                    save_scan_checkpoint(state, cache_dir, ds, lit or None)
+                except Exception:                      # noqa: BLE001
+                    pass
+
+        result = scan_dataset(ds, lit or None, time_budget_seconds=budget,
+                              resume_state=resume, checkpoint=checkpoint)
+        if cache_dir:
+            clear_scan_checkpoint(ds, cache_dir, lit or None)
+        return {"ok": True, "scan": result, "literature_used": len(lit),
+                "resumed": bool(resume)}
+    if op=="cache.clear":
+        # The service is long-lived, and the surface estimators keep a geometry
+        # cache - triangulations and neighbour graphs - that can hold tens of
+        # megabytes per dataset. Clearing the application's scan cache clears
+        # this one too, which is the only way it was ever going to be released
+        # short of restarting the service.
+        from graphvis_science.analysis.surfaces import clear_geometry_cache
+        clear_geometry_cache()
+        return {"ok": True, "cleared": "geometry"}
     if op=="fit.modified_gompertz":
         from graphvis_science.analysis.fitting import fit_modified_gompertz
         df=_load_frame(req["arrow_path"]); out=fit_modified_gompertz(df[req["x"]].to_numpy(float),df[req["y"]].to_numpy(float))

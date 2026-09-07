@@ -182,5 +182,7 @@ def fit_nonlinear_model(x, y, model="Exponential saturation") -> FitResult:
     return FitResult(model, {n:float(v) for n,v in zip(names,res.x)}, x, y, fitted, y-fitted, r2)
 
 
-def result_dataframe(result: FitResult) -> pd.DataFrame:
-    return pd.DataFrame({"x": result.x, "observed": result.y, "fit": result.fitted, "residual": result.residual})
+# result_dataframe() used to be here: a FitResult as an x/observed/fit/residual
+# frame. Nothing called it, and the reply serialiser already sends those four
+# arrays out of the FitResult itself - so it was a second spelling of the same
+# answer, and the one that reached the application was the other one.

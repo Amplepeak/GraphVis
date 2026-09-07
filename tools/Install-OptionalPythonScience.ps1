@@ -15,8 +15,8 @@ if (-not (Test-Path $manager)) { throw "Manage-OptionalComponents.ps1 is missing
 # The [vlm] component - transformers and torch - is never installed from here.
 # It is not a dataset format, it is larger than everything else combined, and it
 # is chosen deliberately from INSTALL-DATA-FORMATS.bat or from Add-ons.
-$keys = if ($AllFormats) { 'io,marine,literature,reports,io_extra' }
-        else             { 'io,marine,literature,reports' }
+$keys = if ($AllFormats) { 'io,marine,literature,reports,symbolic,units,uncertainty,io_extra' }
+        else             { 'io,marine,literature,reports,symbolic,units,uncertainty' }
 
 & $manager -Install $keys
 exit $LASTEXITCODE

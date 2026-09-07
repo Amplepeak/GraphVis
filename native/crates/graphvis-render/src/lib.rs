@@ -301,42 +301,10 @@ pub fn voxel_aggregate(x:&[f64], y:&[f64], z:&[f64], response:&[f64], bins:[usiz
     accum.into_iter().enumerate().filter_map(|(k,(sum,count))| { if count==0{return None}; let ix=k%bins[0];let iy=(k/bins[0])%bins[1];let iz=k/(bins[0]*bins[1]); Some(VoxelCell { center:[xl+(ix as f64+0.5)*(xh-xl)/bins[0] as f64, yl+(iy as f64+0.5)*(yh-yl)/bins[1] as f64, zl+(iz as f64+0.5)*(zh-zl)/bins[2] as f64], mean:sum/count as f64, count }) }).collect()
 }
 
-/// Native regular-grid surface triangulation. Invalid vertices are omitted from triangles.
-pub fn triangulate_grid(width:usize, height:usize, z:&[f64]) -> Vec<[u32;3]> {
-    if width<2 || height<2 || z.len()<width*height { return vec![]; }
-    let mut tris=Vec::with_capacity((width-1)*(height-1)*2);
-    // Two independent triangles per grid cell, each kept only if its three
-    // corners are finite. Written out rather than packed onto one line: the
-    // packed version read as a broken `else if` to clippy, and to a person.
-    for j in 0..height - 1 {
-        for i in 0..width - 1 {
-            let a = j * width + i;
-            let b = a + 1;
-            let c = a + width;
-            let d = c + 1;
-            let finite = |t: [f64; 3]| t.iter().all(|v| v.is_finite());
-            if finite([z[a], z[b], z[c]]) {
-                tris.push([a as u32, b as u32, c as u32]);
-            }
-            if finite([z[b], z[d], z[c]]) {
-                tris.push([b as u32, d as u32, c as u32]);
-            }
-        }
-    }
-    tris
-}
-
-/// Native marching-squares contour extraction for a regular scalar grid.
-pub fn marching_squares(width:usize, height:usize, values:&[f64], level:f64) -> Vec<[[f32;2];2]> {
-    if width<2 || height<2 || values.len()<width*height || !level.is_finite(){return vec![];}
-    let interp=|a:f64,b:f64|->f32{ if (b-a).abs()<f64::EPSILON{0.5}else{((level-a)/(b-a)).clamp(0.0,1.0) as f32} };
-    let mut out=Vec::new();
-    for y in 0..height-1 { for x in 0..width-1 {
-        let v=[values[y*width+x],values[y*width+x+1],values[(y+1)*width+x+1],values[(y+1)*width+x]];
-        if !v.iter().all(|q|q.is_finite()){continue;}
-        let mask=(v[0]>=level) as u8 | (((v[1]>=level) as u8)<<1) | (((v[2]>=level) as u8)<<2) | (((v[3]>=level) as u8)<<3);
-        let p=[ [x as f32+interp(v[0],v[1]),y as f32], [(x+1) as f32,y as f32+interp(v[1],v[2])], [x as f32+interp(v[3],v[2]),(y+1) as f32], [x as f32,y as f32+interp(v[0],v[3])] ];
-        let pairs:&[(usize,usize)]=match mask {0|15=>&[],1|14=>&[(3,0)],2|13=>&[(0,1)],3|12=>&[(3,1)],4|11=>&[(1,2)],5=>&[(3,2),(0,1)],6|9=>&[(0,2)],7|8=>&[(3,2)],10=>&[(0,3),(1,2)],_=>&[]};
-        for &(a,b) in pairs { out.push([p[a],p[b]]); }
-    }} out
-}
+// triangulate_grid() and marching_squares() used to be here, and nothing called
+// either of them from Rust, from C++ or from the app. Both algorithms are
+// implemented again in native/plot2d - the surface engines triangulate a grid
+// in QtPlotBackend, and drawContour() is a marching-squares sweep over the
+// cached value grid - and those are the copies that draw what the user sees.
+// One algorithm in two languages, with only one of them reachable, is a bug
+// waiting for the day someone fixes the copy that is not running.

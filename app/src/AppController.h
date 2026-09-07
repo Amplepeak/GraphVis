@@ -80,6 +80,11 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantMap analysisResult READ analysisResult NOTIFY analysisChanged)
     Q_PROPERTY(QString analysisKind READ analysisKind NOTIFY analysisChanged)
     Q_PROPERTY(bool analysisOk READ analysisOk NOTIFY analysisChanged)
+    // Every analysis operation the service offers, asked for rather than
+    // listed here. The panel used to carry its own list of eight, which is how
+    // it came to offer six that did not exist - the service is the only thing
+    // that knows what it can actually do.
+    Q_PROPERTY(QVariantList analysisCatalogue READ analysisCatalogue NOTIFY analysisCatalogueChanged)
     // Persisted UI theme index. Kept in C++ so QML needs no QtCore module,
     // whose absence from the deployed layout stopped the app from starting.
     Q_PROPERTY(int themeIndex READ themeIndex WRITE setThemeIndex NOTIFY themeIndexChanged)
@@ -113,17 +118,22 @@ public:
     QVariantMap analysisResult() const{return analysisResult_;}
     QString analysisKind() const{return analysisKind_;}
     bool analysisOk() const{return analysisResult_.value(QStringLiteral("ok")).toBool();}
+    QVariantList analysisCatalogue() const{return analysisCatalogue_;}
 
     // One entry point for every analysis operation the service exposes:
     // limits, forecast, fft, weibull, regression, pca, doe, advisor, domain.
     // `options` is merged into the request, so a caller passes only what that
     // operation needs (predictors for a regression, bounds for a design).
     Q_INVOKABLE bool runAnalysis(const QString& kind,const QVariantMap& options=QVariantMap());
+    // Ask the service what it can do. Answered once per session and cached,
+    // because it is the same answer every time.
+    Q_INVOKABLE void refreshAnalysisCatalogue();
     // Scattered x/y/z to a regular grid through one of the sixteen estimators.
     // The result is an ordinary three-column Arrow file, so it imports and
     // draws like any other dataset.
     Q_INVOKABLE bool estimateSurface(const QString& x,const QString& y,const QString& z,
-                                     const QString& estimator,int resolution=160);
+                                     const QString& estimator,int resolution=160,
+                                     const QString& imputation=QString());
     bool scienceServiceAvailable() const;
     QVariantMap smartRenderPlan() const{return smartRenderPlan_;}
     QVariantList scanRecommendations() const{return scanRecommendations_;}
@@ -292,6 +302,7 @@ signals:
     void workspaceModeChanged();
     void literatureChanged();
     void analysisChanged();
+    void analysisCatalogueChanged();
     void scienceServiceAvailabilityChanged();
     void importLogChanged();
     void plotColourVisionChanged();
@@ -395,6 +406,7 @@ private:
     QVariantMap literatureAnalysis_;
     QVariantMap analysisResult_;
     QString analysisKind_;
+    QVariantList analysisCatalogue_;
     QFutureWatcher<QString> importWatcher_;
     QFutureWatcher<QString> queryWatcher_;
     QProcess scienceProcess_;
