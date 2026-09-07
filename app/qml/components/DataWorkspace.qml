@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 // Data workspace.
 //
 // The previous version led with "Arrow-native workspace / Python is not the
@@ -18,7 +25,7 @@ import GraphVis
 
 PanelScroll {
     id: root
-    spacing: Theme.gap
+    contentSpacing: Theme.gap
     required property var app
 
     function stateColour(state) {
@@ -171,12 +178,14 @@ PanelScroll {
             Repeater {
                 model: root.app.importLog
                 delegate: RowLayout {
+                    id: entryRow
+                    required property var modelData
                     Layout.fillWidth: true
                     spacing: Theme.gap
 
                     Label {
-                        text: root.stateGlyph(modelData.state)
-                        color: root.stateColour(modelData.state)
+                        text: root.stateGlyph(entryRow.modelData.state)
+                        color: root.stateColour(entryRow.modelData.state)
                         font.bold: true
                         Layout.preferredWidth: 16
                     }
@@ -184,22 +193,22 @@ PanelScroll {
                         Layout.fillWidth: true
                         spacing: 0
                         Label {
-                            text: modelData.name
+                            text: entryRow.modelData.name
                             color: Theme.text
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
                         }
                         Label {
-                            visible: modelData.detail !== ""
-                            text: modelData.detail
-                            color: modelData.state === "failed" ? Theme.warning : Theme.textMuted
+                            visible: entryRow.modelData.detail !== ""
+                            text: entryRow.modelData.detail
+                            color: entryRow.modelData.state === "failed" ? Theme.warning : Theme.textMuted
                             font.pixelSize: Theme.fontSizeSmall
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
                     }
                     Label {
-                        text: modelData.time
+                        text: entryRow.modelData.time
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSizeSmall
                     }
@@ -235,11 +244,12 @@ PanelScroll {
         model: root.app.datasets
 
         delegate: Rectangle {
+            required property var modelData
             id: row
             width: ListView.view.width
             height: 52
             radius: Theme.radius
-            readonly property bool active: modelData.id === root.app.activeDatasetId
+            readonly property bool active: row.modelData.id === root.app.activeDatasetId
             color: row.active ? Theme.surfaceAlt : (rowHover.hovered ? Theme.surface : "transparent")
             border.color: row.active ? Theme.accent : Theme.border
 
@@ -252,15 +262,15 @@ PanelScroll {
                     Layout.fillWidth: true
                     spacing: 0
                     Label {
-                        text: modelData.name || "dataset"
+                        text: row.modelData.name || "dataset"
                         color: Theme.text
                         font.bold: row.active
                         elide: Text.ElideMiddle
                         Layout.fillWidth: true
                     }
                     Label {
-                        text: (modelData.rows !== undefined ? modelData.rows + " rows" : "")
-                              + (modelData.numeric_columns ? "  ·  " + modelData.numeric_columns.length + " numeric columns" : "")
+                        text: (row.modelData.rows !== undefined ? row.modelData.rows + " rows" : "")
+                              + (row.modelData.numeric_columns ? "  ·  " + row.modelData.numeric_columns.length + " numeric columns" : "")
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSizeSmall
                         elide: Text.ElideRight
@@ -276,7 +286,7 @@ PanelScroll {
             }
 
             HoverHandler { id: rowHover }
-            TapHandler { onTapped: root.app.activeDatasetId = modelData.id }
+            TapHandler { onTapped: root.app.activeDatasetId = row.modelData.id }
         }
     }
 

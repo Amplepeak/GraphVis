@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 // Smart Suite / Scan Dataset.
 //
 // Runs GraphVis 17's intelligent_scan over the active dataset through the
@@ -120,6 +127,8 @@ ColumnLayout {
         ScrollBar.vertical: ScrollBar {}
 
         delegate: Rectangle {
+            id: rec
+            required property var modelData
             width: ListView.view.width
             height: body.implicitHeight + 14
             radius: Theme.radius
@@ -136,7 +145,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     Label {
                         Layout.fillWidth: true
-                        text: modelData.graph
+                        text: rec.modelData.graph
                         color: Theme.text
                         font.bold: true
                         font.pixelSize: Theme.fontSizeBody
@@ -147,21 +156,21 @@ ColumnLayout {
                         implicitWidth: scoreLabel.implicitWidth + 10
                         implicitHeight: scoreLabel.implicitHeight + 4
                         radius: 3
-                        color: modelData.source === "literature" ? Theme.accent : Theme.surfaceAlt
+                        color: rec.modelData.source === "literature" ? Theme.accent : Theme.surfaceAlt
                         border.color: Theme.border
                         Label {
                             id: scoreLabel
                             anchors.centerIn: parent
-                            text: Math.round(Number(modelData.score) * 100) + "%"
+                            text: Math.round(Number(rec.modelData.score) * 100) + "%"
                             font.pixelSize: Theme.fontSizeSmall
-                            color: modelData.source === "literature" ? Theme.onAccent : Theme.textSecondary
+                            color: rec.modelData.source === "literature" ? Theme.onAccent : Theme.textSecondary
                         }
                     }
                 }
                 Label {
                     Layout.fillWidth: true
                     text: {
-                        var m = modelData.mappings || {}
+                        var m = rec.modelData.mappings || {}
                         var parts = []
                         if (m.x) parts.push("X " + m.x)
                         if (m.y) parts.push("Y " + m.y)
@@ -174,7 +183,7 @@ ColumnLayout {
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: modelData.reason || ""
+                    text: rec.modelData.reason || ""
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSizeSmall
                     wrapMode: Text.WordWrap
@@ -185,7 +194,7 @@ ColumnLayout {
 
             HoverHandler { id: hover }
             TapHandler {
-                onTapped: root.recommendationChosen(modelData.graph, modelData.mappings || ({}))
+                onTapped: root.recommendationChosen(rec.modelData.graph, rec.modelData.mappings || ({}))
             }
         }
     }

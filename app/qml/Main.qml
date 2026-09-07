@@ -1,7 +1,13 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
-import QtQuick.Layouts
 import QtQuick.Dialogs
 import "components"
 import "workspaces"
@@ -57,7 +63,7 @@ ApplicationWindow {
     // which is not part of the deployed QML layout.
     Connections {
         target: Theme
-        function onCurrentIndexChanged() { app.themeIndex = Theme.currentIndex }
+        function onCurrentIndexChanged() { root.app.themeIndex = Theme.currentIndex }
     }
 
     // ---------------------------------------------------------------- display
@@ -141,8 +147,8 @@ ApplicationWindow {
     }
 
     Connections {
-        target: app
-        function onDisplayModeChanged() { root.applyDisplayMode(app.displayMode) }
+        target: root.app
+        function onDisplayModeChanged() { root.applyDisplayMode(root.app.displayMode) }
     }
 
     // Remember where the user put the window, but only in windowed mode - a
@@ -160,23 +166,23 @@ ApplicationWindow {
     Timer {
         id: geometryTimer
         interval: 400
-        onTriggered: app.saveWindowGeometry(root.x, root.y, root.width, root.height)
+        onTriggered: root.app.saveWindowGeometry(root.x, root.y, root.width, root.height)
     }
 
     // F11 toggles fullscreen and Escape leaves it, as in a browser or a game.
     Shortcut {
         sequences: ["F11"]
-        onActivated: app.displayMode = (app.displayMode === root.modeFullscreen)
+        onActivated: root.app.displayMode = (root.app.displayMode === root.modeFullscreen)
                                        ? root.modeWindowed : root.modeFullscreen
     }
     Shortcut {
         sequences: ["Esc"]
-        enabled: app.displayMode === root.modeFullscreen || app.displayMode === root.modeBorderless
-        onActivated: app.displayMode = root.modeWindowed
+        enabled: root.app.displayMode === root.modeFullscreen || root.app.displayMode === root.modeBorderless
+        onActivated: root.app.displayMode = root.modeWindowed
     }
 
-    FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:app.importNameFilters();onAccepted:app.importDataset(selectedFile)}
-    FileDialog{id:literatureDialog;title:"Open literature";nameFilters:app.literatureNameFilters();onAccepted:app.openLiterature(selectedFile)}
+    FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:root.app.importNameFilters();onAccepted:root.app.importDataset(selectedFile)}
+    FileDialog{id:literatureDialog;title:"Open literature";nameFilters:root.app.literatureNameFilters();onAccepted:root.app.openLiterature(selectedFile)}
 
     header:TopBar{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onAddOnsRequested:addOnsDialog.open()}
 
@@ -198,7 +204,7 @@ ApplicationWindow {
 
     Loader {
         anchors{left:parent.left;right:parent.right;top:parent.top;bottom:status.top}
-        sourceComponent:app.experimentalUi?experimentalShell:classicShell
+        sourceComponent:root.app.experimentalUi?experimentalShell:classicShell
     }
     Component{id:classicShell;ClassicShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open()}}
     Component{id:experimentalShell;ExperimentalShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open()}}

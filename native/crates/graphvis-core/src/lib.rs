@@ -94,6 +94,14 @@ pub struct DatasetMeta {
     pub units: HashMap<String, String>,
 }
 
+// clippy::large_enum_variant fires here: AddDataset and SetPlot carry whole
+// structs, so every Command is as large as the biggest of them. Boxing them
+// would shrink the enum and is the usual fix - but it is the wrong one here.
+// A Command is never stored: it is built, passed to execute(), applied to a
+// snapshot and dropped. The history keeps AppSnapshot, not Command. Boxing
+// would trade one stack copy of a short-lived value for a heap allocation and
+// a free on every single user action, which is slower, not faster.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
     AddDataset(DatasetMeta),

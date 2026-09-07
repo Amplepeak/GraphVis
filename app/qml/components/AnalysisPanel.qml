@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -97,6 +104,7 @@ PanelScroll {
             Repeater {
                 model: root.operations
                 delegate: Button {
+                    required property var modelData
                     Layout.fillWidth: true
                     text: modelData.label
                     enabled: root.ready
@@ -164,6 +172,7 @@ PanelScroll {
             Repeater {
                 model: root.app.analysisResult.recommendations || []
                 delegate: Label {
+                    required property var modelData
                     text: "• " + modelData.engine + " — " + modelData.why
                     wrapMode: Text.WordWrap; color: Theme.textMuted
                     font.pixelSize: 11; Layout.fillWidth: true
@@ -172,6 +181,7 @@ PanelScroll {
             Repeater {
                 model: root.app.analysisResult.summary || []
                 delegate: Label {
+                    required property var modelData
                     text: "• " + modelData
                     wrapMode: Text.WordWrap; color: Theme.textMuted
                     font.pixelSize: 11; Layout.fillWidth: true

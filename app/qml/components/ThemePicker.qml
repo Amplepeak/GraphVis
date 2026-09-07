@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 // Theme picker.
 //
 // A hundred themes will not fit in a ComboBox. This is a button showing the
@@ -6,6 +13,10 @@
 // secondary surface, border, text and accent - so the choice is made by
 // looking rather than by reading a name.
 import QtQuick
+// For the Window attached property used to size the popup against the actual
+// window. It was missing, so root.Window was undefined and the height binding
+// raised a TypeError instead of falling back to 800.
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import GraphVis
@@ -13,6 +24,12 @@ import GraphVis
 Item {
     id: root
     required property var app
+
+    // Read on the Item itself rather than through root.<attached> inside the
+    // popup: an attached property is not part of ThemePicker's registered type,
+    // so a static check cannot see it there. It is also evaluated once here
+    // instead of on every popup geometry pass.
+    readonly property real windowHeight: root.Window.height || 800
     property bool compact: false
 
     implicitWidth: button.implicitWidth
@@ -120,7 +137,7 @@ Item {
         y: root.height + 6
         margins: 8
         width: 330
-        height: Math.min(520, Math.max(240, (root.Window.height || 800) - 150))
+        height: Math.min(520, Math.max(240, root.windowHeight - 150))
         padding: 8
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -152,10 +169,10 @@ Item {
                     id: entry
                     required property var modelData
                     width: ListView.view.width
-                    height: modelData.header ? 32 : 34
+                    height: entry.modelData.header ? 32 : 34
                     radius: 5
-                    readonly property int themeIndex: modelData.index
-                    readonly property bool active: !modelData.header && themeIndex === Theme.currentIndex
+                    readonly property int themeIndex: entry.modelData.index
+                    readonly property bool active: !entry.modelData.header && themeIndex === Theme.currentIndex
                     color: entry.active
                            ? Theme.surfaceAlt
                            : (hover.hovered

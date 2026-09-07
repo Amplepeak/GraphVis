@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -5,7 +12,7 @@ import GraphVis
 
 PanelScroll {
     id:root
-    spacing: 8
+    contentSpacing: 8
     required property var app
     signal applyRequested()
 
@@ -91,7 +98,7 @@ PanelScroll {
                 Button{text:"Analyze && Apply";enabled:smart.checked;onClicked:root.apply()}
             }
             Label {visible:smart.checked;text:"Automatically controls robust clipping, colour contrast, interpolation policy, point LOD, density alpha and anomaly emphasis. Source data is never deleted.";wrapMode:Text.WordWrap;color:Theme.textSecondary;Layout.fillWidth:true}
-            Rectangle {visible:smart.checked && app.smartRenderPlan && Object.keys(app.smartRenderPlan).length>0;Layout.fillWidth:true;implicitHeight:smartSummary.implicitHeight+18;radius:7;color:Theme.surface;border.color:Theme.border
+            Rectangle {visible:smart.checked && root.app.smartRenderPlan && Object.keys(root.app.smartRenderPlan).length>0;Layout.fillWidth:true;implicitHeight:smartSummary.implicitHeight+18;radius:7;color:Theme.surface;border.color:Theme.border
                 ColumnLayout {id:smartSummary;anchors{fill:parent;margins:9} spacing:3
                     Label{text:"SMART RENDER PLAN";font.bold:true;color:Theme.accent}
                     Label{text:"Contrast: "+root.planText("color_transfer","—")+" · Palette: "+root.planText("colormap","—")+" · Interpolation: "+root.planText("interpolation","—");color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}
@@ -101,7 +108,17 @@ PanelScroll {
                     // printed "NaN → NaN" and "NaN%".
                     Label{text:"Robust display range: "+root.planNumber("display_min",5)+" → "+root.planNumber("display_max",5);color:Theme.textSecondary}
                     Label{text:"LOD target: "+root.planText("target_points","—")+" · Confidence: "+root.planPercent("confidence");color:Theme.textSecondary}
-                    Repeater {model:app.smartRenderPlan.reasons || [];delegate:Label{text:"• "+modelData;color:Theme.textMuted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.fillWidth:true}}
+                    Repeater {
+                        model: root.app.smartRenderPlan.reasons || []
+                        delegate: Label {
+                            required property var modelData
+                            text: "\u2022 " + modelData
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
                 }
             }
         }
@@ -110,8 +127,10 @@ PanelScroll {
     Repeater {
         model:[{label:"X axis",key:"x"},{label:"Y axis",key:"y"},{label:"Z axis",key:"z"},{label:"Colour / response",key:"c"}]
         delegate:ColumnLayout {
+            id: axis
+            required property var modelData
             Layout.fillWidth:true;Layout.leftMargin:10;Layout.rightMargin:10
-            Label{text:modelData.label;color:Theme.textSecondary}
+            Label{text:axis.modelData.label;color:Theme.textSecondary}
             RowLayout {
                 Layout.fillWidth:true
                 ComboBox {
@@ -120,8 +139,8 @@ PanelScroll {
                     model: root.app.activeColumns
                     // Bound to the staged value, so the box always shows
                     // what Apply would commit - including after a reset.
-                    currentIndex: (root.app.activeColumns || []).indexOf(root.stagedFor(modelData.key))
-                    onActivated: root.stage(modelData.key, currentText)
+                    currentIndex: (root.app.activeColumns || []).indexOf(root.stagedFor(axis.modelData.key))
+                    onActivated: root.stage(axis.modelData.key, currentText)
                 }
                 Button{ text:"Apply"; onClicked: root.apply() }
             }

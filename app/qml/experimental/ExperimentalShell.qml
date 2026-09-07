@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -45,13 +52,14 @@ Rectangle {
                 Repeater {
                     model:[{icon:"⌂",mode:"Home",tip:"Home"},{icon:"▣",mode:"Literature",tip:"Read Literature"},{icon:"◈",mode:"Visualize",tip:"Visualize"},{icon:"▤",mode:"Data",tip:"Data"},{icon:"∑",mode:"Analysis",tip:"Analysis"},{icon:"↗",mode:"Publish",tip:"Publish"}]
                     delegate:ToolButton {
+                        required property var modelData
                         Layout.fillWidth:true; Layout.preferredHeight:54; text:modelData.icon; font.pixelSize:22
-                        highlighted:app.workspaceMode===modelData.mode; ToolTip.visible:hovered; ToolTip.text:modelData.tip
-                        onClicked:{app.workspaceMode=modelData.mode;if(modelData.mode==="Literature"&&app.literatureUrl.toString()==="")root.literatureRequested()}
+                        highlighted:root.app.workspaceMode===modelData.mode; ToolTip.visible:hovered; ToolTip.text:modelData.tip
+                        onClicked:{root.app.workspaceMode=modelData.mode;if(modelData.mode==="Literature"&&root.app.literatureUrl.toString()==="")root.literatureRequested()}
                     }
                 }
                 Item{Layout.fillHeight:true}
-                Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
+                Rectangle{Layout.fillWidth:true;Layout.preferredHeight:1;color:Theme.border}
                 Label{text:"18";Layout.alignment:Qt.AlignHCenter;color:Theme.textMuted}
             }
         }
@@ -68,10 +76,10 @@ Rectangle {
                 visible: root.visualiseMode
             }
             Loader {
-                anchors.fill:parent; anchors.margins:app.workspaceMode==="Literature"?0:4
+                anchors.fill:parent; anchors.margins:root.app.workspaceMode==="Literature"?0:4
                 visible: !root.visualiseMode
                 active: !root.visualiseMode
-                sourceComponent:app.workspaceMode==="Literature"?litComp:app.workspaceMode==="Home"?homeComp:app.workspaceMode==="Data"?dataComp:app.workspaceMode==="Analysis"?analysisComp:publishComp
+                sourceComponent:root.app.workspaceMode==="Literature"?litComp:root.app.workspaceMode==="Home"?homeComp:root.app.workspaceMode==="Data"?dataComp:root.app.workspaceMode==="Analysis"?analysisComp:publishComp
             }
         }
     }
@@ -92,7 +100,14 @@ Rectangle {
                 placeholderText:"Command palette — search actions…"
                 Layout.fillWidth:true
                 focus:true
-                onAccepted:if(commandList.count>0)commandList.itemAtIndex(0).clicked()
+                // itemAtIndex returns null for an item the view has not
+                // realised yet, which is exactly the case when Enter is pressed
+                // straight after typing. Run the action from the model instead
+                // of reaching into a delegate that may not exist.
+                onAccepted: {
+                    var first = commandList.model[0]
+                    if (first) { root.runCommand(first.id); commandPalette.close() }
+                }
             }
             ListView{
                 id:commandList
@@ -102,6 +117,7 @@ Rectangle {
                     return q==="" || a.label.toLowerCase().indexOf(q)>=0
                 })
                 delegate:ItemDelegate{
+                    required property var modelData
                     width:ListView.view.width
                     text:modelData.label
                     onClicked:{root.runCommand(modelData.id);commandPalette.close()}
@@ -116,5 +132,5 @@ Rectangle {
         }
     }
     Shortcut{sequence:"Ctrl+K";onActivated:{commandSearch.text="";commandPalette.open();commandSearch.forceActiveFocus()}}
-    Shortcut{sequence:"Ctrl+L";onActivated:{app.workspaceMode="Literature";if(app.literatureUrl.toString()==="")root.literatureRequested()}}
+    Shortcut{sequence:"Ctrl+L";onActivated:{root.app.workspaceMode="Literature";if(root.app.literatureUrl.toString()==="")root.literatureRequested()}}
 }

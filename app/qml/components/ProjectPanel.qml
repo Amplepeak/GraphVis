@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 // Project data and context.
 //
 // A port of the panel GraphVis 17 put at the top of its sidebar, and the reason
@@ -17,7 +24,7 @@ import GraphVis
 
 PanelScroll {
     id: root
-    spacing: Theme.gap
+    contentSpacing: Theme.gap
     required property var app
     readonly property var project: root.app.project
 
@@ -324,7 +331,7 @@ PanelScroll {
                     width: ListView.view.width
                     height: 42
                     radius: 4
-                    readonly property bool picked: root.selectedDatasets[modelData.path] === true
+                    readonly property bool picked: root.selectedDatasets[row.modelData.path] === true
                     color: row.picked ? Theme.surfaceAlt
                                       : (rowHover.hovered ? Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.05)
                                                           : "transparent")
@@ -436,12 +443,13 @@ PanelScroll {
             Repeater {
                 model: root.project.literature
                 delegate: RowLayout {
+                    id: paper
                     required property var modelData
                     Layout.fillWidth: true
                     spacing: Theme.gap
                     Label { text: "▣"; color: Theme.accent }
                     Label {
-                        text: modelData.name
+                        text: paper.modelData.name
                         color: Theme.text
                         elide: Text.ElideMiddle
                         Layout.fillWidth: true
@@ -449,25 +457,26 @@ PanelScroll {
                     Button {
                         flat: true
                         text: "Read"
-                        onClicked: root.app.openLiteraturePath(modelData.path)
+                        onClicked: root.app.openLiteraturePath(paper.modelData.path)
                     }
                 }
             }
             Repeater {
                 model: root.project.scripts
                 delegate: RowLayout {
+                    id: script
                     required property var modelData
                     Layout.fillWidth: true
                     spacing: Theme.gap
                     Label { text: "⌗"; color: Theme.textMuted }
                     Label {
-                        text: modelData.name
+                        text: script.modelData.name
                         color: Theme.textSecondary
                         elide: Text.ElideMiddle
                         Layout.fillWidth: true
                     }
                     Label {
-                        text: modelData.sizeText
+                        text: script.modelData.sizeText
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSizeSmall
                     }

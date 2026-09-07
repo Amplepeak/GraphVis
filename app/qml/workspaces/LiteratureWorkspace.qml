@@ -38,19 +38,19 @@ Rectangle {
                 anchors.fill: parent; anchors.margins: 12; spacing: 10
                 Label { text: "LIBRARY"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
                 Button { text: "Open literature…"; Layout.fillWidth: true; onClicked: root.openRequested() }
-                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
                 Label { text: root.hasPaper ? root.paperName : "No paper open"; color: Theme.text; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                 Label { text: root.analysed ? "Extraction complete" : (root.hasPaper ? "Not analysed yet" : ""); color: Theme.textSecondary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                 GvGroupBox {
                     title: "Research tools"; Layout.fillWidth: true
                     ColumnLayout { anchors.fill: parent
-                        Button { text: "Extract figures & tables"; Layout.fillWidth: true; enabled: root.hasPaper && !app.busy; onClicked: app.analyzeLiterature() }
-                        Button { text: "Use extracted dataset"; Layout.fillWidth: true; enabled: root.analysed; onClicked: app.importFirstLiteratureDataset() }
+                        Button { text: "Extract figures & tables"; Layout.fillWidth: true; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
+                        Button { text: "Use extracted dataset"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                         Button { text: "Recreate selected graph"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Enable after selecting a detected figure and completing axis calibration" }
                     }
                 }
                 Item { Layout.fillHeight: true }
-                Label { text: app.scienceServiceAvailable ? "AI/science service ready" : "Native reader ready · AI extraction optional"; color: app.scienceServiceAvailable ? Theme.positive : Theme.textSecondary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                Label { text: root.app.scienceServiceAvailable ? "AI/science service ready" : "Native reader ready · AI extraction optional"; color: root.app.scienceServiceAvailable ? Theme.positive : Theme.textSecondary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
             }
         }
 
@@ -60,13 +60,13 @@ Rectangle {
                 anchors.fill: parent; spacing: 0
 
                 Rectangle {
-                    Layout.fillWidth: true; height: 50; color: Theme.background
+                    Layout.fillWidth: true; Layout.preferredHeight: 50; color: Theme.background
                     RowLayout {
                         anchors.fill: parent; anchors.margins: 7
                         Label { text: root.hasPaper ? root.paperName : "Literature Reader"; color: Theme.text; elide: Text.ElideMiddle; Layout.maximumWidth: 420 }
                         Item { Layout.fillWidth: true }
-                        Button { text: "Analyze"; enabled: root.hasPaper && !app.busy; onClicked: app.analyzeLiterature() }
-                        Button { text: "Close paper"; enabled: root.hasPaper; onClicked: app.clearLiterature() }
+                        Button { text: "Analyze"; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
+                        Button { text: "Close paper"; enabled: root.hasPaper; onClicked: root.app.clearLiterature() }
                     }
                 }
 
@@ -79,16 +79,16 @@ Rectangle {
                         Label { Layout.alignment: Qt.AlignHCenter; text: root.paperName; font.pixelSize: 26; font.bold: true; color: Theme.text; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                         Label {
                             Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Theme.textSecondary
-                            text: app.busy && app.workspaceMode === "Literature" ? app.busyLabel
+                            text: root.app.busy && root.app.workspaceMode === "Literature" ? root.app.busyLabel
                                   : root.analysed ? "Extraction complete. Send the data to the workspace to plot it."
                                   : "Run Analyze to extract figures, tables and numeric series from this paper."
                         }
                         Label {
                             Layout.alignment: Qt.AlignHCenter; color: Theme.positive; visible: root.analysed
-                            text: (app.literatureAnalysis.datasets ? app.literatureAnalysis.datasets.length + " numeric datasets" : "")
-                                  + (app.literatureAnalysis.text_chars ? " · " + app.literatureAnalysis.text_chars + " characters indexed" : "")
+                            text: (root.app.literatureAnalysis.datasets ? root.app.literatureAnalysis.datasets.length + " numeric datasets" : "")
+                                  + (root.app.literatureAnalysis.text_chars ? " · " + root.app.literatureAnalysis.text_chars + " characters indexed" : "")
                         }
-                        Button { Layout.alignment: Qt.AlignHCenter; text: "Send extracted data to workspace"; enabled: root.analysed; onClicked: app.importFirstLiteratureDataset() }
+                        Button { Layout.alignment: Qt.AlignHCenter; text: "Send extracted data to workspace"; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                     }
 
                     Column {
@@ -100,7 +100,7 @@ Rectangle {
 
                     DropArea {
                         anchors.fill: parent
-                        onDropped: (drop) => { if (drop.hasUrls && drop.urls.length > 0) app.openLiterature(drop.urls[0]) }
+                        onDropped: (drop) => { if (drop.hasUrls && drop.urls.length > 0) root.app.openLiterature(drop.urls[0]) }
                     }
                 }
             }
@@ -113,22 +113,22 @@ Rectangle {
                 ColumnLayout {
                     width: parent.width; spacing: 10
                     Label { text: "LITERATURE INTELLIGENCE"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true; Layout.margins: 12 }
-                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
-                    Label { text: app.busy && app.workspaceMode === "Literature" ? app.busyLabel : (root.analysed ? "Extraction complete" : "Select a figure, table or method section to inspect it."); color: root.analysed ? Theme.positive : Theme.text; wrapMode: Text.WordWrap; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12 }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+                    Label { text: root.app.busy && root.app.workspaceMode === "Literature" ? root.app.busyLabel : (root.analysed ? "Extraction complete" : "Select a figure, table or method section to inspect it."); color: root.analysed ? Theme.positive : Theme.text; wrapMode: Text.WordWrap; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12 }
                     GvGroupBox {
                         title: "Detected content"; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
                         ColumnLayout { anchors.fill: parent
-                            Label { text: app.literatureAnalysis.datasets ? app.literatureAnalysis.datasets.length + " numeric datasets" : "Figures · tables · equations"; color: Theme.textSecondary }
-                            Label { text: app.literatureAnalysis.text_chars ? app.literatureAnalysis.text_chars + " text characters indexed" : "Method and unit links appear here"; color: Theme.textMuted; wrapMode: Text.WordWrap }
+                            Label { text: root.app.literatureAnalysis.datasets ? root.app.literatureAnalysis.datasets.length + " numeric datasets" : "Figures · tables · equations"; color: Theme.textSecondary }
+                            Label { text: root.app.literatureAnalysis.text_chars ? root.app.literatureAnalysis.text_chars + " text characters indexed" : "Method and unit links appear here"; color: Theme.textMuted; wrapMode: Text.WordWrap }
                         }
                     }
                     GvGroupBox {
                         title: "Actions"; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
                         ColumnLayout { anchors.fill: parent
-                            Button { text: "Analyze paper"; Layout.fillWidth: true; enabled: !app.busy && root.hasPaper; onClicked: app.analyzeLiterature() }
+                            Button { text: "Analyze paper"; Layout.fillWidth: true; enabled: !root.app.busy && root.hasPaper; onClicked: root.app.analyzeLiterature() }
                             Button { text: "Reconstruct graph"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Select a detected figure before reconstruction" }
                             Button { text: "Compare with active dataset"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Available after a reconstructed literature series is selected" }
-                            Button { text: "Send extracted data to workspace"; Layout.fillWidth: true; enabled: root.analysed; onClicked: app.importFirstLiteratureDataset() }
+                            Button { text: "Send extracted data to workspace"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                         }
                     }
                     GvGroupBox {
@@ -136,13 +136,27 @@ Rectangle {
                         ColumnLayout { anchors.fill: parent
                             TextArea { id: noteEditor; placeholderText: "Add a note about this paper…"; Layout.fillWidth: true; Layout.preferredHeight: 100; wrapMode: TextEdit.Wrap }
                             RowLayout {
-                                Button { text: "Add note"; enabled: noteEditor.text.trim().length > 0; onClicked: { annotations.append({kind: "Note", text: noteEditor.text.trim()}); noteEditor.clear(); app.notify("Annotation added") } }
+                                Button { text: "Add note"; enabled: noteEditor.text.trim().length > 0; onClicked: { annotations.append({kind: "Note", body: noteEditor.text.trim()}); noteEditor.clear(); root.app.notify("Annotation added") } }
                                 Button { text: "Clear notes"; enabled: annotations.count > 0; onClicked: annotations.clear() }
                             }
-                            Repeater { model: annotations; delegate: Label { text: model.kind + " — " + model.text; color: Theme.textMuted; wrapMode: Text.WordWrap; Layout.fillWidth: true } }
+                            Repeater {
+                                model: annotations
+                                delegate: Label {
+                                    // Declared rather than looked up. The role
+                                    // was called "text", which is also Label's
+                                    // own property, so an unqualified read was
+                                    // ambiguous; the role is "body" now.
+                                    required property string kind
+                                    required property string body
+                                    text: kind + " \u2014 " + body
+                                    color: Theme.textMuted
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
                         }
                     }
-                    Label { text: app.scienceServiceInstallHint(); color: Theme.textMuted; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true; Layout.margins: 12 }
+                    Label { text: root.app.scienceServiceInstallHint(); color: Theme.textMuted; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true; Layout.margins: 12 }
                 }
             }
         }

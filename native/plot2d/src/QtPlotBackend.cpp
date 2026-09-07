@@ -1632,7 +1632,13 @@ void QtPlotBackend::drawComposition(QPainter* p,const QRectF& target,const PlotS
     for(const PlotSeries& s:spec.series){
         double total=0.0;
         for(double v:s.y) if(finite(v)) total+=std::abs(v);
-        if(total>0.0) parts.append({s.label,total,s.color});
+        // finite(total), not just total>0. Each value can be finite while the
+        // SUM overflows to infinity - 240 values near 1e308 does it - and an
+        // infinite total then divides by itself below to produce NaN, which
+        // reaches QPainter as a NaN radius. Qt says so out loud
+        // ("QPainterPath::arcTo: Adding arc where a parameter is NaN") and
+        // draws something undefined.
+        if(total>0.0&&finite(total)) parts.append({s.label,total,s.color});
     }
     if(parts.isEmpty()) return;
     std::sort(parts.begin(),parts.end(),
@@ -1711,7 +1717,13 @@ void QtPlotBackend::drawComposition(QPainter* p,const QRectF& target,const PlotS
         const int count=qMin(3,parts.size());
         const double offsets[3][2]={{-0.55,0.0},{0.55,0.0},{0.0,0.9}};
         for(int i=0;i<count;++i){
-            const double scale=0.7+0.6*(parts[i].value/parts[0].value);
+            // parts is sorted descending and every value is finite and
+            // positive, so the ratio is in (0,1] - but the division is guarded
+            // anyway, because a NaN here becomes a NaN circle radius and the
+            // failure is silent apart from a Qt warning nobody reads.
+            const double largest=parts[0].value;
+            const double share=largest>0.0?parts[i].value/largest:1.0;
+            const double scale=0.7+0.6*(finite(share)?qBound(0.0,share,1.0):1.0);
             QColor fill=parts[i].colour; fill.setAlphaF(0.45);
             p->setBrush(fill);
             QPen edge(parts[i].colour); edge.setWidthF(1.2);
@@ -1728,7 +1740,12 @@ void QtPlotBackend::drawComposition(QPainter* p,const QRectF& target,const PlotS
         QVector<QRectF> placed;
         const QPointF centre=area.center();
         for(const Part& part:parts){
-            const double weight=part.value/parts.first().value;
+            // Same guard as the Venn circles: this weight sets a font size
+            // and a bubble radius, and NaN in either is undefined behaviour
+            // inside QPainter rather than a visible mistake.
+            const double biggest=parts.first().value;
+            const double ratio=biggest>0.0?part.value/biggest:1.0;
+            const double weight=finite(ratio)?qBound(0.0,ratio,1.0):1.0;
             const bool bubble=(engine==QLatin1String("Bubble Cloud"));
             QFont f=font(spec,spec.style.legendSize);
             f.setPointSizeF(qBound(7.0,spec.style.legendSize*(0.9+2.8*weight),34.0));
@@ -1874,7 +1891,6 @@ void QtPlotBackend::draw3DField(QPainter* p,const QRectF& target,const PlotSpec&
     std::sort(glyphs.begin(),glyphs.end(),
               [](const Glyph& a,const Glyph& b){ return a.depth<b.depth; });
 
-    const double unit=proj.scale*0.10;
     for(const Glyph& g:glyphs){
         const int i=g.index;
         const double t=qBound(0.0,magnitude[i]/magMax,1.0);
@@ -2084,6 +2100,20 @@ const PlotSpec& QtPlotBackend::preparedCached(const PlotSpec& in) const {
     return prepCache_.prepared;
 }
 
+namespace {
+// Every derived engine opens the same way: keep the incoming spec so the title,
+// the axes, the style and the publication profile all survive; swap in the
+// engine that will actually be drawn; and start with no series, because a
+// derivation builds its own. This was written out at thirty-two sites, which
+// is thirty-two places for the rule to drift apart.
+PlotSpec derivedAs(const PlotSpec& in,const QString& engine){
+    PlotSpec out=in;
+    out.engine=engine;
+    out.series.clear();
+    return out;
+}
+} // namespace
+
 PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // ----------------------------------------------------------------- ECDF
     // The empirical distribution: every observation contributes one step of
@@ -2091,9 +2121,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // with straight lines would claim values between observations that were
     // never measured.
     if(in.engine==QLatin1String("ECDF")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Stairs");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Stairs"));
         for(const PlotSeries& s:in.series){
             QVector<double> v=finiteValues(s);
             if(v.size()<2) continue;
@@ -2118,9 +2146,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // sample were normal. The 45-degree line is the hypothesis; departure from
     // it is the finding, so it is drawn rather than left to be imagined.
     if(in.engine==QLatin1String("Q-Q Plot")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         double lo=std::numeric_limits<double>::infinity(),hi=-lo;
         for(const PlotSeries& s:in.series){
             QVector<double> v=finiteValues(s);
@@ -2163,9 +2189,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // thumb. A histogram's shape depends on where the bin edges happen to fall;
     // this does not, which is the whole reason to prefer it.
     if(in.engine==QLatin1String("KDE Density")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             QVector<double> v=finiteValues(s);
             if(v.size()<3) continue;
@@ -2191,9 +2215,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // against the mean, with the bias and the 95% limits of agreement drawn.
     // Needs exactly two mapped columns, because that is what the method is.
     if(in.engine==QLatin1String("Bland-Altman")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         if(in.series.size()>=2){
             const PlotSeries& a=in.series.at(0);
             const PlotSeries& b=in.series.at(1);
@@ -2235,9 +2257,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // that has already shifted would inflate the latter and hide the shift the
     // chart exists to reveal.
     if(in.engine==QLatin1String("Control Chart")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             QVector<double> v=finiteValues(s);
             if(v.size()<4) continue;
@@ -2273,9 +2293,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // down the sorted scores traces the curve, and the diagonal is the
     // no-information line a classifier has to beat to be worth anything.
     if(in.engine==QLatin1String("ROC Curve")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         if(in.series.size()>=2){
             const PlotSeries& score=in.series.at(0);
             const PlotSeries& truth=in.series.at(1);
@@ -2339,9 +2357,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // are at the top, and the two threshold rules are drawn because a volcano
     // plot without them is just a scatter.
     if(in.engine==QLatin1String("Volcano Plot")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         if(in.series.size()>=2){
             const PlotSeries& effect=in.series.at(0);
             const PlotSeries& pvalue=in.series.at(1);
@@ -2385,9 +2401,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // the optimisation literature uses; a maximised objective is negated by the
     // person who mapped it.
     if(in.engine==QLatin1String("Pareto Front")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         if(in.series.size()>=2){
             const PlotSeries& f1=in.series.at(0);
             const PlotSeries& f2=in.series.at(1);
@@ -2434,9 +2448,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // along x, the best value in each bin joined. It answers "how good has
     // anything been at this setting", which a scatter alone does not.
     if(in.engine==QLatin1String("Performance Ceiling")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
             if(n<4) continue;
@@ -2479,9 +2491,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // One bar per input, sorted by influence. Horizontal because the labels are
     // variable names and reading those rotated is a needless tax.
     if(in.engine==QLatin1String("Global Sensitivity")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Horizontal Bar");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Horizontal Bar"));
         out.legendVisible=false;
         QVector<QPair<double,PlotSeries>> ranked;
         for(const PlotSeries& s:in.series){
@@ -2527,9 +2537,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // of a graph.
     if(in.engine==QLatin1String("Gompertz H₂ Kinetics")
        ||in.engine==QLatin1String("Gompertz H2 Kinetics")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
             QVector<double> t,h;
@@ -2635,9 +2643,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // starting value on the same picture. Removal is what gets reported, and
     // deriving it here means the two can never disagree.
     if(in.engine==QLatin1String("sCOD Degradation Profile")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
             if(n<2) continue;
@@ -2692,9 +2698,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // because P = IV is not something the reader should have to take on trust
     // from a separate column that may or may not have been kept in step.
     if(in.engine==QLatin1String("Polarisation & Power Curve")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
             if(n<2) continue;
@@ -2729,9 +2733,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // semicircle appears above the axis where everyone expects to read it.
     // Two mapped columns, real and imaginary.
     if(in.engine==QLatin1String("EIS: Nyquist")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         if(in.series.size()>=2){
             const PlotSeries& re=in.series.at(0);
             const PlotSeries& im=in.series.at(1);
@@ -2763,9 +2765,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // impedance spectra span decades and a linear axis wastes most of the plot
     // on the top one.
     if(in.engine==QLatin1String("EIS: Bode")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         if(in.series.size()>=2){
             const PlotSeries& freq=in.series.at(0);
             const int n=freq.y.size();
@@ -2796,9 +2796,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // different units and ranges, so each response is scaled to 0-1 over its own
     // sweep; the shape is the finding, not the magnitude.
     if(in.engine==QLatin1String("1D Marginal Responses")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
             if(n<2) continue;
@@ -2831,9 +2829,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // so the same data draws the same picture every time - which matters when
     // the picture goes in a paper.
     if(in.engine==QLatin1String("Swarm")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         out.legendVisible=in.series.size()>1;
         int slot=1;
         for(const PlotSeries& s:in.series){
@@ -3048,9 +3044,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
             yLabel=QStringLiteral("cumulative count"); drawAs=QStringLiteral("Stairs"); }
 
         if(how!=Transform::None){
-            PlotSpec out=in;
-            out.engine=drawAs;
-            out.series.clear();
+            PlotSpec out=derivedAs(in,drawAs);
             // A window that scales with the series: too small and a rolling
             // statistic is the original with noise, too large and it is a
             // straight line. A twentieth of the sample is the usual compromise.
@@ -3237,9 +3231,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // what a model says it should be, and all three want the reference line
     // drawn or they are just scatters.
     if(in.engine==QLatin1String("Residual Plot")||in.engine==QLatin1String("Calibration Plot")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         if(in.series.size()>=2){
             const PlotSeries& observed=in.series.at(0);
             const PlotSeries& predicted=in.series.at(1);
@@ -3287,9 +3279,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     if(in.engine==QLatin1String("Manhattan Plot")){
         // Genome-wide significance: -log10(p) along an ordinal axis, with the
         // 5e-8 threshold that the field uses drawn on.
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         for(const PlotSeries& s:in.series){
             PlotSeries pts;
             pts.label=s.label; pts.color=s.color;
@@ -3336,9 +3326,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // the histogram family bins the angles first, because a wind rose is a
     // distribution of directions rather than a list of them.
     if(in.engine==QLatin1String("Polar Histogram")||in.engine==QLatin1String("Wind Rose")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Polar Histogram");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Polar Histogram"));
         constexpr int kSectors=16;
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
@@ -3369,9 +3357,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
         return out;
     }
     if(in.engine==QLatin1String("Radar Chart")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Radar Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Radar Chart"));
         // One spoke per mapped column, one closed outline per row. Values are
         // scaled per axis, because a radar chart of raw values with different
         // units compares nothing.
@@ -3490,9 +3476,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // that is where power laws are straight lines and where the useful part of
     // a spectrum lives.
     if(in.engine==QLatin1String("Power Spectral Density")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             QVector<double> v=finiteValues(s);
             if(v.size()<16) continue;
@@ -3587,9 +3571,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
 
     // --------------------------------------------------- Cross Correlation
     if(in.engine==QLatin1String("Cross Correlation")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Stem");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Stem"));
         if(in.series.size()>=2){
             QVector<double> a=finiteValues(in.series.at(0));
             QVector<double> b=finiteValues(in.series.at(1));
@@ -3628,9 +3610,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // scaled to its own range, because the whole point is to compare the shape
     // of a row across variables whose units have nothing to do with each other.
     if(in.engine==QLatin1String("Parallel Coordinates")||in.engine==QLatin1String("Andrews Curves")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         out.legendVisible=false;
         const int axes=in.series.size();
         if(axes>=2){
@@ -3689,9 +3669,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // and which went down, so the two columns are the only x positions there
     // are and the line between them is the whole message.
     if(in.engine==QLatin1String("Slope Graph")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         if(in.series.size()>=2){
             const PlotSeries& before=in.series.at(0);
             const PlotSeries& after=in.series.at(1);
@@ -3762,9 +3740,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // normal with the same moments. Drawn from the eigenvectors, which is where
     // the orientation and the two radii come from.
     if(in.engine==QLatin1String("Confidence Ellipse")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         if(in.series.size()>=2){
             const PlotSeries& xs=in.series.at(0);
             const PlotSeries& ys=in.series.at(1);
@@ -3817,9 +3793,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // distributions changing across groups, which overlaying them on one axis
     // does not.
     if(in.engine==QLatin1String("Ridgeline")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         int row=0;
         // The offset is a fraction of the tallest ridge, so the overlap looks
         // the same whatever the densities happen to be.
@@ -3852,9 +3826,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // ------------------------------------------------------ Population Pyramid
     // Two groups back to back on a shared category axis, one drawn negative.
     if(in.engine==QLatin1String("Population Pyramid")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Horizontal Bar");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Horizontal Bar"));
         if(in.series.size()>=2){
             for(int side=0;side<2;++side){
                 const PlotSeries& s=in.series.at(side);
@@ -3928,9 +3900,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // A closed filled polygon from the mapped coordinates: a region rather than
     // a trace. Used for boundaries, footprints and shaded domains.
     if(in.engine==QLatin1String("Patch")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Area");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
         for(const PlotSeries& s:in.series){
             PlotSeries patch=s;
             // Closed explicitly, or the fill runs to the baseline instead of
@@ -3951,9 +3921,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // marked. Saying that plainly is better than drawing a static plot and
     // calling it an animation.
     if(in.engine==QLatin1String("Comet")||in.engine==QLatin1String("Animated Line")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("Line Chart");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
         for(const PlotSeries& s:in.series){
             const int n=qMin(s.x.size(),s.y.size());
             if(n<2) continue;
@@ -3978,9 +3946,7 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     // for the first, the first pair for the second, each with the correlation
     // stated so the number that a matrix is scanned for is not lost.
     if(in.engine==QLatin1String("Scatter + Marginals")||in.engine==QLatin1String("Plot Matrix")){
-        PlotSpec out=in;
-        out.engine=QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
         if(in.series.size()>=2){
             const PlotSeries& xs=in.series.at(0);
             const PlotSeries& ys=in.series.at(1);

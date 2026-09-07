@@ -5,11 +5,21 @@
 //! geometry kernels live here as well so interactive contours/voxels/meshes do
 //! not require a Python round trip.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
+// Context and DeviceExt are used only inside from_win32 and from_surface, both
+// of which are Windows-only. Gated rather than removed: on Windows they are
+// load-bearing, and this is the platform that ships.
+#[cfg(target_os = "windows")]
+use anyhow::Context;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use rayon::prelude::*;
+// Windows-only: the sole use is from_win32, which is itself behind this cfg.
+// Deleting the import to silence the Linux warning would break the Windows
+// build, which is the one that ships.
+#[cfg(target_os = "windows")]
 use std::num::NonZeroIsize;
+#[cfg(target_os = "windows")]
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -67,6 +77,14 @@ pub struct NativeSurfaceRenderer {
 impl NativeSurfaceRenderer {
     /// Attach WGPU directly to the HWND supplied by a Qt child QWindow.
     /// The surface is presented by WGPU; Qt never receives an RGBA frame.
+    /// Build a renderer drawing directly into an existing native window.
+    ///
+    /// # Safety
+    ///
+    /// `hwnd` must be a valid HWND and `hinstance` its module handle, and the
+    /// caller must keep that window alive for the whole life of the returned
+    /// renderer. The surface borrows the window without owning it, so a window
+    /// destroyed first leaves the GPU surface pointing at freed memory.
     #[cfg(target_os = "windows")]
     pub unsafe fn from_win32(hwnd: isize, hinstance: isize, width: u32, height: u32) -> Result<Self> {
         use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle};
@@ -85,11 +103,22 @@ impl NativeSurfaceRenderer {
         Self::from_surface(instance, surface, width, height)
     }
 
+    /// Build a renderer drawing directly into an existing native window.
+    ///
+    /// # Safety
+    ///
+    /// Nothing is dereferenced on this platform - the call fails immediately -
+    /// but the signature must match the Windows one, so it keeps the same
+    /// contract: the handles must be valid and the window must outlive the
+    /// renderer.
     #[cfg(not(target_os = "windows"))]
     pub unsafe fn from_win32(_: isize, _: isize, _: u32, _: u32) -> Result<Self> {
         Err(anyhow!("Win32 direct-surface constructor is only available on Windows"))
     }
 
+    // Reached only from from_win32, so on any other platform it is genuinely
+    // dead rather than merely unreferenced.
+    #[cfg(target_os = "windows")]
     fn from_surface(instance: wgpu::Instance, surface: wgpu::Surface<'static>, width: u32, height: u32) -> Result<Self> {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -257,7 +286,7 @@ pub struct VoxelCell { pub center:[f64;3], pub mean:f64, pub count:u32 }
 /// Native voxel aggregation preserving density and mean response.
 pub fn voxel_aggregate(x:&[f64], y:&[f64], z:&[f64], response:&[f64], bins:[usize;3]) -> Vec<VoxelCell> {
     let n = x.len().min(y.len()).min(z.len()).min(response.len());
-    if n == 0 || bins.iter().any(|&b| b == 0) { return vec![]; }
+    if n == 0 || bins.contains(&0) { return vec![]; }
     fn extent(v:&[f64])->Option<(f64,f64)>{ let mut lo=f64::INFINITY; let mut hi=f64::NEG_INFINITY; for &q in v { if q.is_finite(){lo=lo.min(q);hi=hi.max(q);} } lo.is_finite().then_some((lo,hi)) }
     let Some((xl,xh))=extent(&x[..n]) else{return vec![]}; let Some((yl,yh))=extent(&y[..n]) else{return vec![]}; let Some((zl,zh))=extent(&z[..n]) else{return vec![]};
     let total=bins[0]*bins[1]*bins[2];
@@ -276,7 +305,24 @@ pub fn voxel_aggregate(x:&[f64], y:&[f64], z:&[f64], response:&[f64], bins:[usiz
 pub fn triangulate_grid(width:usize, height:usize, z:&[f64]) -> Vec<[u32;3]> {
     if width<2 || height<2 || z.len()<width*height { return vec![]; }
     let mut tris=Vec::with_capacity((width-1)*(height-1)*2);
-    for j in 0..height-1 { for i in 0..width-1 { let a=j*width+i; let b=a+1; let c=a+width; let d=c+1; if [z[a],z[b],z[c]].iter().all(|v|v.is_finite()){tris.push([a as u32,b as u32,c as u32]);} if [z[b],z[d],z[c]].iter().all(|v|v.is_finite()){tris.push([b as u32,d as u32,c as u32]);} } }
+    // Two independent triangles per grid cell, each kept only if its three
+    // corners are finite. Written out rather than packed onto one line: the
+    // packed version read as a broken `else if` to clippy, and to a person.
+    for j in 0..height - 1 {
+        for i in 0..width - 1 {
+            let a = j * width + i;
+            let b = a + 1;
+            let c = a + width;
+            let d = c + 1;
+            let finite = |t: [f64; 3]| t.iter().all(|v| v.is_finite());
+            if finite([z[a], z[b], z[c]]) {
+                tris.push([a as u32, b as u32, c as u32]);
+            }
+            if finite([z[b], z[d], z[c]]) {
+                tris.push([b as u32, d as u32, c as u32]);
+            }
+        }
+    }
     tris
 }
 

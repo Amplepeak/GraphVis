@@ -492,39 +492,45 @@ def _clough_tocher(points: np.ndarray, values: np.ndarray, queries: np.ndarray, 
     return np.asarray(interp(queries), dtype=float)
 
 
-def _idw(points: np.ndarray, values: np.ndarray, queries: np.ndarray, *, power: float, neighbors: int,
-         tree: cKDTree | None = None, cancel_check=None) -> np.ndarray:
-    k = max(1, min(int(neighbors), len(points)))
+def _knn_blocks(points: np.ndarray, queries: np.ndarray, k: int, tree, cancel_check):
+    """Yield (slice, distances, indices) for the queries, 4096 at a time.
+
+    Both inverse-distance estimators walked the query set in the same blocks,
+    for the same two reasons: a k-NN query over a whole 160x160 grid is one
+    uninterruptible call, and the distance matrix for it is large. Chunking
+    keeps cancellation responsive and the working set small. The weighting is
+    what differs between them, so only the weighting is written twice.
+    """
     tree = tree or cKDTree(points)
-    pred = np.empty(len(queries), dtype=float)
-    # Chunked evaluation keeps the k-NN queries cooperative with cancellation.
-    for start in range(0, len(queries), 4096):
+    step = 4096
+    for start in range(0, len(queries), step):
         if cancel_check is not None and cancel_check():
             raise RuntimeError("Cancelled")
-        block = queries[start:start + 4096]
+        block = queries[start:start + step]
         d, idx = tree.query(block, k=k, workers=1)
         if k == 1:
             d, idx = d[:, None], idx[:, None]
+        yield slice(start, start + len(block)), d, idx
+
+
+def _idw(points: np.ndarray, values: np.ndarray, queries: np.ndarray, *, power: float, neighbors: int,
+         tree: cKDTree | None = None, cancel_check=None) -> np.ndarray:
+    k = max(1, min(int(neighbors), len(points)))
+    pred = np.empty(len(queries), dtype=float)
+    for where, d, idx in _knn_blocks(points, queries, k, tree, cancel_check):
         exact = d[:, 0] <= 1e-14
         weights = 1.0 / np.maximum(d, 1e-12) ** max(float(power), 0.05)
         out = np.sum(weights * values[idx], axis=1) / np.maximum(np.sum(weights, axis=1), 1e-30)
         out[exact] = values[idx[exact, 0]]
-        pred[start:start + len(block)] = out
+        pred[where] = out
     return pred
 
 
 def _modified_shepard(points: np.ndarray, values: np.ndarray, queries: np.ndarray, *, neighbors: int,
                       tree: cKDTree | None = None, cancel_check=None) -> np.ndarray:
-    tree = tree or cKDTree(points)
     k = max(2, min(int(neighbors), len(points)))
     pred = np.empty(len(queries), dtype=float)
-    for start in range(0, len(queries), 4096):
-        if cancel_check is not None and cancel_check():
-            raise RuntimeError("Cancelled")
-        block = queries[start:start + 4096]
-        d, idx = tree.query(block, k=k, workers=1)
-        if k == 1:
-            d, idx = d[:, None], idx[:, None]
+    for where, d, idx in _knn_blocks(points, queries, k, tree, cancel_check):
         exact = d[:, 0] <= 1e-14
         # Franke/Nielson compact Shepard weights: ((R-d)/(R*d))^2 for d<R.
         R = np.maximum(d[:, -1:], 1e-12) * 1.0000001
@@ -532,7 +538,7 @@ def _modified_shepard(points: np.ndarray, values: np.ndarray, queries: np.ndarra
         denom = np.sum(w, axis=1)
         out = np.sum(w * values[idx], axis=1) / np.maximum(denom, 1e-30)
         out[exact] = values[idx[exact, 0]]
-        pred[start:start + len(block)] = out
+        pred[where] = out
     return pred
 
 

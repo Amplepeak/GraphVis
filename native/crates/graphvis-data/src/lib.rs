@@ -13,7 +13,7 @@ use arrow_ipc::{reader::FileReader, writer::FileWriter};
 use datafusion::prelude::*;
 use graphvis_core::DatasetMeta;
 use parking_lot::RwLock;
-use std::{collections::HashMap, fs::File, path::{Path, PathBuf}, sync::Arc};
+use std::{collections::HashMap, fs::File, path::Path, sync::Arc};
 use uuid::Uuid;
 use futures::StreamExt;
 

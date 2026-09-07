@@ -60,10 +60,23 @@ def dispatch(req: dict) -> dict:
 
         def numbers(a):
             """JSON has no NaN. Non-finite becomes null, which every consumer
-            here already reads as a gap rather than as a zero."""
+            here already reads as a gap rather than as a zero.
+
+            Vectorised deliberately. Written as
+            ``[None if not np.isfinite(v) else float(v) for v in arr]`` this
+            dispatched a NumPy ufunc per element, and on a 200k-row PCA that
+            one line was 94% of the whole operation - 2.1 s of a 2.3 s call,
+            against 0.1 s for the PCA itself. isfinite runs once over the
+            array, tolist() converts in C, and the null patching touches only
+            the elements that need it - usually none."""
             if a is None: return []
             arr=np.asarray(a, dtype=float).ravel()
-            return [None if not np.isfinite(v) else float(v) for v in arr]
+            out=arr.tolist()
+            finite=np.isfinite(arr)
+            if not finite.all():
+                for i in np.flatnonzero(~finite):
+                    out[int(i)]=None
+            return out
 
         def frame_out(f):
             """A DataFrame as columns plus column-wise rows. Several of these
@@ -73,8 +86,17 @@ def dispatch(req: dict) -> dict:
             out={}
             for c in f.columns:
                 col=f[c]
-                if pd.api.types.is_numeric_dtype(col): out[str(c)]=numbers(col.to_numpy())
-                else: out[str(c)]=[None if pd.isna(v) else str(v) for v in col]
+                if pd.api.types.is_numeric_dtype(col):
+                    out[str(c)]=numbers(col.to_numpy())
+                else:
+                    # Same reason as numbers(): one vectorised isna instead of
+                    # a pandas call per element.
+                    values=col.astype(str).tolist()
+                    missing=col.isna().to_numpy()
+                    if missing.any():
+                        for i in np.flatnonzero(missing):
+                            values[int(i)]=None
+                    out[str(c)]=values
             return {"columns":[str(c) for c in f.columns], "rows":out}
 
         def scalars(d):

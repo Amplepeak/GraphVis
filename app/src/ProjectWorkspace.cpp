@@ -142,7 +142,7 @@ bool ProjectWorkspace::loadMetadata(){
         QVariantMap members;
         for(const QString& kind:{QStringLiteral("datasets"),QStringLiteral("literature"),QStringLiteral("scripts")}){
             QStringList paths;
-            for(const QJsonValue& v:entry.value(kind).toArray()) paths<<v.toString();
+            for(const QJsonValue v:entry.value(kind).toArray()) paths<<v.toString();
             members.insert(kind,paths);
         }
         groups_.insert(it.key(),members);
@@ -204,12 +204,21 @@ bool ProjectWorkspace::createProject(const QString& projectName,const QUrl& pare
     return true;
 }
 
-bool ProjectWorkspace::openProject(const QUrl& folder){
+// Both ways into a project - opening one and adopting a folder - start by
+// turning a URL into a directory that exists, and say the same thing when it
+// is not one.
+QString ProjectWorkspace::validFolder(const QUrl& folder){
     const QString path=cleanFolder(folder);
     if(path.isEmpty()||!QFileInfo(path).isDir()){
         setStatus(QStringLiteral("That is not a folder"));
-        return false;
+        return QString();
     }
+    return path;
+}
+
+bool ProjectWorkspace::openProject(const QUrl& folder){
+    const QString path=validFolder(folder);
+    if(path.isEmpty()) return false;
     root_=QDir(path).absolutePath();
     // A folder GraphVis has opened before carries its own mode; anything else
     // is adopted, because copying a stranger's files around uninvited is not on.
@@ -238,11 +247,8 @@ bool ProjectWorkspace::addDatasetPath(const QString& file){
 }
 
 bool ProjectWorkspace::adoptFolder(const QUrl& folder){
-    const QString path=cleanFolder(folder);
-    if(path.isEmpty()||!QFileInfo(path).isDir()){
-        setStatus(QStringLiteral("That is not a folder"));
-        return false;
-    }
+    const QString path=validFolder(folder);
+    if(path.isEmpty()) return false;
     root_=QDir(path).absolutePath();
     mode_=QStringLiteral("adopted");
     loadMetadata();

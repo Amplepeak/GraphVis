@@ -79,37 +79,45 @@ set_source_files_properties(
     QT_RESOURCE_ALIAS catalogue/graph_catalogue.json
 )
 
-foreach(_qml_file
-    qml/Main.qml
-    qml/Theme.qml
-    qml/components/TopBar.qml
-    qml/components/ThemePicker.qml
-    qml/components/ColourVisionBar.qml
-    qml/components/ProjectPanel.qml
-    qml/components/RenderProgressBadge.qml
-    qml/components/PreviewReadyNotice.qml
-    qml/components/ControlSidebar.qml
-    qml/components/DataWorkspace.qml
-    qml/components/MappingPanel.qml
-    qml/components/AnalysisPanel.qml
-    qml/components/LiteraturePanel.qml
-    qml/components/PublicationPanel.qml
-    qml/components/StatusStrip.qml
-    qml/components/GraphLibrary.qml
-    qml/components/GvGroupBox.qml
-    qml/components/StatusPill.qml
-    qml/components/UnitSelector.qml
-    qml/components/SolverPanel.qml
-    qml/components/AddOnsPanel.qml
-    qml/components/PanelScroll.qml
-    qml/components/DockPanel.qml
-    qml/components/ScanPanel.qml
-    qml/workspaces/ClassicShell.qml
-    qml/workspaces/HomeWorkspace.qml
-    qml/workspaces/LiteratureWorkspace.qml
-    qml/workspaces/VisualizeWorkspace.qml
-    qml/experimental/ExperimentalShell.qml
+# Every QML file in the module, listed once.
+#
+# It used to be written out twice - once for the resource-alias loop below
+# and once for qt_add_qml_module - so adding a component meant editing two
+# lists, and forgetting the second gave a file that built but could not be
+# imported. Same list, one place.
+set(GRAPHVIS_QML_FILES
+  qml/Main.qml
+  qml/Theme.qml
+  qml/components/TopBar.qml
+  qml/components/ThemePicker.qml
+  qml/components/ColourVisionBar.qml
+  qml/components/ProjectPanel.qml
+  qml/components/RenderProgressBadge.qml
+  qml/components/PreviewReadyNotice.qml
+  qml/components/ControlSidebar.qml
+  qml/components/DataWorkspace.qml
+  qml/components/MappingPanel.qml
+  qml/components/AnalysisPanel.qml
+  qml/components/LiteraturePanel.qml
+  qml/components/PublicationPanel.qml
+  qml/components/StatusStrip.qml
+  qml/components/GraphLibrary.qml
+  qml/components/GvGroupBox.qml
+  qml/components/StatusPill.qml
+  qml/components/UnitSelector.qml
+  qml/components/SolverPanel.qml
+  qml/components/AddOnsPanel.qml
+  qml/components/PanelScroll.qml
+  qml/components/DockPanel.qml
+  qml/components/ScanPanel.qml
+  qml/workspaces/ClassicShell.qml
+  qml/workspaces/HomeWorkspace.qml
+  qml/workspaces/LiteratureWorkspace.qml
+  qml/workspaces/VisualizeWorkspace.qml
+  qml/experimental/ExperimentalShell.qml
 )
+
+foreach(_qml_file IN LISTS GRAPHVIS_QML_FILES)
   string(REGEX REPLACE "^qml/" "" _alias "${_qml_file}")
 
   set_source_files_properties(
@@ -135,35 +143,7 @@ qt_add_qml_module(graphvis
   RESOURCE_PREFIX "/qt/qml"
 
   QML_FILES
-    qml/Main.qml
-    qml/Theme.qml
-    qml/components/TopBar.qml
-    qml/components/ThemePicker.qml
-    qml/components/ColourVisionBar.qml
-    qml/components/ProjectPanel.qml
-    qml/components/RenderProgressBadge.qml
-    qml/components/PreviewReadyNotice.qml
-    qml/components/ControlSidebar.qml
-    qml/components/DataWorkspace.qml
-    qml/components/MappingPanel.qml
-    qml/components/AnalysisPanel.qml
-    qml/components/LiteraturePanel.qml
-    qml/components/PublicationPanel.qml
-    qml/components/StatusStrip.qml
-    qml/components/GraphLibrary.qml
-    qml/components/GvGroupBox.qml
-    qml/components/StatusPill.qml
-    qml/components/UnitSelector.qml
-    qml/components/SolverPanel.qml
-    qml/components/AddOnsPanel.qml
-    qml/components/PanelScroll.qml
-    qml/components/DockPanel.qml
-    qml/components/ScanPanel.qml
-    qml/workspaces/ClassicShell.qml
-    qml/workspaces/HomeWorkspace.qml
-    qml/workspaces/LiteratureWorkspace.qml
-    qml/workspaces/VisualizeWorkspace.qml
-    qml/experimental/ExperimentalShell.qml
+    ${GRAPHVIS_QML_FILES}
 
   RESOURCES
     ../assets/branding/graphvis_icon.png

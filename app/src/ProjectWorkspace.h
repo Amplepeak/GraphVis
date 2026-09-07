@@ -113,6 +113,10 @@ signals:
     void recentChanged();
     void statusChanged();
 
+    // A URL turned into an existing directory, or "" with the reason already
+    // shown. Shared by openProject and adoptFolder.
+    QString validFolder(const QUrl& folder);
+
 private:
     QString datasetsDir() const;
     QString literatureDir() const;

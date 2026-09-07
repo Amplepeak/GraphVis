@@ -10,7 +10,6 @@
 // is actually there to use.
 import QtQuick
 import QtQuick.Controls
-import GraphVis
 
 ComboBox {
     id: root

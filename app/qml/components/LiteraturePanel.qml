@@ -5,7 +5,7 @@ import GraphVis
 
 PanelScroll {
     id: root
-    spacing: 10
+    contentSpacing: 10
 
     required property var app
 

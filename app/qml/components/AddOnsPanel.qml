@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 // Add-ons.
 //
 // The heavy or rarely-wanted parts of GraphVis are a choice at install time and
@@ -14,7 +21,7 @@ import GraphVis
 
 PanelScroll {
     id: root
-    spacing: 10
+    contentSpacing: 10
 
     required property var app
 
@@ -54,8 +61,9 @@ PanelScroll {
     Repeater {
         model: root.app.optionalComponents
         delegate: GvGroupBox {
+            id: entry
             required property var modelData
-            title: modelData.name
+            title: entry.modelData.name
             Layout.fillWidth: true
             Layout.margins: 8
 
@@ -67,19 +75,19 @@ PanelScroll {
                     Layout.fillWidth: true
                     spacing: Theme.gap
                     CheckBox {
-                        checked: root.picked[modelData.key] === true
+                        checked: root.picked[entry.modelData.key] === true
                         enabled: !root.app.componentsBusy
-                        onToggled: root.togglePicked(modelData.key)
+                        onToggled: root.togglePicked(entry.modelData.key)
                     }
                     Label {
                         Layout.fillWidth: true
-                        text: modelData.installed ? "Installed" : "Not installed"
-                        color: modelData.installed ? Theme.positive : Theme.textMuted
+                        text: entry.modelData.installed ? "Installed" : "Not installed"
+                        color: entry.modelData.installed ? Theme.positive : Theme.textMuted
                         font.bold: true
                         font.pixelSize: Theme.fontSizeSmall
                     }
                     Label {
-                        text: "~" + modelData.sizeMb + " MB"
+                        text: "~" + entry.modelData.sizeMb + " MB"
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSizeSmall
                     }
@@ -89,14 +97,14 @@ PanelScroll {
                     wrapMode: Text.WordWrap
                     color: Theme.text
                     font.pixelSize: Theme.fontSizeSmall
-                    text: modelData.summary
+                    text: entry.modelData.summary
                 }
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSizeSmall
-                    text: "Cost: " + modelData.cost
+                    text: "Cost: " + entry.modelData.cost
                 }
             }
         }

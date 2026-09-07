@@ -17,7 +17,12 @@ import QtQuick.Layouts
 ScrollView {
     id: root
     default property alias content: column.data
-    property alias spacing: column.spacing
+    // NOT "spacing". ScrollView derives from Control, whose `spacing` is a
+    // FINAL property, and an alias of that name shadows it: qmllint rejects it,
+    // and every panel that set `spacing:` was setting the Control's, not the
+    // column's - so all seven of them silently lost their spacing while looking
+    // correct in the source.
+    property alias contentSpacing: column.spacing
 
     clip: true
     // The column binds to availableWidth, so nothing should ever need

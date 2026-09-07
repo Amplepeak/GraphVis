@@ -17,7 +17,7 @@ import GraphVis
 
 PanelScroll {
     id: root
-    spacing: 10
+    contentSpacing: 10
 
     required property var app
     // The live canvas. Null until the Visualize workspace has built one, which

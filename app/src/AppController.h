@@ -337,6 +337,10 @@ private:
     bool scanning_=false;
     // Scan cache. The key fingerprints the Arrow file (path, size, mtime), the
     // budget, and the literature context, so any change to the inputs misses.
+    // The guard three operations open with: there has to be an active dataset
+    // and it has to have been written to Arrow. Returns its path, or an empty
+    // string having already told the user which of the two is missing.
+    QString requireActiveArrow();
     QString scanCacheDir() const;
     QString scanCacheKey(const QJsonObject& request) const;
     void applyScanReply(const QJsonObject& obj,bool cached);

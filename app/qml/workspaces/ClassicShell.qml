@@ -1,6 +1,11 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
 import "../components"
 
 Item {
@@ -28,7 +33,7 @@ Item {
         anchors.fill:parent
         visible: !root.visualiseMode
         active: !root.visualiseMode
-        sourceComponent: app.workspaceMode==="Literature" ? litComp : app.workspaceMode==="Home" ? homeComp : app.workspaceMode==="Data" ? dataComp : app.workspaceMode==="Analysis" ? analysisComp : publishComp
+        sourceComponent: root.app.workspaceMode==="Literature" ? litComp : root.app.workspaceMode==="Home" ? homeComp : root.app.workspaceMode==="Data" ? dataComp : root.app.workspaceMode==="Analysis" ? analysisComp : publishComp
     }
     Component { id:litComp; LiteratureWorkspace{app:root.app;onOpenRequested:root.literatureRequested()} }
     Component { id:homeComp; HomeWorkspace{app:root.app;onImportRequested:root.importRequested();onLiteratureRequested:root.literatureRequested()} }

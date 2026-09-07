@@ -1,3 +1,10 @@
+// Qt 6 delegate scoping. Without this, an id from the enclosing file is not
+// legally visible inside a delegate or an inline Component - it resolves only
+// because the old unbound context lookup walks out of the component, which is
+// slower at every evaluation and silently breaks the moment a model role
+// shares a name. Bound resolves ids at compile time; delegates declare what
+// they take from the model with `required property`.
+pragma ComponentBehavior: Bound
 // Graph Library — the GraphVis 17 catalogue, native.
 //
 // 318 entries across 30 categories come from app.graphCategories, which
@@ -77,7 +84,7 @@ Rectangle {
             Layout.fillWidth: true
             Label { text: "GRAPH LIBRARY"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
             Item { Layout.fillWidth: true }
-            Label { text: app.graphEntryCount + " graphs"; color: Theme.textMuted; font.pixelSize: 11 }
+            Label { text: root.app.graphEntryCount + " graphs"; color: Theme.textMuted; font.pixelSize: 11 }
         }
 
         TextField {
@@ -111,22 +118,24 @@ Rectangle {
             ScrollBar.vertical: ScrollBar {}
 
             delegate: Item {
+                id: entry
+                required property var modelData
                 width: view.width
-                height: modelData.header ? 26 : 34
+                height: entry.modelData.header ? 26 : 34
 
                 Label {
-                    visible: modelData.header
+                    visible: entry.modelData.header
                     anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.label + (modelData.count > 0 ? "  (" + modelData.count + ")" : "")
+                    text: entry.modelData.label + (entry.modelData.count > 0 ? "  (" + entry.modelData.count + ")" : "")
                     color: Theme.textMuted; font.pixelSize: 10; font.bold: true
                 }
 
                 Rectangle {
-                    visible: !modelData.header
+                    visible: !entry.modelData.header
                     anchors.fill: parent; anchors.rightMargin: 4
                     radius: 5
-                    color: root.staged && modelData.entry && root.staged.engine === modelData.entry.engine
-                           && root.staged.category === modelData.entry.category
+                    color: root.staged && entry.modelData.entry && root.staged.engine === entry.modelData.entry.engine
+                           && root.staged.category === entry.modelData.entry.category
                            ? Theme.surfaceAlt : (hover.hovered ? Theme.surfaceAlt : "transparent")
 
                     RowLayout {
@@ -136,33 +145,33 @@ Rectangle {
                             Layout.preferredWidth: 46; Layout.preferredHeight: 28
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true; cache: true
-                            source: modelData.entry ? app.graphThumbnail(modelData.entry.thumbnail, true) : ""
+                            source: entry.modelData.entry ? root.app.graphThumbnail(entry.modelData.entry.thumbnail, true) : ""
                             visible: status === Image.Ready
                         }
                         ColumnLayout {
                             Layout.fillWidth: true; spacing: 0
                             Label {
-                                text: modelData.label + (modelData.entry && modelData.entry.scale ? " · " + modelData.entry.scale : "")
+                                text: entry.modelData.label + (entry.modelData.entry && entry.modelData.entry.scale ? " · " + entry.modelData.entry.scale : "")
                                 color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true
                             }
                             Label {
-                                text: modelData.entry ? modelData.entry.description : ""
+                                text: entry.modelData.entry ? entry.modelData.entry.description : ""
                                 color: Theme.textMuted; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true
                             }
                         }
                         Label {
-                            text: modelData.entry && modelData.entry.advanced ? "adv" : ""
+                            text: entry.modelData.entry && entry.modelData.entry.advanced ? "adv" : ""
                             color: Theme.textMuted; font.pixelSize: 9
                         }
                     }
 
                     HoverHandler { id: hover }
-                    TapHandler { onTapped: { if (modelData.entry) { root.staged = modelData.entry; root.app.notify("Staged: " + modelData.entry.engine) } } }
+                    TapHandler { onTapped: { if (entry.modelData.entry) { root.staged = entry.modelData.entry; root.app.notify("Staged: " + entry.modelData.entry.engine) } } }
                 }
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
         // Smart Suite: let the scanner pick the graph and its mapping.
         ScanPanel {
@@ -190,7 +199,7 @@ Rectangle {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
         RowLayout {
             Layout.fillWidth: true

@@ -164,18 +164,35 @@ def _r_sqlite(p):
         con.close()
 
 # ------------------------------------------------------------------ MATLAB/HDF
+def _hdf5_series(path) -> dict[str, np.ndarray]:
+    """Every 1-D numeric dataset in an HDF5 file, keyed by its leaf name.
+
+    MATLAB v7.3 files are HDF5, so the .mat reader and the .h5/.hdf5 reader
+    walked the file with the same nine lines. One walk now: a change to what
+    counts as a usable series - the dtype kinds, the minimum length - lands in
+    both formats instead of one.
+    """
+    _need('h5py', 'h5py')
+    import h5py
+    out: dict[str, np.ndarray] = {}
+
+    def visit(name, node):
+        if isinstance(node, h5py.Dataset) and node.dtype.kind in ('f', 'i', 'u', 'b'):
+            arr = np.squeeze(np.asarray(node))
+            if arr.ndim == 1 and arr.size >= 2:
+                out[name.split('/')[-1]] = arr.astype(np.float64, copy=False)
+
+    with h5py.File(path, 'r') as fh:
+        fh.visititems(visit)
+    return out
+
+
 def _r_matlab(p):
     _need('h5py', 'h5py')
     import h5py
     raw: dict[str, np.ndarray] = {}
     if h5py.is_hdf5(p):                       # MATLAB v7.3 is HDF5
-        with h5py.File(p, 'r') as fh:
-            def visit(name, node):
-                if isinstance(node, h5py.Dataset) and node.dtype.kind in ('f', 'i', 'u', 'b'):
-                    arr = np.squeeze(np.asarray(node))
-                    if arr.ndim == 1 and arr.size >= 2:
-                        raw[name.split('/')[-1]] = arr.astype(np.float64, copy=False)
-            fh.visititems(visit)
+        raw = _hdf5_series(p)
     else:                                     # v5/v6/v7
         _need('scipy', 'scipy')
         from scipy.io import loadmat
@@ -198,17 +215,7 @@ def _r_matlab(p):
     return _frame_from_arrays(raw)
 
 def _r_hdf(p):
-    _need('h5py', 'h5py')
-    import h5py
-    raw: dict[str, np.ndarray] = {}
-    with h5py.File(p, 'r') as fh:
-        def visit(name, node):
-            if isinstance(node, h5py.Dataset) and node.dtype.kind in ('f', 'i', 'u', 'b'):
-                arr = np.squeeze(np.asarray(node))
-                if arr.ndim == 1 and arr.size >= 2:
-                    raw[name.split('/')[-1]] = arr.astype(np.float64, copy=False)
-        fh.visititems(visit)
-    return _frame_from_arrays(raw)
+    return _frame_from_arrays(_hdf5_series(p))
 
 def _r_netcdf(p):
     _need('xarray', 'xarray')

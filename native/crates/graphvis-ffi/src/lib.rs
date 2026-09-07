@@ -61,7 +61,19 @@ fn cstring(s:String)->*mut c_char { CString::new(s.replace('\0', " ")).unwrap().
 fn error_json(message:impl ToString)->*mut c_char { cstring(serde_json::json!({"ok":false,"error":message.to_string()}).to_string()) }
 
 #[unsafe(no_mangle)] pub extern "C" fn gv_version()->*mut c_char { cstring(env!("CARGO_PKG_VERSION").into()) }
-#[unsafe(no_mangle)] pub extern "C" fn gv_string_free(p:*mut c_char){ if !p.is_null(){unsafe{drop(CString::from_raw(p));}} }
+/// Free a string returned by any other gv_* function.
+///
+/// # Safety
+///
+/// `p` must be null, or a pointer this library returned and that has not
+/// already been freed. Passing anything else - a C string this library did not
+/// allocate, or one freed twice - is undefined behaviour.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gv_string_free(p: *mut c_char) {
+    if !p.is_null() {
+        unsafe { drop(CString::from_raw(p)) };
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn gv_runtime_new(cache_dir:*const c_char)->*mut c_void {
@@ -129,7 +141,24 @@ pub extern "C" fn gv_import_dataset(p:*mut c_void, path:*const c_char)->*mut c_c
     })
 }
 
-fn sanitize_name(s:&str)->String { let mut out=s.chars().map(|c|if c.is_ascii_alphanumeric(){c}else{'_'}).collect::<String>(); if out.is_empty(){out="dataset".into();} if out.chars().next().unwrap().is_ascii_digit(){out.insert(0,'d');} out }
+// A table name DataFusion will accept. Two independent rules, not an
+// `else if`: an empty name becomes "dataset", and a name that then starts with
+// a digit gets a letter in front. Packed onto one line this read as broken
+// control flow to clippy, and to a reader.
+fn sanitize_name(s: &str) -> String {
+    let mut out: String = s
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    if out.is_empty() {
+        out = "dataset".into();
+    }
+    // Safe to unwrap: the branch above guarantees at least one character.
+    if out.chars().next().unwrap().is_ascii_digit() {
+        out.insert(0, 'd');
+    }
+    out
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn gv_query_to_ipc(p:*mut c_void, sql:*const c_char, output:*const c_char)->*mut c_char {

@@ -102,18 +102,18 @@ Rectangle {
             Layout.topMargin: Theme.gap
             spacing: Theme.gapWide
             Label {
-                text: app.datasets.length === 0
+                text: root.app.datasets.length === 0
                       ? "No datasets loaded"
-                      : app.datasets.length + (app.datasets.length === 1 ? " dataset loaded" : " datasets loaded")
+                      : root.app.datasets.length + (root.app.datasets.length === 1 ? " dataset loaded" : " datasets loaded")
                 color: Theme.textMuted; font.pixelSize: Theme.fontSizeSmall
             }
             Label {
-                text: app.graphEntryCount + " graphs in the library"
+                text: root.app.graphEntryCount + " graphs in the library"
                 color: Theme.textMuted; font.pixelSize: Theme.fontSizeSmall
             }
             Label {
-                visible: app.literatureUrl.toString() !== ""
-                text: "Paper open: " + app.literatureUrl.toString().split("/").pop()
+                visible: root.app.literatureUrl.toString() !== ""
+                text: "Paper open: " + root.app.literatureUrl.toString().split("/").pop()
                 color: Theme.textMuted; font.pixelSize: Theme.fontSizeSmall
                 elide: Text.ElideMiddle; Layout.fillWidth: true
             }

@@ -7,7 +7,6 @@
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 const QUANTILE_SAMPLE_MAX: usize = 200_000;
 
@@ -88,7 +87,7 @@ fn finite_sample(values: &[f64]) -> Vec<f64> {
     let mut seen = 0usize;
     for &v in values {
         if !v.is_finite() { continue; }
-        if seen % stride == 0 { out.push(v); }
+        if seen.is_multiple_of(stride) { out.push(v); }
         seen += 1;
     }
     out.sort_by(|a,b| a.total_cmp(b));
@@ -202,7 +201,14 @@ pub fn optimize_scatter(x:&[f64],y:&[f64],z:&[f64],response:&[f64],plan:&SmartRe
     if finite.len()<=plan.target_points {selected.extend(finite.iter().copied());}
     else { selected.extend(cells.iter().filter(|c|c.count>0).map(|c|c.best_idx)); }
     // Preserve spatial and response extrema even when they fall in a crowded cell.
-    for vals in [x,y,z,response]{if let Some(&imin)=finite.iter().min_by(|&&a,&&b|vals[a].total_cmp(&vals[b])){selected.push(imin);}if let Some(&imax)=finite.iter().max_by(|&&a,&&b|vals[a].total_cmp(&vals[b])){selected.push(imax);}}
+    for vals in [x, y, z, response] {
+        if let Some(&imin) = finite.iter().min_by(|&&a, &&b| vals[a].total_cmp(&vals[b])) {
+            selected.push(imin);
+        }
+        if let Some(&imax) = finite.iter().max_by(|&&a, &&b| vals[a].total_cmp(&vals[b])) {
+            selected.push(imax);
+        }
+    }
     selected.sort_unstable();selected.dedup();
     // If voxel representatives are still too many, keep highest significance deterministically.
     if selected.len()>plan.target_points {selected.sort_by(|&a,&b|score(response[b]).total_cmp(&score(response[a])));selected.truncate(plan.target_points);selected.sort_unstable();}

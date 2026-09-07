@@ -233,7 +233,7 @@ void AppController::setWorkspaceMode(const QString& value){if(workspaceMode_==va
 void AppController::refreshState(){
     if(!runtime_)return;const QString text=NativeApi::instance().takeString(NativeApi::instance().stateJson(runtime_));
     const auto doc=QJsonDocument::fromJson(text.toUtf8());if(!doc.isObject())return;const auto o=doc.object();workspaceName_=o.value("workspace_name").toString("Untitled");datasets_.clear();
-    for(const auto& v:o.value("datasets").toArray())datasets_.push_back(v.toObject().toVariantMap());
+    for(const QJsonValue v:o.value("datasets").toArray())datasets_.push_back(v.toObject().toVariantMap());
     if(activeDatasetId_.isEmpty()&&!datasets_.isEmpty())activeDatasetId_=datasets_.last().toMap().value("id").toString();
     emit stateChanged();emit activeDatasetChanged();
 }
@@ -689,11 +689,11 @@ void AppController::loadGraphCatalogue(){
         return;
     }
     const QJsonArray cats=doc.object().value(QStringLiteral("categories")).toArray();
-    for(const QJsonValue& cv:cats){
+    for(const QJsonValue cv:cats){
         const QJsonObject co=cv.toObject();
         const QString category=co.value(QStringLiteral("name")).toString();
         QVariantList entries;
-        for(const QJsonValue& ev:co.value(QStringLiteral("entries")).toArray()){
+        for(const QJsonValue ev:co.value(QStringLiteral("entries")).toArray()){
             QVariantMap e=ev.toObject().toVariantMap();
             e.insert(QStringLiteral("category"),category);
             entries.append(e);
@@ -925,12 +925,12 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         // Datasets first, canvas state after: the state names columns, and
         // those columns only exist once the payloads are imported. The signal
         // is queued behind the import queue for exactly that reason.
-        for(const QJsonValue& v:payloads){
+        for(const QJsonValue v:payloads){
             const QString arrow=v.toObject().value(QStringLiteral("arrow_path")).toString();
             if(!arrow.isEmpty()&&!importQueue_.contains(arrow)) importQueue_.append(arrow);
         }
         const int count=payloads.size();
-        QTimer::singleShot(0,this,[this,state,count]{
+        QTimer::singleShot(0,this,[this,state]{
             pumpImportQueue();
             QTimer::singleShot(0,this,[this,state]{ emit figureLoaded(state); });
         });
@@ -1069,16 +1069,22 @@ bool AppController::literatureContextAvailable() const{
 // permanently disabled buttons. limits, forecast, fft, weibull, regression,
 // pca, doe, advisor and domain all answer through one request shape.
 // =========================================================================
-bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
+QString AppController::requireActiveArrow(){
     if(activeDatasetId_.isEmpty()){
         setStatus(QStringLiteral("Import or select a dataset first"));
-        return false;
+        return QString();
     }
     const QString arrow=nativeArrowPath();
     if(arrow.isEmpty()||!QFileInfo::exists(arrow)){
         setStatus(QStringLiteral("The active dataset has no Arrow file yet"));
-        return false;
+        return QString();
     }
+    return arrow;
+}
+
+bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
+    const QString arrow=requireActiveArrow();
+    if(arrow.isEmpty()) return false;
     const QString op=QStringLiteral("analysis.")+kind;
     QJsonObject request{{"op",op},{"arrow_path",arrow}};
     // Whatever the caller supplied travels as-is: an operation asks for the
@@ -1092,15 +1098,8 @@ bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
 
 bool AppController::estimateSurface(const QString& x,const QString& y,const QString& z,
                                     const QString& estimator,int resolution){
-    if(activeDatasetId_.isEmpty()){
-        setStatus(QStringLiteral("Import or select a dataset first"));
-        return false;
-    }
-    const QString arrow=nativeArrowPath();
-    if(arrow.isEmpty()||!QFileInfo::exists(arrow)){
-        setStatus(QStringLiteral("The active dataset has no Arrow file yet"));
-        return false;
-    }
+    const QString arrow=requireActiveArrow();
+    if(arrow.isEmpty()) return false;
     if(x.isEmpty()||y.isEmpty()||z.isEmpty()){
         setStatus(QStringLiteral("A surface needs three mapped columns"));
         return false;
@@ -1514,9 +1513,8 @@ bool AppController::runBatch(const QUrl& folder,const QString& operation,
 }
 
 void AppController::scanDataset(double budgetSeconds,bool useLiterature,bool force){
-    if(activeDatasetId_.isEmpty()){setStatus(QStringLiteral("Import or select a dataset first"));return;}
-    const QString arrow=nativeArrowPath();
-    if(arrow.isEmpty()||!QFileInfo::exists(arrow)){setStatus(QStringLiteral("The active dataset has no Arrow file yet"));return;}
+    const QString arrow=requireActiveArrow();
+    if(arrow.isEmpty()) return;
 
     QJsonObject request{{"op","dataset.scan"},
                         {"arrow_path",arrow},

@@ -45,8 +45,14 @@ SplitView {
         canvas: plot
         onApplyMapping:(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)=>{
             app.applyMapping(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)
+            // vtkLoader.item is a QObject as far as any static check can tell:
+            // GraphVis.VTK is a separate, lazily-loaded module. The guard on
+            // the line is the check, so the lint is told so rather than left
+            // reporting a member it has no way to know about.
+            // qmllint disable missing-property
             if(app.rendererMode==="VTK / PBR" && vtkLoader.item && vtkLoader.item.reload)
                 vtkLoader.item.reload()
+            // qmllint enable missing-property
             plot.xColumn = x
             plot.yColumns = y ? [y] : []
         }
@@ -91,14 +97,14 @@ SplitView {
             color:Theme.background; border.color:Theme.border; radius:Theme.radius
             StackLayout {
                 anchors.fill:parent
-                currentIndex: app.rendererMode==="Qt 2-D" ? 2 : (app.rendererMode==="VTK / PBR" ? 1 : 0)
+                currentIndex: root.app.rendererMode==="Qt 2-D" ? 2 : (root.app.rendererMode==="VTK / PBR" ? 1 : 0)
                 Item {
-                    WindowContainer { anchors.fill:parent; window:app.viewportWindow }
+                    WindowContainer { anchors.fill:parent; window:root.app.viewportWindow }
                     StatusPill { anchors{right:parent.right;bottom:parent.bottom;margins:12} text:"Rust / WGPU · persistent direct surface" }
                 }
                 Loader {
                     id:vtkLoader
-                    active: app.rendererMode === "VTK / PBR"
+                    active: root.app.rendererMode === "VTK / PBR"
                     source: active ? "qrc:/qt/qml/GraphVis/lazy/VtkViewport.qml" : ""
                     onLoaded: {
                         item.controller = root.app
