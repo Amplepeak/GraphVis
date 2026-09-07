@@ -23,6 +23,28 @@ namespace {
 // here: the screen path decimates, exportPdf/exportPng do not.
 constexpr int kInteractivePointBudget = 10000;
 
+// ...but that budget was applied PER SERIES, so the cost of a repaint scaled
+// with the number of columns mapped. Six series meant 60,000 points on the GUI
+// thread, and the raster engine's cost is superlinear in stroked area:
+//
+//     3,000 points   37 ms      18,000 points    322 ms
+//     6,000 points   81 ms      30,000 points    678 ms
+//    10,000 points  152 ms      60,000 points  2,143 ms
+//
+// So a six-column plot took over two seconds to repaint - during a drag, on
+// every frame. Sharing the budget across the series puts it back at 152 ms.
+//
+// A single-series plot is unchanged: it still gets the whole 10,000. Only the
+// multi-series case, which is the slow one, gives anything up, and the floor
+// keeps each series detailed enough to read. The full-resolution render is
+// untouched - it draws every row, as it always did.
+constexpr int kMinimumPointsPerSeries = 1500;
+
+int interactiveBudgetFor(int seriesCount){
+    if(seriesCount<=1) return kInteractivePointBudget;
+    return qMax(kMinimumPointsPerSeries,kInteractivePointBudget/seriesCount);
+}
+
 // Series colours come from ColourVision.h, which measures its palettes through
 // a dichromat simulation instead of asserting they are safe. The rotation that
 // used to live here carried the comment "colour-blind-safe" and measured 3.6 dE
@@ -245,7 +267,8 @@ void PlotCanvas::rebuild(){
     }
     if(yNames.isEmpty()){ message_=QStringLiteral("Need at least two numeric columns to plot"); emit stateChanged(); return; }
 
-    pointCount_=buildPlotSeries(table,xName,yNames,colourVision_,kInteractivePointBudget,spec_,
+    pointCount_=buildPlotSeries(table,xName,yNames,colourVision_,
+                                interactiveBudgetFor(int(yNames.size())),spec_,
                                 xUnit_,yUnit_);
 
     // How many points there would have been without the budget. The difference
