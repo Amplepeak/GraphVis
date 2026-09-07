@@ -128,6 +128,40 @@ add_subdirectory(app)
 
 install(DIRECTORY assets/ DESTINATION share/graphvis/assets)
 install(FILES VERSION README.md DESTINATION share/graphvis)
+
+# --------------------------------------------------------------------------
+# The science add-on, and the scripts that install it
+#
+# Without this, a release contains the native application and nothing else:
+# the add-on is installed by pip from services/python, and that folder only
+# ever existed in the source tree. So an end user with Install.exe could not
+# install it - and everything behind it was unreachable. That is 149 dataset
+# formats, all nine analysis operations, the seventeen surface estimators,
+# literature extraction, .gvfig save and open, folder batching, and the MATLAB
+# engine path.
+#
+# The layout mirrors the source tree on purpose. AppController looks for
+# tools/Manage-OptionalComponents.ps1 beside the executable, and that script
+# resolves the package as ../services/python, so both find what they expect
+# with no path special-casing for an installed copy.
+#
+# Source only - a few hundred kilobytes. The packages themselves are still
+# downloaded on demand into the user's own virtual environment, which is what
+# keeps the release small and the add-on optional.
+install(DIRECTORY services/python/graphvis_science
+  DESTINATION services/python
+  PATTERN "__pycache__" EXCLUDE
+  PATTERN "*.pyc" EXCLUDE
+)
+install(FILES services/python/pyproject.toml DESTINATION services/python)
+
+install(FILES
+    tools/Manage-OptionalComponents.ps1
+    tools/Install-OptionalPythonScience.ps1
+    tools/optional-components.json
+    tools/component_requirements.py
+  DESTINATION tools
+)
 if(GRAPHVIS_BUILD_RUST)
   install(FILES "${GRAPHVIS_RUST_LIB}" DESTINATION . OPTIONAL)
   if(GRAPHVIS_BUILD_FLIGHT)

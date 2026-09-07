@@ -17,7 +17,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$EnvDir = Join-Path $env:LOCALAPPDATA 'GraphVis\18.4\python-science'
+# AppController resolves this as qEnvironmentVariable("LOCALAPPDATA", <app local
+# data>), so it already has a fallback. Without the same one here the two could
+# disagree about where the environment lives, and the app would report the
+# add-on missing right after this script said it installed it.
+$LocalAppData = $env:LOCALAPPDATA
+if (-not $LocalAppData) { $LocalAppData = [Environment]::GetFolderPath('LocalApplicationData') }
+if (-not $LocalAppData) { throw 'Cannot locate the local application data folder.' }
+$EnvDir = Join-Path $LocalAppData 'GraphVis\18.4\python-science'
 $Python = Join-Path $EnvDir 'Scripts\python.exe'
 $Catalogue = Join-Path $PSScriptRoot 'optional-components.json'
 
