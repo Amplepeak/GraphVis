@@ -576,6 +576,13 @@ GV_FIELD_SETTER(FieldValuePolicy,fieldValuePolicy,
 GV_FIELD_SETTER(FieldResponseSpace,fieldResponseSpace,
                 qBound(0,v,int(ResponseSpace::Count)-1))
 GV_FIELD_SETTER(FieldNeighbours,fieldNeighbours,qBound(4,v,512))
+GV_FIELD_SETTER(FieldFootprint,fieldFootprint,
+                qBound(0,v,int(FailureFootprint::Count)-1))
+GV_FIELD_SETTER(FieldBridging,fieldBridging,qBound(0,v,int(Bridging::Count)-1))
+GV_FIELD_SETTER(FieldBridgeMaxCells,fieldBridgeMaxCells,qBound(1,v,2500))
+GV_FIELD_SETTER(FieldInvalidDisplay,fieldInvalidDisplay,
+                qBound(0,v,int(InvalidDisplay::Count)-1))
+GV_FIELD_SETTER(FieldKrigingVariogram,fieldKrigingVariogram,qBound(0,v,2))
 #undef GV_FIELD_SETTER
 
 void PlotCanvas::setFieldIdwPower(double v){
@@ -613,6 +620,17 @@ QVariantList PlotCanvas::fieldEstimatorList(){
 }
 
 QStringList PlotCanvas::fieldExtrapolationNames(){ return extrapolationNames(); }
+QStringList PlotCanvas::fieldFootprintNames(){ return failureFootprintNames(); }
+QStringList PlotCanvas::fieldBridgingNames(){ return bridgingNames(); }
+QStringList PlotCanvas::fieldInvalidDisplayNames(){ return invalidDisplayNames(); }
+QStringList PlotCanvas::fieldKrigingVariogramNames(){ return krigingVariogramNames(); }
+
+void PlotCanvas::setFieldLoessFraction(double v){
+    const double clamped=qBound(0.02,v,1.0);
+    if(qFuzzyCompare(spec_.style.fieldLoessFraction,clamped)) return;
+    spec_.style.fieldLoessFraction=clamped;
+    showingFull_=false; update(); scheduleFullRender(); emit styleChanged();
+}
 QStringList PlotCanvas::fieldValuePolicyNames(){ return valuePolicyNames(); }
 QStringList PlotCanvas::fieldResponseSpaceNames(){ return responseSpaceNames(); }
 

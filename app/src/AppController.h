@@ -122,6 +122,12 @@ class AppController final : public QObject {
     Q_PROPERTY(int plotFieldNeighbours READ plotFieldNeighbours WRITE setPlotFieldNeighbours NOTIFY plotDisplayChanged)
     Q_PROPERTY(double plotFieldIdwPower READ plotFieldIdwPower WRITE setPlotFieldIdwPower NOTIFY plotDisplayChanged)
     Q_PROPERTY(double plotFieldSmoothing READ plotFieldSmoothing WRITE setPlotFieldSmoothing NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldFootprint READ plotFieldFootprint WRITE setPlotFieldFootprint NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldBridging READ plotFieldBridging WRITE setPlotFieldBridging NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldBridgeMaxCells READ plotFieldBridgeMaxCells WRITE setPlotFieldBridgeMaxCells NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldInvalidDisplay READ plotFieldInvalidDisplay WRITE setPlotFieldInvalidDisplay NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldKrigingVariogram READ plotFieldKrigingVariogram WRITE setPlotFieldKrigingVariogram NOTIFY plotDisplayChanged)
+    Q_PROPERTY(double plotFieldLoessFraction READ plotFieldLoessFraction WRITE setPlotFieldLoessFraction NOTIFY plotDisplayChanged)
 
     // What was open last time.
     //
@@ -336,6 +342,18 @@ public:
     int plotFieldNeighbours() const{return plotFieldNeighbours_;}
     double plotFieldIdwPower() const{return plotFieldIdwPower_;}
     double plotFieldSmoothing() const{return plotFieldSmoothing_;}
+    int plotFieldFootprint() const{return plotFieldFootprint_;}
+    int plotFieldBridging() const{return plotFieldBridging_;}
+    int plotFieldBridgeMaxCells() const{return plotFieldBridgeMaxCells_;}
+    int plotFieldInvalidDisplay() const{return plotFieldInvalidDisplay_;}
+    void setPlotFieldFootprint(int v);
+    void setPlotFieldBridging(int v);
+    void setPlotFieldBridgeMaxCells(int v);
+    void setPlotFieldInvalidDisplay(int v);
+    int plotFieldKrigingVariogram() const{return plotFieldKrigingVariogram_;}
+    double plotFieldLoessFraction() const{return plotFieldLoessFraction_;}
+    void setPlotFieldKrigingVariogram(int v);
+    void setPlotFieldLoessFraction(double v);
     void setPlotFieldEstimator(int v);
     void setPlotFieldExtrapolation(int v);
     void setPlotFieldValuePolicy(int v);
@@ -523,6 +541,12 @@ private:
     int plotFieldNeighbours_=32;
     double plotFieldIdwPower_=2.0;
     double plotFieldSmoothing_=0.0;
+    int plotFieldFootprint_=0;
+    int plotFieldBridging_=1;
+    int plotFieldBridgeMaxCells_=4;
+    int plotFieldInvalidDisplay_=0;
+    int plotFieldKrigingVariogram_=0;
+    double plotFieldLoessFraction_=0.25;
     QStringList messageLog_;
     int uiLayout_=0;                        // Notebook
     // Newest first, capped. Each entry is {path, name}; visualisations are

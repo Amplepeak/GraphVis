@@ -584,6 +584,12 @@ Item {
                         fieldNeighbours: root.app.plotFieldNeighbours
                         fieldIdwPower: root.app.plotFieldIdwPower
                         fieldSmoothing: root.app.plotFieldSmoothing
+                        fieldFootprint: root.app.plotFieldFootprint
+                        fieldBridging: root.app.plotFieldBridging
+                        fieldBridgeMaxCells: root.app.plotFieldBridgeMaxCells
+                        fieldInvalidDisplay: root.app.plotFieldInvalidDisplay
+                        fieldKrigingVariogram: root.app.plotFieldKrigingVariogram
+                        fieldLoessFraction: root.app.plotFieldLoessFraction
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision

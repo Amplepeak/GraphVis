@@ -1189,6 +1189,15 @@ QtPlotBackend::ValueGrid QtPlotBackend::gridFromSeries(const PlotSpec& spec,int 
         settings.neighbours=qBound(4,spec.style.fieldNeighbours,512);
         settings.idwPower=spec.style.fieldIdwPower;
         settings.smoothing=qMax(0.0,spec.style.fieldSmoothing);
+        settings.footprint=FailureFootprint(qBound(0,spec.style.fieldFootprint,
+                                                   int(FailureFootprint::Count)-1));
+        settings.bridging=Bridging(qBound(0,spec.style.fieldBridging,
+                                          int(Bridging::Count)-1));
+        settings.bridgeMaxCells=qBound(1,spec.style.fieldBridgeMaxCells,2500);
+        settings.invalidDisplay=InvalidDisplay(qBound(0,spec.style.fieldInvalidDisplay,
+                                                      int(InvalidDisplay::Count)-1));
+        settings.kriging=qBound(0,spec.style.fieldKrigingVariogram,2);
+        settings.loessFraction=qBound(0.02,spec.style.fieldLoessFraction,1.0);
         // The distance weights make the two axes comparable. Without them a
         // sweep that spans 0..1 in x and 0..10000 in y has every neighbourhood
         // stretched into a horizontal sliver, and the field is smeared along
@@ -3964,6 +3973,12 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     fnvBytes(h,&spec.style.fieldNeighbours,sizeof(spec.style.fieldNeighbours));
     fnvBytes(h,&spec.style.fieldIdwPower,sizeof(spec.style.fieldIdwPower));
     fnvBytes(h,&spec.style.fieldSmoothing,sizeof(spec.style.fieldSmoothing));
+    fnvBytes(h,&spec.style.fieldFootprint,sizeof(spec.style.fieldFootprint));
+    fnvBytes(h,&spec.style.fieldBridging,sizeof(spec.style.fieldBridging));
+    fnvBytes(h,&spec.style.fieldBridgeMaxCells,sizeof(spec.style.fieldBridgeMaxCells));
+    fnvBytes(h,&spec.style.fieldInvalidDisplay,sizeof(spec.style.fieldInvalidDisplay));
+    fnvBytes(h,&spec.style.fieldKrigingVariogram,sizeof(spec.style.fieldKrigingVariogram));
+    fnvBytes(h,&spec.style.fieldLoessFraction,sizeof(spec.style.fieldLoessFraction));
     return h;
 }
 

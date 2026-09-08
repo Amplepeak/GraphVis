@@ -136,20 +136,24 @@ bool estimatorImplemented(Estimator e){
     switch(e){
     case Estimator::Auto:
     case Estimator::NearestNeighbour:
+    case Estimator::Bilinear:
+    case Estimator::Bicubic:
+    case Estimator::RectangularBSpline:
+    case Estimator::MonotonePchip:
     case Estimator::DelaunayLinear:
     case Estimator::InverseDistance:
     case Estimator::ModifiedShepard:
     case Estimator::ThinPlateSpline:
     case Estimator::Multiquadric:
     case Estimator::GaussianRbf:
+    case Estimator::OrdinaryKriging:
+    case Estimator::MovingLeastSquares:
+    case Estimator::Loess:
         return true;
-    // Not yet ported. Each needs real machinery of its own rather than a
-    // parameter on something already here: Clough-Tocher needs estimated
-    // vertex gradients and a cubic Bezier patch per triangle, natural
-    // neighbour needs Voronoi areas recomputed per query, kriging needs a
-    // fitted variogram and a solve per neighbourhood, and the four structured
-    // methods only apply when the samples already lie on a complete rectangle,
-    // which needs detecting first.
+    // Not yet ported: Clough-Tocher needs estimated vertex gradients and a
+    // cubic Bezier patch per triangle, and natural neighbour needs Voronoi
+    // areas recomputed per query. Both are real machinery rather than a
+    // parameter on something already here.
     default:
         return false;
     }
@@ -181,6 +185,34 @@ QStringList extrapolationNames(){
             QStringLiteral("IDW full-domain extension"),
             QStringLiteral("Linear + nearest full rectangle"),
             QStringLiteral("Edge-clamped full rectangle")};
+}
+
+QStringList failureFootprintNames(){
+    return {QStringLiteral("Sample cell only"),
+            QStringLiteral("Conservative local region"),
+            QStringLiteral("Voronoi failure region"),
+            QStringLiteral("None (fit through failures)")};
+}
+
+QStringList bridgingNames(){
+    return {QStringLiteral("Preserve all failures"),
+            QStringLiteral("Bridge isolated failures"),
+            QStringLiteral("Bridge small enclosed holes"),
+            QStringLiteral("Bridge all interior holes")};
+}
+
+QStringList invalidDisplayNames(){
+    return {QStringLiteral("Transparent"),
+            QStringLiteral("Fallback colour"),
+            QStringLiteral("Nearest Neighbor Fill"),
+            QStringLiteral("Local Mean Imputation"),
+            QStringLiteral("Baseline Clamp (colour-scale minimum)"),
+            QStringLiteral("Symmetric Mirror Fill")};
+}
+
+QStringList krigingVariogramNames(){
+    return {QStringLiteral("Exponential"),QStringLiteral("Spherical"),
+            QStringLiteral("Gaussian")};
 }
 
 QStringList valuePolicyNames(){
@@ -517,6 +549,499 @@ double evaluateRbf(const RbfFit& fit,double x,double y,double xWeight,double yWe
     return sum;
 }
 
+
+// ---------------------------------------------------------------------------
+// The structured family.
+//
+// These apply when the measurements ALREADY lie on a complete rectangle, which
+// a factorial parameter sweep almost always is: every combination of a set of x
+// levels with a set of y levels, run once. The general scattered machinery
+// still works on such data and is both slower and worse at it - a Delaunay
+// triangulation of a regular lattice is a set of arbitrarily-oriented triangles
+// whose diagonals show up as diagonal ridges in the picture, and an RBF solves
+// a dense system to reproduce something a tensor product gets exactly.
+//
+// So the first thing any of them has to do is find out whether the data is on a
+// rectangle at all, and say no when it is not rather than pretending.
+
+struct StructuredGrid {
+    QVector<double> xs, ys;     // the distinct levels, sorted
+    QVector<double> z;          // ys.size() x xs.size(), NaN where a cell is missing
+    bool ok=false;
+    int missing=0;
+};
+
+// Distinct values, to a tolerance that scales with the span.
+//
+// Exact equality is wrong here: a sweep written out by a solver carries values
+// like 0.30000000000000004, and three levels become three hundred. The
+// tolerance is a fraction of the smallest gap between genuinely distinct
+// levels, found by sorting first.
+static QVector<double> distinctLevels(QVector<double> v,double span){
+    std::sort(v.begin(),v.end());
+    QVector<double> out;
+    const double tol=qMax(1e-12,span*1e-9);
+    for(double x:v)
+        if(out.isEmpty()||x-out.last()>tol) out.append(x);
+    return out;
+}
+
+static StructuredGrid asStructured(const QVector<ScatterPoint>& pts){
+    StructuredGrid g;
+    const int n=pts.size();
+    if(n<4) return g;
+
+    double xLo=pts[0].x,xHi=xLo,yLo=pts[0].y,yHi=yLo;
+    QVector<double> xv,yv;
+    xv.reserve(n); yv.reserve(n);
+    for(const ScatterPoint& p:pts){
+        xv.append(p.x); yv.append(p.y);
+        xLo=qMin(xLo,p.x); xHi=qMax(xHi,p.x);
+        yLo=qMin(yLo,p.y); yHi=qMax(yHi,p.y);
+    }
+    g.xs=distinctLevels(xv,xHi-xLo);
+    g.ys=distinctLevels(yv,yHi-yLo);
+    const qint64 cells=qint64(g.xs.size())*qint64(g.ys.size());
+    // A rectangle has as many cells as it has points, give or take the ones a
+    // run failed at. More than a quarter empty is not a lattice with holes, it
+    // is scattered data that happens to repeat a few coordinates - and treating
+    // it as a lattice would be a tensor product over mostly nothing.
+    if(g.xs.size()<2||g.ys.size()<2) return g;
+    if(cells>4LL*n) return g;
+
+    g.z.fill(kNaN,int(cells));
+    const double xTol=qMax(1e-12,(xHi-xLo)*1e-9);
+    const double yTol=qMax(1e-12,(yHi-yLo)*1e-9);
+    const auto indexOf=[](const QVector<double>& levels,double v,double tol){
+        int lo=0,hi=levels.size()-1;
+        while(lo<=hi){
+            const int mid=(lo+hi)/2;
+            if(std::abs(levels[mid]-v)<=tol) return mid;
+            if(levels[mid]<v) lo=mid+1; else hi=mid-1;
+        }
+        return -1;
+    };
+    for(const ScatterPoint& p:pts){
+        const int ix=indexOf(g.xs,p.x,xTol);
+        const int iy=indexOf(g.ys,p.y,yTol);
+        if(ix<0||iy<0) return g;              // not on the lattice after all
+        // A repeated cell takes the mean, as the binned path does. A sweep run
+        // twice at one point is two measurements of the same thing.
+        double& cell=g.z[iy*g.xs.size()+ix];
+        cell=finite(cell)?(cell+p.v)/2.0:p.v;
+    }
+    for(double v:g.z) if(!finite(v)) ++g.missing;
+    if(g.missing*4>g.z.size()) return g;      // too holey to call a lattice
+    g.ok=true;
+    return g;
+}
+
+// Where a query sits in a set of levels: the interval below it and the
+// fraction across that interval.
+static void locate(const QVector<double>& levels,double v,int* i,double* t){
+    const int n=levels.size();
+    int lo=0,hi=n-1;
+    while(hi-lo>1){
+        const int mid=(lo+hi)/2;
+        if(levels[mid]<=v) lo=mid; else hi=mid;
+    }
+    *i=lo;
+    const double d=levels[lo+1]-levels[lo];
+    *t=(d>1e-300)?(v-levels[lo])/d:0.0;
+}
+
+// Fritsch-Carlson slopes: the ONE thing that makes PCHIP worth having.
+//
+// A natural cubic spline through data that only ever rises will still dip
+// between two close points, because it is minimising curvature rather than
+// respecting the data's shape. On a concentration or a conversion that dip is a
+// value below zero, drawn in the same ink as the measurements. These slopes are
+// limited so a monotone run of points produces a monotone curve.
+static QVector<double> pchipSlopes(const QVector<double>& x,const QVector<double>& y){
+    const int n=x.size();
+    QVector<double> m(n,0.0);
+    if(n<2) return m;
+    QVector<double> d(n-1,0.0);
+    for(int i=0;i<n-1;++i){
+        const double h=x[i+1]-x[i];
+        d[i]=(h>1e-300)?(y[i+1]-y[i])/h:0.0;
+    }
+    m[0]=d[0];
+    m[n-1]=d[n-2];
+    for(int i=1;i<n-1;++i){
+        if(d[i-1]*d[i]<=0.0){ m[i]=0.0; continue; }   // a turning point stays flat
+        const double h0=x[i]-x[i-1], h1=x[i+1]-x[i];
+        const double w0=2.0*h1+h0, w1=h1+2.0*h0;
+        m[i]=(w0+w1)/(w0/d[i-1]+w1/d[i]);
+    }
+    return m;
+}
+
+static double hermite(double x0,double x1,double y0,double y1,
+                      double m0,double m1,double x){
+    const double h=x1-x0;
+    if(!(h>1e-300)) return y0;
+    const double t=(x-x0)/h, t2=t*t, t3=t2*t;
+    return (2*t3-3*t2+1)*y0 + (t3-2*t2+t)*h*m0
+         + (-2*t3+3*t2)*y1 + (t3-t2)*h*m1;
+}
+
+// Catmull-Rom on the ACTUAL level positions rather than on the index.
+//
+// The textbook form assumes the samples are evenly spaced and takes its
+// tangents as (c-a)/2. A parameter sweep is rarely even - decades in one
+// factor, a quadratic ramp in another - and on such a lattice the uniform form
+// is not even exact on a plane: it was out by 0.93 on a plane over a lattice
+// spanning two decades in x, which is a curved surface drawn through flat data.
+// Taking the tangent as (y[i+1]-y[i-1])/(x[i+1]-x[i-1]) and interpolating with
+// a Hermite between the two bracketing levels costs nothing and is exact on a
+// plane whatever the spacing.
+static double catmullRomAt(const QVector<double>& xs,const QVector<double>& ys,
+                           int i,double x){
+    const int n=xs.size();
+    const auto X=[&xs,n](int k){ return xs[qBound(0,k,n-1)]; };
+    const auto Y=[&ys,n](int k){ return ys[qBound(0,k,n-1)]; };
+    const auto slope=[&X,&Y](int k){
+        const double h=X(k+1)-X(k-1);
+        return (std::abs(h)>1e-300)?(Y(k+1)-Y(k-1))/h:0.0;
+    };
+    return hermite(X(i),X(i+1),Y(i),Y(i+1),slope(i),slope(i+1),x);
+}
+
+// The rectangular spline, knotted on the ACTUAL level positions.
+//
+// GraphVis 17 used scipy's RectBivariateSpline, whose knots are the
+// coordinates. The first version here was a uniform-knot B-spline - knotted on
+// the INDEX - which is a different curve: it reproduced its own measurements
+// but bent by 1.0 between them on a plane measured over a lattice spanning two
+// decades in x, because index-uniform knots say the levels are evenly spaced
+// and they are not. That is not a tuning difference, it is a surface curving
+// through flat data.
+//
+// So this is a natural cubic spline on the levels: the standard tridiagonal
+// solve for the second derivatives, with M = 0 at both ends. Interpolating,
+// C2, and exact on anything linear whatever the spacing.
+static QVector<double> splineSecondDerivatives(const QVector<double>& x,
+                                               const QVector<double>& y){
+    const int n=x.size();
+    QVector<double> m(n,0.0);
+    if(n<3) return m;
+    QVector<double> h(n-1,0.0);
+    for(int i=0;i<n-1;++i) h[i]=qMax(1e-300,x[i+1]-x[i]);
+
+    // Thomas over rows 1..n-2; the ends are pinned at zero curvature.
+    QVector<double> lower(n,0.0),diag(n,1.0),upper(n,0.0),rhs(n,0.0);
+    for(int i=1;i<n-1;++i){
+        lower[i]=h[i-1];
+        diag[i]=2.0*(h[i-1]+h[i]);
+        upper[i]=h[i];
+        rhs[i]=6.0*((y[i+1]-y[i])/h[i]-(y[i]-y[i-1])/h[i-1]);
+    }
+    for(int i=1;i<n;++i){
+        const double w=(std::abs(diag[i-1])>1e-300)?lower[i]/diag[i-1]:0.0;
+        diag[i]-=w*upper[i-1];
+        rhs[i]-=w*rhs[i-1];
+    }
+    for(int i=n-2;i>=1;--i)
+        m[i]=(std::abs(diag[i])>1e-300)?(rhs[i]-upper[i]*m[i+1])/diag[i]:0.0;
+    return m;
+}
+
+static double splineAt(const QVector<double>& x,const QVector<double>& y,
+                       const QVector<double>& m,int i,double at){
+    const double h=qMax(1e-300,x[i+1]-x[i]);
+    const double a=x[i+1]-at, b=at-x[i];
+    return (a*a*a*m[i]+b*b*b*m[i+1])/(6.0*h)
+         + (y[i]/h - h*m[i]/6.0)*a
+         + (y[i+1]/h - h*m[i+1]/6.0)*b;
+}
+
+// One structured sample. Every method here is a tensor product: interpolate
+// along each row of the lattice, then interpolate the results down the column.
+static double structuredAt(const StructuredGrid& g,Estimator kind,double x,double y){
+    const int nx=g.xs.size(), ny=g.ys.size();
+    if(x<g.xs.first()||x>g.xs.last()||y<g.ys.first()||y>g.ys.last()) return kNaN;
+
+    int ix=0,iy=0; double tx=0.0,ty=0.0;
+    locate(g.xs,x,&ix,&tx);
+    locate(g.ys,y,&iy,&ty);
+    const auto cell=[&g,nx,ny](int cx,int cy){
+        return g.z[qBound(0,cy,ny-1)*nx+qBound(0,cx,nx-1)];
+    };
+
+    if(kind==Estimator::NearestNeighbour){
+        return cell(tx<0.5?ix:ix+1, ty<0.5?iy:iy+1);
+    }
+    if(kind==Estimator::Bilinear){
+        const double a=cell(ix,iy),   b=cell(ix+1,iy);
+        const double c=cell(ix,iy+1), d=cell(ix+1,iy+1);
+        if(!finite(a)||!finite(b)||!finite(c)||!finite(d)) return kNaN;
+        return (a*(1-tx)+b*tx)*(1-ty)+(c*(1-tx)+d*tx)*ty;
+    }
+    if(kind==Estimator::Bicubic){
+        QVector<double> colVals(ny,0.0);
+        for(int r=0;r<ny;++r){
+            QVector<double> row(nx);
+            for(int c=0;c<nx;++c){
+                row[c]=g.z[r*nx+c];
+                if(!finite(row[c])) return kNaN;
+            }
+            colVals[r]=catmullRomAt(g.xs,row,ix,x);
+        }
+        return catmullRomAt(g.ys,colVals,iy,y);
+    }
+    if(kind==Estimator::MonotonePchip){
+        // Along x on the two bracketing rows, then along y between them, with
+        // Fritsch-Carlson slopes each time.
+        QVector<double> colVals, colY;
+        for(int r=0;r<ny;++r){
+            QVector<double> row(nx);
+            for(int c=0;c<nx;++c){
+                row[c]=g.z[r*nx+c];
+                if(!finite(row[c])) return kNaN;
+            }
+            const QVector<double> m=pchipSlopes(g.xs,row);
+            colVals.append(hermite(g.xs[ix],g.xs[ix+1],row[ix],row[ix+1],
+                                   m[ix],m[ix+1],x));
+            colY.append(g.ys[r]);
+        }
+        const QVector<double> mv=pchipSlopes(colY,colVals);
+        return hermite(colY[iy],colY[iy+1],colVals[iy],colVals[iy+1],
+                       mv[iy],mv[iy+1],y);
+    }
+    // Rectangular B-spline.
+    QVector<double> colVals(ny,0.0);
+    for(int r=0;r<ny;++r){
+        QVector<double> row(nx);
+        for(int c=0;c<nx;++c){
+            row[c]=g.z[r*nx+c];
+            if(!finite(row[c])) return kNaN;
+        }
+        colVals[r]=splineAt(g.xs,row,splineSecondDerivatives(g.xs,row),ix,x);
+    }
+    return splineAt(g.ys,colVals,splineSecondDerivatives(g.ys,colVals),iy,y);
+}
+
+
+// ---------------------------------------------------------------------------
+// Statistical and local regression.
+//
+// These three are the only estimators here that do NOT pass through their own
+// measurements, and that is the point of them rather than a shortcoming. A
+// sweep whose response carries noise - a solver tolerance, a measurement error,
+// a stochastic model - has an interpolant drawn through every wobble, and the
+// resulting surface is a picture of the noise as much as of the field. These
+// fit a model near each query and report what the model says.
+
+// A local weighted least-squares fit at one point.
+//
+// `quadratic` picks the basis: linear (1, x, y) is LOESS's usual degree-1 fit,
+// quadratic (1, x, y, x^2, xy, y^2) is what moving least squares means by
+// moving - it reproduces curvature that a plane cannot, at the cost of needing
+// more points in the neighbourhood before the system is determined.
+double localFit(const Workspace& w,double x,double y,QVector<int>& scratch,
+                int count,bool quadratic,bool tricube){
+    w.index.near(x,y,qMax(6,count),scratch);
+    if(scratch.isEmpty()) return kNaN;
+
+    const double wx=qMax(1e-12,w.s.xWeight), wy=qMax(1e-12,w.s.yWeight);
+    QVector<QPair<double,int>> byDist;
+    byDist.reserve(scratch.size());
+    for(int i:scratch){
+        const double ddx=(w.pts[i].x-x)/wx, ddy=(w.pts[i].y-y)/wy;
+        byDist.append({std::sqrt(ddx*ddx+ddy*ddy),i});
+    }
+    std::sort(byDist.begin(),byDist.end());
+    const int terms=quadratic?6:3;
+    const int k=qMin(byDist.size(),qMax(terms+2,count));
+    // The bandwidth is the distance to the FURTHEST point used, so the weight
+    // falls to zero exactly at the edge of the neighbourhood and a point
+    // entering or leaving it does not step the estimate. A fixed bandwidth
+    // would leave a seam wherever the sample density changes.
+    const double h=qMax(1e-300,byDist[k-1].first);
+
+    QVector<double> A(terms*terms,0.0), b(terms,0.0);
+    for(int i=0;i<k;++i){
+        const int idx=byDist[i].second;
+        const double u=(w.pts[idx].x-x)/wx, v=(w.pts[idx].y-y)/wy;
+        const double d=byDist[i].first/h;
+        double weight;
+        if(tricube){
+            // Cleveland's tricube, which is what LOESS means.
+            const double t=qMax(0.0,1.0-d*d*d);
+            weight=t*t*t;
+        }else{
+            // A Gaussian, truncated at the bandwidth. The usual MLS choice.
+            weight=std::exp(-4.0*d*d);
+        }
+        if(!(weight>0.0)) continue;
+        double basis[6]={1.0,u,v,u*u,u*v,v*v};
+        for(int r=0;r<terms;++r){
+            for(int c=0;c<terms;++c) A[r*terms+c]+=weight*basis[r]*basis[c];
+            b[r]+=weight*basis[r]*w.pts[idx].v;
+        }
+    }
+    // Solved AT the query point - the basis above is centred on it - so the
+    // answer is simply the constant term, and no evaluation step can get the
+    // centring wrong.
+    QVector<double> Acopy=A, rhs=b;
+    if(!solveInPlace(Acopy,rhs,terms)){
+        // Not enough independent points for this basis. A degenerate
+        // neighbourhood is a real situation - a row of collinear runs - and
+        // dropping to the linear fit is better than reporting nothing.
+        if(!quadratic) return kNaN;
+        return localFit(w,x,y,scratch,count,false,tricube);
+    }
+    return rhs[0];
+}
+
+// Ordinary kriging.
+//
+// Alone among these it estimates the SPATIAL STRUCTURE first - how quickly the
+// response decorrelates with distance - and then weights the neighbours by what
+// that structure implies rather than by distance alone. On an anisotropic sweep
+// that is a real difference: two runs a given distance apart along the axis the
+// response varies slowly in tell you more about each other than two the same
+// distance apart across it.
+struct Variogram {
+    double nugget=0.0, sill=1.0, range=1.0;
+    int model=0;              // 0 exponential, 1 spherical, 2 gaussian
+    bool ok=false;
+};
+
+double variogramAt(const Variogram& g,double h){
+    if(h<=0.0) return 0.0;
+    const double a=qMax(1e-300,g.range);
+    switch(g.model){
+    case 1: return (h>=a)?(g.nugget+g.sill)
+                         :(g.nugget+g.sill*(1.5*h/a-0.5*std::pow(h/a,3.0)));
+    case 2: return g.nugget+g.sill*(1.0-std::exp(-(h*h)/(a*a)));
+    default: return g.nugget+g.sill*(1.0-std::exp(-h/a));
+    }
+}
+
+Variogram fitVariogram(const QVector<ScatterPoint>& pts,int model,
+                       double xWeight,double yWeight){
+    Variogram g;
+    g.model=model;
+    const int n=pts.size();
+    if(n<8) return g;
+
+    // The experimental variogram: half the mean squared difference, binned by
+    // separation. Sampled rather than exhaustive - all pairs is O(n^2) and a
+    // few thousand pairs pins these three numbers perfectly well.
+    double maxLag=0.0;
+    {
+        double xLo=pts[0].x,xHi=xLo,yLo=pts[0].y,yHi=yLo;
+        for(const ScatterPoint& p:pts){
+            xLo=qMin(xLo,p.x); xHi=qMax(xHi,p.x);
+            yLo=qMin(yLo,p.y); yHi=qMax(yHi,p.y);
+        }
+        maxLag=0.5*std::hypot((xHi-xLo)/qMax(1e-12,xWeight),
+                              (yHi-yLo)/qMax(1e-12,yWeight));
+    }
+    if(!(maxLag>0.0)) return g;
+
+    constexpr int kBins=16;
+    QVector<double> sum(kBins,0.0);
+    QVector<int> count(kBins,0);
+    quint32 seed=88675123u;
+    const int pairs=qMin(20000,n*8);
+    for(int t=0;t<pairs;++t){
+        seed^=seed<<13; seed^=seed>>17; seed^=seed<<5;
+        const int i=int(seed%quint32(n));
+        seed^=seed<<13; seed^=seed>>17; seed^=seed<<5;
+        const int j=int(seed%quint32(n));
+        if(i==j) continue;
+        const double h=std::hypot((pts[i].x-pts[j].x)/qMax(1e-12,xWeight),
+                                  (pts[i].y-pts[j].y)/qMax(1e-12,yWeight));
+        if(h<=0.0||h>maxLag) continue;
+        const int bin=qBound(0,int(h/maxLag*kBins),kBins-1);
+        const double d=pts[i].v-pts[j].v;
+        sum[bin]+=0.5*d*d;
+        count[bin]+=1;
+    }
+    QVector<double> lag,gamma;
+    for(int b=0;b<kBins;++b){
+        if(count[b]<4) continue;
+        lag.append(maxLag*(double(b)+0.5)/kBins);
+        gamma.append(sum[b]/double(count[b]));
+    }
+    if(lag.size()<4) return g;
+
+    // Three parameters over a grid rather than by a nonlinear solver: the
+    // surface is smooth, the grid is 12 x 12 x 8, and a search that cannot
+    // diverge is worth more here than one that is two decimal places better.
+    double best=std::numeric_limits<double>::infinity();
+    double totalSill=0.0;
+    for(double v:gamma) totalSill=qMax(totalSill,v);
+    for(int ri=1;ri<=12;++ri){
+        const double range=maxLag*double(ri)/12.0;
+        for(int si=1;si<=12;++si){
+            const double sill=totalSill*double(si)/12.0*1.4;
+            for(int ni=0;ni<8;++ni){
+                const double nugget=totalSill*double(ni)/8.0*0.5;
+                Variogram trial; trial.model=model;
+                trial.range=range; trial.sill=sill; trial.nugget=nugget;
+                double sse=0.0;
+                for(int k=0;k<lag.size();++k){
+                    const double r=gamma[k]-variogramAt(trial,lag[k]);
+                    sse+=r*r;
+                }
+                if(sse<best){ best=sse; g=trial; }
+            }
+        }
+    }
+    g.ok=std::isfinite(best);
+    return g;
+}
+
+double krigingAt(const Workspace& w,const Variogram& g,double x,double y,
+                 QVector<int>& scratch){
+    if(!g.ok) return kNaN;
+    // A neighbourhood, not the whole sample: the kriging system is
+    // (k+1) x (k+1) and solved PER NODE, so k is what decides whether a
+    // 160 x 160 grid takes a moment or an afternoon.
+    const int want=qBound(6,w.s.neighbours,64);
+    w.index.near(x,y,want,scratch);
+    if(scratch.isEmpty()) return kNaN;
+
+    const double wx=qMax(1e-12,w.s.xWeight), wy=qMax(1e-12,w.s.yWeight);
+    QVector<QPair<double,int>> byDist;
+    for(int i:scratch){
+        const double ddx=(w.pts[i].x-x)/wx, ddy=(w.pts[i].y-y)/wy;
+        byDist.append({std::sqrt(ddx*ddx+ddy*ddy),i});
+    }
+    std::sort(byDist.begin(),byDist.end());
+    if(byDist[0].first<1e-12) return w.pts[byDist[0].second].v;
+    const int k=qMin(byDist.size(),want);
+
+    // [ G  1 ] [lambda]   [g0]
+    // [ 1' 0 ] [  mu  ] = [ 1]   - the 1s are what makes it ORDINARY kriging:
+    // the weights are forced to sum to one, so the estimate is unbiased without
+    // anyone having to know the mean.
+    const int size=k+1;
+    QVector<double> A(size*size,0.0), b(size,0.0);
+    for(int i=0;i<k;++i){
+        const ScatterPoint& pi=w.pts[byDist[i].second];
+        for(int j=0;j<k;++j){
+            const ScatterPoint& pj=w.pts[byDist[j].second];
+            const double h=std::hypot((pi.x-pj.x)/wx,(pi.y-pj.y)/wy);
+            A[i*size+j]=variogramAt(g,h);
+        }
+        A[i*size+k]=1.0;
+        A[k*size+i]=1.0;
+        b[i]=variogramAt(g,byDist[i].first);
+    }
+    A[k*size+k]=0.0;
+    b[k]=1.0;
+    if(!solveInPlace(A,b,size)) return kNaN;
+
+    double sum=0.0;
+    for(int i=0;i<k;++i) sum+=b[i]*w.pts[byDist[i].second].v;
+    return sum;
+}
+
 } // namespace
 
 EstimatedField estimateField(const QVector<ScatterPoint>& raw,
@@ -530,16 +1055,23 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
 
     // Only the usable measurements, and in the response space asked for.
     QVector<ScatterPoint> pts;
+    // Runs that produced no finite answer. Their COORDINATES are real - the
+    // sweep went there and something came back non-finite - so they are kept
+    // and used to mask, rather than dropped as though the point had never been
+    // visited. That distinction is the whole of the footprint control below.
+    QVector<ScatterPoint> failures;
     pts.reserve(raw.size());
     double vLo=std::numeric_limits<double>::infinity(), vHi=-vLo;
     for(const ScatterPoint& p:raw){
-        if(!finite(p.x)||!finite(p.y)||!finite(p.v)) continue;
+        if(!finite(p.x)||!finite(p.y)) continue;
+        if(!finite(p.v)){ failures.append(p); continue; }
         ScatterPoint q=p;
         if(settings.responseSpace==ResponseSpace::Log10){
-            // A non-positive value has no logarithm, and dropping it is the
-            // only honest choice: substituting a floor would put a measurement
-            // on the map at a value nobody recorded.
-            if(!(q.v>0.0)) continue;
+            // A non-positive value has no logarithm. It is a failure of the
+            // chosen response space rather than of the run, and masking it is
+            // more honest than substituting a floor - which would put a
+            // measurement on the map at a value nobody recorded.
+            if(!(q.v>0.0)){ failures.append(p); continue; }
             q.v=std::log10(q.v);
         }
         pts.append(q);
@@ -552,15 +1084,40 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
     // An estimator this build does not compute becomes Auto rather than
     // silently falling through to nearest-neighbour under another name.
     if(!estimatorImplemented(chosen)) chosen=Estimator::Auto;
+
+    // Is the sweep on a lattice? Asked once, because Auto wants to know and the
+    // structured methods cannot run without it.
+    const bool wantsStructured=(chosen==Estimator::Bilinear
+                              ||chosen==Estimator::Bicubic
+                              ||chosen==Estimator::RectangularBSpline
+                              ||chosen==Estimator::MonotonePchip);
+    StructuredGrid lattice;
+    if(wantsStructured||chosen==Estimator::Auto) lattice=asStructured(pts);
+    // A structured method asked for on scattered data is a request that cannot
+    // be met. It falls back rather than drawing a tensor product over a lattice
+    // that is not there - and the fallback is the scattered method closest in
+    // character, not a generic default.
+    if(wantsStructured&&!lattice.ok){
+        chosen=(chosen==Estimator::Bilinear)?Estimator::DelaunayLinear
+                                            :Estimator::ThinPlateSpline;
+    }
+
     if(chosen==Estimator::Auto){
-        // The choice a person would make from the same three facts, said out
-        // loud rather than left to a comment: too few points for a global
-        // solve is a triangulation, a small clean sample earns a thin-plate
-        // spline, and a large one gets the local method that stays O(n).
-        if(pts.size()<12) chosen=Estimator::NearestNeighbour;
+        // The choice a person would make from the same facts, said out loud
+        // rather than left to a comment. A complete rectangle is the one case
+        // with an exactly right answer, so it takes it; otherwise too few
+        // points for a global solve is a triangulation, a small clean sample
+        // earns a thin-plate spline, and a large one gets the local method
+        // that stays O(n).
+        if(lattice.ok&&lattice.missing==0) chosen=Estimator::Bicubic;
+        else if(pts.size()<12) chosen=Estimator::NearestNeighbour;
         else if(pts.size()<=400) chosen=Estimator::ThinPlateSpline;
         else chosen=Estimator::DelaunayLinear;
     }
+    const bool structured=(chosen==Estimator::Bilinear
+                         ||chosen==Estimator::Bicubic
+                         ||chosen==Estimator::RectangularBSpline
+                         ||chosen==Estimator::MonotonePchip)&&lattice.ok;
 
     // The triangulation, only for the estimators that read it. It is the
     // expensive part and three of seventeen methods need it.
@@ -569,6 +1126,13 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
                              ||chosen==Estimator::CloughTocher
                              ||chosen==Estimator::NaturalNeighbour);
     if(needsTriangles) tris=delaunay(pts);
+
+    // The variogram, for kriging only. Fitted once over the whole sample; the
+    // per-node solve below reads it.
+    Variogram variogram;
+    if(chosen==Estimator::OrdinaryKriging)
+        variogram=fitVariogram(pts,qBound(0,settings.kriging,2),
+                               settings.xWeight,settings.yWeight);
 
     RbfFit rbf;
     const bool isRbf=(chosen==Estimator::ThinPlateSpline
@@ -582,6 +1146,73 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
     field.value.fill(kNaN,nx*ny);
     field.outsideHull.fill(false,nx*ny);
     field.estimated.fill(true,nx*ny);
+    field.failed.fill(false,nx*ny);
+    field.bridged.fill(false,nx*ny);
+
+    // Where the failures reach. Computed before anything is estimated, so a
+    // masked node costs nothing to produce.
+    if(!failures.isEmpty()&&settings.footprint!=FailureFootprint::None){
+        // The scale of a footprint is the sweep's own spacing near THAT
+        // failure, not one number for the whole sweep.
+        //
+        // A global median was tried first and was wrong in a way that only
+        // shows on an uneven sweep: with the runs crowded at one end of the
+        // range, the median spacing is the crowded end's, and the conservative
+        // footprint collapses onto the single-cell one everywhere. Measured on
+        // a lattice cubed towards zero it masked 2 nodes and 1 node - exactly
+        // what "sample cell only" masked - so the control existed and did
+        // nothing. Each failure now asks its own neighbours how far away they
+        // are.
+        const double cellX=(xHi-xLo)/qMax(1,nx-1), cellY=(yHi-yLo)/qMax(1,ny-1);
+        const double cellReach=0.5*std::hypot(cellX,cellY);
+        const PointIndex spacingIndex(pts,xLo,xHi,yLo,yHi);
+        QVector<double> reachOf(failures.size(),cellReach);
+        if(settings.footprint==FailureFootprint::ConservativeRegion){
+            QVector<int> found;
+            for(int i=0;i<failures.size();++i){
+                spacingIndex.near(failures[i].x,failures[i].y,8,found);
+                QVector<double> d;
+                for(int j:found)
+                    d.append(std::hypot(pts[j].x-failures[i].x,pts[j].y-failures[i].y));
+                std::sort(d.begin(),d.end());
+                // The mean of the four nearest runs: far enough to cover the
+                // gap the failure leaves, near enough not to swallow its
+                // neighbours' own results.
+                const int take=qMin(4,d.size());
+                double sum=0.0;
+                for(int k=0;k<take;++k) sum+=d[k];
+                const double local=(take>0)?sum/double(take):0.0;
+                reachOf[i]=qMax(cellReach,0.75*local);
+            }
+        }
+        const PointIndex goodIndex(pts,xLo,xHi,yLo,yHi);
+        QVector<int> near;
+        for(int gy=0;gy<ny;++gy){
+            const double y=yLo+(yHi-yLo)*double(gy)/double(ny-1);
+            for(int gx=0;gx<nx;++gx){
+                const double x=xLo+(xHi-xLo)*double(gx)/double(nx-1);
+                double toFailure=std::numeric_limits<double>::infinity();
+                bool withinReach=false;
+                for(int i=0;i<failures.size();++i){
+                    const double d=std::hypot(failures[i].x-x,failures[i].y-y);
+                    toFailure=qMin(toFailure,d);
+                    if(d<=reachOf[i]) withinReach=true;
+                }
+                if(settings.footprint==FailureFootprint::VoronoiRegion){
+                    // Masked when the nearest RUN of any kind is a failed one:
+                    // the region the failure owns. Conservative, and the reason
+                    // a dense sweep full of isolated dropouts comes out looking
+                    // like a slice of Swiss cheese.
+                    goodIndex.near(x,y,1,near);
+                    double toGood=std::numeric_limits<double>::infinity();
+                    for(int i:near) toGood=qMin(toGood,std::hypot(pts[i].x-x,pts[i].y-y));
+                    if(toFailure<toGood) field.failed[gy*nx+gx]=true;
+                }else if(withinReach){
+                    field.failed[gy*nx+gx]=true;
+                }
+            }
+        }
+    }
 
     QVector<int> scratch;
     for(int gy=0;gy<ny;++gy){
@@ -594,10 +1225,25 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
 
             // Outside the measured region, what happens is a policy rather
             // than an estimate, and it is applied before the estimator runs so
-            // that masking costs nothing.
+            // that masking costs nothing. The same for a node a failed run
+            // masks - the bridging pass below decides whether any of those
+            // come back.
             if(!inside&&settings.extrapolation==Extrapolation::MaskOutsideHull) continue;
+            if(field.failed[k]) continue;
 
             double v=kNaN;
+            if(structured){
+                v=structuredAt(lattice,chosen,x,y);
+                // A hole in the lattice defeats the tensor product for every
+                // node whose stencil touches it. Nearest is the honest patch:
+                // it repeats a measured value rather than inventing a smooth
+                // one across a gap the sweep never covered.
+                if(!finite(v)) v=nearestValue(work,x,y,scratch);
+                if(settings.valuePolicy==ValuePolicy::ClampToObserved)
+                    v=qBound(vLo,v,vHi);
+                if(finite(v)) field.value[k]=v;
+                continue;
+            }
             switch(chosen){
             case Estimator::DelaunayLinear: {
                 bool hit=false;
@@ -613,6 +1259,17 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
             case Estimator::Multiquadric:
             case Estimator::GaussianRbf:
                 v=evaluateRbf(rbf,x,y,settings.xWeight,settings.yWeight); break;
+            case Estimator::Loess:
+                // Degree one with tricube weights, over a FRACTION of the
+                // sample rather than a fixed count - which is what the f
+                // parameter means in LOESS and why it adapts to sample size.
+                v=localFit(work,x,y,scratch,
+                           qMax(6,int(pts.size()*qBound(0.02,settings.loessFraction,1.0))),
+                           false,true); break;
+            case Estimator::MovingLeastSquares:
+                v=localFit(work,x,y,scratch,settings.neighbours,true,false); break;
+            case Estimator::OrdinaryKriging:
+                v=krigingAt(work,variogram,x,y,scratch); break;
             default:
                 v=nearestValue(work,x,y,scratch); break;
             }
@@ -637,6 +1294,191 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
                 v=qBound(vLo,v,vHi);
             field.value[k]=v;
         }
+    }
+
+    // ---------------------------------------------------------------- bridging
+    //
+    // Which masked regions may be estimated across after all. Connected
+    // components of masked cells, four-connected; a component touching the edge
+    // of the field is NEVER bridged whatever the mode, because its far side was
+    // never measured and joining across it would be invention rather than
+    // interpolation.
+    if(settings.bridging!=Bridging::PreserveAll){
+        QVector<int> label(nx*ny,-1);
+        QVector<int> stack;
+        int nextLabel=0;
+        QVector<int> sizes;
+        QVector<bool> touchesEdge;
+        for(int start=0;start<nx*ny;++start){
+            if(label[start]>=0) continue;
+            if(finite(field.value[start])) continue;   // not masked
+            const int id=nextLabel++;
+            sizes.append(0);
+            touchesEdge.append(false);
+            stack.clear();
+            stack.append(start);
+            label[start]=id;
+            while(!stack.isEmpty()){
+                const int k=stack.takeLast();
+                sizes[id]+=1;
+                const int cx=k%nx, cy=k/nx;
+                if(cx==0||cy==0||cx==nx-1||cy==ny-1) touchesEdge[id]=true;
+                const int steps[4]={k-1,k+1,k-nx,k+nx};
+                const bool ok[4]={cx>0,cx<nx-1,cy>0,cy<ny-1};
+                for(int d=0;d<4;++d){
+                    if(!ok[d]) continue;
+                    const int nk=steps[d];
+                    if(label[nk]>=0||finite(field.value[nk])) continue;
+                    label[nk]=id;
+                    stack.append(nk);
+                }
+            }
+        }
+
+        QVector<bool> bridge(nextLabel,false);
+        for(int id=0;id<nextLabel;++id){
+            if(touchesEdge[id]) continue;
+            switch(settings.bridging){
+            case Bridging::IsolatedOnly:  bridge[id]=(sizes[id]<=1); break;
+            case Bridging::SmallEnclosed: bridge[id]=(sizes[id]<=qMax(1,settings.bridgeMaxCells)); break;
+            case Bridging::AllInterior:   bridge[id]=true; break;
+            default: break;
+            }
+        }
+
+        // Filled from the ring of finite neighbours, iterated until the whole
+        // component is covered - which is a local mean rather than a re-run of
+        // the estimator, and deliberately: the estimator was told not to look
+        // here, and asking it now would give the answer the mask exists to
+        // withhold. What the surrounding cells say is the most that can honestly
+        // be claimed about a hole.
+        bool changed=true;
+        int guard=0;
+        while(changed&&guard++<256){
+            changed=false;
+            QVector<double> next=field.value;
+            for(int k=0;k<nx*ny;++k){
+                if(finite(field.value[k])||label[k]<0||!bridge[label[k]]) continue;
+                const int cx=k%nx, cy=k/nx;
+                double sum=0.0; int count=0;
+                for(int dy=-1;dy<=1;++dy)
+                    for(int dx=-1;dx<=1;++dx){
+                        const int qx=cx+dx, qy=cy+dy;
+                        if(qx<0||qy<0||qx>=nx||qy>=ny) continue;
+                        const double v=field.value[qy*nx+qx];
+                        if(!finite(v)) continue;
+                        sum+=v; ++count;
+                    }
+                if(count==0) continue;
+                next[k]=sum/double(count);
+                field.bridged[k]=true;
+                changed=true;
+            }
+            field.value=next;
+        }
+    }
+
+    // --------------------------------------------------- what a mask shows
+    //
+    // Everything still masked at this point is a region nothing is known about.
+    // Transparent is the default and the honest one; the rest are for the cases
+    // where a hole in the middle of a figure is worse than a stated guess, and
+    // each says in the interface which it is.
+    if(settings.invalidDisplay!=InvalidDisplay::Transparent
+       &&settings.invalidDisplay!=InvalidDisplay::FallbackColour){
+        QVector<int> scratch2;
+        QVector<double> filled=field.value;
+        for(int gy=0;gy<ny;++gy){
+            const double y=yLo+(yHi-yLo)*double(gy)/double(ny-1);
+            for(int gx=0;gx<nx;++gx){
+                const int k=gy*nx+gx;
+                if(finite(field.value[k])) continue;
+                const double x=xLo+(xHi-xLo)*double(gx)/double(nx-1);
+                switch(settings.invalidDisplay){
+                case InvalidDisplay::NearestFill:
+                    filled[k]=nearestValue(work,x,y,scratch2); break;
+                case InvalidDisplay::BaselineClamp:
+                    // The bottom of the colour scale, so a hole reads as "as
+                    // low as this map goes" rather than as a measurement.
+                    filled[k]=vLo; break;
+                case InvalidDisplay::MirrorFill: {
+                    // Reflected across the edge of the masked region.
+                    //
+                    // Walk out along each axis to the first cell that has a
+                    // value; that cell is the boundary. Continue the same
+                    // distance again and take THAT value, which is the mirror
+                    // image of the masked node through the boundary. Falling
+                    // back to the boundary value itself when the mirror lands
+                    // outside is what makes the fill flat rather than absent at
+                    // the edge of the field.
+                    //
+                    // The point of the mode is that a contour running into a
+                    // hole continues with the slope it arrived with instead of
+                    // stopping dead - which a nearest fill cannot do, because
+                    // it repeats one value.
+                    const int step[4][2]={{1,0},{-1,0},{0,1},{0,-1}};
+                    double sum=0.0; int count=0;
+                    for(int d=0;d<4;++d){
+                        int dist=0;
+                        double edge=kNaN;
+                        for(int t=1;t<qMax(nx,ny);++t){
+                            const int qx=gx+step[d][0]*t, qy=gy+step[d][1]*t;
+                            if(qx<0||qy<0||qx>=nx||qy>=ny) break;
+                            const double v=field.value[qy*nx+qx];
+                            if(!finite(v)) continue;
+                            edge=v; dist=t; break;
+                        }
+                        if(!finite(edge)) continue;
+                        const int mx=gx+step[d][0]*dist*2, my=gy+step[d][1]*dist*2;
+                        double mirrored=kNaN;
+                        if(mx>=0&&my>=0&&mx<nx&&my<ny) mirrored=field.value[my*nx+mx];
+                        // 2*edge - mirrored reflects the VALUE as well as the
+                        // position, so a rising field goes on rising into the
+                        // hole rather than turning back on itself.
+                        sum+=finite(mirrored)?(2.0*edge-mirrored):edge;
+                        ++count;
+                    }
+                    if(count>0) filled[k]=sum/double(count);
+                    break;
+                }
+                default: break;    // local mean, below
+                }
+            }
+        }
+        field.value=filled;
+
+        if(settings.invalidDisplay==InvalidDisplay::LocalMean){
+            // Iterated neighbour mean over everything still masked - the same
+            // pass the bridging uses, applied without the topology test.
+            bool changed=true;
+            int guard=0;
+            while(changed&&guard++<256){
+                changed=false;
+                QVector<double> next=field.value;
+                for(int k=0;k<nx*ny;++k){
+                    if(finite(field.value[k])) continue;
+                    const int cx=k%nx, cy=k/nx;
+                    double sum=0.0; int count=0;
+                    for(int dy=-1;dy<=1;++dy)
+                        for(int dx=-1;dx<=1;++dx){
+                            const int qx=cx+dx, qy=cy+dy;
+                            if(qx<0||qy<0||qx>=nx||qy>=ny) continue;
+                            const double v=field.value[qy*nx+qx];
+                            if(!finite(v)) continue;
+                            sum+=v; ++count;
+                        }
+                    if(count==0) continue;
+                    next[k]=sum/double(count);
+                    changed=true;
+                }
+                field.value=next;
+            }
+        }
+    }
+
+    for(int k=0;k<nx*ny;++k){
+        if(field.failed[k]) ++field.failedCount;
+        if(field.bridged[k]) ++field.bridgedCount;
     }
 
     // Back out of the response space, so the caller and the colour bar are in

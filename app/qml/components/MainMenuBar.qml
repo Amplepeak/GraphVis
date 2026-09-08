@@ -312,6 +312,153 @@ MenuBar {
                 }
             }
 
+            // The two numeric parameters that belong to one estimator each.
+            // Offered only while that estimator is chosen, because a control
+            // that does nothing is worse than no control.
+            Menu {
+                title: "Kriging variogram"
+                enabled: root.app.plotFieldEstimator === 14
+                Repeater {
+                    model: root.canvas ? root.canvas.fieldKrigingVariogramNames() : []
+                    delegate: MenuItem {
+                        required property string modelData
+                        required property int index
+                        text: modelData
+                        checkable: true
+                        checked: root.app.plotFieldKrigingVariogram === index
+                        ToolTip.visible: hovered
+                        ToolTip.text: "How quickly the response is assumed to decorrelate "
+                                    + "with distance. Gaussian gives the smoothest field and "
+                                    + "the strongest short-range correlation; exponential the "
+                                    + "least."
+                        onTriggered: root.app.plotFieldKrigingVariogram = index
+                    }
+                }
+            }
+            Menu {
+                title: "LOESS span"
+                enabled: root.app.plotFieldEstimator === 16
+                Repeater {
+                    model: [0.10, 0.25, 0.40, 0.60, 1.00]
+                    delegate: MenuItem {
+                        required property real modelData
+                        text: Math.round(modelData * 100) + "% of the runs"
+                        checkable: true
+                        checked: Math.abs(root.app.plotFieldLoessFraction - modelData) < 0.001
+                        ToolTip.visible: hovered
+                        ToolTip.text: "How much of the sweep each local fit sees. Smaller "
+                                    + "follows the data more closely; larger smooths harder."
+                        onTriggered: root.app.plotFieldLoessFraction = modelData
+                    }
+                }
+            }
+
+            MenuSeparator {}
+
+            // What a run that failed does to the picture.
+            //
+            // A sweep that solves an ODE at every point does not always
+            // converge, and a non-finite response is an outcome rather than a
+            // missing row. These three decide how much of the map one failure
+            // takes out, which masked regions may be filled in again, and what
+            // a region that stays masked actually shows.
+            Menu {
+                title: "Failed runs"
+                enabled: root.app.plotFieldEstimator >= 0
+
+                Menu {
+                    title: "How much one failure masks"
+                    Repeater {
+                        model: root.canvas ? root.canvas.fieldFootprintNames() : []
+                        delegate: MenuItem {
+                            required property string modelData
+                            required property int index
+                            text: modelData
+                            checkable: true
+                            checked: root.app.plotFieldFootprint === index
+                            ToolTip.visible: hovered
+                            ToolTip.text: [
+                                "One grid cell. The narrowest honest answer, and the one "
+                              + "that keeps a dense sweep readable.",
+                                "As far as the runs around it are apart — measured at that "
+                              + "failure, so it widens where the sweep is thin and stays "
+                              + "narrow where it is crowded.",
+                                "Everything nearer to the failed run than to any successful "
+                              + "one. The most conservative, and the reason a dense sweep "
+                              + "full of isolated dropouts can come out looking like Swiss "
+                              + "cheese.",
+                                "Ignore failures and fit straight through them. Fastest, and "
+                              + "it shows a surface where nothing was measured."][index]
+                            onTriggered: root.app.plotFieldFootprint = index
+                        }
+                    }
+                }
+
+                Menu {
+                    title: "Filling failures back in"
+                    Repeater {
+                        model: root.canvas ? root.canvas.fieldBridgingNames() : []
+                        delegate: MenuItem {
+                            required property string modelData
+                            required property int index
+                            text: modelData
+                            checkable: true
+                            checked: root.app.plotFieldBridging === index
+                            ToolTip.visible: hovered
+                            ToolTip.text: [
+                                "Every failure stays a hole.",
+                                "Single dropped cells only.",
+                                "Enclosed holes up to the size below.",
+                                "Any hole with successful runs all the way round it."][index]
+                              + "\n\nA masked region touching the edge of the sweep is never "
+                              + "filled, whatever this says: its far side was never measured, "
+                              + "so joining across it would be invention rather than "
+                              + "interpolation."
+                            onTriggered: root.app.plotFieldBridging = index
+                        }
+                    }
+                    MenuSeparator {}
+                    Repeater {
+                        model: [1, 4, 12, 40, 200]
+                        delegate: MenuItem {
+                            required property int modelData
+                            text: "up to " + modelData + " cells"
+                            checkable: true
+                            checked: root.app.plotFieldBridgeMaxCells === modelData
+                            enabled: root.app.plotFieldBridging === 2
+                            onTriggered: root.app.plotFieldBridgeMaxCells = modelData
+                        }
+                    }
+                }
+
+                Menu {
+                    title: "What a masked area shows"
+                    Repeater {
+                        model: root.canvas ? root.canvas.fieldInvalidDisplayNames() : []
+                        delegate: MenuItem {
+                            required property string modelData
+                            required property int index
+                            text: modelData
+                            checkable: true
+                            checked: root.app.plotFieldInvalidDisplay === index
+                            ToolTip.visible: hovered
+                            ToolTip.text: [
+                                "Nothing. The honest default: a hole in the map is a region "
+                              + "nothing is known about.",
+                                "The figure's background colour, so the hole has an edge.",
+                                "The nearest measured value, repeated.",
+                                "The mean of the surrounding cells, spread inwards.",
+                                "The bottom of the colour scale, so it reads as 'as low as "
+                              + "this map goes' rather than as a measurement.",
+                                "Reflected across the edge of the hole, so a contour running "
+                              + "into it continues with the slope it arrived with instead of "
+                              + "stopping dead."][index]
+                            onTriggered: root.app.plotFieldInvalidDisplay = index
+                        }
+                    }
+                }
+            }
+
             MenuSeparator {}
 
             Menu {

@@ -46,6 +46,15 @@ struct EstimatedField {
     QVector<double> value;      // NaN where nothing is known
     QVector<bool> outsideHull;  // node lies outside the measured region
     QVector<bool> estimated;    // node had no measurement of its own
+    // Masked because a run there failed, and - separately - filled in across
+    // such a mask afterwards. Kept apart because they are different claims:
+    // one says nothing was measured here, the other says this number was
+    // inferred rather than run, and a figure that cannot tell them apart
+    // presents an imputed value as a simulated one.
+    QVector<bool> failed;
+    QVector<bool> bridged;
+    int failedCount = 0;
+    int bridgedCount = 0;
     bool valid = false;
 };
 
@@ -107,6 +116,32 @@ enum class ValuePolicy { AllowOvershoot, ClampToObserved, Count };
 // is 100.
 enum class ResponseSpace { Linear, Log10, Count };
 
+// How much of the map ONE failed run masks.
+//
+// A sweep that solves an ODE at every point does not always converge, and a
+// non-finite response is a real outcome rather than a missing row. The question
+// is how much area it should take out of the picture, and the honest answer
+// depends on how the sweep was laid out: on a lattice a failure is one cell,
+// and on a scattered run its nearest neighbourhood is the region nothing is
+// known about. Voronoi is the most conservative and produces the large white
+// holes in dense sweeps that the default exists to avoid.
+enum class FailureFootprint { SampleCellOnly, ConservativeRegion, VoronoiRegion,
+                              None, Count };
+
+// Which masked regions may be estimated across after all.
+//
+// The distinction that matters is TOPOLOGICAL, not one of size: a small hole
+// surrounded on all sides by successful runs is a solver dropout and the
+// surrounding data says what belongs there, while a masked region touching the
+// edge of the sweep is a washout zone whose far side was never measured.
+// Bridging the first is interpolation; bridging the second is invention. A
+// region connected to the boundary is never bridged, whatever the mode.
+enum class Bridging { PreserveAll, IsolatedOnly, SmallEnclosed, AllInterior, Count };
+
+// What a cell that is still masked at the end actually shows.
+enum class InvalidDisplay { Transparent, FallbackColour, NearestFill, LocalMean,
+                            BaselineClamp, MirrorFill, Count };
+
 struct EstimatorSettings {
     Estimator estimator = Estimator::Auto;
     Extrapolation extrapolation = Extrapolation::MaskOutsideHull;
@@ -119,6 +154,13 @@ struct EstimatorSettings {
     double smoothing = 0.0;      // RBF regularisation; 0 interpolates exactly
     double xWeight = 1.0;        // per-axis distance weights, so a sweep that is
     double yWeight = 1.0;        // dense in x and thin in y is not smeared
+    FailureFootprint footprint = FailureFootprint::SampleCellOnly;
+    Bridging bridging = Bridging::IsolatedOnly;
+    int bridgeMaxCells = 4;      // largest enclosed hole "small enclosed" bridges
+    InvalidDisplay invalidDisplay = InvalidDisplay::Transparent;
+    // Which variogram model ordinary kriging fits: 0 exponential, 1 spherical,
+    // 2 gaussian. The three GraphVis 17 offered.
+    int kriging = 0;
 };
 
 // The names, in the order and the words GraphVis 17 used, so the interface and
@@ -136,6 +178,10 @@ QStringList estimatorNames();
 bool estimatorImplemented(Estimator e);
 QStringList estimatorGroupNames();      // one group per estimator, parallel list
 QStringList extrapolationNames();
+QStringList failureFootprintNames();
+QStringList bridgingNames();
+QStringList invalidDisplayNames();
+QStringList krigingVariogramNames();
 QStringList valuePolicyNames();
 QStringList responseSpaceNames();
 

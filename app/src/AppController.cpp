@@ -71,6 +71,12 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotFieldNeighbours_=qBound(4,settings.value(QStringLiteral("plot/fieldNeighbours"),32).toInt(),512);
     plotFieldIdwPower_=qBound(0.5,settings.value(QStringLiteral("plot/fieldIdwPower"),2.0).toDouble(),8.0);
     plotFieldSmoothing_=qBound(0.0,settings.value(QStringLiteral("plot/fieldSmoothing"),0.0).toDouble(),10.0);
+    plotFieldFootprint_=qBound(0,settings.value(QStringLiteral("plot/fieldFootprint"),0).toInt(),3);
+    plotFieldBridging_=qBound(0,settings.value(QStringLiteral("plot/fieldBridging"),1).toInt(),3);
+    plotFieldBridgeMaxCells_=qBound(1,settings.value(QStringLiteral("plot/fieldBridgeMaxCells"),4).toInt(),2500);
+    plotFieldInvalidDisplay_=qBound(0,settings.value(QStringLiteral("plot/fieldInvalidDisplay"),0).toInt(),5);
+    plotFieldKrigingVariogram_=qBound(0,settings.value(QStringLiteral("plot/fieldKrigingVariogram"),0).toInt(),2);
+    plotFieldLoessFraction_=qBound(0.02,settings.value(QStringLiteral("plot/fieldLoessFraction"),0.25).toDouble(),1.0);
     uiLayout_=qBound(0,settings.value(QStringLiteral("ui/layout"),0).toInt(),5);
     loadRecents();
     // Every signal connection below has to happen whether or not the native
@@ -1909,6 +1915,12 @@ GV_FIELD_SETTING(ResponseSpace,plotFieldResponseSpace_,"plot/fieldResponseSpace"
 GV_FIELD_SETTING(Neighbours,plotFieldNeighbours_,"plot/fieldNeighbours",int,qBound(4,v,512))
 GV_FIELD_SETTING(IdwPower,plotFieldIdwPower_,"plot/fieldIdwPower",double,qBound(0.5,v,8.0))
 GV_FIELD_SETTING(Smoothing,plotFieldSmoothing_,"plot/fieldSmoothing",double,qBound(0.0,v,10.0))
+GV_FIELD_SETTING(Footprint,plotFieldFootprint_,"plot/fieldFootprint",int,qBound(0,v,3))
+GV_FIELD_SETTING(Bridging,plotFieldBridging_,"plot/fieldBridging",int,qBound(0,v,3))
+GV_FIELD_SETTING(BridgeMaxCells,plotFieldBridgeMaxCells_,"plot/fieldBridgeMaxCells",int,qBound(1,v,2500))
+GV_FIELD_SETTING(InvalidDisplay,plotFieldInvalidDisplay_,"plot/fieldInvalidDisplay",int,qBound(0,v,5))
+GV_FIELD_SETTING(KrigingVariogram,plotFieldKrigingVariogram_,"plot/fieldKrigingVariogram",int,qBound(0,v,2))
+GV_FIELD_SETTING(LoessFraction,plotFieldLoessFraction_,"plot/fieldLoessFraction",double,qBound(0.02,v,1.0))
 #undef GV_FIELD_SETTING
 
 void AppController::setPlotFieldInterpolation(int mode){

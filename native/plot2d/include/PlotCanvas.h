@@ -120,6 +120,12 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(int fieldNeighbours READ fieldNeighbours WRITE setFieldNeighbours NOTIFY styleChanged)
     Q_PROPERTY(double fieldIdwPower READ fieldIdwPower WRITE setFieldIdwPower NOTIFY styleChanged)
     Q_PROPERTY(double fieldSmoothing READ fieldSmoothing WRITE setFieldSmoothing NOTIFY styleChanged)
+    Q_PROPERTY(int fieldFootprint READ fieldFootprint WRITE setFieldFootprint NOTIFY styleChanged)
+    Q_PROPERTY(int fieldBridging READ fieldBridging WRITE setFieldBridging NOTIFY styleChanged)
+    Q_PROPERTY(int fieldBridgeMaxCells READ fieldBridgeMaxCells WRITE setFieldBridgeMaxCells NOTIFY styleChanged)
+    Q_PROPERTY(int fieldInvalidDisplay READ fieldInvalidDisplay WRITE setFieldInvalidDisplay NOTIFY styleChanged)
+    Q_PROPERTY(int fieldKrigingVariogram READ fieldKrigingVariogram WRITE setFieldKrigingVariogram NOTIFY styleChanged)
+    Q_PROPERTY(double fieldLoessFraction READ fieldLoessFraction WRITE setFieldLoessFraction NOTIFY styleChanged)
     Q_PROPERTY(int fieldResolution READ fieldResolution WRITE setFieldResolution NOTIFY styleChanged)
 
     // 0 Standard, 1 Protanopia, 2 Deuteranopia, 3 Tritanopia, 4 Monochrome.
@@ -327,6 +333,18 @@ public:
     int fieldNeighbours() const { return spec_.style.fieldNeighbours; }
     double fieldIdwPower() const { return spec_.style.fieldIdwPower; }
     double fieldSmoothing() const { return spec_.style.fieldSmoothing; }
+    int fieldFootprint() const { return spec_.style.fieldFootprint; }
+    int fieldBridging() const { return spec_.style.fieldBridging; }
+    int fieldBridgeMaxCells() const { return spec_.style.fieldBridgeMaxCells; }
+    int fieldInvalidDisplay() const { return spec_.style.fieldInvalidDisplay; }
+    void setFieldFootprint(int v);
+    void setFieldBridging(int v);
+    void setFieldBridgeMaxCells(int v);
+    void setFieldInvalidDisplay(int v);
+    int fieldKrigingVariogram() const { return spec_.style.fieldKrigingVariogram; }
+    double fieldLoessFraction() const { return spec_.style.fieldLoessFraction; }
+    void setFieldKrigingVariogram(int v);
+    void setFieldLoessFraction(double v);
     void setFieldEstimator(int v);
     void setFieldExtrapolation(int v);
     void setFieldValuePolicy(int v);
@@ -339,6 +357,10 @@ public:
     Q_INVOKABLE static QStringList fieldEstimatorNames();
     Q_INVOKABLE static QVariantList fieldEstimatorList();
     Q_INVOKABLE static QStringList fieldExtrapolationNames();
+    Q_INVOKABLE static QStringList fieldFootprintNames();
+    Q_INVOKABLE static QStringList fieldBridgingNames();
+    Q_INVOKABLE static QStringList fieldInvalidDisplayNames();
+    Q_INVOKABLE static QStringList fieldKrigingVariogramNames();
     Q_INVOKABLE static QStringList fieldValuePolicyNames();
     Q_INVOKABLE static QStringList fieldResponseSpaceNames();
     void setFieldInterpolation(int mode);

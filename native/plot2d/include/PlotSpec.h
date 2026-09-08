@@ -178,6 +178,15 @@ struct PlotStyle {
     int fieldNeighbours = 32;       // sample size for the local methods
     double fieldIdwPower = 2.0;
     double fieldSmoothing = 0.0;    // 0 interpolates exactly
+    // What a failed run masks, which masks come back, and what a mask shows.
+    // A sweep that solves an ODE at every point does not always converge, and
+    // a non-finite response is an outcome rather than a missing row.
+    int fieldFootprint = 0;         // how much area one failure takes out
+    int fieldBridging = 1;          // which masked regions may be filled again
+    int fieldBridgeMaxCells = 4;
+    int fieldInvalidDisplay = 0;    // what a cell that is still masked shows
+    int fieldKrigingVariogram = 0;  // 0 exponential, 1 spherical, 2 gaussian
+    double fieldLoessFraction = 0.25;
 };
 
 // A note on the figure: a label at a point, optionally with a leader line back
