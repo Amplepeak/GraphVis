@@ -327,6 +327,26 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Function 3D Parametric"),
         QStringLiteral("Implicit Function"),
         QStringLiteral("Implicit Surface"),
+        QStringLiteral("Lorenz Curve"),
+        QStringLiteral("Concentration Curve"),
+        QStringLiteral("Rank-Abundance Curve"),
+        QStringLiteral("Scree Plot"),
+        QStringLiteral("Prediction Error Plot"),
+        QStringLiteral("Learning Curve"),
+        QStringLiteral("Validation Curve"),
+        QStringLiteral("Discrimination Threshold"),
+        QStringLiteral("Silhouette Plot"),
+        QStringLiteral("Elbow Plot"),
+        QStringLiteral("Radial Plot"),
+        QStringLiteral("L'Abbé Plot"),
+        QStringLiteral("Caterpillar Plot"),
+        QStringLiteral("Cumulative Meta-Analysis"),
+        QStringLiteral("Nelson-Aalen Cumulative Hazard"),
+        QStringLiteral("Cumulative Incidence"),
+        QStringLiteral("Decision Curve"),
+        QStringLiteral("Bathtub Curve"),
+        QStringLiteral("Duane Plot"),
+        QStringLiteral("Mean Cumulative Function"),
     };
     return kEngines;
 }
@@ -1521,7 +1541,24 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Smith Chart"),QStringLiteral("Cross Correlation"),
         QStringLiteral("Slope Graph"),QStringLiteral("Confidence Ellipse"),
         QStringLiteral("Population Pyramid"),
-        QStringLiteral("Scatter + Marginals"),QStringLiteral("Plot Matrix")};
+        QStringLiteral("Scatter + Marginals"),QStringLiteral("Plot Matrix"),
+        // Batch 1 of the expansion. Each reads two columns and compares them:
+        // an outcome against the variable it is ranked by, an observation
+        // against a prediction, a score against a label, a time against an
+        // event flag.
+        QStringLiteral("Concentration Curve"),
+        QStringLiteral("Prediction Error Plot"),
+        QStringLiteral("Learning Curve"),
+        QStringLiteral("Validation Curve"),
+        QStringLiteral("Discrimination Threshold"),
+        QStringLiteral("Silhouette Plot"),
+        QStringLiteral("Radial Plot"),
+        QStringLiteral("L'Abbé Plot"),
+        QStringLiteral("Cumulative Meta-Analysis"),
+        QStringLiteral("Nelson-Aalen Cumulative Hazard"),
+        QStringLiteral("Cumulative Incidence"),
+        QStringLiteral("Decision Curve"),
+        QStringLiteral("Mean Cumulative Function")};
     if(kPairs.contains(engine)) return {2,2,true};
 
     // ---- Every column mapped, read as one series each. These get WIDER with
@@ -1550,7 +1587,7 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Surface + Contours"),QStringLiteral("Comet 3D"),
         QStringLiteral("Ribbon"),
         // Estimate and its two confidence bounds.
-        QStringLiteral("Forest Plot"),
+        QStringLiteral("Forest Plot"),QStringLiteral("Caterpillar Plot"),
         // A surface sampled on a grid: x, y and elevation. The whole terrain
         // family reads the same three and then differs in what it computes.
         QStringLiteral("Terrain Profile"),QStringLiteral("Slope Map"),
@@ -9356,6 +9393,872 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         return out;
     }
 
+    // =====================================================================
+    // Batch 1 of the catalogue expansion: statistics, model evaluation,
+    // meta-analysis, survival and reliability.
+    //
+    // Every one is a rewrite rather than a painter, for the reason the rest of
+    // this file is: each is a transformation of the data followed by geometry
+    // that already exists and is already tested. A Lorenz curve is a line, a
+    // silhouette plot is a horizontal bar chart, a caterpillar plot is a forest
+    // plot with its rows sorted. Writing a bespoke painter for each is how a
+    // plotting library ends up with forty subtly different ways to draw a line.
+    // =====================================================================
+
+    // ------------------------------------------------------- Lorenz Curve
+    // Cumulative share of the total against cumulative share of the
+    // population, with the line of perfect equality. The area between them is
+    // the Gini coefficient, which is reported in the label because it is the
+    // number anybody drawing this actually wants.
+    if(in.engine==QLatin1String("Lorenz Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            // Negative values have no cumulative share: a Lorenz curve of
+            // incomes that include debts is not defined, and silently treating
+            // a debt as a small income would invent a distribution.
+            v.erase(std::remove_if(v.begin(),v.end(),[](double d){ return d<0.0; }),v.end());
+            if(v.size()<2) continue;
+            std::sort(v.begin(),v.end());
+            double total=0.0;
+            for(double d:v) total+=d;
+            if(!(total>0.0)) continue;
+            PlotSeries curve;
+            curve.color=s.color;
+            curve.lineWidth=qMax(1.2,in.style.lineWidth);
+            curve.x.append(0.0); curve.y.append(0.0);
+            double running=0.0, gini=0.0, prevX=0.0, prevY=0.0;
+            for(int i=0;i<v.size();++i){
+                running+=v[i];
+                const double px=double(i+1)/double(v.size());
+                const double py=running/total;
+                // Trapezoid under the curve, accumulated as we go, so the Gini
+                // costs nothing beyond the walk we are already doing.
+                gini+=(px-prevX)*(py+prevY)/2.0;
+                prevX=px; prevY=py;
+                curve.x.append(px); curve.y.append(py);
+            }
+            curve.label=QStringLiteral("%1 (Gini %2)")
+                            .arg(s.label).arg(1.0-2.0*gini,0,'f',3);
+            out.series.append(curve);
+        }
+        if(!out.series.isEmpty()){
+            PlotSeries equality;
+            equality.label=QStringLiteral("perfect equality");
+            equality.x={0.0,1.0}; equality.y={0.0,1.0};
+            equality.color=in.style.gridColor;
+            equality.dashPattern={5,4};
+            out.series.append(equality);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cumulative share of population"),false,0.0,1.0};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative share of total"),false,0.0,1.0};
+        return out;
+    }
+
+    // ------------------------------------------------- Concentration Curve
+    // The same construction, but ranked by a SECOND column rather than by the
+    // outcome itself: the cumulative share of spending against the cumulative
+    // share of people ranked by income. Above the diagonal the outcome favours
+    // the poor, below it the rich - which is the whole reading of the figure
+    // and is invisible on a Lorenz curve of the outcome alone.
+    if(in.engine==QLatin1String("Concentration Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& outcome=in.series.at(0).y;
+            const QVector<double>& rank=in.series.at(1).y;
+            const int n=qMin(outcome.size(),rank.size());
+            QVector<QPair<double,double>> rows;
+            for(int i=0;i<n;++i)
+                if(finite(outcome[i])&&finite(rank[i])&&outcome[i]>=0.0)
+                    rows.append({rank[i],outcome[i]});
+            if(rows.size()>=2){
+                std::sort(rows.begin(),rows.end(),
+                          [](const QPair<double,double>& a,const QPair<double,double>& b){
+                              return a.first<b.first;
+                          });
+                double total=0.0;
+                for(const auto& r:rows) total+=r.second;
+                if(total>0.0){
+                    PlotSeries curve;
+                    curve.label=QStringLiteral("%1 by %2")
+                                    .arg(in.series.at(0).label,in.series.at(1).label);
+                    curve.color=in.series.at(0).color;
+                    curve.lineWidth=qMax(1.2,in.style.lineWidth);
+                    curve.x.append(0.0); curve.y.append(0.0);
+                    double running=0.0;
+                    for(int i=0;i<rows.size();++i){
+                        running+=rows[i].second;
+                        curve.x.append(double(i+1)/double(rows.size()));
+                        curve.y.append(running/total);
+                    }
+                    out.series.append(curve);
+                    PlotSeries equality;
+                    equality.label=QStringLiteral("proportionate");
+                    equality.x={0.0,1.0}; equality.y={0.0,1.0};
+                    equality.color=in.style.gridColor;
+                    equality.dashPattern={5,4};
+                    out.series.append(equality);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cumulative share of population, ranked"),
+                           false,0.0,1.0};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative share of outcome"),false,0.0,1.0};
+        return out;
+    }
+
+    // ------------------------------------------------ Rank-Abundance Curve
+    // Value against its rank, commonest first. A steep curve is a community
+    // dominated by a few species; a shallow one is even. Drawn on a log y axis,
+    // which is where the shape is legible.
+    if(in.engine==QLatin1String("Rank-Abundance Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            v.erase(std::remove_if(v.begin(),v.end(),[](double d){ return d<=0.0; }),v.end());
+            if(v.size()<2) continue;
+            std::sort(v.begin(),v.end(),std::greater<double>());
+            PlotSeries curve;
+            curve.label=s.label;
+            curve.color=s.color;
+            curve.drawMarkers=v.size()<=60;
+            curve.markerSize=3.5;
+            for(int i=0;i<v.size();++i){ curve.x.append(double(i+1)); curve.y.append(v[i]); }
+            out.series.append(curve);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("rank"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("abundance"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------------- Scree Plot
+    // Eigenvalues, or any decreasing measure of explained variance, against
+    // component number, with the cumulative percentage over the top. The elbow
+    // is read off the first; where the second crosses 80 or 90% is read off the
+    // second, and drawing only one of them is why people argue about how many
+    // components to keep.
+    if(in.engine==QLatin1String("Scree Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            v.erase(std::remove_if(v.begin(),v.end(),[](double d){ return d<0.0; }),v.end());
+            if(v.size()<2) continue;
+            std::sort(v.begin(),v.end(),std::greater<double>());
+            double total=0.0;
+            for(double d:v) total+=d;
+            PlotSeries eig;
+            eig.label=QStringLiteral("%1 — eigenvalue").arg(s.label);
+            eig.color=s.color;
+            eig.drawMarkers=true; eig.markerSize=4.0;
+            for(int i=0;i<v.size()&&i<40;++i){ eig.x.append(double(i+1)); eig.y.append(v[i]); }
+            out.series.append(eig);
+            if(total>0.0){
+                PlotSeries cum;
+                cum.label=QStringLiteral("cumulative %");
+                cum.color=in.style.warning;
+                cum.dashPattern={5,3};
+                double running=0.0;
+                for(int i=0;i<v.size()&&i<40;++i){
+                    running+=v[i];
+                    cum.x.append(double(i+1));
+                    // Scaled onto the eigenvalue axis, because a second y axis
+                    // is a different figure and this one has to stay readable
+                    // at a journal's single-column width.
+                    cum.y.append(running/total*v.first());
+                }
+                out.series.append(cum);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("component"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("eigenvalue  (dashed: cumulative share, scaled)"),
+                           false,0.0,unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------- Prediction Error Plot
+    // Observed against predicted, with the identity line and the least-squares
+    // fit. The gap between the two lines IS the bias, and R-squared is on the
+    // legend because a scatter without it invites optimism.
+    if(in.engine==QLatin1String("Prediction Error Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& actual=in.series.at(0).y;
+            const QVector<double>& predicted=in.series.at(1).y;
+            const int n=qMin(actual.size(),predicted.size());
+            PlotSeries pts;
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=3.6;
+            QVector<double> ax,py;
+            for(int i=0;i<n;++i){
+                if(!finite(actual[i])||!finite(predicted[i])) continue;
+                pts.x.append(actual[i]); pts.y.append(predicted[i]);
+                ax.append(actual[i]); py.append(predicted[i]);
+            }
+            if(!pts.x.isEmpty()){
+                const Moments2 m=momentsOf(ax,py);
+                const double r=pearson(m);
+                pts.label=QStringLiteral("R² = %1").arg(r*r,0,'f',3);
+                out.series.append(pts);
+
+                const Bounds b=boundsOf(ax);
+                if(b.valid){
+                    PlotSeries identity;
+                    identity.label=QStringLiteral("identity");
+                    identity.x={b.lo,b.hi}; identity.y={b.lo,b.hi};
+                    identity.color=in.style.gridColor;
+                    identity.dashPattern={5,4};
+                    out.series.append(identity);
+                    if(m.n>=2&&m.sxx>1e-15){
+                        const double slope=m.sxy/m.sxx;
+                        const double intercept=m.my-slope*m.mx;
+                        PlotSeries fit;
+                        fit.label=QStringLiteral("best fit");
+                        fit.x={b.lo,b.hi};
+                        fit.y={intercept+slope*b.lo,intercept+slope*b.hi};
+                        fit.color=in.style.warning;
+                        fit.lineWidth=qMax(1.2,in.style.lineWidth);
+                        out.series.append(fit);
+                    }
+                }
+            }
+            out.xAxis=PlotAxis{in.series.at(0).label.isEmpty()?QStringLiteral("observed")
+                                                              :in.series.at(0).label,
+                               false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{in.series.at(1).label.isEmpty()?QStringLiteral("predicted")
+                                                              :in.series.at(1).label,
+                               false,unsetValue(),unsetValue()};
+        }
+        return out;
+    }
+
+    // ----------------------------------- Learning Curve / Validation Curve
+    // Two scores against a swept quantity - training-set size for one, a
+    // hyperparameter for the other - so the gap between them can be read. A
+    // training score that stays high while the validation score falls away is
+    // overfitting, and it is invisible if only one of the two is drawn.
+    if(in.engine==QLatin1String("Learning Curve")
+       ||in.engine==QLatin1String("Validation Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        const bool learning=(in.engine==QLatin1String("Learning Curve"));
+        if(in.series.size()>=2){
+            static const char* kNames[2]={"training","validation"};
+            for(int k=0;k<2;++k){
+                const PlotSeries& s=in.series.at(k);
+                PlotSeries line;
+                line.label=s.label.isEmpty()?QLatin1String(kNames[k]):s.label;
+                line.color=s.color;
+                line.lineWidth=qMax(1.2,in.style.lineWidth);
+                line.drawMarkers=s.y.size()<=80;
+                line.markerSize=3.6;
+                const int n=qMin(s.x.size(),s.y.size());
+                for(int i=0;i<n;++i){
+                    if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                    line.x.append(s.x[i]); line.y.append(s.y[i]);
+                }
+                if(!line.x.isEmpty()) out.series.append(line);
+            }
+        }
+        out.xAxis=PlotAxis{learning?QStringLiteral("training examples")
+                                   :QStringLiteral("hyperparameter"),
+                           false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("score"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------- Discrimination Threshold
+    // Precision, recall, F1 and the queue rate, all against the decision
+    // threshold. A classifier is chosen at a threshold, not at a point on a
+    // curve, and this is the figure that says which threshold - the ROC curve
+    // deliberately hides it.
+    if(in.engine==QLatin1String("Discrimination Threshold")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& score=in.series.at(0).y;
+            const QVector<double>& truth=in.series.at(1).y;
+            const int n=qMin(score.size(),truth.size());
+            double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            double tLo=lo,tHi=-lo;
+            for(int i=0;i<n;++i){
+                if(!finite(score[i])||!finite(truth[i])) continue;
+                lo=qMin(lo,score[i]); hi=qMax(hi,score[i]);
+                tLo=qMin(tLo,truth[i]); tHi=qMax(tHi,truth[i]);
+            }
+            const double cut=(finite(tLo)&&finite(tHi))?(tLo+tHi)/2.0:0.5;
+            if(finite(lo)&&hi>lo){
+                PlotSeries precision,recall,f1,queue;
+                precision.label=QStringLiteral("precision");
+                recall.label=QStringLiteral("recall");
+                f1.label=QStringLiteral("F1");
+                queue.label=QStringLiteral("queue rate");
+                precision.color=in.style.positive;
+                recall.color=in.series.at(0).color;
+                f1.color=in.style.warning;
+                queue.color=in.style.gridColor;
+                queue.dashPattern={4,3};
+                constexpr int kSteps=60;
+                for(int s=0;s<=kSteps;++s){
+                    const double th=lo+(hi-lo)*double(s)/double(kSteps);
+                    int tp=0,fp=0,fn=0,flagged=0,total=0;
+                    for(int i=0;i<n;++i){
+                        if(!finite(score[i])||!finite(truth[i])) continue;
+                        ++total;
+                        const bool positive=truth[i]>cut;
+                        const bool called=score[i]>=th;
+                        if(called) ++flagged;
+                        if(called&&positive) ++tp;
+                        else if(called&&!positive) ++fp;
+                        else if(!called&&positive) ++fn;
+                    }
+                    if(total==0) continue;
+                    // A threshold that flags nothing has no precision - not a
+                    // precision of zero, and not of one. Left as a gap.
+                    const double p=(tp+fp>0)?double(tp)/double(tp+fp)
+                                            :std::numeric_limits<double>::quiet_NaN();
+                    const double r=(tp+fn>0)?double(tp)/double(tp+fn)
+                                            :std::numeric_limits<double>::quiet_NaN();
+                    precision.x.append(th); precision.y.append(p);
+                    recall.x.append(th);    recall.y.append(r);
+                    f1.x.append(th);
+                    f1.y.append((finite(p)&&finite(r)&&p+r>0.0)?2.0*p*r/(p+r)
+                                                               :std::numeric_limits<double>::quiet_NaN());
+                    queue.x.append(th);     queue.y.append(double(flagged)/double(total));
+                }
+                out.series.append(precision);
+                out.series.append(recall);
+                out.series.append(f1);
+                out.series.append(queue);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("decision threshold"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("rate"),false,0.0,1.0};
+        return out;
+    }
+
+    // ----------------------------------------------------- Silhouette Plot
+    // One bar per observation, sorted within its cluster, with the overall mean
+    // marked. A cluster whose bars are short or negative is one whose members
+    // are closer to a different cluster than to their own - which no measure of
+    // total inertia will tell you.
+    if(in.engine==QLatin1String("Silhouette Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Horizontal Bar"));
+        out.legendVisible=false;
+        if(in.series.size()>=2){
+            const QVector<double>& cluster=in.series.at(0).y;
+            const QVector<double>& score=in.series.at(1).y;
+            const int n=qMin(cluster.size(),score.size());
+            QVector<QPair<double,double>> rows;
+            double sum=0.0; int used=0;
+            for(int i=0;i<n;++i){
+                if(!finite(cluster[i])||!finite(score[i])) continue;
+                rows.append({cluster[i],score[i]});
+                sum+=score[i]; ++used;
+            }
+            if(used>0){
+                // Cluster ascending, and within a cluster the widest bar first,
+                // which is the shape the figure is recognised by.
+                std::sort(rows.begin(),rows.end(),
+                          [](const QPair<double,double>& a,const QPair<double,double>& b){
+                              if(a.first!=b.first) return a.first<b.first;
+                              return a.second>b.second;
+                          });
+                // 400 bars is already a solid block; beyond that they are
+                // thinner than a pixel and the picture stops changing.
+                const int stride=qMax(1,int(rows.size()/400));
+                int slot=1;
+                double last=rows.first().first;
+                for(int i=0;i<rows.size();i+=stride){
+                    if(rows[i].first!=last){ ++slot; last=rows[i].first; }
+                    PlotSeries bar;
+                    bar.label=(i==0)?QStringLiteral("silhouette"):QString();
+                    bar.color=QColor::fromHsvF(std::fmod(std::abs(rows[i].first)*0.17,1.0),0.45,0.9);
+                    bar.x={rows[i].second};
+                    bar.y={double(slot)};
+                    out.series.append(bar);
+                    ++slot;
+                }
+                out.series.append(horizontalRule(0.0,sum/double(used),sum/double(used),
+                                                 in.style.foreground,
+                                                 QStringLiteral("mean %1")
+                                                     .arg(sum/double(used),0,'f',3),true));
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("silhouette coefficient"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("observation, by cluster"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------------- Elbow Plot
+    // A clustering score against the number of clusters, with the knee marked
+    // by maximum distance from the chord between the first and last points -
+    // the standard construction, and better than eyeballing it because two
+    // people eyeballing the same curve disagree.
+    if(in.engine==QLatin1String("Elbow Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            PlotSeries line;
+            line.label=s.label;
+            line.color=s.color;
+            line.lineWidth=qMax(1.2,in.style.lineWidth);
+            line.drawMarkers=true; line.markerSize=4.0;
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                line.x.append(s.x[i]); line.y.append(s.y[i]);
+            }
+            if(line.x.size()<3){ if(!line.x.isEmpty()) out.series.append(line); continue; }
+            out.series.append(line);
+
+            const double x0=line.x.first(),y0=line.y.first();
+            const double x1=line.x.last(), y1=line.y.last();
+            const double dx=x1-x0, dy=y1-y0;
+            const double len=std::hypot(dx,dy);
+            if(!(len>0.0)) continue;
+            int best=-1; double bestD=-1.0;
+            for(int i=1;i<line.x.size()-1;++i){
+                const double d=std::abs(dy*line.x[i]-dx*line.y[i]+x1*y0-y1*x0)/len;
+                if(d>bestD){ bestD=d; best=i; }
+            }
+            if(best>0){
+                PlotSeries knee;
+                knee.label=QStringLiteral("knee at %1").arg(line.x[best],0,'g',4);
+                knee.x={line.x[best]}; knee.y={line.y[best]};
+                knee.color=in.style.warning;
+                knee.drawLine=false; knee.drawMarkers=true; knee.markerSize=8.0;
+                out.series.append(knee);
+            }
+            break;   // one curve's knee; several would be a different figure
+        }
+        out.xAxis=PlotAxis{QStringLiteral("clusters"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("score"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------ Radial (Galbraith) Plot
+    // Standardised effect against precision. Every study is plotted at the same
+    // vertical scale in standard errors, so a small imprecise study cannot look
+    // as convincing as a large precise one - which is exactly what it does on a
+    // forest plot, where both get a row of the same height.
+    if(in.engine==QLatin1String("Radial Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& effect=in.series.at(0).y;
+            const QVector<double>& se=in.series.at(1).y;
+            const int n=qMin(effect.size(),se.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("studies");
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+            double wSum=0.0,weSum=0.0,xHi=0.0;
+            for(int i=0;i<n;++i){
+                if(!finite(effect[i])||!finite(se[i])||!(se[i]>0.0)) continue;
+                const double precision=1.0/se[i];
+                pts.x.append(precision);
+                pts.y.append(effect[i]*precision);
+                const double w=precision*precision;
+                wSum+=w; weSum+=w*effect[i];
+                xHi=qMax(xHi,precision);
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                if(wSum>0.0&&xHi>0.0){
+                    // The pooled effect is the SLOPE through the origin, not a
+                    // horizontal line: that is what makes the plot radial.
+                    const double pooled=weSum/wSum;
+                    PlotSeries ray;
+                    ray.label=QStringLiteral("pooled %1").arg(pooled,0,'f',3);
+                    ray.x={0.0,xHi}; ray.y={0.0,pooled*xHi};
+                    ray.color=in.style.warning;
+                    ray.lineWidth=qMax(1.2,in.style.lineWidth);
+                    out.series.append(ray);
+                    for(int k=-2;k<=2;k+=2){
+                        if(k==0) continue;
+                        PlotSeries band;
+                        band.label=QStringLiteral("%1%2 SE").arg(k>0?"+":"").arg(k);
+                        band.x={0.0,xHi}; band.y={double(k),pooled*xHi+double(k)};
+                        band.color=in.style.gridColor;
+                        band.dashPattern={4,3};
+                        out.series.append(band);
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("precision  (1 / standard error)"),
+                           false,0.0,unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("standardised effect  (effect / SE)"),
+                           false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------------- L'Abbé Plot
+    // The event rate in the treated arm against the rate in the control arm,
+    // one point per study, against the line of no effect. Points scattered
+    // across the diagonal rather than sitting parallel to it are heterogeneity
+    // you can see, which a pooled estimate and an I-squared cannot show you.
+    if(in.engine==QLatin1String("L'Abbé Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& control=in.series.at(0).y;
+            const QVector<double>& treated=in.series.at(1).y;
+            const int n=qMin(control.size(),treated.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("studies");
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+            double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            for(int i=0;i<n;++i){
+                if(!finite(control[i])||!finite(treated[i])) continue;
+                pts.x.append(control[i]); pts.y.append(treated[i]);
+                lo=qMin(lo,qMin(control[i],treated[i]));
+                hi=qMax(hi,qMax(control[i],treated[i]));
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                if(finite(lo)&&hi>lo){
+                    PlotSeries same;
+                    same.label=QStringLiteral("no difference");
+                    same.x={lo,hi}; same.y={lo,hi};
+                    same.color=in.style.gridColor;
+                    same.dashPattern={5,4};
+                    out.series.append(same);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("control arm"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("treated arm"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------- Caterpillar Plot
+    // A forest plot with its rows sorted by estimate, so the shape of the whole
+    // body of evidence is visible rather than the order the studies happened to
+    // be entered in. Derived onto Forest Plot, which already draws an estimate
+    // with an interval.
+    if(in.engine==QLatin1String("Caterpillar Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Forest Plot"));
+        if(in.series.size()>=3){
+            const QVector<double>& est=in.series.at(0).y;
+            const QVector<double>& lo=in.series.at(1).y;
+            const QVector<double>& hi=in.series.at(2).y;
+            const int n=qMin(est.size(),qMin(lo.size(),hi.size()));
+            QVector<int> order;
+            for(int i=0;i<n;++i)
+                if(finite(est[i])&&finite(lo[i])&&finite(hi[i])) order.append(i);
+            std::sort(order.begin(),order.end(),
+                      [&est](int a,int b){ return est[a]<est[b]; });
+            PlotSeries e,l,h;
+            e.label=in.series.at(0).label; e.color=in.series.at(0).color;
+            l.label=in.series.at(1).label; h.label=in.series.at(2).label;
+            for(int i:order){ e.y.append(est[i]); l.y.append(lo[i]); h.y.append(hi[i]); }
+            for(int i=0;i<order.size();++i){ e.x.append(double(i)); l.x.append(double(i)); h.x.append(double(i)); }
+            if(!e.y.isEmpty()){ out.series.append(e); out.series.append(l); out.series.append(h); }
+        }
+        return out;
+    }
+
+    // ---------------------------------------- Cumulative Meta-Analysis Plot
+    // The pooled estimate recomputed as each study is added, so it can be seen
+    // when the answer stopped changing. A conclusion that was already stable
+    // after four of forty studies is a different finding from one that only
+    // settled at the fortieth, and a plain forest plot shows neither.
+    if(in.engine==QLatin1String("Cumulative Meta-Analysis")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& effect=in.series.at(0).y;
+            const QVector<double>& variance=in.series.at(1).y;
+            const int n=qMin(effect.size(),variance.size());
+            PlotSeries pooled,upper,lower;
+            pooled.label=QStringLiteral("pooled estimate");
+            pooled.color=in.series.at(0).color;
+            pooled.lineWidth=qMax(1.4,in.style.lineWidth);
+            pooled.drawMarkers=n<=80; pooled.markerSize=3.6;
+            upper.label=QStringLiteral("95% CI");
+            lower.label=QString();
+            upper.color=lower.color=in.style.gridColor;
+            upper.dashPattern=lower.dashPattern={4,3};
+            double wSum=0.0,weSum=0.0;
+            int step=0;
+            for(int i=0;i<n;++i){
+                if(!finite(effect[i])||!finite(variance[i])||!(variance[i]>0.0)) continue;
+                // Inverse-variance weighting, which is the fixed-effect pooled
+                // estimate. A random-effects version needs tau-squared and is a
+                // different engine rather than a silent variation on this one.
+                const double w=1.0/variance[i];
+                wSum+=w; weSum+=w*effect[i];
+                ++step;
+                const double mu=weSum/wSum;
+                const double se=std::sqrt(1.0/wSum);
+                pooled.x.append(double(step)); pooled.y.append(mu);
+                upper.x.append(double(step));  upper.y.append(mu+1.96*se);
+                lower.x.append(double(step));  lower.y.append(mu-1.96*se);
+            }
+            if(!pooled.x.isEmpty()){
+                out.series.append(pooled);
+                out.series.append(upper);
+                out.series.append(lower);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("studies included"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("pooled effect"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------- Nelson-Aalen Cumulative Hazard
+    // The cumulative hazard rather than the survival probability. The same
+    // information as a Kaplan-Meier curve, plotted so that a constant hazard is
+    // a straight line - which is the reason to draw it, because departure from
+    // straight is what a survival curve makes hard to judge.
+    if(in.engine==QLatin1String("Nelson-Aalen Cumulative Hazard")
+       ||in.engine==QLatin1String("Cumulative Incidence")){
+        const bool incidence=(in.engine==QLatin1String("Cumulative Incidence"));
+        PlotSpec out=derivedAs(in,QStringLiteral("Stairs"));
+        if(in.series.size()>=2){
+            const QVector<double>& time=in.series.at(0).y;
+            const QVector<double>& event=in.series.at(1).y;
+            const int n=qMin(time.size(),event.size());
+            QVector<QPair<double,bool>> rows;
+            double eLo=std::numeric_limits<double>::infinity(),eHi=-eLo;
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(event[i])) continue;
+                eLo=qMin(eLo,event[i]); eHi=qMax(eHi,event[i]);
+            }
+            // Anything above the midpoint of the event column counts as an
+            // event, so 0/1, 1/2 and true/false all behave - the same rule the
+            // ROC engine uses, deliberately.
+            const double cut=(finite(eLo)&&finite(eHi))?(eLo+eHi)/2.0:0.5;
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(event[i])) continue;
+                rows.append({time[i],event[i]>cut});
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,bool>& a,const QPair<double,bool>& b){
+                          return a.first<b.first;
+                      });
+            if(rows.size()>=2){
+                PlotSeries curve;
+                curve.label=incidence?QStringLiteral("cumulative incidence")
+                                     :QStringLiteral("cumulative hazard");
+                curve.color=in.series.at(0).color;
+                curve.lineWidth=qMax(1.3,in.style.lineWidth);
+                int atRisk=rows.size();
+                double cumulativeHazard=0.0, survival=1.0;
+                curve.x.append(rows.first().first);
+                curve.y.append(0.0);
+                int i=0;
+                while(i<rows.size()){
+                    const double t=rows[i].first;
+                    int events=0,tied=0;
+                    while(i+tied<rows.size()&&rows[i+tied].first==t){
+                        if(rows[i+tied].second) ++events;
+                        ++tied;
+                    }
+                    if(events>0&&atRisk>0){
+                        cumulativeHazard+=double(events)/double(atRisk);
+                        survival*=(1.0-double(events)/double(atRisk));
+                        curve.x.append(t);
+                        curve.y.append(incidence?(1.0-survival):cumulativeHazard);
+                    }
+                    atRisk-=tied;
+                    i+=tied;
+                }
+                if(curve.x.size()>=2) out.series.append(curve);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time"),false,unsetValue(),unsetValue()};
+        out.yAxis=incidence
+            ? PlotAxis{QStringLiteral("cumulative incidence"),false,0.0,unsetValue()}
+            : PlotAxis{QStringLiteral("cumulative hazard"),false,0.0,unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------- Decision Curve
+    // Net benefit against the threshold probability, with treat-all and
+    // treat-none for comparison. A model is only worth using where its curve is
+    // above BOTH of those, and a model with a fine AUC can fail that over the
+    // whole range of thresholds anyone would actually use.
+    if(in.engine==QLatin1String("Decision Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& prob=in.series.at(0).y;
+            const QVector<double>& truth=in.series.at(1).y;
+            const int n=qMin(prob.size(),truth.size());
+            double tLo=std::numeric_limits<double>::infinity(),tHi=-tLo;
+            double pLo=tLo,pHi=-tLo;
+            for(int i=0;i<n;++i){
+                if(!finite(prob[i])||!finite(truth[i])) continue;
+                tLo=qMin(tLo,truth[i]); tHi=qMax(tHi,truth[i]);
+                pLo=qMin(pLo,prob[i]);  pHi=qMax(pHi,prob[i]);
+            }
+            const double cut=(finite(tLo)&&finite(tHi))?(tLo+tHi)/2.0:0.5;
+            // The score need not already be a probability; rescaled onto 0..1
+            // so a threshold probability means what it says.
+            const double span=(finite(pLo)&&pHi>pLo)?(pHi-pLo):1.0;
+            int positives=0,total=0;
+            for(int i=0;i<n;++i){
+                if(!finite(prob[i])||!finite(truth[i])) continue;
+                ++total; if(truth[i]>cut) ++positives;
+            }
+            if(total>0){
+                PlotSeries model,all,none;
+                model.label=QStringLiteral("model");
+                model.color=in.series.at(0).color;
+                model.lineWidth=qMax(1.3,in.style.lineWidth);
+                all.label=QStringLiteral("treat all");
+                all.color=in.style.warning; all.dashPattern={5,3};
+                none.label=QStringLiteral("treat none");
+                none.color=in.style.gridColor;
+                const double prevalence=double(positives)/double(total);
+                constexpr int kSteps=60;
+                for(int s=1;s<kSteps;++s){
+                    const double pt=double(s)/double(kSteps);
+                    int tp=0,fp=0;
+                    for(int i=0;i<n;++i){
+                        if(!finite(prob[i])||!finite(truth[i])) continue;
+                        const double scaled=(prob[i]-pLo)/span;
+                        if(scaled<pt) continue;
+                        if(truth[i]>cut) ++tp; else ++fp;
+                    }
+                    const double w=pt/(1.0-pt);
+                    model.x.append(pt);
+                    model.y.append(double(tp)/double(total)-double(fp)/double(total)*w);
+                    all.x.append(pt);
+                    all.y.append(prevalence-(1.0-prevalence)*w);
+                    none.x.append(pt);
+                    none.y.append(0.0);
+                }
+                out.series.append(model);
+                out.series.append(all);
+                out.series.append(none);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("threshold probability"),false,0.0,1.0};
+        out.yAxis=PlotAxis{QStringLiteral("net benefit"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------- Bathtub Curve
+    // The hazard rate against age, binned from a column of lifetimes. Infant
+    // mortality falling, a flat useful life, and wear-out rising - and the
+    // point of drawing it is to find out which of the three regions your fleet
+    // is actually in, which a mean time between failures cannot tell you.
+    if(in.engine==QLatin1String("Bathtub Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            v.erase(std::remove_if(v.begin(),v.end(),[](double d){ return d<0.0; }),v.end());
+            if(v.size()<8) continue;
+            std::sort(v.begin(),v.end());
+            const double lo=v.first(), hi=v.last();
+            if(!(hi>lo)) continue;
+            const int bins=qBound(6,int(std::sqrt(double(v.size()))),40);
+            const double width=(hi-lo)/bins;
+            QVector<int> failed(bins,0);
+            for(double d:v) failed[qBound(0,int((d-lo)/width),bins-1)]+=1;
+            PlotSeries hazard;
+            hazard.label=QStringLiteral("%1 — hazard").arg(s.label);
+            hazard.color=s.color;
+            hazard.lineWidth=qMax(1.3,in.style.lineWidth);
+            hazard.drawMarkers=true; hazard.markerSize=3.4;
+            int survivors=v.size();
+            for(int b=0;b<bins;++b){
+                if(survivors<=0) break;
+                // Hazard is failures in the interval divided by those still at
+                // risk at its start, not by the original population: the second
+                // is a failure DENSITY and slopes down even when the hazard is
+                // flat, which is how a bathtub curve gets drawn upside down.
+                hazard.x.append(lo+width*(b+0.5));
+                hazard.y.append(double(failed[b])/double(survivors)/width);
+                survivors-=failed[b];
+            }
+            if(!hazard.x.isEmpty()) out.series.append(hazard);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("age"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("hazard rate"),false,0.0,unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------------- Duane Plot
+    // Cumulative mean time between failures against cumulative operating time,
+    // on log-log axes, where reliability growth is a straight line and its
+    // slope is the growth rate. Crow-AMSAA in its original graphical form.
+    if(in.engine==QLatin1String("Duane Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            PlotSeries pts;
+            pts.label=s.label;
+            pts.color=s.color;
+            pts.drawLine=true; pts.drawMarkers=n<=80; pts.markerSize=3.6;
+            QVector<double> lx,ly;
+            for(int i=0;i<n;++i){
+                const double t=s.x[i];
+                const double failures=s.y[i];
+                if(!finite(t)||!finite(failures)||!(t>0.0)||!(failures>0.0)) continue;
+                const double mtbf=t/failures;
+                pts.x.append(t); pts.y.append(mtbf);
+                lx.append(std::log10(t)); ly.append(std::log10(mtbf));
+            }
+            if(pts.x.isEmpty()) continue;
+            out.series.append(pts);
+            const Moments2 m=momentsOf(lx,ly);
+            if(m.n>=2&&m.sxx>1e-15){
+                const double slope=m.sxy/m.sxx;
+                const double intercept=m.my-slope*m.mx;
+                const Bounds b=boundsOf(lx);
+                PlotSeries fit;
+                fit.label=QStringLiteral("growth slope %1").arg(slope,0,'f',3);
+                fit.x={std::pow(10.0,b.lo),std::pow(10.0,b.hi)};
+                fit.y={std::pow(10.0,intercept+slope*b.lo),
+                       std::pow(10.0,intercept+slope*b.hi)};
+                fit.color=in.style.warning;
+                fit.lineWidth=qMax(1.2,in.style.lineWidth);
+                out.series.append(fit);
+            }
+            break;
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cumulative operating time"),true,
+                           unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative MTBF"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------- Mean Cumulative Function
+    // The average number of repairs a unit has had by a given age, across a
+    // fleet. The right tool for repairable systems, where a survival curve is
+    // simply the wrong model: a pump that has been fixed four times has not
+    // died four times.
+    if(in.engine==QLatin1String("Mean Cumulative Function")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Stairs"));
+        if(in.series.size()>=2){
+            const QVector<double>& age=in.series.at(0).y;
+            const QVector<double>& unit=in.series.at(1).y;
+            const int n=qMin(age.size(),unit.size());
+            QSet<double> units;
+            QVector<double> ages;
+            for(int i=0;i<n;++i){
+                if(!finite(age[i])||!finite(unit[i])) continue;
+                units.insert(unit[i]);
+                ages.append(age[i]);
+            }
+            const int fleet=qMax(1,units.size());
+            std::sort(ages.begin(),ages.end());
+            if(ages.size()>=2){
+                PlotSeries mcf;
+                mcf.label=QStringLiteral("MCF over %1 unit%2")
+                              .arg(fleet).arg(fleet==1?QString():QStringLiteral("s"));
+                mcf.color=in.series.at(0).color;
+                mcf.lineWidth=qMax(1.3,in.style.lineWidth);
+                for(int i=0;i<ages.size();++i){
+                    mcf.x.append(ages[i]);
+                    mcf.y.append(double(i+1)/double(fleet));
+                }
+                out.series.append(mcf);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("age"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("mean cumulative repairs per unit"),
+                           false,0.0,unsetValue()};
+        return out;
+    }
     return in;
 }
 

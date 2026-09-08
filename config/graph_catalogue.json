@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 1219,
- "engine_count": 203,
+ "entry_count": 1359,
+ "engine_count": 223,
  "categories": [
   {
    "name": "Line Plots",
@@ -1317,6 +1317,76 @@
      "description": "Kernel-density distribution shape — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "◖◗",
      "thumbnail": "violinplot_ed3b51fc55.png"
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance",
+     "engine": "Rank-Abundance Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance · Semi-Log Y",
+     "engine": "Rank-Abundance Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance · Logarithmic Scale",
+     "engine": "Rank-Abundance Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance · Semi-Log X",
+     "engine": "Rank-Abundance Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance · Semi-Log(1+x) Y",
+     "engine": "Rank-Abundance Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance · Standardised (Z-Score)",
+     "engine": "Rank-Abundance Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance · Quantile X",
+     "engine": "Rank-Abundance Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -6072,6 +6142,146 @@
      "description": "Scatter with covariance ellipse",
      "preview": "◯•",
      "thumbnail": "confidence_ellipse_scatter_4ebb5baa68.png"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz",
+     "engine": "Lorenz Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration",
+     "engine": "Concentration Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative share of an outcome against population ranked by a second variable",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration · Semi-Log Y",
+     "engine": "Concentration Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cumulative share of an outcome against population ranked by a second variable — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration · Logarithmic Scale",
+     "engine": "Concentration Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cumulative share of an outcome against population ranked by a second variable — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration · Semi-Log X",
+     "engine": "Concentration Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cumulative share of an outcome against population ranked by a second variable — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration · Semi-Log(1+x) Y",
+     "engine": "Concentration Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cumulative share of an outcome against population ranked by a second variable — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration · Standardised (Z-Score)",
+     "engine": "Concentration Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cumulative share of an outcome against population ranked by a second variable — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration · Quantile X",
+     "engine": "Concentration Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cumulative share of an outcome against population ranked by a second variable — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz · Semi-Log Y",
+     "engine": "Lorenz Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz · Logarithmic Scale",
+     "engine": "Lorenz Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz · Semi-Log X",
+     "engine": "Lorenz Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz · Semi-Log(1+x) Y",
+     "engine": "Lorenz Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz · Standardised (Z-Score)",
+     "engine": "Lorenz Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz · Quantile X",
+     "engine": "Lorenz Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -9842,6 +10052,216 @@
      "description": "Median ranks with the shape and scale fitted — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "📊",
      "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub",
+     "engine": "Bathtub Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane",
+     "engine": "Duane Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf",
+     "engine": "Mean Cumulative Function",
+     "scale": null,
+     "advanced": false,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub · Semi-Log Y",
+     "engine": "Bathtub Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub · Logarithmic Scale",
+     "engine": "Bathtub Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub · Semi-Log X",
+     "engine": "Bathtub Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub · Semi-Log(1+x) Y",
+     "engine": "Bathtub Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub · Standardised (Z-Score)",
+     "engine": "Bathtub Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub · Quantile X",
+     "engine": "Bathtub Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane · Semi-Log Y",
+     "engine": "Duane Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane · Logarithmic Scale",
+     "engine": "Duane Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane · Semi-Log X",
+     "engine": "Duane Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane · Semi-Log(1+x) Y",
+     "engine": "Duane Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane · Standardised (Z-Score)",
+     "engine": "Duane Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane · Quantile X",
+     "engine": "Duane Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf · Semi-Log Y",
+     "engine": "Mean Cumulative Function",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf · Logarithmic Scale",
+     "engine": "Mean Cumulative Function",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf · Semi-Log X",
+     "engine": "Mean Cumulative Function",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf · Semi-Log(1+x) Y",
+     "engine": "Mean Cumulative Function",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf · Standardised (Z-Score)",
+     "engine": "Mean Cumulative Function",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf · Quantile X",
+     "engine": "Mean Cumulative Function",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -10816,6 +11236,496 @@
      "advanced": true,
      "description": "Survival probability as a step function, censoring ticked — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🩺",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot",
+     "engine": "Radial Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe",
+     "engine": "L'Abbé Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Treated-arm rate against control-arm rate, one point per study",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar",
+     "engine": "Caterpillar Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": null,
+     "advanced": false,
+     "description": "The pooled estimate recomputed as each study is added, with its interval",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence",
+     "engine": "Cumulative Incidence",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative incidence against time, from event times and an event flag",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve",
+     "engine": "Decision Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar · Semi-Log Y",
+     "engine": "Caterpillar Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar · Logarithmic Scale",
+     "engine": "Caterpillar Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar · Semi-Log X",
+     "engine": "Caterpillar Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar · Semi-Log(1+x) Y",
+     "engine": "Caterpillar Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar · Standardised (Z-Score)",
+     "engine": "Caterpillar Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar · Quantile X",
+     "engine": "Caterpillar Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence · Semi-Log Y",
+     "engine": "Cumulative Incidence",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cumulative incidence against time, from event times and an event flag — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence · Logarithmic Scale",
+     "engine": "Cumulative Incidence",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cumulative incidence against time, from event times and an event flag — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence · Semi-Log X",
+     "engine": "Cumulative Incidence",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cumulative incidence against time, from event times and an event flag — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence · Semi-Log(1+x) Y",
+     "engine": "Cumulative Incidence",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cumulative incidence against time, from event times and an event flag — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence · Standardised (Z-Score)",
+     "engine": "Cumulative Incidence",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cumulative incidence against time, from event times and an event flag — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence · Quantile X",
+     "engine": "Cumulative Incidence",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cumulative incidence against time, from event times and an event flag — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta · Semi-Log Y",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "The pooled estimate recomputed as each study is added, with its interval — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta · Logarithmic Scale",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "The pooled estimate recomputed as each study is added, with its interval — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta · Semi-Log X",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "The pooled estimate recomputed as each study is added, with its interval — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta · Semi-Log(1+x) Y",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "The pooled estimate recomputed as each study is added, with its interval — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta · Standardised (Z-Score)",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "The pooled estimate recomputed as each study is added, with its interval — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta · Quantile X",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "The pooled estimate recomputed as each study is added, with its interval — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve · Semi-Log Y",
+     "engine": "Decision Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve · Logarithmic Scale",
+     "engine": "Decision Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve · Semi-Log X",
+     "engine": "Decision Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve · Semi-Log(1+x) Y",
+     "engine": "Decision Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve · Standardised (Z-Score)",
+     "engine": "Decision Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve · Quantile X",
+     "engine": "Decision Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe · Semi-Log Y",
+     "engine": "L'Abbé Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Treated-arm rate against control-arm rate, one point per study — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe · Logarithmic Scale",
+     "engine": "L'Abbé Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Treated-arm rate against control-arm rate, one point per study — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe · Semi-Log X",
+     "engine": "L'Abbé Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Treated-arm rate against control-arm rate, one point per study — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe · Semi-Log(1+x) Y",
+     "engine": "L'Abbé Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Treated-arm rate against control-arm rate, one point per study — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe · Standardised (Z-Score)",
+     "engine": "L'Abbé Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Treated-arm rate against control-arm rate, one point per study — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe · Quantile X",
+     "engine": "L'Abbé Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Treated-arm rate against control-arm rate, one point per study — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen · Semi-Log Y",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen · Logarithmic Scale",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen · Semi-Log X",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen · Semi-Log(1+x) Y",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen · Standardised (Z-Score)",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen · Quantile X",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot · Semi-Log Y",
+     "engine": "Radial Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot · Logarithmic Scale",
+     "engine": "Radial Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot · Semi-Log X",
+     "engine": "Radial Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot · Semi-Log(1+x) Y",
+     "engine": "Radial Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot · Standardised (Z-Score)",
+     "engine": "Radial Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot · Quantile X",
+     "engine": "Radial Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
      "thumbnail": ""
     }
    ]
@@ -12171,6 +13081,496 @@
      "advanced": true,
      "description": "Precision against recall with the average precision — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🎯",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree",
+     "engine": "Scree Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Eigenvalues by component with the cumulative share over the top",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror",
+     "engine": "Prediction Error Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Observed against predicted with the identity line, the best fit and R²",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve",
+     "engine": "Learning Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Training and validation score against training-set size — the gap is overfitting",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve",
+     "engine": "Validation Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Training and validation score against one hyperparameter",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination",
+     "engine": "Discrimination Threshold",
+     "scale": null,
+     "advanced": false,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette",
+     "engine": "Silhouette Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow",
+     "engine": "Elbow Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination · Semi-Log Y",
+     "engine": "Discrimination Threshold",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination · Logarithmic Scale",
+     "engine": "Discrimination Threshold",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination · Semi-Log X",
+     "engine": "Discrimination Threshold",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination · Semi-Log(1+x) Y",
+     "engine": "Discrimination Threshold",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination · Standardised (Z-Score)",
+     "engine": "Discrimination Threshold",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination · Quantile X",
+     "engine": "Discrimination Threshold",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow · Semi-Log Y",
+     "engine": "Elbow Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow · Logarithmic Scale",
+     "engine": "Elbow Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow · Semi-Log X",
+     "engine": "Elbow Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow · Semi-Log(1+x) Y",
+     "engine": "Elbow Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow · Standardised (Z-Score)",
+     "engine": "Elbow Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow · Quantile X",
+     "engine": "Elbow Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve · Semi-Log Y",
+     "engine": "Learning Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Training and validation score against training-set size — the gap is overfitting — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve · Logarithmic Scale",
+     "engine": "Learning Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Training and validation score against training-set size — the gap is overfitting — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve · Semi-Log X",
+     "engine": "Learning Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Training and validation score against training-set size — the gap is overfitting — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve · Semi-Log(1+x) Y",
+     "engine": "Learning Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Training and validation score against training-set size — the gap is overfitting — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve · Standardised (Z-Score)",
+     "engine": "Learning Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Training and validation score against training-set size — the gap is overfitting — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve · Quantile X",
+     "engine": "Learning Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Training and validation score against training-set size — the gap is overfitting — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror · Semi-Log Y",
+     "engine": "Prediction Error Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Observed against predicted with the identity line, the best fit and R² — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror · Logarithmic Scale",
+     "engine": "Prediction Error Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Observed against predicted with the identity line, the best fit and R² — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror · Semi-Log X",
+     "engine": "Prediction Error Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Observed against predicted with the identity line, the best fit and R² — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror · Semi-Log(1+x) Y",
+     "engine": "Prediction Error Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Observed against predicted with the identity line, the best fit and R² — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror · Standardised (Z-Score)",
+     "engine": "Prediction Error Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Observed against predicted with the identity line, the best fit and R² — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror · Quantile X",
+     "engine": "Prediction Error Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Observed against predicted with the identity line, the best fit and R² — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree · Semi-Log Y",
+     "engine": "Scree Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Eigenvalues by component with the cumulative share over the top — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree · Logarithmic Scale",
+     "engine": "Scree Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Eigenvalues by component with the cumulative share over the top — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree · Semi-Log X",
+     "engine": "Scree Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Eigenvalues by component with the cumulative share over the top — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree · Semi-Log(1+x) Y",
+     "engine": "Scree Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Eigenvalues by component with the cumulative share over the top — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree · Standardised (Z-Score)",
+     "engine": "Scree Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Eigenvalues by component with the cumulative share over the top — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree · Quantile X",
+     "engine": "Scree Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Eigenvalues by component with the cumulative share over the top — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette · Semi-Log Y",
+     "engine": "Silhouette Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette · Logarithmic Scale",
+     "engine": "Silhouette Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette · Semi-Log X",
+     "engine": "Silhouette Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette · Semi-Log(1+x) Y",
+     "engine": "Silhouette Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette · Standardised (Z-Score)",
+     "engine": "Silhouette Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette · Quantile X",
+     "engine": "Silhouette Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve · Semi-Log Y",
+     "engine": "Validation Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Training and validation score against one hyperparameter — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve · Logarithmic Scale",
+     "engine": "Validation Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Training and validation score against one hyperparameter — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve · Semi-Log X",
+     "engine": "Validation Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Training and validation score against one hyperparameter — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve · Semi-Log(1+x) Y",
+     "engine": "Validation Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Training and validation score against one hyperparameter — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve · Standardised (Z-Score)",
+     "engine": "Validation Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Training and validation score against one hyperparameter — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve · Quantile X",
+     "engine": "Validation Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Training and validation score against one hyperparameter — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
      "thumbnail": ""
     }
    ]

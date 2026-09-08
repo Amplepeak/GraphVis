@@ -61,7 +61,7 @@ bool runEngineSweep(){
     // ones. A shared baseline then reported the polar engines as broken,
     // because they have no rectangular frame at all and draw less chrome than
     // the engine the baseline came from.
-    auto inkFor=[&](const PlotSpec& probe){
+    auto imageOf=[&](const PlotSpec& probe){
         QImage canvas(640,400,QImage::Format_ARGB32_Premultiplied);
         canvas.fill(Qt::white);
         {
@@ -69,6 +69,10 @@ bool runEngineSweep(){
             painter.setRenderHint(QPainter::Antialiasing,true);
             backend.render(&painter,QRectF(0,0,640,400),probe);
         }
+        return canvas;
+    };
+    auto inkFor=[&](const PlotSpec& probe){
+        const QImage canvas=imageOf(probe);
         qint64 ink=0;
         for(int y=0;y<canvas.height();y+=2){
             const QRgb* row=reinterpret_cast<const QRgb*>(canvas.constScanLine(y));
@@ -76,6 +80,24 @@ bool runEngineSweep(){
                 if(qRed(row[x])<250||qGreen(row[x])<250||qBlue(row[x])<250) ++ink;
         }
         return ink;
+    };
+    // Pixels that DIFFER between two renders of the same figure.
+    //
+    // This replaces counting non-white pixels, which cannot see a curve that
+    // lands on the gridlines it overdraws: a blue line through a grey gridline
+    // changes that pixel without adding a non-white one, so a correct thin
+    // curve can come out with LESS "ink" than its own empty frame. That is not
+    // a near miss, it is a measure that answers a different question from the
+    // one being asked. What is wanted is "did anything appear", and the way to
+    // ask it is to compare the two pictures.
+    auto changedPixels=[](const QImage& a,const QImage& b){
+        qint64 n=0;
+        for(int y=0;y<a.height();++y){
+            const QRgb* pa=reinterpret_cast<const QRgb*>(a.constScanLine(y));
+            const QRgb* pb=reinterpret_cast<const QRgb*>(b.constScanLine(y));
+            for(int x=0;x<a.width();++x) if(pa[x]!=pb[x]) ++n;
+        }
+        return n;
     };
 
     qint64 baseline=0;
@@ -121,6 +143,41 @@ bool runEngineSweep(){
     }
     QVector<double> lifetimes,events,memberA,memberB,memberC;
     QVector<double> resistance,reactance;
+    // Inputs for batch 1: a risk score with a matching outcome, cluster labels
+    // with silhouette coefficients, a fleet's repair ages, and a set of study
+    // effects with their standard errors and intervals.
+    QVector<double> riskScore,outcome,clusterId,silhouette,repairAge,repairUnit;
+    QVector<double> effect,stdErr,variance,ciLo,ciHi;
+    for(int i=0;i<80;++i){
+        const double p=double(i)/79.0;
+        riskScore.append(p);
+        // Correlated with the score rather than random, so precision and recall
+        // actually separate and the figure has something to show.
+        outcome.append((std::fmod(double(i)*0.37,1.0)<p)?1.0:0.0);
+        clusterId.append(double(i%4));
+        silhouette.append(0.75-0.5*std::fmod(double(i)*0.13,1.0));
+        repairAge.append(1.0+double(i)*0.9);
+        repairUnit.append(double(i%12));
+    }
+    for(int i=0;i<24;++i){
+        const double e=0.35+0.5*std::sin(double(i)*0.7);
+        const double se=0.08+0.03*double(i%5);
+        effect.append(e);
+        stdErr.append(se);
+        variance.append(se*se);
+        ciLo.append(e-1.96*se);
+        ciHi.append(e+1.96*se);
+    }
+    // A Duane plot reads cumulative time on x and cumulative failures on y,
+    // which is the one engine here that needs its x column shaped too.
+    PlotSeries duaneSeries;
+    duaneSeries.label=QStringLiteral("growth");
+    for(int i=1;i<=60;++i){
+        const double t=double(i)*25.0;
+        duaneSeries.x.append(t);
+        // Failures accruing more slowly than time, which is growth.
+        duaneSeries.y.append(std::pow(t,0.65)*0.4);
+    }
     for(int i=0;i<60;++i){
         lifetimes.append(1.0+double(i)*0.7);
         events.append((i%4==0)?0.0:1.0);          // a quarter censored
@@ -147,6 +204,28 @@ bool runEngineSweep(){
         // 240x240 grid, and is right to.
         {QStringLiteral("Confusion Matrix"),{column("true",categoryA),
                                              column("predicted",categoryB)}},
+        // Batch 1 of the catalogue expansion. Each of these reads a specific
+        // pair or triple; handed the shared continuous signal they would be
+        // asked to read a smooth curve as an event flag or a cluster label.
+        {QStringLiteral("Nelson-Aalen Cumulative Hazard"),
+            {column("time",lifetimes),column("event",events)}},
+        {QStringLiteral("Cumulative Incidence"),
+            {column("time",lifetimes),column("event",events)}},
+        {QStringLiteral("Discrimination Threshold"),
+            {column("score",riskScore),column("outcome",outcome)}},
+        {QStringLiteral("Decision Curve"),
+            {column("probability",riskScore),column("outcome",outcome)}},
+        {QStringLiteral("Silhouette Plot"),
+            {column("cluster",clusterId),column("silhouette",silhouette)}},
+        {QStringLiteral("Mean Cumulative Function"),
+            {column("age",repairAge),column("unit",repairUnit)}},
+        {QStringLiteral("Radial Plot"),
+            {column("effect",effect),column("standard error",stdErr)}},
+        {QStringLiteral("Cumulative Meta-Analysis"),
+            {column("effect",effect),column("variance",variance)}},
+        {QStringLiteral("Caterpillar Plot"),
+            {column("estimate",effect),column("lower",ciLo),column("upper",ciHi)}},
+        {QStringLiteral("Duane Plot"),{duaneSeries}},
     };
 
     for(const QString& engine:engines){
@@ -169,9 +248,7 @@ bool runEngineSweep(){
             backend.render(&painter,QRectF(0,0,640,400),spec);
         }
 
-        // Ink, not just a background. Counting pixels that differ from white
-        // catches an engine whose rewrite produced no series at all.
-        const qint64 marked=inkFor(spec);
+        const QImage drawn=imageOf(spec);
 
         // The chrome probe has to be the PREPARED spec with its series cleared,
         // not the original. The formula engines synthesise their own data from
@@ -182,20 +259,45 @@ bool runEngineSweep(){
         PlotSpec chromeOnly=backend.preparedFor(spec);
         chromeOnly.series.clear();
         chromeOnly.expression.clear();
-        const qint64 chrome=inkFor(chromeOnly);
+        // ...and it has to be drawn on the SAME frame. With the series gone the
+        // axes fall back to a default range, so the empty probe gets different
+        // tick values, different label widths and a differently inset plot
+        // area - a different amount of chrome. That is not a control, and it
+        // reported a correct Nelson-Aalen curve as blank: a thin staircase puts
+        // less ink on the page than the extra gridlines its own empty frame
+        // drew, so "drew something" came out negative.
+        //
+        // Pinning both axes to the range the real render used makes the chrome
+        // identical by construction, and every differing pixel data. The same
+        // mistake, in the same shape, has now turned up in three separate
+        // sweeps; this is the fix in all three.
+        {
+            const QtPlotBackend::DataRange r=backend.rangeFor(spec);
+            const auto pin=[](PlotAxis& axis,double lo,double hi,bool log){
+                if(!(std::isfinite(lo)&&std::isfinite(hi)&&hi>lo)) return;
+                // rangeFor reports a log axis in LOG space; PlotAxis holds data
+                // values.
+                axis.min=log?std::pow(10.0,lo):lo;
+                axis.max=log?std::pow(10.0,hi):hi;
+            };
+            pin(chromeOnly.xAxis,r.xLo,r.xHi,r.xLog);
+            pin(chromeOnly.yAxis,r.yLo,r.yHi,r.yLog);
+        }
+        const qint64 changed=changedPixels(drawn,imageOf(chromeOnly));
 
-        // 120 sampled pixels above this engine's own empty frame is roughly a
-        // single thin curve across the plot: enough to tell "drew something"
-        // from "drew nothing" without demanding a filled chart.
-        if(marked<chrome+120){
+        // 300 changed pixels at full resolution is well under a single thin
+        // curve across a 640-wide plot, and far more than antialiasing noise
+        // between two identical frames - which is zero, because the frames ARE
+        // identical once the axes are pinned.
+        if(changed<300){
             // Say what the rewrite produced, not just that the picture is
             // empty: no series at all and a series of no points are different
             // faults with different causes.
             const PlotSpec prepared=backend.preparedFor(spec);
             int points=0;
             for(const PlotSeries& s:prepared.series) points+=qMin(s.x.size(),s.y.size());
-            blank.append(QStringLiteral("%1 [%2 px vs %3 chrome, %4 series, %5 pts, as %6]")
-                             .arg(engine).arg(marked).arg(chrome)
+            blank.append(QStringLiteral("%1 [%2 px changed, %3 series, %4 pts, as %5]")
+                             .arg(engine).arg(changed)
                              .arg(prepared.series.size()).arg(points).arg(prepared.engine));
         }
     }
