@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 1889,
- "engine_count": 321,
+ "entry_count": 1949,
+ "engine_count": 339,
  "categories": [
   {
    "name": "Line Plots",
@@ -7969,6 +7969,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "beamcaustic",
+     "engine": "Beam Caustic",
+     "scale": null,
+     "advanced": false,
+     "description": "Beam radius through a focus, fitted as a parabola in the square for the waist and divergence",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -8448,6 +8459,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum",
+     "engine": "Species Accumulation Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum · Semi-Log Y",
+     "engine": "Species Accumulation Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum · Logarithmic Scale",
+     "engine": "Species Accumulation Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum · Semi-Log X",
+     "engine": "Species Accumulation Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum · Semi-Log(1+x) Y",
+     "engine": "Species Accumulation Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum · Standardised (Z-Score)",
+     "engine": "Species Accumulation Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "speciesaccum · Quantile X",
+     "engine": "Species Accumulation Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Species found against sampling effort, with the Chao1 estimate of what is left — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -8765,6 +8853,28 @@
      "scale": null,
      "advanced": false,
      "description": "Probability a sampling plan accepts a lot, against how defective the lot is",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "youden",
+     "engine": "Youden Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Two materials measured by every laboratory, separating random scatter from systematic bias",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "leveyjennings",
+     "engine": "Levey-Jennings Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Control results against the mean and its deviation bands, with the Westgard 1-3s and 2-2s counts",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -10516,6 +10626,94 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd",
+     "engine": "Residence Time Distribution",
+     "scale": null,
+     "advanced": false,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "ratkowsky",
+     "engine": "Ratkowsky Square-Root Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Square root of growth rate against temperature, extrapolated to the minimum growth temperature",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd · Semi-Log Y",
+     "engine": "Residence Time Distribution",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd · Logarithmic Scale",
+     "engine": "Residence Time Distribution",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd · Semi-Log X",
+     "engine": "Residence Time Distribution",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd · Semi-Log(1+x) Y",
+     "engine": "Residence Time Distribution",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd · Standardised (Z-Score)",
+     "engine": "Residence Time Distribution",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "rtd · Quantile X",
+     "engine": "Residence Time Distribution",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": "",
      "pack": "life"
@@ -13132,6 +13330,160 @@
      "scale": null,
      "advanced": false,
      "description": "Pressure coefficient along the chord, y axis inverted as convention requires",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield",
+     "engine": "Balanced Field Length",
+     "scale": null,
+     "advanced": false,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange",
+     "engine": "Specific Range",
+     "scale": null,
+     "advanced": false,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield · Semi-Log Y",
+     "engine": "Balanced Field Length",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield · Logarithmic Scale",
+     "engine": "Balanced Field Length",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield · Semi-Log X",
+     "engine": "Balanced Field Length",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield · Semi-Log(1+x) Y",
+     "engine": "Balanced Field Length",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield · Standardised (Z-Score)",
+     "engine": "Balanced Field Length",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "balancedfield · Quantile X",
+     "engine": "Balanced Field Length",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Accelerate-stop against accelerate-go; where they cross is the balanced field — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange · Semi-Log Y",
+     "engine": "Specific Range",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange · Logarithmic Scale",
+     "engine": "Specific Range",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange · Semi-Log X",
+     "engine": "Specific Range",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange · Semi-Log(1+x) Y",
+     "engine": "Specific Range",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange · Standardised (Z-Score)",
+     "engine": "Specific Range",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "specificrange · Quantile X",
+     "engine": "Specific Range",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Distance per unit of fuel against weight, with the peak refined between samples — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -16943,6 +17295,160 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve",
+     "engine": "Epidemic Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective",
+     "engine": "Effective Reproduction Number",
+     "scale": null,
+     "advanced": false,
+     "description": "R from the growth rate of the case series and a stated generation interval",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective · Semi-Log Y",
+     "engine": "Effective Reproduction Number",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "R from the growth rate of the case series and a stated generation interval — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective · Logarithmic Scale",
+     "engine": "Effective Reproduction Number",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "R from the growth rate of the case series and a stated generation interval — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective · Semi-Log X",
+     "engine": "Effective Reproduction Number",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "R from the growth rate of the case series and a stated generation interval — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective · Semi-Log(1+x) Y",
+     "engine": "Effective Reproduction Number",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "R from the growth rate of the case series and a stated generation interval — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective · Standardised (Z-Score)",
+     "engine": "Effective Reproduction Number",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "R from the growth rate of the case series and a stated generation interval — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "rteffective · Quantile X",
+     "engine": "Effective Reproduction Number",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "R from the growth rate of the case series and a stated generation interval — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve · Semi-Log Y",
+     "engine": "Epidemic Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve · Logarithmic Scale",
+     "engine": "Epidemic Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve · Semi-Log X",
+     "engine": "Epidemic Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve · Semi-Log(1+x) Y",
+     "engine": "Epidemic Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve · Standardised (Z-Score)",
+     "engine": "Epidemic Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "epicurve · Quantile X",
+     "engine": "Epidemic Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cases by date of onset with a centred moving average, so the peak is not reported late — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -18099,6 +18605,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology",
+     "engine": "Phenology Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology · Semi-Log Y",
+     "engine": "Phenology Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology · Logarithmic Scale",
+     "engine": "Phenology Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology · Semi-Log X",
+     "engine": "Phenology Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology · Semi-Log(1+x) Y",
+     "engine": "Phenology Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology · Standardised (Z-Score)",
+     "engine": "Phenology Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "phenology · Quantile X",
+     "engine": "Phenology Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A vegetation index through the year with green-up, peak and senescence at half amplitude — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
     }
    ],
    "pack": "earth"
@@ -18578,6 +19161,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pinch",
+     "engine": "Composite Curves (Pinch)",
+     "scale": null,
+     "advanced": false,
+     "description": "Hot and cold composites offset to the minimum approach, giving the pinch and both utilities",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -19046,6 +19640,39 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Civil & Structural",
+     "name": "proctor",
+     "engine": "Proctor Compaction Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Dry density against moisture with the optimum fitted and the zero-air-voids limit",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Civil & Structural",
+     "name": "mohrcoulomb",
+     "engine": "Mohr-Coulomb Envelope",
+     "scale": null,
+     "advanced": false,
+     "description": "Shear at failure against normal stress, giving the cohesion and the friction angle",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Civil & Structural",
+     "name": "influenceline",
+     "engine": "Influence Line",
+     "scale": null,
+     "advanced": false,
+     "description": "A response against the position of a unit load, with the worst position marked",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -19478,6 +20105,28 @@
      "scale": null,
      "advanced": false,
      "description": "The open-loop locus against the critical point, with the gain and phase margins",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "harmonics",
+     "engine": "Harmonic Spectrum",
+     "scale": null,
+     "advanced": false,
+     "description": "Magnitude by harmonic order with the total harmonic distortion computed from it",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "soundstats",
+     "engine": "Sound Level Statistics",
+     "scale": null,
+     "advanced": false,
+     "description": "Level against percentage of time exceeded, with L10, L50, L90 and the energy-average Leq",
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
@@ -20472,6 +21121,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "cumulativegain",
+     "engine": "Cumulative Gain Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Positives captured against population contacted, with the random and perfect baselines",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -21066,31 +21726,31 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 774
+   "entryCount": 782
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 547
+   "entryCount": 567
   },
   {
    "id": "earth",
    "name": "Earth & Environment",
    "description": "Map projections, GIS, terrain, hydrology, geology and oceanography.",
-   "entryCount": 190
+   "entryCount": 197
   },
   {
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 254
+   "entryCount": 277
   },
   {
    "id": "physics",
    "name": "Physics & Signals",
    "description": "Spectral analysis, signal imaging, RF and control, and volume visualisation.",
-   "entryCount": 124
+   "entryCount": 126
   }
  ]
 }

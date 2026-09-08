@@ -90,6 +90,18 @@ NO_SCALE = {
     "Van 't Hoff Plot", "Tauc Plot", "Stern-Volmer Plot", "TGA / DTG Curve",
     "DSC Thermogram", "Creep Curve", "Master Curve (TTS)",
     "Rheology Flow Curve", "Octave Band Spectrum", "Nyquist Stability Plot",
+    # Batch 8, on the same two tests. Reading an answer off a straight line:
+    # the Mohr-Coulomb cohesion and friction angle, the Ratkowsky minimum
+    # growth temperature, the Proctor optimum and its zero-air-voids limit, the
+    # beam waist and divergence. Axes that are not measurements: a cumulative
+    # gain and a sound-level statistic are both percentages of a total, a
+    # Levey-Jennings chart's y is deviations from its own mean, a Youden plot
+    # carries a circle and a 45 degree line, an influence line's x is a
+    # position and a harmonic spectrum's is an integer order.
+    "Proctor Compaction Curve", "Mohr-Coulomb Envelope", "Influence Line",
+    "Composite Curves (Pinch)", "Harmonic Spectrum", "Sound Level Statistics",
+    "Beam Caustic", "Youden Plot", "Levey-Jennings Chart",
+    "Cumulative Gain Chart", "Ratkowsky Square-Root Plot",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

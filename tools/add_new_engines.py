@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 7.
+"""Catalogue entries for the engine expansion, batches 1 to 8.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -266,6 +266,45 @@ NEW = [
      "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged"),
     ("Signals & RF", "nyquiststability", "Nyquist Stability Plot",
      "The open-loop locus against the critical point, with the gain and phase margins"),
+
+    # ---- batch 8: geotechnics, flight performance, process integration,
+    # metrology, epidemiology and remote sensing
+    ("Civil & Structural", "proctor", "Proctor Compaction Curve",
+     "Dry density against moisture with the optimum fitted and the zero-air-voids limit"),
+    ("Civil & Structural", "mohrcoulomb", "Mohr-Coulomb Envelope",
+     "Shear at failure against normal stress, giving the cohesion and the friction angle"),
+    ("Civil & Structural", "influenceline", "Influence Line",
+     "A response against the position of a unit load, with the worst position marked"),
+    ("Aviation & Flight", "balancedfield", "Balanced Field Length",
+     "Accelerate-stop against accelerate-go; where they cross is the balanced field"),
+    ("Aviation & Flight", "specificrange", "Specific Range",
+     "Distance per unit of fuel against weight, with the peak refined between samples"),
+    ("Energy & Building Services", "pinch", "Composite Curves (Pinch)",
+     "Hot and cold composites offset to the minimum approach, giving the pinch and both utilities"),
+    ("Electrochemical & Bioprocess", "rtd", "Residence Time Distribution",
+     "E(t) from a tracer pulse, with the mean, the variance and the tanks-in-series number"),
+    ("Signals & RF", "harmonics", "Harmonic Spectrum",
+     "Magnitude by harmonic order with the total harmonic distortion computed from it"),
+    ("Signals & RF", "soundstats", "Sound Level Statistics",
+     "Level against percentage of time exceeded, with L10, L50, L90 and the energy-average Leq"),
+    ("Spectroscopy & Chromatography", "beamcaustic", "Beam Caustic",
+     "Beam radius through a focus, fitted as a parabola in the square for the waist and divergence"),
+    ("Quality, Process & Reliability", "youden", "Youden Plot",
+     "Two materials measured by every laboratory, separating random scatter from systematic bias"),
+    ("Quality, Process & Reliability", "leveyjennings", "Levey-Jennings Chart",
+     "Control results against the mean and its deviation bands, with the Westgard 1-3s and 2-2s counts"),
+    ("Statistical Inference & Effect", "speciesaccum", "Species Accumulation Curve",
+     "Species found against sampling effort, with the Chao1 estimate of what is left"),
+    ("Clinical & Meta-analysis", "epicurve", "Epidemic Curve",
+     "Cases by date of onset with a centred moving average, so the peak is not reported late"),
+    ("Clinical & Meta-analysis", "rteffective", "Effective Reproduction Number",
+     "R from the growth rate of the case series and a stated generation interval"),
+    ("Model Evaluation", "cumulativegain", "Cumulative Gain Chart",
+     "Positives captured against population contacted, with the random and perfect baselines"),
+    ("Electrochemical & Bioprocess", "ratkowsky", "Ratkowsky Square-Root Plot",
+     "Square root of growth rate against temperature, extrapolated to the minimum growth temperature"),
+    ("Earth & Ocean Science", "phenology", "Phenology Curve",
+     "A vegetation index through the year with green-up, peak and senescence at half amplitude"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -305,5 +344,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-7: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-8: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

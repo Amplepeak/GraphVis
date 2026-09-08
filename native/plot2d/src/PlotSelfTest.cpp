@@ -759,6 +759,122 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 8's inputs, on the same rule: a constant the engine must recover.
+    // A compaction curve peaking at 1.92 at 14% moisture, a soil with c 15 and
+    // phi 30, a balanced field at V1 120, a four-stream pinch problem whose
+    // utilities must differ by exactly the stream imbalance, a caustic with a
+    // 0.05 waist at z 100, a season running 166.7 to 233.3.
+    QVector<double> proctorMoisture,proctorDensity;
+    QVector<double> normalStress,failureShear;
+    QVector<double> loadPosition,sectionMoment;
+    QVector<double> decisionSpeed,stopDistance,goDistance;
+    QVector<double> cruiseWeight,specificRange;
+    QVector<double> streamSupply,streamTarget,streamCapacity;
+    QVector<double> tracerTime,tracerConcentration;
+    QVector<double> harmonicOrder,harmonicMagnitude;
+    QVector<double> noiseTime,noiseLevel;
+    QVector<double> beamDistance,beamRadius;
+    QVector<double> youdenA,youdenB;
+    QVector<double> controlRun,controlValue;
+    QVector<double> surveySample,surveySpecies;
+    QVector<double> onsetDay,onsetCases;
+    QVector<double> gainScore,gainOutcome;
+    QVector<double> growthTemperature,ratkowskyRate;
+    QVector<double> phenologyDay,phenologyIndex;
+    {
+        for(int i=0;i<9;++i){
+            const double w=8.0+double(i)*1.5;
+            proctorMoisture.append(w);
+            proctorDensity.append(1.92-0.006*(w-14.0)*(w-14.0));
+        }
+        for(int i=0;i<8;++i){
+            const double sigma=50.0+double(i)*40.0;
+            normalStress.append(sigma);
+            failureShear.append(15.0+sigma*std::tan(30.0*M_PI/180.0));
+        }
+        // Moment at midspan of a 20-long simply supported beam.
+        for(int i=0;i<=40;++i){
+            const double x=double(i)*0.5;
+            loadPosition.append(x);
+            sectionMoment.append(x<=10.0?x/2.0:(20.0-x)/2.0);
+        }
+        for(int i=0;i<=20;++i){
+            const double v=100.0+double(i)*2.0;
+            decisionSpeed.append(v);
+            stopDistance.append(800.0+12.0*v);
+            goDistance.append(3200.0-8.0*v);
+        }
+        for(int i=0;i<=20;++i){
+            const double w=50000.0+double(i)*1000.0;
+            cruiseWeight.append(w);
+            specificRange.append(0.30-2.0e-9*(w-60000.0)*(w-60000.0));
+        }
+        // Two hot streams totalling 470 and two cold totalling 485, so the hot
+        // and cold utilities must differ by exactly 15 whatever the pinch is.
+        streamSupply={200.0,150.0,50.0,80.0};
+        streamTarget={100.0,60.0,180.0,160.0};
+        streamCapacity={2.0,3.0,2.5,2.0};
+        // Three equal tanks in series with a mean residence time of 10.
+        for(int i=0;i<=200;++i){
+            const double t=double(i)*0.25;
+            tracerTime.append(t);
+            tracerConcentration.append(std::pow(0.3,3.0)*t*t*std::exp(-0.3*t)/2.0);
+        }
+        harmonicOrder={1.0,3.0,5.0,7.0};
+        harmonicMagnitude={100.0,20.0,10.0,5.0};
+        for(int i=0;i<=40;++i){ noiseTime.append(double(i)); noiseLevel.append(40.0+double(i)); }
+        for(int i=0;i<=40;++i){
+            const double z=50.0+double(i)*2.5;
+            beamDistance.append(z);
+            beamRadius.append(std::sqrt(0.0025+4.0e-6*(z-100.0)*(z-100.0)));
+        }
+        for(int i=0;i<18;++i){
+            const double u=std::fmod(double(i)*0.6180339887,1.0)-0.5;
+            youdenA.append(10.0+u*0.4); youdenB.append(20.0+u*0.4);
+        }
+        youdenA.append(11.5); youdenB.append(21.5);
+        youdenA.append(11.4); youdenB.append(21.6);
+        for(int i=0;i<30;++i){
+            controlRun.append(double(i+1));
+            controlValue.append(100.0+2.0*std::sin(double(i)*1.1));
+        }
+        controlValue[17]=112.0;
+        // Twelve species: five seen once, four twice, three often. Chao1 must
+        // come back 12 + 25/8 = 15.125.
+        {
+            int sample=0;
+            const auto add=[&](double species,int times){
+                for(int k=0;k<times;++k){
+                    surveySample.append(double(++sample));
+                    surveySpecies.append(species);
+                }
+            };
+            for(int i=0;i<5;++i) add(double(i+1),1);
+            for(int i=0;i<4;++i) add(double(i+6),2);
+            for(int i=0;i<3;++i) add(double(i+10),6);
+        }
+        for(int i=0;i<90;++i){
+            onsetDay.append(double(i));
+            onsetCases.append(std::round(200.0*std::exp(-0.5*std::pow((double(i)-40.0)/12.0,2.0))));
+        }
+        // Already ranked, prevalence 0.25, so a perfect ranking captures 80%
+        // of the positives in the top fifth.
+        for(int i=0;i<400;++i){
+            gainScore.append(double(400-i));
+            gainOutcome.append(i<100?1.0:0.0);
+        }
+        for(int i=0;i<12;++i){
+            const double t=8.0+double(i)*2.0;
+            growthTemperature.append(t);
+            ratkowskyRate.append(std::pow(0.03*(t-5.0),2.0));
+        }
+        for(int i=0;i<73;++i){
+            const double d=1.0+double(i)*5.0;
+            phenologyDay.append(d);
+            phenologyIndex.append(0.2+0.6*std::exp(-std::pow((d-200.0)/40.0,2.0)));
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1003,6 +1119,45 @@ bool runEngineSweep(){
              column("date",yieldDate)}},
         {QStringLiteral("Nyquist Stability Plot"),
             {column("real",nyquistReal),column("imaginary",nyquistImag)}},
+        // Batch 8.
+        {QStringLiteral("Proctor Compaction Curve"),
+            {column("moisture",proctorMoisture),column("dry density",proctorDensity)}},
+        {QStringLiteral("Mohr-Coulomb Envelope"),
+            {column("normal stress",normalStress),column("shear at failure",failureShear)}},
+        {QStringLiteral("Influence Line"),
+            {column("position",loadPosition),column("moment",sectionMoment)}},
+        {QStringLiteral("Balanced Field Length"),
+            {column("V1",decisionSpeed),column("accelerate-stop",stopDistance),
+             column("accelerate-go",goDistance)}},
+        {QStringLiteral("Specific Range"),
+            {column("weight",cruiseWeight),column("specific range",specificRange)}},
+        {QStringLiteral("Composite Curves (Pinch)"),
+            {column("supply T",streamSupply),column("target T",streamTarget),
+             column("CP",streamCapacity)}},
+        {QStringLiteral("Residence Time Distribution"),
+            {column("time",tracerTime),column("tracer",tracerConcentration)}},
+        {QStringLiteral("Harmonic Spectrum"),
+            {column("order",harmonicOrder),column("magnitude",harmonicMagnitude)}},
+        {QStringLiteral("Sound Level Statistics"),
+            {column("time",noiseTime),column("level",noiseLevel)}},
+        {QStringLiteral("Beam Caustic"),
+            {column("z",beamDistance),column("radius",beamRadius)}},
+        {QStringLiteral("Youden Plot"),
+            {column("material A",youdenA),column("material B",youdenB)}},
+        {QStringLiteral("Levey-Jennings Chart"),
+            {column("run",controlRun),column("result",controlValue)}},
+        {QStringLiteral("Species Accumulation Curve"),
+            {column("sample",surveySample),column("species",surveySpecies)}},
+        {QStringLiteral("Epidemic Curve"),
+            {column("day",onsetDay),column("cases",onsetCases)}},
+        {QStringLiteral("Effective Reproduction Number"),
+            {column("day",onsetDay),column("cases",onsetCases)}},
+        {QStringLiteral("Cumulative Gain Chart"),
+            {column("score",gainScore),column("outcome",gainOutcome)}},
+        {QStringLiteral("Ratkowsky Square-Root Plot"),
+            {column("temperature",growthTemperature),column("rate",ratkowskyRate)}},
+        {QStringLiteral("Phenology Curve"),
+            {column("day of year",phenologyDay),column("index",phenologyIndex)}},
     };
 
     for(const QString& engine:engines){
