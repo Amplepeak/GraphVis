@@ -137,6 +137,10 @@ SplitView {
                         fullRenderPolicy: root.app.fullRenderPolicy
                         fullRenderAskAfterSeconds: root.app.fullRenderAskAfterSeconds
                     }
+                    // Placing and editing notes. Only the part that has to ask a
+                    // person what a note says: the canvas stores and draws them,
+                    // so the PDF export and the self-test need none of this.
+                    AnnotationLayer { canvas: plot }
                     // Ready notice, sitting ABOVE the overlay row rather than in the
                     // same corner. Both used to anchor to the bottom right with
                     // near-identical margins - plot is inset only 6 px - so the
@@ -189,6 +193,26 @@ SplitView {
                         // with a drag or a finger and zooms with the wheel or a
                         // pinch, and nothing on screen would otherwise say how
                         // to get back to the whole dataset.
+                        Button {
+                            id: annotateButton
+                            text: plot.annotating ? "Stop annotating"
+                                                  : (plot.annotationCount > 0
+                                                     ? "Annotate (" + plot.annotationCount + ")"
+                                                     : "Annotate")
+                            checkable: true
+                            checked: plot.annotating
+                            visible: plot.viewInteractive && plot.pointCount > 0
+                            ToolTip.visible: annotateButton.hovered
+                            ToolTip.text: "Add a note to the figure. Notes are anchored to a data "
+                                        + "point, so they stay put through a zoom, and they export "
+                                        + "into the PDF as real selectable text."
+                            onClicked: plot.annotating = annotateButton.checked
+                        }
+                        Button {
+                            text: "Clear notes"
+                            visible: plot.annotationCount > 0
+                            onClicked: plot.clearAnnotations()
+                        }
                         Button {
                             text: "Reset view"
                             visible: plot.viewZoomed

@@ -53,6 +53,23 @@ public:
     // the answer must be the same one render() acts on.
     static bool engineHasAxes(const QString& engine);
 
+    // Why did this engine draw nothing? Empty when it drew, or when the reason
+    // is not one of the understood ones.
+    //
+    // A figure that comes out empty is the single most confusing thing this
+    // application can do, and it used to say only "2D Heatmap - 20000 points",
+    // which is true and tells you nothing. A heat map needs THREE mapped
+    // columns - x, y and the value - and given two it returns before drawing a
+    // single cell while the axes are still computed from the data, so the frame
+    // and the labels appear and the plot area does not.
+    //
+    // Takes BOTH specs. The requirement belongs to the engine the person
+    // chose - a Ternary Scatter that got two columns has already been rewritten
+    // into something else by the time the painter sees it, so asking the
+    // prepared engine what it needed gives the wrong answer or none. What was
+    // actually produced has to come from the prepared one.
+    static QString explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared);
+
 private:
     struct Frame {
         QRectF plotArea;      // where series are drawn
@@ -232,6 +249,9 @@ public:
     // too, so answering from the catalogue name would miss both.
     static bool usesColourMap(const QString& preparedEngine);
 private:
+    // Notes on the figure, drawn last and clipped to the plot area. Real text,
+    // so a PDF export carries words rather than outlines.
+    void drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& spec) const;
     QFont font(const PlotSpec& spec, double pointSize) const;
 };
 

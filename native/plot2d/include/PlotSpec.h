@@ -94,6 +94,33 @@ struct PlotStyle {
     QString colourMap;
 };
 
+// A note on the figure: a label at a point, optionally with a leader line back
+// to it. The thing every plotting tool has and this one did not - "this is the
+// breakthrough", "instrument replaced here", "n = 3 for these" - which is the
+// difference between a figure someone can read and one that needs the person
+// who made it standing next to it.
+//
+// The position is in DATA coordinates, not pixels, so the note stays on the
+// point it is about when the axes are zoomed, the figure is resized or the
+// same spec is exported at a different size. offsetX/offsetY move the text
+// away from that point, in points (1/72 inch), so the note does not sit on top
+// of the thing it is pointing at.
+struct PlotAnnotation {
+    double x = 0.0;
+    double y = 0.0;
+    QString text;
+    // Where the text sits relative to the anchor, in typographic points. The
+    // default puts it up and to the right, clear of a rising curve.
+    double offsetX = 12.0;
+    double offsetY = -18.0;
+    // Draw a line from the text back to the anchor. Off when the text sits
+    // close enough that a line would be clutter.
+    bool leader = true;
+    // Empty means the figure's foreground colour, so a note follows the theme
+    // unless it was deliberately given a colour of its own.
+    QColor color;
+};
+
 struct PlotSpec {
     QString engine;   // catalogue engine key, e.g. "Line Chart", "3D Scatter"
     QString variant;  // catalogue scale variant, e.g. "Semi-Log X"
@@ -107,6 +134,10 @@ struct PlotSpec {
     QString expression;
     PlotStyle style;
     bool legendVisible = true;
+    // Notes on the figure. Drawn last, over everything, and clipped to the plot
+    // area - a note whose anchor has been zoomed out of view must not appear
+    // among the axis labels.
+    QVector<PlotAnnotation> annotations;
 };
 
 } // namespace graphvis

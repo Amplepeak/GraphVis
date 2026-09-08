@@ -2,6 +2,7 @@
 #include <QAtomicInt>
 #include <QElapsedTimer>
 #include <QFutureWatcher>
+#include <QHash>
 #include <QImage>
 #include <QTimer>
 #include <QVariantMap>
@@ -126,6 +127,17 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(bool cursorOnPlot READ cursorOnPlot NOTIFY cursorChanged)
     Q_PROPERTY(double cursorX READ cursorX NOTIFY cursorChanged)
     Q_PROPERTY(double cursorY READ cursorY NOTIFY cursorChanged)
+
+    // Annotations.
+    //
+    // While annotating, a click on the figure places a note at the data point
+    // under it rather than starting a pan. That is the only mode this canvas
+    // has, and it exists because there is no other gesture left: a drag pans, a
+    // wheel zooms, a double-click resets, and a plain click has to stay
+    // available for the pan to feel immediate.
+    Q_PROPERTY(bool annotating READ annotating WRITE setAnnotating NOTIFY annotationsChanged)
+    Q_PROPERTY(QVariantList annotations READ annotations NOTIFY annotationsChanged)
+    Q_PROPERTY(int annotationCount READ annotationCount NOTIFY annotationsChanged)
 public:
     explicit PlotCanvas(QQuickItem* parent=nullptr);
     ~PlotCanvas() override;
@@ -192,6 +204,17 @@ public:
     bool cursorOnPlot() const { return cursorOnPlot_; }
     double cursorX() const { return cursorX_; }
     double cursorY() const { return cursorY_; }
+    bool annotating() const { return annotating_; }
+    void setAnnotating(bool on);
+    QVariantList annotations() const;
+    int annotationCount() const { return int(spec_.annotations.size()); }
+    // x and y are DATA coordinates - use cursorX/cursorY, or the point handed
+    // to annotationRequested. Returns the new note's index.
+    Q_INVOKABLE int addAnnotation(double x,double y,const QString& text);
+    Q_INVOKABLE void updateAnnotation(int index,const QString& text);
+    Q_INVOKABLE void moveAnnotation(int index,double offsetX,double offsetY);
+    Q_INVOKABLE void removeAnnotation(int index);
+    Q_INVOKABLE void clearAnnotations();
     // Back to fitting the data. Also what a double-click and a double-tap do.
     Q_INVOKABLE void resetView();
     // For a QML button or a keyboard shortcut: >1 zooms in, about the centre.
@@ -275,6 +298,12 @@ signals:
     void styleChanged();
     void renderStateChanged();
     void cursorChanged();
+    void annotationsChanged();
+    // A click landed on the figure while annotating, at these DATA coordinates.
+    // QML asks for the text and calls addAnnotation; the canvas deliberately
+    // does not put up a dialog of its own, because a renderer that opens
+    // windows is a renderer that cannot be used headless.
+    void annotationRequested(double x,double y);
 
 private:
     // Seed the view from what is currently drawn, so the first drag or pinch
@@ -297,6 +326,7 @@ private:
     QString cursorText_;
     bool cursorOnPlot_=false;
     double cursorX_=0.0, cursorY_=0.0;
+    bool annotating_=false;
     QPointF lastPointer_;
     bool dragging_=false;
     // Fingers. The same reader the 3-D viewport uses - see TouchGesture.h for
@@ -354,7 +384,25 @@ private:
     // Milliseconds per point, measured. Starts as a deliberate over-estimate:
     // showing a progress bar that was not needed is a smaller sin than hiding
     // one that was.
-    double msPerPoint_=0.0025;
+    // Milliseconds per point, learned from completed renders and used for the
+    // "about N seconds" estimate. PER ENGINE, because the engines differ by
+    // three orders of magnitude and one running average across all of them is
+    // wrong for every one:
+    //
+    //     Line Chart      0.05 ms/point
+    //     Derivative      2.4  ms/point      (measured, 16,000 points, 900x650)
+    //
+    // Not because Derivative computes anything - its preparation is 0.4 ms -
+    // but because differentiating a measurement amplifies its noise, and the
+    // curve that results crosses most of the plot height at every sample.
+    // Qt's antialiased rasteriser charges for every one of those crossings.
+    // A shared average meant the first Derivative render was announced as
+    // taking a second and took forty.
+    //
+    // Keyed on the CATALOGUE engine, so a Spectrogram and a hand-built heatmap
+    // are not averaged together just because both end up drawn as one.
+    QHash<QString,double> msPerPoint_;
+    static constexpr double kDefaultMsPerPoint=0.0025;
 };
 
 } // namespace graphvis

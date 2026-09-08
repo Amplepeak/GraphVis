@@ -237,6 +237,98 @@ void PlotCanvas::setGridColor(const QColor& c){ if(spec_.style.gridColor==c) ret
 // The map is part of the spec, so changing it has to invalidate the prepared
 // figure the same way a colour change does - update() alone would repaint the
 // cached image and show the old colours.
+// --------------------------------------------------------------------- notes
+//
+// Stored in the spec, so they travel with the figure through prepareSpec, the
+// full-resolution render, PDF and SVG export and the .gvfig container without
+// any of those having to know they exist.
+//
+// Changing one calls update() rather than rebuild(): a note does not alter the
+// data, the range or the prepared spec, so re-deriving all of that to move a
+// label would be work for nothing - and on a slow engine it would mean a
+// forty-second wait to correct a typo.
+QVariantList PlotCanvas::annotations() const {
+    QVariantList out;
+    for(const PlotAnnotation& a:spec_.annotations){
+        out.append(QVariantMap{
+            {QStringLiteral("x"),a.x},
+            {QStringLiteral("y"),a.y},
+            {QStringLiteral("text"),a.text},
+            {QStringLiteral("offsetX"),a.offsetX},
+            {QStringLiteral("offsetY"),a.offsetY},
+            {QStringLiteral("leader"),a.leader}});
+    }
+    return out;
+}
+
+void PlotCanvas::setAnnotating(bool on){
+    if(annotating_==on) return;
+    annotating_=on;
+    // A drag half-finished when the mode changed would otherwise pan on the
+    // next move event, after the press that started it has been reinterpreted.
+    dragging_=false;
+    setCursor(on?Qt::CrossCursor:Qt::ArrowCursor);
+    emit annotationsChanged();
+}
+
+int PlotCanvas::addAnnotation(double x,double y,const QString& text){
+    if(text.trimmed().isEmpty()) return -1;
+    if(!std::isfinite(x)||!std::isfinite(y)) return -1;
+    PlotAnnotation note;
+    note.x=x; note.y=y; note.text=text.trimmed();
+    spec_.annotations.append(note);
+    // The full-resolution image on screen was rendered without this note, so it
+    // is no longer a picture of the current figure.
+    showingFull_=false;
+    update();
+    emit annotationsChanged();
+    scheduleFullRender();
+    return int(spec_.annotations.size())-1;
+}
+
+void PlotCanvas::updateAnnotation(int index,const QString& text){
+    if(index<0||index>=spec_.annotations.size()) return;
+    const QString trimmed=text.trimmed();
+    // Emptying the text deletes it. The alternative is an invisible note that
+    // still catches clicks and still exports.
+    if(trimmed.isEmpty()){ removeAnnotation(index); return; }
+    if(spec_.annotations[index].text==trimmed) return;
+    spec_.annotations[index].text=trimmed;
+    showingFull_=false;
+    update();
+    emit annotationsChanged();
+    scheduleFullRender();
+}
+
+void PlotCanvas::moveAnnotation(int index,double offsetX,double offsetY){
+    if(index<0||index>=spec_.annotations.size()) return;
+    if(!std::isfinite(offsetX)||!std::isfinite(offsetY)) return;
+    spec_.annotations[index].offsetX=qBound(-4000.0,offsetX,4000.0);
+    spec_.annotations[index].offsetY=qBound(-4000.0,offsetY,4000.0);
+    showingFull_=false;
+    update();
+    emit annotationsChanged();
+    scheduleFullRender();
+}
+
+void PlotCanvas::removeAnnotation(int index){
+    if(index<0||index>=spec_.annotations.size()) return;
+    spec_.annotations.remove(index);
+    showingFull_=false;
+    update();
+    emit annotationsChanged();
+    scheduleFullRender();
+}
+
+void PlotCanvas::clearAnnotations(){
+    if(spec_.annotations.isEmpty()) return;
+    spec_.annotations.clear();
+    showingFull_=false;
+    update();
+    emit annotationsChanged();
+    scheduleFullRender();
+}
+
 void PlotCanvas::setColourMap(const QString& name){
     if(spec_.style.colourMap==name) return;
     spec_.style.colourMap=name;
@@ -315,6 +407,13 @@ void PlotCanvas::rebuild(){
         spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
     }
     spec_.series.clear();
+    // Annotations are deliberately NOT cleared here, unlike the zoom above.
+    // A zoom is a view of a figure and means nothing on the next one; a note is
+    // something the person typed, and silently deleting typed text because the
+    // engine changed is a worse failure than a note left pointing at a value
+    // the new figure does not have. One that falls outside the range is clipped
+    // away by drawAnnotations and returns if the range covers it again, so a
+    // stale note is invisible rather than wrong. Clear Notes empties them.
     pointCount_=0;
     usesColourMap_=false;      // recomputed at the end; cleared so the early
                                // returns below cannot leave the last figure's
@@ -368,8 +467,18 @@ void PlotCanvas::rebuild(){
                             : Units::replaceUnit(Units::displayName(yNames.first()),yUnit_))
         : QStringLiteral("value");
     if(spec_.title.isEmpty()) spec_.title=spec_.engine;
-    message_=spec_.series.isEmpty()?QStringLiteral("Selected columns have no numeric data")
-                                   :QStringLiteral("%1 · %2 points").arg(spec_.engine).arg(pointCount_);
+    // What the status line says, and it has to be able to say "nothing was
+    // drawn, and here is why". "2D Heatmap - 20000 points" over an empty plot
+    // area is true and useless: the columns ARE mapped and the points ARE
+    // there, and the engine wanted a third column it never got.
+    if(spec_.series.isEmpty()){
+        message_=QStringLiteral("Selected columns have no numeric data");
+    }else{
+        const QString why=QtPlotBackend::explainEmpty(spec_,qtBackend_.preparedFor(spec_));
+        message_=why.isEmpty()
+            ? QStringLiteral("%1 · %2 points").arg(spec_.engine).arg(pointCount_)
+            : why;
+    }
     applyVariant();
     // Which control the interface should offer, decided from the engine that
     // will actually be drawn rather than the one that was chosen. prepareSpec
@@ -601,6 +710,16 @@ void PlotCanvas::resetView(){
 
 void PlotCanvas::mousePressEvent(QMouseEvent* e){
     if(!viewInteractive()){ e->ignore(); return; }
+    // While annotating, a click places a note instead of starting a pan. The
+    // coordinates come from updateCursor, which is the same conversion the
+    // readout uses - so the note lands exactly where the readout said it would,
+    // and there is only one place for that arithmetic to be wrong.
+    if(annotating_){
+        updateCursor(e->position());
+        if(cursorOnPlot_) emit annotationRequested(cursorX_,cursorY_);
+        e->accept();
+        return;
+    }
     dragging_=true;
     lastPointer_=e->position();
     e->accept();
@@ -720,6 +839,7 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("foreground"),spec_.style.foreground.name(QColor::HexArgb)},
         {QStringLiteral("grid"),spec_.style.gridColor.name(QColor::HexArgb)},
         {QStringLiteral("colourMap"),spec_.style.colourMap},
+        {QStringLiteral("annotations"),annotations()},
         // The zoom, when there is one. A figure saved while zoomed in reopens
         // showing what was on screen when it was saved; one saved fitted to
         // its data carries no limits at all and stays that way.
@@ -769,6 +889,28 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     // exactly right: those figures were all drawn with Viridis, which is what
     // an empty string means.
     spec_.style.colourMap=state.value(QStringLiteral("colourMap")).toString();
+
+    // Notes. Absent in a figure saved before they existed, which reads as none.
+    // Rebuilt rather than merged: applyFigureState restores a figure, it does
+    // not add to the one already open.
+    spec_.annotations.clear();
+    const QVariantList savedNotes=state.value(QStringLiteral("annotations")).toList();
+    for(const QVariant& v:savedNotes){
+        const QVariantMap m=v.toMap();
+        PlotAnnotation note;
+        note.x=m.value(QStringLiteral("x")).toDouble();
+        note.y=m.value(QStringLiteral("y")).toDouble();
+        note.text=m.value(QStringLiteral("text")).toString();
+        note.offsetX=m.value(QStringLiteral("offsetX"),12.0).toDouble();
+        note.offsetY=m.value(QStringLiteral("offsetY"),-18.0).toDouble();
+        note.leader=m.value(QStringLiteral("leader"),true).toBool();
+        // A note with no text or no position is not a note. Dropped rather than
+        // restored, so a hand-edited container cannot put an invisible object
+        // into the figure.
+        if(note.text.trimmed().isEmpty()) continue;
+        if(!std::isfinite(note.x)||!std::isfinite(note.y)) continue;
+        spec_.annotations.append(note);
+    }
 
     dirty_=true;
     rebuild();
@@ -935,7 +1077,8 @@ void PlotCanvas::handleFullRenderFinished(){
     }
     if(fullPointCount_>0&&elapsed>0){
         const double observed=double(elapsed)/double(fullPointCount_);
-        msPerPoint_=(msPerPoint_<=0.0)?observed:(msPerPoint_*0.6+observed*0.4);
+        const double known=msPerPoint_.value(spec_.engine,0.0);
+        msPerPoint_[spec_.engine]=(known<=0.0)?observed:(known*0.6+observed*0.4);
     }
     fullImage_=image;
     readyGeneration_=renderingGeneration_;
@@ -1005,7 +1148,12 @@ void PlotCanvas::cancelFullRender(){
 
 double PlotCanvas::renderEstimateSeconds() const{
     if(fullPointCount_<=0) return 0.0;
-    return (double(fullPointCount_)*msPerPoint_)/1000.0;
+    // No measurement for this engine yet: the shared default, which is roughly
+    // a line chart. It is wrong for the slow engines, and it is only wrong once
+    // - the first completed render replaces it with what that engine actually
+    // costs on this machine.
+    const double rate=msPerPoint_.value(spec_.engine,kDefaultMsPerPoint);
+    return (double(fullPointCount_)*rate)/1000.0;
 }
 
 double PlotCanvas::renderProgress() const{

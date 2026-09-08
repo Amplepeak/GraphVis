@@ -1172,6 +1172,176 @@ bool QtPlotBackend::usesColourMap(const QString& preparedEngine){
     return kFieldEngines.contains(preparedEngine);
 }
 
+// ---------------------------------------------------------------------------
+// Annotations.
+//
+// Drawn last, over everything including the legend, because a note is about
+// the figure rather than part of it.
+//
+// Real text, not a path: this goes through the same painter as the screen, so
+// an exported PDF carries a selectable, searchable string in an embedded font
+// rather than an outline. The whole point of the vector export is that the
+// words in it are words.
+//
+// Positions are DATA coordinates and offsets are typographic points, so the
+// note follows its point through a zoom and keeps its distance from it at any
+// figure size - a note placed at 900x650 and exported at 89 mm must not end up
+// half a plot away from the thing it is pointing at.
+void QtPlotBackend::drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    if(spec.annotations.isEmpty()) return;
+    p->save();
+    // Clipped to the plot area. A note whose anchor has been zoomed out of view
+    // must not reappear among the axis labels, which is where an unclipped one
+    // ends up as soon as the offset carries it past the frame.
+    p->setClipRect(f.plotArea.adjusted(-1,-1,1,1));
+    const QFont base=font(spec,spec.style.baseFontSize);
+    QFontMetricsF metrics(base);
+    p->setFont(base);
+    // Points to device pixels, the same conversion the rest of the typography
+    // uses, so an offset given in points is the same physical distance as a
+    // font size given in points.
+    const double scale=double(qMax(1,spec.style.dpi))/72.0;
+
+    for(const PlotAnnotation& note:spec.annotations){
+        if(note.text.isEmpty()) continue;
+        if(!finite(note.x)||!finite(note.y)) continue;
+        if(f.xLog&&note.x<=0) continue;
+        if(f.yLog&&note.y<=0) continue;
+        const QPointF anchor=toDevice(f,note.x,note.y);
+        if(!finite(anchor.x())||!finite(anchor.y())) continue;
+        // The ANCHOR decides whether the note exists at all. A note about a
+        // point that has been zoomed or panned out of view is not about
+        // anything on screen, and the nudge below would otherwise drag it back
+        // into the frame and draw it beside data it has nothing to do with.
+        // The clip alone is not enough: it removes the label but leaves the
+        // leader line, and the nudge would keep the label too.
+        if(!f.plotArea.contains(anchor)) continue;
+        const QPointF at=anchor+QPointF(note.offsetX*scale,note.offsetY*scale);
+
+        const QColor ink=note.color.isValid()?note.color:spec.style.foreground;
+        QRectF text=metrics.boundingRect(note.text).translated(at);
+        QRectF plate=text.adjusted(-4,-2,4,2);
+
+        // Pushed back inside the frame if the offset carried it out.
+        //
+        // The clip above is for a note whose ANCHOR has been zoomed away, which
+        // should vanish. This is the different case: the anchor is on the plot
+        // and only the label overhangs, and clipping that leaves a leader line
+        // pointing at nothing and a note nobody can read. A default offset near
+        // an edge does it immediately - the very first test figure had a note
+        // at the bottom of the range whose text landed under the x axis.
+        // qBound(lo, 0, hi) is not safe here: when the label is WIDER than the
+        // plot area - a long note on a narrow figure, or a paragraph pasted
+        // into one - lo exceeds hi and qBound asserts. Pinning to the leading
+        // edge instead keeps the beginning of the text readable, which is the
+        // half worth having when the whole of it cannot fit.
+        const auto slide=[](double lo,double hi){
+            if(lo>hi) return lo;              // too big to fit: show the start
+            return qBound(lo,0.0,hi);
+        };
+        const QPointF nudge(slide(f.plotArea.left()+2-plate.left(),
+                                  f.plotArea.right()-2-plate.right()),
+                            slide(f.plotArea.top()+2-plate.top(),
+                                  f.plotArea.bottom()-2-plate.bottom()));
+        if(!nudge.isNull()){
+            text.translate(nudge);
+            plate.translate(nudge);
+        }
+
+        // A backing plate, because a note over a dense plot is unreadable
+        // otherwise, and because "put it somewhere empty" is not available when
+        // the note has to sit next to the point it is about.
+        QColor behind=spec.style.background;
+        behind.setAlphaF(0.78f);
+        p->setPen(Qt::NoPen);
+        p->setBrush(behind);
+        p->drawRoundedRect(plate,3,3);
+
+        if(note.leader){
+            // From the edge of the plate nearest the anchor, not from the text
+            // itself, so the line does not run underneath its own label.
+            const QPointF from(qBound(plate.left(),anchor.x(),plate.right()),
+                               qBound(plate.top(),anchor.y(),plate.bottom()));
+            QPen leader(ink);
+            leader.setWidthF(qMax(0.5,spec.style.lineWidth*0.6));
+            p->setPen(leader);
+            p->setBrush(Qt::NoBrush);
+            p->drawLine(from,anchor);
+            // A dot on the anchor: without it the line ends in mid-air and it
+            // is not clear which point of several the note is about.
+            p->setPen(Qt::NoPen);
+            p->setBrush(ink);
+            p->drawEllipse(anchor,qMax(1.2,spec.style.lineWidth),qMax(1.2,spec.style.lineWidth));
+        }
+
+        p->setPen(ink);
+        p->setBrush(Qt::NoBrush);
+        p->drawText(at+nudge,note.text);
+    }
+    p->restore();
+}
+
+// The mapped-column requirement each family actually enforces, kept beside the
+// code that enforces it. Every number here is the guard in the corresponding
+// painter or grid builder, not a guess at what the engine "should" need.
+QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared){
+    const QString e=chosen.engine;
+    // How many columns the person actually mapped, which is what the
+    // requirements below are about. The prepared spec is used only to decide
+    // whether anything came out.
+    const int n=int(chosen.series.size());
+
+    // gridFromSeries: series 0 is x, 1 is y, 2 is the value.
+    static const QSet<QString> kGridEngines{
+        QStringLiteral("2D Heatmap"),QStringLiteral("2D Contour"),
+        QStringLiteral("2D Histogram"),QStringLiteral("Hexbin Density")};
+    if(kGridEngines.contains(e)&&n<3){
+        return QStringLiteral(
+            "%1 needs three mapped columns - x, y and the value it colours by - "
+            "and %2 %3 mapped. The axes come from the data, which is why the "
+            "frame is drawn and the plot area is empty.")
+            .arg(e).arg(n).arg(n==1?QStringLiteral("is"):QStringLiteral("are"));
+    }
+
+    // Vector fields read two more columns for the components.
+    static const QSet<QString> kVectorEngines{
+        QStringLiteral("Quiver Field"),QStringLiteral("Feather"),
+        QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
+        QStringLiteral("Phase Portrait"),QStringLiteral("Flow Texture (LIC)"),
+        QStringLiteral("Divergence Map"),QStringLiteral("Vorticity Map")};
+    if(kVectorEngines.contains(e)&&n<4){
+        return QStringLiteral(
+            "%1 needs four mapped columns - x, y and the two vector components - "
+            "and %2 mapped.").arg(e).arg(n);
+    }
+
+    if(e.startsWith(QLatin1String("3D "))
+       ||e==QLatin1String("Surface + Contours")
+       ||e==QLatin1String("Ribbon")){
+        if(n<3) return QStringLiteral(
+            "%1 needs three mapped columns - x, y and z - and %2 mapped.").arg(e).arg(n);
+    }
+
+    if(e==QLatin1String("Ternary Scatter")&&n<3)
+        return QStringLiteral("Ternary Scatter needs three mapped columns, one per corner.");
+
+    if(n==0)
+        return QStringLiteral(
+            "No column produced any drawable values. Check that the mapped "
+            "columns are numeric and are not entirely blank.");
+
+    // Columns were mapped, and the rewrite still produced nothing.
+    bool anyPoints=false;
+    for(const PlotSeries& s:prepared.series) if(!s.y.isEmpty()){ anyPoints=true; break; }
+    if(!anyPoints)
+        return QStringLiteral(
+            "%1 produced no points from the mapped columns. Its own guards "
+            "rejected the data - most often too few rows, or values it cannot "
+            "use such as zero or negative numbers on a log axis.").arg(e);
+
+    return QString();
+}
+
 void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec) const {
     // The field colour map, read once. Viridis unless the style asks for
     // another - see PlotStyle::colourMap.
@@ -2909,12 +3079,24 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
 }
 
 namespace {
-// The caller's limits, put back on top of a rewrite that set its own.
+// The caller's limits and notes, put back on top of a rewrite that set its own.
+//
+// Both are deliberately absent from specFingerprint, for the same reason: no
+// rewrite in prepareSpec reads either, and both change while someone is
+// interacting. Hashing the limits meant dragging a violin plot re-derived the
+// violin sixty times a second; hashing the notes would mean re-deriving it on
+// every keystroke while a note is being typed.
+//
+// This is not an optimisation, it is a correctness fix. Without the second
+// line a note added to a figure whose data had not changed hit the cache,
+// which had been filled before the note existed, and simply did not appear -
+// and one that was deleted stayed on screen.
 PlotSpec& applyLimits(PlotSpec& out,const PlotSpec& in){
     if(!isUnset(in.xAxis.min)) out.xAxis.min=in.xAxis.min;
     if(!isUnset(in.xAxis.max)) out.xAxis.max=in.xAxis.max;
     if(!isUnset(in.yAxis.min)) out.yAxis.min=in.yAxis.min;
     if(!isUnset(in.yAxis.max)) out.yAxis.max=in.yAxis.max;
+    out.annotations=in.annotations;
     return out;
 }
 } // namespace
@@ -8848,6 +9030,9 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
     painter->restore();
 
     drawLegend(painter,f,spec);
+    // Last, over the legend as well: a note is about the figure rather than
+    // part of it, and one hidden behind the legend is one nobody reads.
+    drawAnnotations(painter,f,spec);
     painter->restore();
 }
 

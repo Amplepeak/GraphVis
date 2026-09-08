@@ -109,6 +109,7 @@ set(GRAPHVIS_QML_FILES
   qml/components/GvGroupBox.qml
   qml/components/StatusPill.qml
   qml/components/ActiveDatasetBar.qml
+  qml/components/AnnotationLayer.qml
   qml/components/ColourMapSelector.qml
   qml/components/FullRenderPolicyBox.qml
   qml/components/UnitSelector.qml
