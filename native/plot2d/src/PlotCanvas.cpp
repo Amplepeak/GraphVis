@@ -1133,6 +1133,33 @@ void PlotCanvas::rebuild(){
     scheduleFullRender();
 }
 
+namespace {
+// Forces full quality for the length of an export, whatever the screen is
+// doing, and puts the flag back afterwards.
+//
+// This exists because the canvas shares ONE backend between the live preview
+// and every export - deliberately, so that what is exported cannot disagree
+// with what is on screen about anything but resolution. Draft mode is set on
+// that shared backend by paint(), and it stays set for 180 ms after the last
+// wheel notch or drag. An export starting inside that window would have been
+// written with antialiasing off and its dense series thinned: a PDF for a
+// paper, drawn at preview quality, with nothing on screen to say so.
+//
+// It was reachable rather than theoretical - a keyboard shortcut or a scripted
+// export lands well inside 180 ms - and the commit that introduced draft mode
+// claimed outright that nothing leaving the application is ever drawn in it.
+// This is what makes that true instead of likely.
+class FullQuality {
+public:
+    explicit FullQuality(QtPlotBackend& backend)
+        : backend_(backend), was_(backend.draft()) { backend_.setDraft(false); }
+    ~FullQuality(){ backend_.setDraft(was_); }
+private:
+    QtPlotBackend& backend_;
+    bool was_;
+};
+} // namespace
+
 void PlotCanvas::renderTo(QPainter* painter,const QRectF& target){
     // Every backend selection still exports through Qt: a rasterising backend
     // cannot emit vectors. See docs/PORT-PLAN.md, rule 2.
@@ -1626,6 +1653,7 @@ bool PlotCanvas::exportPdf(const QString& filePath,double widthIn,double heightI
     if(!painter.isActive()) return false;
     const QRectF target(0,0,widthIn*dpi,heightIn*dpi);
     painter.setWindow(target.toRect());
+    const FullQuality fullQuality(qtBackend_);
     qtBackend_.render(&painter,target,publication);
     painter.end();
     return QFileInfo::exists(filePath);
@@ -1641,6 +1669,7 @@ bool PlotCanvas::exportPng(const QString& filePath,int width,int height){
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing,true);
     painter.setRenderHint(QPainter::TextAntialiasing,true);
+    const FullQuality fullQuality(qtBackend_);
     qtBackend_.render(&painter,QRectF(0,0,image.width(),image.height()),full);
     painter.end();
     return image.save(filePath);
@@ -1962,6 +1991,7 @@ bool PlotCanvas::exportSvg(const QString& filePath,double widthIn,double heightI
 
     QPainter painter(&generator);
     if(!painter.isActive()) return false;
+    const FullQuality fullQuality(qtBackend_);
     qtBackend_.render(&painter,QRectF(0,0,widthIn*dpi,heightIn*dpi),publication);
     painter.end();
     return QFileInfo::exists(filePath);
@@ -2001,6 +2031,7 @@ bool PlotCanvas::exportWithProfile(const QString& filePath,const QString& profil
         const QRectF target(0,0,profile.figureWidthIn*profile.dpi,
                             profile.figureHeightIn*profile.dpi);
         painter.setWindow(target.toRect());
+        const FullQuality fullQuality(qtBackend_);
         qtBackend_.render(&painter,target,publication);
         painter.end();
         return QFileInfo(filePath).size()>0;
@@ -2014,6 +2045,7 @@ bool PlotCanvas::exportWithProfile(const QString& filePath,const QString& profil
         generator.setTitle(publication.title);
         QPainter painter(&generator);
         if(!painter.isActive()) return false;
+        const FullQuality fullQuality(qtBackend_);
         qtBackend_.render(&painter,QRectF(0,0,w,h),publication);
         painter.end();
         return QFileInfo::exists(filePath);
@@ -2039,6 +2071,7 @@ bool PlotCanvas::exportWithProfile(const QString& filePath,const QString& profil
         const double logicalW=profile.figureWidthIn*96.0;
         const double logicalH=profile.figureHeightIn*96.0;
         painter.scale(double(w)/logicalW,double(h)/logicalH);
+        const FullQuality fullQuality(qtBackend_);
         qtBackend_.render(&painter,QRectF(0,0,logicalW,logicalH),publication);
     }
     image.setDotsPerMeterX(int(profile.dpi/0.0254));
