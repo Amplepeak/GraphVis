@@ -31,7 +31,11 @@ Rectangle {
         {id:"publish",    label:"Publication Studio"}
     ]
     function runCommand(id){
-        if(id==="literature"){ root.app.workspaceMode="Literature"; root.literatureRequested() }
+        // "Read literature" in the command palette goes to the workspace. The
+        // palette entry that opens a file browser is a different command, and
+        // making one entry do both means it can only ever be wrong for one of
+        // the two things people press it for.
+        if(id==="literature") root.app.workspaceMode="Literature"
         else if(id==="import") root.importRequested()
         else if(id==="visualize") root.app.workspaceMode="Visualize"
         else if(id==="sql") root.app.workspaceMode="Data"
@@ -55,7 +59,19 @@ Rectangle {
                         required property var modelData
                         Layout.fillWidth:true; Layout.preferredHeight:54; text:modelData.icon; font.pixelSize:22
                         highlighted:root.app.workspaceMode===modelData.mode; ToolTip.visible:hovered; ToolTip.text:modelData.tip
-                        onClicked:{root.app.workspaceMode=modelData.mode;if(modelData.mode==="Literature"&&root.app.literatureUrl.toString()==="")root.literatureRequested()}
+                        // Switches to the tab and nothing else.
+                        //
+                        // This used to open a file browser as well, whenever no
+                        // paper happened to be loaded - so pressing the
+                        // Literature icon to LOOK at the workspace threw a modal
+                        // file dialog over it, and the only way to see the tab
+                        // was to cancel a dialog you had not asked for. A tab
+                        // deciding what you meant by pressing it is not a
+                        // shortcut. The "Open literature" button inside the
+                        // workspace is where that belongs, and it is already
+                        // there. TopBar.qml was fixed this way; the same three
+                        // sites in this shell were missed.
+                        onClicked: root.app.workspaceMode = modelData.mode
                     }
                 }
                 Item{Layout.fillHeight:true}
@@ -132,5 +148,5 @@ Rectangle {
         }
     }
     Shortcut{sequence:"Ctrl+K";onActivated:{commandSearch.text="";commandPalette.open();commandSearch.forceActiveFocus()}}
-    Shortcut{sequence:"Ctrl+L";onActivated:{root.app.workspaceMode="Literature";if(root.app.literatureUrl.toString()==="")root.literatureRequested()}}
+    Shortcut{sequence:"Ctrl+L";onActivated:root.app.workspaceMode="Literature"}
 }

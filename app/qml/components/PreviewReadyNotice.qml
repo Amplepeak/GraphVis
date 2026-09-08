@@ -16,6 +16,10 @@ Rectangle {
 
     // Same as RenderProgressBadge: the fade drives `visible`, not the reverse,
     // or the notice can never animate away.
+    // fullRenderWaiting is already false on the Automatic setting - the canvas
+    // swaps the picture in rather than offering it - so this needs no policy
+    // check of its own. Stated because the absence of one looks like an
+    // oversight otherwise.
     opacity: canvas.fullRenderWaiting ? 1 : 0
     visible: opacity > 0
     Behavior on opacity { NumberAnimation { duration: 160 } }

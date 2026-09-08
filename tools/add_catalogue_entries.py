@@ -182,6 +182,60 @@ MODEL_EVAL = [
 for name, engine, desc, prev in MODEL_EVAL:
     new.append(entry("Model Evaluation", name, engine, desc, preview=prev))
 
+# =========================== LABPLOT PASS =================================
+# The third wave: the operations the sci-draw / LabPlot analysis turned up that
+# GraphVis could do arithmetic for but had no way into. Two new engines, and
+# the spectral window - which was hard-coded to Hann and is a choice with real
+# consequences - promoted to a variant the way the map projections were.
+# ==========================================================================
+
+REDUCTION = [
+    ("data reduction (fine)", "Fine",
+     "Ramer-Douglas-Peucker at 0.05% of the data diagonal - about half a pixel of error, a quarter of the points"),
+    ("data reduction", None,
+     "Ramer-Douglas-Peucker at 0.25% - under three pixels of error, and typically a thirtieth of the points"),
+    ("data reduction (coarse)", "Coarse",
+     "Ramer-Douglas-Peucker at 1% - a shape summary, about nine pixels of error"),
+]
+for name, scale, desc in REDUCTION:
+    new.append(entry("Data Reduction & Interpolation", name, "Data Reduction", desc,
+                     scale=scale, preview="\U0001F4C9"))
+
+INTERPOLATION = [
+    ("interpolation (Akima)", "Akima",
+     "Akima spline: local, so a step in the data stays a step instead of ringing"),
+    ("interpolation (cubic spline)", "Cubic Spline",
+     "Natural cubic spline: the smoothest curve through the points, and it will overshoot a step"),
+    ("interpolation (linear)", "Linear",
+     "Straight between neighbours. Never smooth, never overshoots"),
+    ("interpolation (cosine)", "Cosine",
+     "Smooth between each pair, with no dependence on the rest of the series"),
+    ("interpolation (nearest)", "Nearest",
+     "Piecewise constant, for a quantised or categorical quantity"),
+]
+for name, scale, desc in INTERPOLATION:
+    new.append(entry("Data Reduction & Interpolation", name, "Interpolation", desc,
+                     scale=scale, preview="\U0001F4C8"))
+
+# The window is not a cosmetic choice: it trades frequency resolution against
+# leakage against amplitude accuracy, and the right one depends on which of the
+# three the question is about.
+WINDOWS = [
+    ("Hann", "the default. Fast-decaying sidelobes, moderate main lobe"),
+    ("Hamming", "lower first sidelobe than Hann; better for two tones of similar size close together"),
+    ("Blackman", "lower sidelobes, wider main lobe - a small tone near a large one"),
+    ("Blackman-Harris", "-92 dB sidelobes, the widest main lobe. For dynamic range"),
+    ("Bartlett", "triangular, and its transform is non-negative"),
+    ("Welch", "parabolic, the classic choice for Welch's periodogram"),
+    ("Flat Top", "flat passband: correct AMPLITUDE wherever a tone falls between bins, at the cost of resolution"),
+    ("Rectangular", "no window. Only correct when the record holds a whole number of periods"),
+]
+for win, why in WINDOWS:
+    new.append(entry("Spectral", f"power spectral density ({win.lower()})", "Power Spectral Density",
+                     f"PSD with the {win} window - {why}", scale=win, preview="\U0001F4C8"))
+    new.append(entry("Spectral", f"spectrogram ({win.lower()})", "Spectrogram",
+                     f"Short-time Fourier transform with the {win} window - {why}", scale=win, preview="\U0001F308"))
+
 # ------------------------------------------------------------------- merging
 by_name = {c["name"]: c for c in doc["categories"]}
 order = [c["name"] for c in doc["categories"]]

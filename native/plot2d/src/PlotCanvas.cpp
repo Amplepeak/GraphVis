@@ -1,6 +1,7 @@
 #include "PlotCanvas.h"
 #include "ArrowTable.h"
 #include "ColourVision.h"
+#include "ColourMaps.h"
 #include "PublicationProfile.h"
 #include "Units.h"
 
@@ -10,8 +11,10 @@
 
 #include <QFileInfo>
 #include <QImage>
+#include <QBuffer>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QHoverEvent>
 #include <QTouchEvent>
 #include <QWheelEvent>
 #include <QPdfWriter>
@@ -171,6 +174,10 @@ PlotCanvas::PlotCanvas(QQuickItem* parent):QQuickPaintedItem(parent){
     // draggable by any input device.
     setAcceptedMouseButtons(Qt::LeftButton|Qt::MiddleButton);
     setAcceptTouchEvents(true);
+    // The cursor readout. Without this the item never sees a pointer that is
+    // not pressing a button, which is every pointer that is merely reading the
+    // figure.
+    setAcceptHoverEvents(true);
 
     // Edits arrive in bursts - dragging a slider is dozens of changes a second -
     // and starting a multi-second render for each one would be worse than
@@ -227,6 +234,52 @@ void PlotCanvas::setBackgroundColor(const QColor& c){ if(spec_.style.background=
 void PlotCanvas::setForegroundColor(const QColor& c){ if(spec_.style.foreground==c) return; spec_.style.foreground=c; update(); emit styleChanged(); }
 void PlotCanvas::setGridColor(const QColor& c){ if(spec_.style.gridColor==c) return; spec_.style.gridColor=c; update(); emit styleChanged(); }
 
+// The map is part of the spec, so changing it has to invalidate the prepared
+// figure the same way a colour change does - update() alone would repaint the
+// cached image and show the old colours.
+void PlotCanvas::setColourMap(const QString& name){
+    if(spec_.style.colourMap==name) return;
+    spec_.style.colourMap=name;
+    rebuild();
+    emit styleChanged();
+}
+
+QStringList PlotCanvas::colourMapNames(){
+    return colourmaps::names();
+}
+
+// The same eighty four, grouped the way GraphVis 17 grouped them. A flat list
+// of eighty four names is not a choice anyone can make; "Diverging" and
+// "Perceptually Uniform" are how the choice is actually reasoned about.
+QVariantList PlotCanvas::colourMapCategories(){
+    QVariantList out;
+    for(const auto& cat:colourmaps::categories()){
+        out.append(QVariantMap{
+            {QStringLiteral("name"),cat.first},
+            {QStringLiteral("maps"),QVariant(cat.second)}});
+    }
+    return out;
+}
+
+// A strip of the map, as an image the interface can show beside its name.
+// A colour map cannot be chosen from a word: nobody knows what "Gist Ncar"
+// looks like, and eighty four words is a list to scroll rather than a choice
+// to make.
+QString PlotCanvas::colourMapPreview(const QString& name,int width,int height){
+    const int w=qBound(8,width,512), h=qBound(4,height,128);
+    QImage strip(w,h,QImage::Format_RGB32);
+    const auto table=colourmaps::tableFor(name);
+    for(int x=0;x<w;++x){
+        const QRgb rgb=colourmaps::sample(table,double(x)/double(w-1)).rgb();
+        for(int y=0;y<h;++y) strip.setPixel(x,y,rgb);
+    }
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    strip.save(&buffer,"PNG");
+    return QStringLiteral("data:image/png;base64,")+QString::fromLatin1(png.toBase64());
+}
+
 void PlotCanvas::setColourVision(int mode){
     const int clamped=qBound(0,mode,4);
     if(colourVision_==clamped) return;
@@ -263,6 +316,9 @@ void PlotCanvas::rebuild(){
     }
     spec_.series.clear();
     pointCount_=0;
+    usesColourMap_=false;      // recomputed at the end; cleared so the early
+                               // returns below cannot leave the last figure's
+                               // answer behind
     available_.clear();
     engineSupported_=qtBackend_.supports(spec_.engine);
 
@@ -315,6 +371,11 @@ void PlotCanvas::rebuild(){
     message_=spec_.series.isEmpty()?QStringLiteral("Selected columns have no numeric data")
                                    :QStringLiteral("%1 · %2 points").arg(spec_.engine).arg(pointCount_);
     applyVariant();
+    // Which control the interface should offer, decided from the engine that
+    // will actually be drawn rather than the one that was chosen. prepareSpec
+    // is cached on the spec's fingerprint, so this is a lookup, not a second
+    // preparation.
+    usesColourMap_=QtPlotBackend::usesColourMap(qtBackend_.preparedFor(spec_).engine);
     emit stateChanged();
     scheduleFullRender();
 }
@@ -443,6 +504,87 @@ void PlotCanvas::zoomAt(const QPointF& pos,double factor){
     vy.lo=anchorY-ty*newSpanY; vy.hi=vy.lo+newSpanY;
     writeBack(spec_.xAxis,vx); writeBack(spec_.yAxis,vy);
     commitView();
+}
+
+// The range on screen, read rather than written. When the user has zoomed, the
+// axes carry it; when they have not, it comes from the same rangeFor() the
+// renderer used, so the readout agrees with the picture in both cases.
+bool PlotCanvas::currentView(double& xLo,double& xHi,bool& xLog,
+                             double& yLo,double& yHi,bool& yLog) const {
+    const auto usable=[](double lo,double hi){ return lo==lo&&hi==hi&&hi>lo; };
+    if(hasView_){
+        const AxisView vx=viewOf(spec_.xAxis), vy=viewOf(spec_.yAxis);
+        xLo=vx.lo; xHi=vx.hi; xLog=vx.log;
+        yLo=vy.lo; yHi=vy.hi; yLog=vy.log;
+        return usable(xLo,xHi)&&usable(yLo,yHi);
+    }
+    const QtPlotBackend::DataRange r=qtBackend_.rangeFor(spec_);
+    xLo=r.xLo; xHi=r.xHi; xLog=r.xLog;
+    yLo=r.yLo; yHi=r.yHi; yLog=r.yLog;
+    return usable(xLo,xHi)&&usable(yLo,yHi);
+}
+
+void PlotCanvas::updateCursor(const QPointF& pos){
+    const bool wasOn=cursorOnPlot_;
+    const QString wasText=cursorText_;
+    cursorOnPlot_=false;
+
+    // Only for the engines drawn in a rectangular frame. On a pie, a treemap
+    // or a 3-D projection a pixel does not correspond to an (x, y) at all, and
+    // a readout there would be a confident fabrication.
+    double xLo,xHi,yLo,yHi; bool xLog,yLog;
+    const QRectF area=interactionArea();
+    if(viewInteractive()&&spec_.series.size()>0
+       &&area.width()>1.0&&area.height()>1.0
+       &&area.contains(pos)
+       &&currentView(xLo,xHi,xLog,yLo,yHi,yLog)){
+        const double tx=(pos.x()-area.left())/area.width();
+        const double ty=(area.bottom()-pos.y())/area.height();
+        const double vx=xLo+tx*(xHi-xLo);
+        const double vy=yLo+ty*(yHi-yLo);
+        cursorX_=xLog?std::pow(10.0,vx):vx;
+        cursorY_=yLog?std::pow(10.0,vy):vy;
+        if(std::isfinite(cursorX_)&&std::isfinite(cursorY_)){
+            cursorOnPlot_=true;
+            // Significant figures from the SPAN on screen, not from the value:
+            // at full extent four figures is noise, and zoomed a thousandfold
+            // into a transient four figures is the entire reason for zooming.
+            // One more digit than the span needs, so the last one moves.
+            const auto digitsFor=[](double lo,double hi,bool log,double value){
+                const double span=log?(std::pow(10.0,hi)-std::pow(10.0,lo)):(hi-lo);
+                if(!(span>0.0)||!std::isfinite(span)) return 6;
+                const double magnitude=qMax(std::abs(value),std::abs(span));
+                const double decades=std::log10(magnitude/span);
+                return int(qBound(1.0,std::ceil(decades)+3.0,15.0));
+            };
+            const auto axisName=[](const PlotAxis& a,const char* fallback){
+                return a.label.isEmpty()?QString::fromLatin1(fallback):a.label;
+            };
+            cursorText_=QStringLiteral("%1 = %2   %3 = %4")
+                .arg(axisName(spec_.xAxis,"x"),
+                     QString::number(cursorX_,'g',digitsFor(xLo,xHi,xLog,cursorX_)),
+                     axisName(spec_.yAxis,"y"),
+                     QString::number(cursorY_,'g',digitsFor(yLo,yHi,yLog,cursorY_)));
+        }
+    }
+    if(!cursorOnPlot_) cursorText_.clear();
+    if(cursorOnPlot_!=wasOn||cursorText_!=wasText) emit cursorChanged();
+}
+
+void PlotCanvas::hoverMoveEvent(QHoverEvent* e){
+    updateCursor(e->position());
+    // Not accepted: hover is informational, and swallowing it would stop
+    // anything layered over the figure from seeing the pointer.
+    QQuickPaintedItem::hoverMoveEvent(e);
+}
+
+void PlotCanvas::hoverLeaveEvent(QHoverEvent* e){
+    if(cursorOnPlot_){
+        cursorOnPlot_=false;
+        cursorText_.clear();
+        emit cursorChanged();
+    }
+    QQuickPaintedItem::hoverLeaveEvent(e);
 }
 
 void PlotCanvas::zoomBy(double factor){
@@ -577,6 +719,7 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("background"),spec_.style.background.name(QColor::HexArgb)},
         {QStringLiteral("foreground"),spec_.style.foreground.name(QColor::HexArgb)},
         {QStringLiteral("grid"),spec_.style.gridColor.name(QColor::HexArgb)},
+        {QStringLiteral("colourMap"),spec_.style.colourMap},
         // The zoom, when there is one. A figure saved while zoomed in reopens
         // showing what was on screen when it was saved; one saved fitted to
         // its data carries no limits at all and stays that way.
@@ -622,6 +765,10 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     spec_.style.background=colour("background",spec_.style.background);
     spec_.style.foreground=colour("foreground",spec_.style.foreground);
     spec_.style.gridColor=colour("grid",spec_.style.gridColor);
+    // Absent in a figure saved before the map was a choice, and absent is
+    // exactly right: those figures were all drawn with Viridis, which is what
+    // an empty string means.
+    spec_.style.colourMap=state.value(QStringLiteral("colourMap")).toString();
 
     dirty_=true;
     rebuild();
@@ -792,7 +939,43 @@ void PlotCanvas::handleFullRenderFinished(){
     }
     fullImage_=image;
     readyGeneration_=renderingGeneration_;
+
+    // Show it, or offer it. See PlotCanvas::fullRenderPolicy.
+    //
+    // Never while a drag is in progress, whatever the policy: the render was
+    // started for the view the drag has already left, and swapping a picture
+    // out from under a finger is worse than showing a preview for another
+    // moment. The notice is what that case falls back to.
+    const bool quick=(double(elapsed)/1000.0)<=fullRenderAskAfterSeconds_;
+    const bool swapNow=!dragging_
+                     &&(fullRenderPolicy_==0
+                      ||(fullRenderPolicy_==2&&quick));
+    if(swapNow){
+        showingFull_=true;
+        fullRenderWaiting_=false;
+        emit renderStateChanged();
+        update();
+        return;
+    }
     fullRenderWaiting_=true;
+    emit renderStateChanged();
+}
+
+void PlotCanvas::setFullRenderPolicy(int policy){
+    const int clamped=qBound(0,policy,2);
+    if(fullRenderPolicy_==clamped) return;
+    fullRenderPolicy_=clamped;
+    // A render already waiting was held under the OLD policy. Switching to
+    // Automatic should show it now rather than leave a notice the setting says
+    // should not exist.
+    if(fullRenderPolicy_==0&&fullRenderWaiting_) acceptFullRender();
+    else emit renderStateChanged();
+}
+
+void PlotCanvas::setFullRenderAskAfterSeconds(double seconds){
+    const double clamped=qBound(0.0,seconds,600.0);
+    if(qFuzzyCompare(fullRenderAskAfterSeconds_,clamped)) return;
+    fullRenderAskAfterSeconds_=clamped;
     emit renderStateChanged();
 }
 

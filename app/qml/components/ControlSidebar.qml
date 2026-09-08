@@ -9,6 +9,9 @@ Rectangle {
     // The live PlotCanvas, handed down so the Publication Studio can export the
     // figure that is actually on screen rather than rebuilding one.
     property var canvas: null
+    // Raised by the dataset bar's Import button, so the shell opens the file
+    // dialog it already owns instead of this panel growing one of its own.
+    signal importRequested()
     signal applyMapping(string x,string y,string z,string color,real size,real alpha,bool invert,int voxelBins,bool smartRender,int smartProfile)
     // Emitted when a catalogue entry is staged and applied from the Graph Library.
     signal graphSelected(var entry)
@@ -31,10 +34,23 @@ Rectangle {
             TabButton{text:"Analysis"} TabButton{text:"Solver"}
             TabButton{text:"Literature"} TabButton{text:"Publish"}
         }
-        // Colour vision, stated above the graph chooser rather than buried in
-        // settings: it changes what every graph below will look like.
+        // Which dataset the graphs below draw from. Above the chooser because
+        // that is the order the questions are asked in - what data, then what
+        // picture of it - and because switching used to mean leaving this tab
+        // for the Data tab and coming back.
+        ActiveDatasetBar {
+            app: root.app
+            Layout.fillWidth: true
+            Layout.leftMargin: 8; Layout.rightMargin: 8; Layout.topMargin: 8
+            visible: tabs.currentIndex === 0
+            onImportRequested: root.importRequested()
+        }
+        // Colour vision and the field colour map, stated above the graph chooser
+        // rather than buried in settings: both change what every graph below
+        // will look like.
         ColourVisionBar {
             app: root.app
+            canvas: root.canvas
             Layout.fillWidth: true
             Layout.margins: 8
             visible: tabs.currentIndex === 0

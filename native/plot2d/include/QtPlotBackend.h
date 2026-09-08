@@ -220,6 +220,17 @@ public:
     // rewrite fails by producing no series rather than by failing to compile,
     // so the test needs to see what the rewrite actually produced.
     PlotSpec preparedFor(const PlotSpec& spec) const { return prepareSpec(spec); }
+
+    // Does this engine colour a FIELD - a heat map, a contour, a surface, a
+    // vector field - rather than a set of series? Only those read
+    // PlotStyle::colourMap, so only for those should the interface offer the
+    // choice; on the other hundred and eighty it would be a control that does
+    // nothing, which is worse than no control.
+    //
+    // Asked of the PREPARED engine, not the catalogue one: a Spectrogram is a
+    // 2-D heatmap by the time anything is drawn and a Correlation Matrix is
+    // too, so answering from the catalogue name would miss both.
+    static bool usesColourMap(const QString& preparedEngine);
 private:
     QFont font(const PlotSpec& spec, double pointSize) const;
 };

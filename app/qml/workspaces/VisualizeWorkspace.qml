@@ -127,6 +127,15 @@ SplitView {
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision
+                        // The field colour map and the full-render behaviour
+                        // belong to the person rather than to a figure, so they
+                        // are persisted on the controller and bound down here.
+                        // Assigned rather than bound in the other direction:
+                        // ColourMapSelector writes to app.plotColourMap, which
+                        // then reaches the canvas through this binding.
+                        colourMap: root.app.plotColourMap
+                        fullRenderPolicy: root.app.fullRenderPolicy
+                        fullRenderAskAfterSeconds: root.app.fullRenderAskAfterSeconds
                     }
                     // Ready notice, sitting ABOVE the overlay row rather than in the
                     // same corner. Both used to anchor to the bottom right with
@@ -154,6 +163,25 @@ SplitView {
                         // which for most datasets means neither of them does.
                         UnitSelector { axis: "X"; canvas: plot }
                         UnitSelector { axis: "Y"; canvas: plot }
+                        // Only on the engines that colour a field. Hidden on
+                        // the other hundred and eighty, where it would do
+                        // nothing - see components/ColourMapSelector.qml.
+                        ColourMapSelector { canvas: plot; app: root.app }
+                        // What happens when the full-resolution render lands.
+                        // Only offered once a figure is large enough for there
+                        // to BE a second render.
+                        FullRenderPolicyBox { app: root.app; canvas: plot }
+                        // What is under the pointer. The figure could be zoomed
+                        // into a transient and still not say what the transient
+                        // measured; the axes gave the range and nothing gave the
+                        // value. Only while the pointer is over a figure with
+                        // real axes - see PlotCanvas::updateCursor.
+                        StatusPill {
+                            visible: plot.cursorOnPlot
+                            width: visible ? implicitWidth : 0
+                            text: plot.cursorText
+                            textColor: Theme.text
+                        }
                         // Progress, outside the preview. Only appears when the full
                         // render is long enough to be worth mentioning.
                         RenderProgressBadge { canvas: plot }

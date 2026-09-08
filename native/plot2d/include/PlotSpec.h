@@ -84,6 +84,14 @@ struct PlotStyle {
     QColor positive = QColor(0x61, 0xd1, 0x95);
     QColor warning  = QColor(0xe2, 0xad, 0x50);
     QColor danger   = QColor(0xde, 0x62, 0x54);
+    // The colour map for every engine that colours a FIELD rather than a
+    // series: heatmap, contour, surface, 3-D field, vector field. Empty means
+    // Viridis, which is what all of them were hard-coded to before this
+    // existed. "Magma", "Inferno", "Plasma", "Cividis" and "Greys" are the
+    // other sequential maps; "Coolwarm" and "BrBG" are diverging, for a field
+    // with a meaningful zero. An unrecognised name falls back to Viridis
+    // rather than failing, because a typo in a theme should not blank a plot.
+    QString colourMap;
 };
 
 struct PlotSpec {

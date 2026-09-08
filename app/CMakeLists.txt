@@ -39,6 +39,7 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/include/QtPlotBackend.h
   ${GRAPHVIS_PLOT2D_DIR}/include/ArrowTable.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotCanvas.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/ColourMaps.h
   ${GRAPHVIS_PLOT2D_DIR}/include/TouchGesture.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotSelfTest.h
   ${GRAPHVIS_PLOT2D_DIR}/include/Units.h
@@ -107,6 +108,9 @@ set(GRAPHVIS_QML_FILES
   qml/components/GraphLibrary.qml
   qml/components/GvGroupBox.qml
   qml/components/StatusPill.qml
+  qml/components/ActiveDatasetBar.qml
+  qml/components/ColourMapSelector.qml
+  qml/components/FullRenderPolicyBox.qml
   qml/components/UnitSelector.qml
   qml/components/SolverPanel.qml
   qml/components/AddOnsPanel.qml

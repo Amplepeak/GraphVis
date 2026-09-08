@@ -1,9 +1,9 @@
 {
   "schema": "graphvis.catalogue/1",
   "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
-  "category_count": 44,
-  "entry_count": 409,
-  "engine_count": 201,
+  "category_count": 46,
+  "entry_count": 433,
+  "engine_count": 203,
   "categories": [
     {
       "name": "Line Plots",
@@ -4311,6 +4311,256 @@
           "advanced": false,
           "description": "Log ratio against mean intensity, with a loess trend",
           "preview": "🧪",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Data Reduction & Interpolation",
+      "entries": [
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "data reduction (fine)",
+          "engine": "Data Reduction",
+          "scale": "Fine",
+          "advanced": false,
+          "description": "Ramer-Douglas-Peucker at 0.05% of the data diagonal - about half a pixel of error, a quarter of the points",
+          "preview": "📉",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "data reduction",
+          "engine": "Data Reduction",
+          "scale": null,
+          "advanced": false,
+          "description": "Ramer-Douglas-Peucker at 0.25% - under three pixels of error, and typically a thirtieth of the points",
+          "preview": "📉",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "data reduction (coarse)",
+          "engine": "Data Reduction",
+          "scale": "Coarse",
+          "advanced": false,
+          "description": "Ramer-Douglas-Peucker at 1% - a shape summary, about nine pixels of error",
+          "preview": "📉",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "interpolation (Akima)",
+          "engine": "Interpolation",
+          "scale": "Akima",
+          "advanced": false,
+          "description": "Akima spline: local, so a step in the data stays a step instead of ringing",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "interpolation (cubic spline)",
+          "engine": "Interpolation",
+          "scale": "Cubic Spline",
+          "advanced": false,
+          "description": "Natural cubic spline: the smoothest curve through the points, and it will overshoot a step",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "interpolation (linear)",
+          "engine": "Interpolation",
+          "scale": "Linear",
+          "advanced": false,
+          "description": "Straight between neighbours. Never smooth, never overshoots",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "interpolation (cosine)",
+          "engine": "Interpolation",
+          "scale": "Cosine",
+          "advanced": false,
+          "description": "Smooth between each pair, with no dependence on the rest of the series",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Data Reduction & Interpolation",
+          "name": "interpolation (nearest)",
+          "engine": "Interpolation",
+          "scale": "Nearest",
+          "advanced": false,
+          "description": "Piecewise constant, for a quantised or categorical quantity",
+          "preview": "📈",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Spectral",
+      "entries": [
+        {
+          "category": "Spectral",
+          "name": "power spectral density (hann)",
+          "engine": "Power Spectral Density",
+          "scale": "Hann",
+          "advanced": false,
+          "description": "PSD with the Hann window - the default. Fast-decaying sidelobes, moderate main lobe",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (hann)",
+          "engine": "Spectrogram",
+          "scale": "Hann",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Hann window - the default. Fast-decaying sidelobes, moderate main lobe",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (hamming)",
+          "engine": "Power Spectral Density",
+          "scale": "Hamming",
+          "advanced": false,
+          "description": "PSD with the Hamming window - lower first sidelobe than Hann; better for two tones of similar size close together",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (hamming)",
+          "engine": "Spectrogram",
+          "scale": "Hamming",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Hamming window - lower first sidelobe than Hann; better for two tones of similar size close together",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (blackman)",
+          "engine": "Power Spectral Density",
+          "scale": "Blackman",
+          "advanced": false,
+          "description": "PSD with the Blackman window - lower sidelobes, wider main lobe - a small tone near a large one",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (blackman)",
+          "engine": "Spectrogram",
+          "scale": "Blackman",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Blackman window - lower sidelobes, wider main lobe - a small tone near a large one",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (blackman-harris)",
+          "engine": "Power Spectral Density",
+          "scale": "Blackman-Harris",
+          "advanced": false,
+          "description": "PSD with the Blackman-Harris window - -92 dB sidelobes, the widest main lobe. For dynamic range",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (blackman-harris)",
+          "engine": "Spectrogram",
+          "scale": "Blackman-Harris",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Blackman-Harris window - -92 dB sidelobes, the widest main lobe. For dynamic range",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (bartlett)",
+          "engine": "Power Spectral Density",
+          "scale": "Bartlett",
+          "advanced": false,
+          "description": "PSD with the Bartlett window - triangular, and its transform is non-negative",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (bartlett)",
+          "engine": "Spectrogram",
+          "scale": "Bartlett",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Bartlett window - triangular, and its transform is non-negative",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (welch)",
+          "engine": "Power Spectral Density",
+          "scale": "Welch",
+          "advanced": false,
+          "description": "PSD with the Welch window - parabolic, the classic choice for Welch's periodogram",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (welch)",
+          "engine": "Spectrogram",
+          "scale": "Welch",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Welch window - parabolic, the classic choice for Welch's periodogram",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (flat top)",
+          "engine": "Power Spectral Density",
+          "scale": "Flat Top",
+          "advanced": false,
+          "description": "PSD with the Flat Top window - flat passband: correct AMPLITUDE wherever a tone falls between bins, at the cost of resolution",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (flat top)",
+          "engine": "Spectrogram",
+          "scale": "Flat Top",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Flat Top window - flat passband: correct AMPLITUDE wherever a tone falls between bins, at the cost of resolution",
+          "preview": "🌈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "power spectral density (rectangular)",
+          "engine": "Power Spectral Density",
+          "scale": "Rectangular",
+          "advanced": false,
+          "description": "PSD with the Rectangular window - no window. Only correct when the record holds a whole number of periods",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Spectral",
+          "name": "spectrogram (rectangular)",
+          "engine": "Spectrogram",
+          "scale": "Rectangular",
+          "advanced": false,
+          "description": "Short-time Fourier transform with the Rectangular window - no window. Only correct when the record holds a whole number of periods",
+          "preview": "🌈",
           "thumbnail": ""
         }
       ]

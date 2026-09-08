@@ -1,4 +1,5 @@
 #include "QtPlotBackend.h"
+#include "ColourMaps.h"
 #include "Expression.h"
 
 #include <cmath>
@@ -273,7 +274,12 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("c-Chart"),
         QStringLiteral("u-Chart"),
         QStringLiteral("Rug Plot"),
-        // Spectral. One radix-2 FFT, Hann-windowed, serves all three.
+        // Data reduction and interpolation. One makes a curve smaller without
+        // changing its shape; the other reads it between the measured points.
+        QStringLiteral("Data Reduction"),
+        QStringLiteral("Interpolation"),
+        // Spectral. One radix-2 FFT serves all three; the catalogue variant
+        // chooses the window, Hann when nothing asks for another.
         QStringLiteral("Power Spectral Density"),
         QStringLiteral("Spectrogram"),
         QStringLiteral("Cross Correlation"),
@@ -429,7 +435,17 @@ QtPlotBackend::Frame QtPlotBackend::computeRange(const PlotSpec& spec) const {
     if(zeroOnY&&!f.yLog){ yLo=qMin(yLo,0.0); yHi=qMax(yHi,0.0); }
     if(spec.engine==QLatin1String("Horizontal Bar")&&!f.xLog){ xLo=qMin(xLo,0.0); xHi=qMax(xHi,0.0); }
 
-    if(!f.yLog){ const double pad=(yHi-yLo)*0.05; yLo-=pad; yHi+=pad; }
+    if(!f.yLog){
+        // Scaled BEFORE subtracting, not after. (yHi - yLo) * 0.05 overflows to
+        // infinity on a column holding both 1e308 and -1e308, and then yLo and
+        // yHi become -inf and +inf - so two perfectly finite bounds were turned
+        // into infinities by the act of padding them, every coordinate came out
+        // NaN, and Qt drew markers from numbers that were not numbers.
+        // yHi*0.05 - yLo*0.05 is the same value wherever both forms are
+        // representable, and stays representable where the other does not.
+        const double pad=yHi*0.05-yLo*0.05;
+        if(std::isfinite(pad)){ yLo-=pad; yHi+=pad; }
+    }
 
     // An inverted axis is the same range, mapped the other way round. Doing it
     // by swapping the bounds means every engine, every tick and every export
@@ -437,6 +453,14 @@ QtPlotBackend::Frame QtPlotBackend::computeRange(const PlotSpec& spec) const {
     // now, and nothing else has to know.
     if(spec.xAxis.inverted) std::swap(xLo,xHi);
     if(spec.yAxis.inverted) std::swap(yLo,yHi);
+
+    // Last line of defence. Everything above is meant to keep the bounds
+    // finite, and every future addition to it is another chance to lose that -
+    // padding, a zero baseline, an explicit limit read from a saved figure.
+    // A non-finite bound is not a slightly wrong picture, it is NaN in every
+    // coordinate and nothing drawn, so it is caught here rather than trusted.
+    if(!finite(xLo)||!finite(xHi)){ xLo=0; xHi=1; }
+    if(!finite(yLo)||!finite(yHi)){ yLo=0; yHi=1; }
 
     f.xLo=xLo; f.xHi=xHi; f.yLo=yLo; f.yHi=yHi;
     return f;
@@ -478,13 +502,33 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
 QPointF QtPlotBackend::toDevice(const Frame& f,double x,double y) const {
     if(f.xLog) x=(x>0)?std::log10(x):f.xLo;
     if(f.yLog) y=(y>0)?std::log10(y):f.yLo;
-    // The span is signed: an inverted axis has hi below lo, and clamping it up
-    // to a positive floor - which qMax(1e-300, span) does - turns every
-    // coordinate into an infinity and draws nothing at all. Only a span of
-    // zero needs the floor.
-    const double spanX=f.xHi-f.xLo,spanY=f.yHi-f.yLo;
-    const double tx=(x-f.xLo)/((std::abs(spanX)>1e-300)?spanX:1e-300);
-    const double ty=(y-f.yLo)/((std::abs(spanY)>1e-300)?spanY:1e-300);
+    // Where a value sits in [lo, hi], as a fraction. Two things have to be got
+    // right, and both were found by looking at what was drawn rather than by
+    // reading this code:
+    //
+    // The span is SIGNED. An inverted axis has hi below lo, and clamping the
+    // span up to a positive floor - which qMax(1e-300, span) does - turns
+    // every coordinate into an infinity and draws nothing at all. Only a span
+    // of exactly zero needs the floor.
+    //
+    // The span can also OVERFLOW. A column holding both 1e308 and -1e308 has a
+    // range wider than a double can represent: hi - lo is +inf, (v - lo) is
+    // +inf as well, and inf/inf is NaN - so every coordinate became NaN and Qt
+    // drew shapes out of numbers that were not numbers ("QPainterPath::arcTo:
+    // Adding arc where a parameter is NaN", once per marker). Halving all
+    // three is an exact fix rather than an approximate one: division by two is
+    // exact in binary floating point, and the ratio (v-lo)/(hi-lo) is
+    // unchanged by scaling v, lo and hi together.
+    const auto fraction=[](double v,double lo,double hi){
+        double span=hi-lo;
+        for(int halvings=0;!std::isfinite(span)&&halvings<8;++halvings){
+            v*=0.5; lo*=0.5; hi*=0.5;
+            span=hi-lo;
+        }
+        return (v-lo)/((std::abs(span)>1e-300)?span:1e-300);
+    };
+    const double tx=fraction(x,f.xLo,f.xHi);
+    const double ty=fraction(y,f.yLo,f.yHi);
     return QPointF(f.plotArea.left()+tx*f.plotArea.width(),
                    f.plotArea.bottom()-ty*f.plotArea.height());
 }
@@ -1030,23 +1074,24 @@ QtPlotBackend::ValueGrid QtPlotBackend::gridFromSeries(const PlotSpec& spec,int 
 }
 
 namespace {
-// Viridis, sampled at sixteen stops and interpolated. Perceptually uniform and
-// monotone in lightness, so the map still reads as ordered in greyscale and for
-// every colour vision deficiency - which a rainbow map does not.
-QColor viridis(double t){
-    static const double stops[16][3]={
-        {0.267,0.005,0.329},{0.283,0.100,0.422},{0.278,0.184,0.487},{0.254,0.265,0.530},
-        {0.222,0.339,0.549},{0.192,0.406,0.556},{0.165,0.470,0.558},{0.141,0.533,0.555},
-        {0.121,0.596,0.544},{0.135,0.659,0.518},{0.208,0.718,0.473},{0.328,0.773,0.407},
-        {0.478,0.821,0.318},{0.647,0.858,0.210},{0.825,0.885,0.107},{0.993,0.906,0.144}};
-    t=qBound(0.0,t,1.0);
-    const double pos=t*15.0;
-    const int i=qBound(0,int(pos),14);
-    const double frac=pos-i;
-    const double r=stops[i][0]*(1-frac)+stops[i+1][0]*frac;
-    const double g=stops[i][1]*(1-frac)+stops[i+1][1]*frac;
-    const double b=stops[i][2]*(1-frac)+stops[i+1][2]*frac;
-    return QColor::fromRgbF(r,g,b);
+// The colour map for engines that colour a FIELD.
+//
+// Every heat field, contour, surface and vector field in this file used to
+// call viridis() directly, so the map was not a choice at all - and the colour
+// map IS the reading of a field plot. GraphVis 17 offered eighty four of them
+// in eight categories; the port offered one.
+//
+// The tables live in ColourMaps.h, generated from the reference
+// implementations by tools/gen_colourmaps.py, so a map here cannot drift from
+// the map of the same name anywhere else.
+using ColourMapKind = const unsigned char (*)[3];
+
+ColourMapKind colourMapFor(const QString& name){
+    return colourmaps::tableFor(name);
+}
+
+inline QColor colourMap(ColourMapKind table,double t){
+    return colourmaps::sample(table,t);
 }
 } // namespace
 
@@ -1098,7 +1143,39 @@ const QtPlotBackend::ValueGrid& QtPlotBackend::cachedGrid(const PlotSpec& gridIn
     return entry.grid;
 }
 
+// The list is kept beside the dispatch above rather than in QML, so a new field
+// engine cannot be added to one and forgotten in the other. Every name here
+// reaches drawHeatmap, drawContour, drawVectorField, draw3D or draw3DField in
+// render() - and every branch of render() that reaches one of those is here.
+bool QtPlotBackend::usesColourMap(const QString& preparedEngine){
+    static const QSet<QString> kFieldEngines{
+        // Flat fields.
+        QStringLiteral("2D Heatmap"),QStringLiteral("2D Histogram"),
+        QStringLiteral("Hexbin Density"),QStringLiteral("Correlation Matrix"),
+        QStringLiteral("Covariance Matrix"),QStringLiteral("Spy Matrix"),
+        QStringLiteral("2D Contour"),
+        // Vector fields.
+        QStringLiteral("Quiver Field"),QStringLiteral("Feather"),
+        QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
+        QStringLiteral("Phase Portrait"),QStringLiteral("Flow Texture (LIC)"),
+        QStringLiteral("Divergence Map"),QStringLiteral("Vorticity Map"),
+        // Surfaces and volumes.
+        QStringLiteral("Surface + Contours"),QStringLiteral("Comet 3D"),
+        QStringLiteral("Ribbon"),QStringLiteral("Stream Ribbon"),
+        QStringLiteral("Tensor Glyph Field"),QStringLiteral("Volume Show"),
+        QStringLiteral("Volume Slice"),QStringLiteral("Isosurface"),
+        QStringLiteral("Isonormals"),QStringLiteral("Isocaps"),
+        QStringLiteral("Contour Slice")};
+    // Everything drawn by draw3D, which is selected by prefix rather than by
+    // name - "3D Surface", "3D Scatter" and the rest.
+    if(preparedEngine.startsWith(QLatin1String("3D "))) return true;
+    return kFieldEngines.contains(preparedEngine);
+}
+
 void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    // The field colour map, read once. Viridis unless the style asks for
+    // another - see PlotStyle::colourMap.
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
     const bool density=spec.engine==QLatin1String("2D Histogram")
                      ||spec.engine==QLatin1String("Hexbin Density");
     const ValueGrid& g=cachedGrid(spec,density?GridAggregate::Count:GridAggregate::Mean,0,0);
@@ -1112,7 +1189,7 @@ void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec)
             const double v=g.cells[cy*g.nx+cx];
             if(!finite(v)) continue;     // leave the background showing through
             const double t=(v-g.vLo)/(g.vHi-g.vLo);
-            p->setBrush(viridis(t));
+            p->setBrush(colourMap(cmap,t));
             // Half a pixel of overlap, or antialiasing leaves seams between
             // cells that read as a grid pattern in the data.
             p->drawRect(QRectF(f.plotArea.left()+cx*cellW,
@@ -1124,6 +1201,9 @@ void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec)
 }
 
 void QtPlotBackend::drawContour(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    // The field colour map, read once. Viridis unless the style asks for
+    // another - see PlotStyle::colourMap.
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
     // Auto resolution, same as the heatmap: a grid fine enough to show
     // structure and coarse enough that its cells actually contain samples.
     const ValueGrid& g=cachedGrid(spec,GridAggregate::Mean,3,0);
@@ -1144,7 +1224,7 @@ void QtPlotBackend::drawContour(QPainter* p,const Frame& f,const PlotSpec& spec)
     for(int level=1;level<=kLevels;++level){
         const double frac=double(level)/double(kLevels+1);
         const double iso=g.vLo+(g.vHi-g.vLo)*frac;
-        QPen pen(viridis(frac));
+        QPen pen(colourMap(cmap,frac));
         pen.setWidthF(qMax(0.6,spec.style.lineWidth));
         p->setPen(pen);
         for(int cy=0;cy<g.ny-1;++cy){
@@ -1423,6 +1503,9 @@ void drawBoundingCube(QPainter* p,const Projection& proj,const QColor& gridColor
 }
 
 void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    // The field colour map, read once. Viridis unless the style asks for
+    // another - see PlotStyle::colourMap.
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
     if(spec.series.size()<3) return;
     const QVector<double>& xs=spec.series.at(0).y;
     const QVector<double>& ys=spec.series.at(1).y;
@@ -1483,11 +1566,11 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
                 const double t=(q.value-g.vLo)/qMax(1e-12,g.vHi-g.vLo);
                 if(wireframe){
                     p->setBrush(Qt::NoBrush);
-                    QPen mesh(viridis(t)); mesh.setWidthF(qMax(0.4,spec.style.lineWidth*0.7));
+                    QPen mesh(colourMap(cmap,t)); mesh.setWidthF(qMax(0.4,spec.style.lineWidth*0.7));
                     p->setPen(mesh);
                 }else{
-                    p->setBrush(viridis(t));
-                    QPen edge(viridis(t).darker(115)); edge.setWidthF(0.3);
+                    p->setBrush(colourMap(cmap,t));
+                    QPen edge(colourMap(cmap,t).darker(115)); edge.setWidthF(0.3);
                     p->setPen(edge);
                 }
                 p->drawPolygon(q.shape);
@@ -1522,7 +1605,7 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
         const double base=qMax(2.0,spec.series.at(2).markerSize);
         for(const Dot& dot:dots){
             const double t=(dot.value-bz.lo)/qMax(1e-12,bz.hi-bz.lo);
-            p->setBrush(viridis(t));
+            p->setBrush(colourMap(cmap,t));
             const double r=base*(0.62+0.38*(dot.depth+0.9));
             p->drawEllipse(dot.at,qMax(0.8,r/2.0),qMax(0.8,r/2.0));
         }
@@ -1541,6 +1624,9 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
 // same gridding, because a field measured at scattered points has to be regular
 // before anything can be differentiated or followed through it.
 void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    // The field colour map, read once. Viridis unless the style asks for
+    // another - see PlotStyle::colourMap.
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
     if(spec.series.size()<4) return;
     const QVector<double>& xs=spec.series.at(0).y;
     const QVector<double>& ys=spec.series.at(1).y;
@@ -1596,7 +1682,7 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
             for(int cx=0;cx<out.nx;++cx){
                 const double value=out.cells[cy*out.nx+cx];
                 if(!finite(value)) continue;
-                p->setBrush(viridis((value-out.vLo)/(out.vHi-out.vLo)));
+                p->setBrush(colourMap(cmap,(value-out.vLo)/(out.vHi-out.vLo)));
                 p->drawRect(QRectF(f.plotArea.left()+cx*cw,
                                    f.plotArea.bottom()-(cy+1)*ch,cw+0.5,ch+0.5));
             }
@@ -1647,7 +1733,7 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
                     if(!started){ path.moveTo(pt); started=true; } else path.lineTo(pt);
                 }
                 if(!started) continue;
-                QPen pen(viridis(qBound(0.0,carried/magMax,1.0)));
+                QPen pen(colourMap(cmap,qBound(0.0,carried/magMax,1.0)));
                 pen.setWidthF(qMax(0.5,spec.style.lineWidth*0.9));
                 p->setPen(pen); p->setBrush(Qt::NoBrush);
                 p->drawPath(path);
@@ -1670,7 +1756,7 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
                 const double length=arrowMax*(mag/magMax);
                 const QPointF dir(u/mag,-v/mag);
                 const QPointF to=from+dir*length;
-                QPen pen(viridis(mag/magMax));
+                QPen pen(colourMap(cmap,mag/magMax));
                 pen.setWidthF(qMax(0.5,spec.style.lineWidth));
                 p->setPen(pen);
                 p->drawLine(from,to);
@@ -1728,12 +1814,87 @@ int nextPowerOfTwo(int n){
     return p;
 }
 
-// Hann. Without a window the spectrum of anything that does not fit a whole
-// number of periods into the record is dominated by leakage from the edges,
-// which looks like broadband noise that is not there.
-double hann(int i,int n){
+// Without a window the spectrum of anything that does not fit a whole number of
+// periods into the record is dominated by leakage from the edges, which looks
+// like broadband noise that is not there. Hann is the default because it is the
+// right answer most of the time, but it is not the right answer every time and
+// the choice used to be unavailable:
+//
+//   Rectangular  no window at all. The narrowest possible main lobe and the
+//                worst leakage. Correct, and only correct, when the record
+//                holds a whole number of periods - a synchronously sampled
+//                gear order, a simulation with a chosen record length.
+//   Hann         the default. Fast-decaying sidelobes, moderate main lobe.
+//   Hamming      lower first sidelobe than Hann, but the far sidelobes decay
+//                more slowly. Better for separating two tones of similar size
+//                that are close together.
+//   Blackman     wider main lobe, much lower sidelobes - a small tone next to
+//                a large one at some distance.
+//   Blackman-Harris  the four-term form: -92 dB sidelobes, the widest main
+//                lobe here. For dynamic range, when resolution is spare.
+//   Bartlett     triangular. Cheap, and its transform is non-negative.
+//   Welch        parabolic. The classic choice for Welch's periodogram.
+//   Flat Top     designed so a tone lands at the right AMPLITUDE regardless of
+//                where it falls between bins - about 0.01 dB of scalloping
+//                loss against Hann's 1.4 dB. Use it to measure how big a peak
+//                is, never to measure how many peaks there are.
+//
+// Every one of these is normalised the same way by the callers (dividing by the
+// sum of w squared), so the PSD stays calibrated whichever is chosen and the
+// numbers on the y axis remain comparable between them.
+enum class SpectralWindow { Rectangular, Hann, Hamming, Blackman, BlackmanHarris,
+                            Bartlett, Welch, FlatTop };
+
+SpectralWindow spectralWindowFor(const QString& variant){
+    const QString v=variant.trimmed();
+    if(v.compare(QLatin1String("Rectangular"),Qt::CaseInsensitive)==0
+     ||v.compare(QLatin1String("None"),Qt::CaseInsensitive)==0)        return SpectralWindow::Rectangular;
+    if(v.compare(QLatin1String("Hamming"),Qt::CaseInsensitive)==0)     return SpectralWindow::Hamming;
+    if(v.compare(QLatin1String("Blackman"),Qt::CaseInsensitive)==0)    return SpectralWindow::Blackman;
+    if(v.compare(QLatin1String("Blackman-Harris"),Qt::CaseInsensitive)==0
+     ||v.compare(QLatin1String("Blackman Harris"),Qt::CaseInsensitive)==0)
+                                                                       return SpectralWindow::BlackmanHarris;
+    if(v.compare(QLatin1String("Bartlett"),Qt::CaseInsensitive)==0
+     ||v.compare(QLatin1String("Triangular"),Qt::CaseInsensitive)==0)  return SpectralWindow::Bartlett;
+    if(v.compare(QLatin1String("Welch"),Qt::CaseInsensitive)==0)       return SpectralWindow::Welch;
+    if(v.compare(QLatin1String("Flat Top"),Qt::CaseInsensitive)==0
+     ||v.compare(QLatin1String("Flat-Top"),Qt::CaseInsensitive)==0)    return SpectralWindow::FlatTop;
+    return SpectralWindow::Hann;
+}
+
+double spectralWindow(SpectralWindow kind,int i,int n){
     if(n<2) return 1.0;
-    return 0.5*(1.0-std::cos(2.0*3.14159265358979323846*double(i)/double(n-1)));
+    constexpr double kPi=3.14159265358979323846;
+    const double d=double(n-1);
+    const double a=2.0*kPi*double(i)/d;      // 0 .. 2*pi across the record
+    switch(kind){
+    case SpectralWindow::Rectangular:
+        return 1.0;
+    case SpectralWindow::Hann:
+        return 0.5*(1.0-std::cos(a));
+    case SpectralWindow::Hamming:
+        // 0.54/0.46, the classic constants rather than the optimised
+        // 0.53836/0.46164: the difference is below a tenth of a dB and these
+        // are the ones every reference and every other tool prints.
+        return 0.54-0.46*std::cos(a);
+    case SpectralWindow::Blackman:
+        return 0.42-0.5*std::cos(a)+0.08*std::cos(2.0*a);
+    case SpectralWindow::BlackmanHarris:
+        return 0.35875-0.48829*std::cos(a)+0.14128*std::cos(2.0*a)-0.01168*std::cos(3.0*a);
+    case SpectralWindow::Bartlett:
+        return 1.0-std::abs((double(i)-d/2.0)/(d/2.0));
+    case SpectralWindow::Welch: {
+        const double u=(double(i)-d/2.0)/(d/2.0);
+        return 1.0-u*u;
+    }
+    case SpectralWindow::FlatTop:
+        // The five-term SRS/ISO form, left unnormalised: it goes negative in
+        // its side regions, which is what flattens the passband, and the
+        // callers' sum-of-squares normalisation handles the scale.
+        return 0.21557895-0.41663158*std::cos(a)+0.277263158*std::cos(2.0*a)
+              -0.083578947*std::cos(3.0*a)+0.006947368*std::cos(4.0*a);
+    }
+    return 0.5*(1.0-std::cos(a));
 }
 
 } // namespace
@@ -2485,6 +2646,9 @@ void QtPlotBackend::drawComposition(QPainter* p,const QRectF& target,const PlotS
 // VTK remains the right tool for a rotatable, lit, million-cell volume. This is
 // the version that exports as vectors and does not need a plugin.
 void QtPlotBackend::draw3DField(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    // The field colour map, read once. Viridis unless the style asks for
+    // another - see PlotStyle::colourMap.
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
     const int columns=spec.series.size();
     if(columns<4) return;
     const QVector<double>& xs=spec.series.at(0).y;
@@ -2553,7 +2717,7 @@ void QtPlotBackend::draw3DField(QPainter* p,const QRectF& target,const PlotSpec&
     for(const Glyph& g:glyphs){
         const int i=g.index;
         const double t=qBound(0.0,magnitude[i]/magMax,1.0);
-        const QColor colour=viridis(t);
+        const QColor colour=colourMap(cmap,t);
 
         if(volume){
             // Points shaded and sized by the scalar, with the low end faded
@@ -2784,6 +2948,228 @@ const PlotSpec& QtPlotBackend::preparedCached(const PlotSpec& in) const {
 }
 
 namespace {
+// ===========================================================================
+// Data reduction and interpolation.
+//
+// Two operations that every other plotting tool has and this one did not: make
+// a curve smaller without changing its shape, and read a curve between the
+// points it was measured at. They are opposites and they share a file because
+// they are asked in the same breath - one throws away points nobody needs, the
+// other invents points nobody measured, and both are lies of a controlled size.
+// ===========================================================================
+namespace {
+
+// Ramer-Douglas-Peucker. Keeps the first and last point, finds the point
+// furthest from the line between them, and if that distance is over the
+// tolerance splits there and recurses. What survives is the set of points that
+// no straight line can stand in for.
+//
+// Iterative rather than recursive, on an explicit stack. The recursive form is
+// two lines shorter and blows the stack on the input this engine exists for:
+// a monotone series of a hundred thousand points recurses a hundred thousand
+// deep, because every split puts one point on one side.
+//
+// sx and sy scale the axes to a common footing before the distance is measured;
+// the tolerance is in that scaled space.
+QVector<int> douglasPeucker(const QVector<double>& xs,const QVector<double>& ys,
+                            double sx,double sy,double tolerance){
+    const int n=xs.size();
+    QVector<int> out;
+    if(n<3){ for(int i=0;i<n;++i) out.append(i); return out; }
+
+    QVector<bool> keep(n,false);
+    keep[0]=true; keep[n-1]=true;
+    QVector<QPair<int,int>> stack;
+    stack.append({0,n-1});
+    const double tol2=tolerance*tolerance;
+
+    while(!stack.isEmpty()){
+        const QPair<int,int> seg=stack.takeLast();
+        const int a=seg.first, b=seg.second;
+        if(b<=a+1) continue;
+        const double ax=xs[a]*sx, ay=ys[a]*sy;
+        const double bx=xs[b]*sx, by=ys[b]*sy;
+        const double ex=bx-ax, ey=by-ay;
+        const double len2=ex*ex+ey*ey;
+        int worst=-1;
+        double worstD2=0.0;
+        for(int i=a+1;i<b;++i){
+            const double px=xs[i]*sx-ax, py=ys[i]*sy-ay;
+            double d2;
+            if(len2>0.0){
+                // Distance to the SEGMENT, not the infinite line: a closed loop
+                // has a==b in scaled space, and projecting onto its zero-length
+                // direction would keep nothing.
+                double t=(px*ex+py*ey)/len2;
+                t=qBound(0.0,t,1.0);
+                const double qx=px-t*ex, qy=py-t*ey;
+                d2=qx*qx+qy*qy;
+            }else{
+                d2=px*px+py*py;
+            }
+            if(d2>worstD2){ worstD2=d2; worst=i; }
+        }
+        if(worst>=0&&worstD2>tol2){
+            keep[worst]=true;
+            stack.append({a,worst});
+            stack.append({worst,b});
+        }
+    }
+    for(int i=0;i<n;++i) if(keep[i]) out.append(i);
+    return out;
+}
+
+enum class InterpolationKind { Linear, CubicSpline, Akima, Cosine, Nearest };
+
+InterpolationKind interpolationFor(const QString& variant){
+    const QString v=variant.trimmed();
+    if(v.compare(QLatin1String("Linear"),Qt::CaseInsensitive)==0)  return InterpolationKind::Linear;
+    if(v.compare(QLatin1String("Cubic Spline"),Qt::CaseInsensitive)==0
+     ||v.compare(QLatin1String("Spline"),Qt::CaseInsensitive)==0)  return InterpolationKind::CubicSpline;
+    if(v.compare(QLatin1String("Cosine"),Qt::CaseInsensitive)==0)  return InterpolationKind::Cosine;
+    if(v.compare(QLatin1String("Nearest"),Qt::CaseInsensitive)==0
+     ||v.compare(QLatin1String("Step"),Qt::CaseInsensitive)==0)    return InterpolationKind::Nearest;
+    return InterpolationKind::Akima;
+}
+
+QString interpolationName(InterpolationKind k){
+    switch(k){
+    case InterpolationKind::Linear:      return QStringLiteral("linear");
+    case InterpolationKind::CubicSpline: return QStringLiteral("cubic spline");
+    case InterpolationKind::Cosine:      return QStringLiteral("cosine");
+    case InterpolationKind::Nearest:     return QStringLiteral("nearest");
+    case InterpolationKind::Akima:       break;
+    }
+    return QStringLiteral("Akima");
+}
+
+// The index of the interval containing x, by binary search. Linear scanning
+// here is what turns a thousand-sample grid over a hundred-thousand-point
+// series into a hundred million comparisons.
+int intervalFor(const QVector<double>& xs,double x){
+    int lo=0, hi=xs.size()-1;
+    if(x<=xs[0]) return 0;
+    if(x>=xs[hi]) return hi-1;
+    while(hi-lo>1){
+        const int mid=(lo+hi)/2;
+        if(xs[mid]<=x) lo=mid; else hi=mid;
+    }
+    return lo;
+}
+
+// Natural cubic spline second derivatives, by the standard tridiagonal solve.
+// "Natural" means the curve is straight at both ends - the second derivative is
+// set to zero there - which is the choice that adds no information the data did
+// not contain.
+QVector<double> naturalSplineM(const QVector<double>& xs,const QVector<double>& ys){
+    const int n=xs.size();
+    QVector<double> m(n,0.0);
+    if(n<3) return m;
+    QVector<double> c(n,0.0),d(n,0.0);
+    for(int i=1;i<n-1;++i){
+        const double h0=xs[i]-xs[i-1], h1=xs[i+1]-xs[i];
+        if(!(h0>0.0)||!(h1>0.0)) return QVector<double>(n,0.0);
+        const double a=h0, b=2.0*(h0+h1), cc=h1;
+        const double r=6.0*((ys[i+1]-ys[i])/h1-(ys[i]-ys[i-1])/h0);
+        const double denom=b-a*c[i-1];
+        if(!(std::abs(denom)>1e-300)) return QVector<double>(n,0.0);
+        c[i]=cc/denom;
+        d[i]=(r-a*d[i-1])/denom;
+    }
+    for(int i=n-2;i>=1;--i) m[i]=d[i]-c[i]*m[i+1];
+    return m;
+}
+
+// Akima slopes. The slope at a point is a weighted blend of the two secants
+// either side, weighted by how much the OTHER two secants disagree - which is
+// what makes it local, and what makes a step in the data stay a step instead of
+// ringing. Akima's 1970 construction, with his end conditions.
+QVector<double> akimaSlopes(const QVector<double>& xs,const QVector<double>& ys){
+    const int n=xs.size();
+    QVector<double> t(n,0.0);
+    if(n<2) return t;
+    if(n==2){
+        const double h=xs[1]-xs[0];
+        const double s=(h>0.0)?(ys[1]-ys[0])/h:0.0;
+        t[0]=t[1]=s;
+        return t;
+    }
+    // Secants, with two extrapolated at each end so the interior formula can be
+    // used everywhere. m is indexed from -2, so it is stored shifted by 2.
+    QVector<double> m(n+3,0.0);
+    for(int i=0;i<n-1;++i){
+        const double h=xs[i+1]-xs[i];
+        m[i+2]=(h>0.0)?(ys[i+1]-ys[i])/h:0.0;
+    }
+    m[1]=2.0*m[2]-m[3];
+    m[0]=2.0*m[1]-m[2];
+    m[n+1]=2.0*m[n]-m[n-1];
+    m[n+2]=2.0*m[n+1]-m[n];
+    for(int i=0;i<n;++i){
+        const double w1=std::abs(m[i+3]-m[i+2]);
+        const double w2=std::abs(m[i+1]-m[i]);
+        if(w1+w2>1e-300) t[i]=(w1*m[i+1]+w2*m[i+2])/(w1+w2);
+        else             t[i]=0.5*(m[i+1]+m[i+2]);   // four collinear secants
+    }
+    return t;
+}
+
+// One evaluation. The spline and Akima coefficient arrays are rebuilt per call
+// only if the caller is careless; the engine below builds them once per series
+// through interpolatorFor and passes them in.
+struct Interpolator {
+    InterpolationKind kind=InterpolationKind::Akima;
+    QVector<double> m;      // spline second derivatives
+    QVector<double> t;      // Akima slopes
+};
+
+Interpolator interpolatorFor(InterpolationKind kind,const QVector<double>& xs,const QVector<double>& ys){
+    Interpolator it; it.kind=kind;
+    if(kind==InterpolationKind::CubicSpline) it.m=naturalSplineM(xs,ys);
+    else if(kind==InterpolationKind::Akima)  it.t=akimaSlopes(xs,ys);
+    return it;
+}
+
+double interpolateAt(const Interpolator& it,const QVector<double>& xs,const QVector<double>& ys,double x){
+    const int n=xs.size();
+    if(n==0) return std::numeric_limits<double>::quiet_NaN();
+    if(n==1) return ys[0];
+    const int i=intervalFor(xs,x);
+    const double h=xs[i+1]-xs[i];
+    if(!(h>0.0)) return ys[i];
+    const double u=(x-xs[i])/h;
+    switch(it.kind){
+    case InterpolationKind::Nearest:
+        return (u<0.5)?ys[i]:ys[i+1];
+    case InterpolationKind::Linear:
+        return ys[i]+(ys[i+1]-ys[i])*u;
+    case InterpolationKind::Cosine: {
+        const double w=(1.0-std::cos(u*3.14159265358979323846))/2.0;
+        return ys[i]*(1.0-w)+ys[i+1]*w;
+    }
+    case InterpolationKind::CubicSpline: {
+        if(it.m.size()!=n) return ys[i]+(ys[i+1]-ys[i])*u;
+        const double a=xs[i+1]-x, b=x-xs[i];
+        return (a*a*a-h*h*a)*it.m[i]/(6.0*h)
+             + (b*b*b-h*h*b)*it.m[i+1]/(6.0*h)
+             + (a*ys[i]+b*ys[i+1])/h;
+    }
+    case InterpolationKind::Akima: {
+        if(it.t.size()!=n) return ys[i]+(ys[i+1]-ys[i])*u;
+        // Hermite on the Akima slopes.
+        const double u2=u*u, u3=u2*u;
+        const double h00= 2.0*u3-3.0*u2+1.0;
+        const double h10=     u3-2.0*u2+u;
+        const double h01=-2.0*u3+3.0*u2;
+        const double h11=     u3-    u2;
+        return h00*ys[i]+h10*h*it.t[i]+h01*ys[i+1]+h11*h*it.t[i+1];
+    }
+    }
+    return ys[i]+(ys[i+1]-ys[i])*u;
+}
+
+} // namespace
+
 // Every derived engine opens the same way: keep the incoming spec so the title,
 // the axes, the style and the publication profile all survive; swap in the
 // engine that will actually be drawn; and start with no series, because a
@@ -4126,6 +4512,177 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         for(PlotSeries& s:out.series){ s.drawLine=false; s.drawMarkers=true; s.markerSize=4.2; }
         return out;
     }
+    // ------------------------------------------------------- Data Reduction
+    //
+    // The same curve with fewer points in it. A logger that wrote a sample a
+    // second for a week is two hundred thousand points describing a shape that
+    // needs two hundred, and the extra ones cost redraw time, file size and -
+    // once the line is thicker than the spacing between them - legibility.
+    //
+    // Both curves are drawn: the original faint underneath, the reduced one on
+    // top, and the legend says how many points each has. A reduction you cannot
+    // see the error of is a reduction you should not trust, and the whole point
+    // of the picture is to let the tolerance be judged by eye.
+    //
+    // The tolerance is a fraction of the data's own bounding diagonal rather
+    // than an absolute number, because the alternative is a figure that empties
+    // itself the moment the y axis is in millivolts instead of volts. Measured
+    // on three periods of a noisy sine at 2,000 points, on an 800x550 plot:
+    //
+    //     variant     fraction   points kept   worst error on screen
+    //     "Fine"        0.05%        25.4%          0.5 px
+    //     default       0.25%         3.1%          2.4 px
+    //     "Coarse"      1.0%          1.0%          8.9 px
+    //
+    // The default keeps a thirtieth of the points and moves the line by under
+    // three pixels, which is why it is the default. That error is measured
+    // PERPENDICULAR to the curve rather than vertically, which is also how the
+    // eye reads it: on a steep segment the same two pixels amount to a large
+    // change in y and are invisible.
+    if(in.engine==QLatin1String("Data Reduction")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        const QString v=in.variant.trimmed();
+        const double fraction=(v.compare(QLatin1String("Fine"),Qt::CaseInsensitive)==0)   ? 0.0005
+                             :(v.compare(QLatin1String("Coarse"),Qt::CaseInsensitive)==0) ? 0.01
+                                                                                          : 0.0025;
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            QVector<double> xs,ys;
+            xs.reserve(n); ys.reserve(n);
+            for(int i=0;i<n;++i)
+                if(finite(s.x[i])&&finite(s.y[i])){ xs.append(s.x[i]); ys.append(s.y[i]); }
+            if(xs.size()<3) continue;
+
+            double xLo=xs[0],xHi=xs[0],yLo=ys[0],yHi=ys[0];
+            for(int i=1;i<xs.size();++i){
+                xLo=qMin(xLo,xs[i]); xHi=qMax(xHi,xs[i]);
+                yLo=qMin(yLo,ys[i]); yHi=qMax(yHi,ys[i]);
+            }
+            const double dx=xHi-xLo, dy=yHi-yLo;
+            const double diagonal=std::sqrt(dx*dx+dy*dy);
+            if(!(diagonal>0.0)) continue;
+            // Perpendicular distance is measured in the plot's own units, so x
+            // and y are put on comparable footing first - otherwise a series in
+            // seconds against microvolts is reduced entirely along one axis.
+            const double sx=(dx>0.0)?1.0/dx:0.0, sy=(dy>0.0)?1.0/dy:0.0;
+            const double tolerance=fraction*std::sqrt(2.0);
+
+            const QVector<int> keep=douglasPeucker(xs,ys,sx,sy,tolerance);
+
+            PlotSeries original=s;
+            original.x=xs; original.y=ys;
+            original.drawLine=true; original.drawMarkers=false;
+            original.lineWidth=qMax(0.7,s.lineWidth*0.6);
+            // Neutral, not the series colour: the whole picture is a
+            // comparison, and two curves in the same hue with only a width
+            // between them is not one. The original recedes; the reduced curve
+            // keeps the series identity and is drawn over it.
+            original.color=in.style.foreground;
+            original.color.setAlphaF(0.45f);
+            original.label=QStringLiteral("%1 — %2 points").arg(s.label).arg(xs.size());
+
+            PlotSeries reduced;
+            reduced.color=s.color.isValid()?s.color:in.style.warning;
+            reduced.drawLine=true; reduced.drawMarkers=keep.size()<=200;
+            reduced.markerSize=3.0;
+            reduced.lineWidth=qMax(1.4,s.lineWidth);
+            reduced.label=QStringLiteral("reduced — %1 points (%2%)")
+                              .arg(keep.size())
+                              .arg(100.0*double(keep.size())/double(xs.size()),0,'f',1);
+            for(int i:keep){ reduced.x.append(xs[i]); reduced.y.append(ys[i]); }
+
+            out.series.append(original);
+            out.series.append(reduced);
+        }
+        out.xAxis=in.xAxis;
+        out.yAxis=in.yAxis;
+        return out;
+    }
+
+    // -------------------------------------------------------- Interpolation
+    //
+    // A curve through the points, evaluated on a fine grid, so a handful of
+    // measurements can be read at values nobody measured. The variant picks the
+    // method, and the methods differ in ways that matter:
+    //
+    //   "Linear"        straight between neighbours. Never overshoots, never
+    //                   smooth. The safe answer.
+    //   "Cubic Spline"  natural cubic spline: the smoothest curve through the
+    //                   points, second derivative continuous. It CAN overshoot
+    //                   - a step in the data becomes a ring around the step -
+    //                   and that overshoot is real information about the fit,
+    //                   not an artefact to hide.
+    //   "Akima"         (the default) local, so a step stays a step: the
+    //                   coefficients depend on two neighbours each side rather
+    //                   than on the whole series. Much less ringing than a
+    //                   spline; slightly less smooth.
+    //   "Cosine"        smooth between each pair with no dependence beyond
+    //                   them. Cheap, monotone between neighbours.
+    //   "Nearest"       piecewise constant. For a categorical or quantised
+    //                   quantity, where a value between two samples is a lie.
+    //
+    // The source points are drawn on top as markers, because the one question
+    // asked of an interpolation is where it passed through what was measured.
+    if(in.engine==QLatin1String("Interpolation")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        const InterpolationKind how=interpolationFor(in.variant);
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<2) continue;
+            // Sorted and de-duplicated by x: every method here needs a
+            // single-valued function of x, and a logger that repeats a
+            // timestamp would otherwise divide by a zero interval.
+            QVector<QPair<double,double>> pairs;
+            pairs.reserve(n);
+            for(int i=0;i<n;++i)
+                if(finite(s.x[i])&&finite(s.y[i])) pairs.append({s.x[i],s.y[i]});
+            std::sort(pairs.begin(),pairs.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){return a.first<b.first;});
+            QVector<double> xs,ys;
+            for(const auto& pr:pairs){
+                if(!xs.isEmpty()&&!(pr.first>xs.last())){
+                    // Repeated x: average, rather than pick one arbitrarily.
+                    ys.last()=(ys.last()+pr.second)/2.0;
+                    continue;
+                }
+                xs.append(pr.first); ys.append(pr.second);
+            }
+            if(xs.size()<2) continue;
+
+            // Enough samples to look continuous at any figure width, and no
+            // more: a thousand points is already finer than the pixels.
+            const int grid=qBound(200,xs.size()*8,1000);
+            PlotSeries curve;
+            curve.color=s.color; curve.drawLine=true; curve.drawMarkers=false;
+            curve.lineWidth=qMax(1.3,s.lineWidth);
+            curve.label=QStringLiteral("%1 — %2").arg(s.label,interpolationName(how));
+            // Coefficients once per series, not once per evaluated point: the
+            // spline solve is O(n) and the grid is a thousand samples, so doing
+            // it inside the loop would be a thousand solves for one curve.
+            const Interpolator it=interpolatorFor(how,xs,ys);
+            const double x0=xs.first(), x1=xs.last();
+            for(int i=0;i<grid;++i){
+                const double x=x0+(x1-x0)*double(i)/double(grid-1);
+                const double y=interpolateAt(it,xs,ys,x);
+                if(!finite(y)) continue;
+                curve.x.append(x); curve.y.append(y);
+            }
+
+            PlotSeries knots;
+            knots.x=xs; knots.y=ys;
+            knots.color=s.color; knots.drawLine=false; knots.drawMarkers=true;
+            knots.markerSize=4.5;
+            knots.label=QStringLiteral("%1 — measured").arg(s.label);
+
+            if(curve.x.size()>=2) out.series.append(curve);
+            out.series.append(knots);
+        }
+        out.xAxis=in.xAxis;
+        out.yAxis=in.yAxis;
+        return out;
+    }
+
     if(in.engine==QLatin1String("Connected Scatter")){
         PlotSpec out=in;
         out.engine=QStringLiteral("Line Chart");
@@ -7186,9 +7743,12 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
             const int n=nextPowerOfTwo(v.size());
             QVector<double> re(n,0.0),im(n,0.0);
             const double mean=meanOf(v);
+            // The catalogue variant picks the taper; Hann when nothing is asked
+            // for, which is what this engine always used.
+            const SpectralWindow taper=spectralWindowFor(in.variant);
             double windowPower=0.0;
             for(int i=0;i<v.size();++i){
-                const double w=hann(i,v.size());
+                const double w=spectralWindow(taper,i,v.size());
                 re[i]=(v[i]-mean)*w;      // remove the DC term or it swamps the plot
                 windowPower+=w*w;
             }
@@ -7235,13 +7795,14 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
             // resolve what changed.
             const int window=qBound(32,nextPowerOfTwo(v.size()/16),512);
             const int hop=qMax(1,window/2);
+            const SpectralWindow taper=spectralWindowFor(in.variant);
             PlotSeries tx,fy,pv;
             for(int start=0;start+window<=v.size();start+=hop){
                 QVector<double> re(window,0.0),im(window,0.0);
                 double mean=0.0;
                 for(int i=0;i<window;++i) mean+=v[start+i];
                 mean/=double(window);
-                for(int i=0;i<window;++i) re[i]=(v[start+i]-mean)*hann(i,window);
+                for(int i=0;i<window;++i) re[i]=(v[start+i]-mean)*spectralWindow(taper,i,window);
                 fftInPlace(re,im);
                 const double centre=(double(start)+window/2.0)*dt;
                 for(int k=1;k<window/2;++k){

@@ -51,6 +51,12 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     // avoids the window opening straddled across a two-monitor desktop.
     displayMode_=qBound(0,settings.value(QStringLiteral("ui/displayMode"),1).toInt(),3);
     plotColourVision_=qBound(0,settings.value(QStringLiteral("plot/colourVision"),0).toInt(),4);
+    plotColourMap_=settings.value(QStringLiteral("plot/colourMap")).toString();
+    // Automatic by default. The old behaviour - a notice, every time, for every
+    // render however brief - meant the better picture existed and was not being
+    // shown until asked for, which is the wrong default for a viewer.
+    fullRenderPolicy_=qBound(0,settings.value(QStringLiteral("plot/fullRenderPolicy"),0).toInt(),2);
+    fullRenderAskAfterSeconds_=qBound(0.0,settings.value(QStringLiteral("plot/fullRenderAskAfterSeconds"),5.0).toDouble(),600.0);
     // Every signal connection below has to happen whether or not the native
     // core loads. When the DLL is missing this constructor used to return here,
     // leaving the science process with no reply path at all - so Literature
@@ -869,11 +875,30 @@ bool AppController::startScienceOp(const QJsonObject& request,const QString& op,
     return true;
 }
 
+// The add-on is a pip-installed package in its own virtual environment, and it
+// is installed ONCE. The application is rebuilt constantly; the add-on is not.
+// So an operation added to services/python after the last install reaches an
+// older package, which answers with what is technically true and completely
+// useless to the person reading it:
+//
+//     KeyError: 'Unknown operation: batch.run'
+//
+// That is not a bug in the feature the user pressed. It is a version skew with
+// exactly one remedy, and saying so is the whole job here.
+static QString explainScienceError(const QString& op,const QString& error){
+    if(!error.contains(QLatin1String("Unknown operation"))) return error;
+    return QStringLiteral(
+        "The GraphVis Science add-on is out of date: the copy installed on this "
+        "machine does not have \"%1\". Reinstall it (Add-ons > GraphVis Science, "
+        "or INSTALL-DATA-FORMATS.bat) and this will work. Nothing is wrong with "
+        "your data or the folder you chose.").arg(op);
+}
+
 void AppController::handleScienceReply(const QJsonObject& obj){
     const QString op=pendingScienceOp_;
     pendingScienceOp_.clear();
     const bool ok=obj.value(QStringLiteral("ok")).toBool();
-    const QString error=obj.value(QStringLiteral("error")).toString();
+    const QString error=explainScienceError(op,obj.value(QStringLiteral("error")).toString());
 
     if(op==QStringLiteral("dataset.scan")){
         if(ok&&!pendingScanCachePath_.isEmpty()){
@@ -1712,6 +1737,33 @@ QString AppController::plotColourVisionSummary() const{
     return plotColourVision_==0
         ? QStringLiteral("Graph colours: %1 - distinguishable for protanopia, deuteranopia and tritanopia").arg(chosen)
         : QStringLiteral("Graph colours: %1 - series palette fixed for this vision type").arg(chosen);
+}
+
+void AppController::setPlotColourMap(const QString& name){
+    if(plotColourMap_==name) return;
+    plotColourMap_=name;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/colourMap"),plotColourMap_);
+    emit plotDisplayChanged();
+}
+
+void AppController::setFullRenderPolicy(int policy){
+    const int clamped=qBound(0,policy,2);
+    if(fullRenderPolicy_==clamped) return;
+    fullRenderPolicy_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/fullRenderPolicy"),fullRenderPolicy_);
+    emit plotDisplayChanged();
+    setStatus(fullRenderPolicyNames().value(fullRenderPolicy_));
+}
+
+void AppController::setFullRenderAskAfterSeconds(double seconds){
+    const double clamped=qBound(0.0,seconds,600.0);
+    if(qFuzzyCompare(fullRenderAskAfterSeconds_,clamped)) return;
+    fullRenderAskAfterSeconds_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/fullRenderAskAfterSeconds"),fullRenderAskAfterSeconds_);
+    emit plotDisplayChanged();
 }
 
 void AppController::setPlotColourVision(int value){

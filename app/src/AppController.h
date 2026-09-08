@@ -48,6 +48,15 @@ class AppController final : public QObject {
     Q_PROPERTY(int plotColourVision READ plotColourVision WRITE setPlotColourVision NOTIFY plotColourVisionChanged)
     Q_PROPERTY(QStringList plotColourVisionNames READ plotColourVisionNames CONSTANT)
     Q_PROPERTY(QString plotColourVisionSummary READ plotColourVisionSummary NOTIFY plotColourVisionChanged)
+    // The field colour map and what happens when a full-resolution render
+    // lands. Both belong to the person, not to a figure: someone who wants the
+    // full render to appear by itself wants that on the next dataset too, and
+    // someone working in Cividis is doing so for a reason that outlives one
+    // plot. Persisted here and applied to the canvas by QML.
+    Q_PROPERTY(QString plotColourMap READ plotColourMap WRITE setPlotColourMap NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int fullRenderPolicy READ fullRenderPolicy WRITE setFullRenderPolicy NOTIFY plotDisplayChanged)
+    Q_PROPERTY(double fullRenderAskAfterSeconds READ fullRenderAskAfterSeconds WRITE setFullRenderAskAfterSeconds NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList fullRenderPolicyNames READ fullRenderPolicyNames CONSTANT)
     Q_PROPERTY(bool dataFormatsInstallerAvailable READ dataFormatsInstallerAvailable CONSTANT)
     Q_PROPERTY(QVariantMap smartRenderPlan READ smartRenderPlan NOTIFY smartRenderChanged)
     // GraphVis 17 graph catalogue: 318 entries in 30 categories, loaded from
@@ -206,6 +215,17 @@ public:
     QVariantList importLog() const{return importLog_;}
     ProjectWorkspace* project() const{return project_;}
     int plotColourVision() const{return plotColourVision_;}
+    QString plotColourMap() const{return plotColourMap_;}
+    void setPlotColourMap(const QString& name);
+    int fullRenderPolicy() const{return fullRenderPolicy_;}
+    void setFullRenderPolicy(int policy);
+    double fullRenderAskAfterSeconds() const{return fullRenderAskAfterSeconds_;}
+    void setFullRenderAskAfterSeconds(double seconds);
+    QStringList fullRenderPolicyNames() const{
+        return {QStringLiteral("Show it as soon as it is ready"),
+                QStringLiteral("Ask every time"),
+                QStringLiteral("Ask only when the render was slow")};
+    }
     void setPlotColourVision(int value);
     QStringList plotColourVisionNames() const;
     QString plotColourVisionSummary() const;
@@ -306,6 +326,7 @@ signals:
     void scienceServiceAvailabilityChanged();
     void importLogChanged();
     void plotColourVisionChanged();
+    void plotDisplayChanged();
     void smartRenderChanged();
     void scanChanged();
     // A loaded figure's canvas state, for QML to hand to PlotCanvas. The
@@ -329,6 +350,9 @@ private:
     QVariantList importLog_;
     ProjectWorkspace* project_=nullptr;
     int plotColourVision_=0;
+    QString plotColourMap_;                 // empty means Viridis
+    int fullRenderPolicy_=0;                // 0 automatic, 1 always ask, 2 ask when slow
+    double fullRenderAskAfterSeconds_=5.0;
     QStringList importQueue_;
     // Converted Arrow file -> the file the user actually chose, so the log row
     // stays on their file rather than sprouting a second row for a temporary.

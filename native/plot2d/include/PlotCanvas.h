@@ -56,6 +56,14 @@ class PlotCanvas : public QQuickPaintedItem {
     // Owned by AppController and persisted, so it survives theme changes and
     // restarts - see ColourVision.h for why it is separate from the UI theme.
     Q_PROPERTY(int colourVision READ colourVision WRITE setColourVision NOTIFY styleChanged)
+    // The colour map for engines that colour a field rather than a series -
+    // heatmap, contour, surface, 3-D field, vector field. Empty is Viridis,
+    // which is what every one of them was hard-coded to. See
+    // PlotStyle::colourMap for the full list and for why there is no rainbow.
+    Q_PROPERTY(QString colourMap READ colourMap WRITE setColourMap NOTIFY styleChanged)
+    // True only while the engine on screen actually colours a field, so the
+    // interface can hide the picker on the engines it would do nothing for.
+    Q_PROPERTY(bool usesColourMap READ usesColourMap NOTIFY stateChanged)
 
     // Level of detail.
     //
@@ -75,6 +83,23 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(bool fullRenderWaiting READ fullRenderWaiting NOTIFY renderStateChanged)
     Q_PROPERTY(bool showingFullRender READ showingFullRender NOTIFY renderStateChanged)
     Q_PROPERTY(int pendingEditCount READ pendingEditCount NOTIFY renderStateChanged)
+    // What happens when the full-resolution render lands.
+    //
+    //   0  Automatic       - it replaces the preview as soon as it is ready.
+    //                        The default, because looking at a preview when a
+    //                        better picture EXISTS is the wrong picture.
+    //   1  Ask every time  - the notice waits for "Show it". What this used to
+    //                        do, unconditionally.
+    //   2  Ask on long ones- swap silently when the render was quick; ask when
+    //                        it took longer than fullRenderAskAfterSeconds, on
+    //                        the grounds that by then you have moved on to
+    //                        something else and having the view change under
+    //                        you is worse than a notice.
+    //
+    // Even on Automatic the swap is refused while a drag is in progress: a
+    // picture that changes under a finger is not a better picture.
+    Q_PROPERTY(int fullRenderPolicy READ fullRenderPolicy WRITE setFullRenderPolicy NOTIFY renderStateChanged)
+    Q_PROPERTY(double fullRenderAskAfterSeconds READ fullRenderAskAfterSeconds WRITE setFullRenderAskAfterSeconds NOTIFY renderStateChanged)
 
     // Pan and zoom.
     //
@@ -88,6 +113,19 @@ class PlotCanvas : public QQuickPaintedItem {
     // means nothing. QML uses it to decide whether to offer the affordance.
     Q_PROPERTY(bool viewInteractive READ viewInteractive NOTIFY stateChanged)
     Q_PROPERTY(bool viewZoomed READ viewZoomed NOTIFY stateChanged)
+
+    // Cursor readout.
+    //
+    // A figure that can be zoomed into needs a way to say what is under the
+    // pointer, and this one had none: the axes told you the range and nothing
+    // told you the value. cursorText is ready to display - "t = 4.128 s,
+    // p = 101.7 kPa" - built here rather than in QML so the number of
+    // significant figures follows the ZOOM. At full extent four figures is
+    // noise; zoomed a thousandfold into a transient it is the whole point.
+    Q_PROPERTY(QString cursorText READ cursorText NOTIFY cursorChanged)
+    Q_PROPERTY(bool cursorOnPlot READ cursorOnPlot NOTIFY cursorChanged)
+    Q_PROPERTY(double cursorX READ cursorX NOTIFY cursorChanged)
+    Q_PROPERTY(double cursorY READ cursorY NOTIFY cursorChanged)
 public:
     explicit PlotCanvas(QQuickItem* parent=nullptr);
     ~PlotCanvas() override;
@@ -137,6 +175,10 @@ public:
     QString renderRemainingText() const;
     bool fullRenderWaiting() const{return fullRenderWaiting_;}
     bool showingFullRender() const{return showingFull_;}
+    int fullRenderPolicy() const{return fullRenderPolicy_;}
+    void setFullRenderPolicy(int policy);
+    double fullRenderAskAfterSeconds() const{return fullRenderAskAfterSeconds_;}
+    void setFullRenderAskAfterSeconds(double seconds);
     int pendingEditCount() const{return pendingEdits_;}
     // Swap the finished full-resolution render in. Deliberately a decision the
     // user makes: a render landing mid-drag must not replace the view they are
@@ -146,14 +188,32 @@ public:
 
     bool viewInteractive() const;
     bool viewZoomed() const { return hasView_; }
+    QString cursorText() const { return cursorText_; }
+    bool cursorOnPlot() const { return cursorOnPlot_; }
+    double cursorX() const { return cursorX_; }
+    double cursorY() const { return cursorY_; }
     // Back to fitting the data. Also what a double-click and a double-tap do.
     Q_INVOKABLE void resetView();
     // For a QML button or a keyboard shortcut: >1 zooms in, about the centre.
     Q_INVOKABLE void zoomBy(double factor);
     QColor gridColor() const { return spec_.style.gridColor; }
+    QString colourMap() const { return spec_.style.colourMap; }
+    bool usesColourMap() const { return usesColourMap_; }
     void setBackgroundColor(const QColor& c);
     void setForegroundColor(const QColor& c);
     void setGridColor(const QColor& c);
+    void setColourMap(const QString& name);
+    // The names setColourMap accepts, in the order they should be offered.
+    // Here rather than in QML so the list cannot drift from the one the
+    // renderer actually understands.
+    Q_INVOKABLE static QStringList colourMapNames();
+    // The same names grouped into the eight categories GraphVis 17 used, as
+    // [{name, maps: [...]}, ...]. Eighty four names in one list is a list to
+    // scroll, not a choice to make.
+    Q_INVOKABLE static QVariantList colourMapCategories();
+    // A base64 PNG strip of one map, for showing beside its name: nobody knows
+    // what "Gist Ncar" looks like from the words.
+    Q_INVOKABLE static QString colourMapPreview(const QString& name,int width=96,int height=14);
 
     void setArrowPath(const QString& v);
     void setEngine(const QString& v);
@@ -196,6 +256,11 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
     void touchEvent(QTouchEvent* e) override;
+    // Hover, for the cursor readout. Separate from mouseMoveEvent because that
+    // one fires only while a button is held - the readout is wanted exactly
+    // when nothing is being dragged.
+    void hoverMoveEvent(QHoverEvent* e) override;
+    void hoverLeaveEvent(QHoverEvent* e) override;
 
 public:
     // A resize invalidates the full-resolution image: paint() draws it scaled
@@ -209,17 +274,29 @@ signals:
     void stateChanged();
     void styleChanged();
     void renderStateChanged();
+    void cursorChanged();
 
 private:
     // Seed the view from what is currently drawn, so the first drag or pinch
     // continues from the figure the user is looking at rather than from a
     // range invented here.
     void ensureView();
+    // The axis ranges currently on screen, WITHOUT creating a view. ensureView
+    // writes the range onto the axes and sets hasView_, which is what makes
+    // viewZoomed true and the "Reset view" button appear - so a readout that
+    // called it would make merely moving the pointer across the figure look
+    // like a zoom the user had performed.
+    bool currentView(double& xLo,double& xHi,bool& xLog,
+                     double& yLo,double& yHi,bool& yLog) const;
+    void updateCursor(const QPointF& pos);
     void panByPixels(double dx,double dy);
     void zoomAt(const QPointF& pos,double factor);
     void commitView();       // write the view onto the axes and redraw
     QRectF interactionArea() const;
     bool hasView_=false;
+    QString cursorText_;
+    bool cursorOnPlot_=false;
+    double cursorX_=0.0, cursorY_=0.0;
     QPointF lastPointer_;
     bool dragging_=false;
     // Fingers. The same reader the 3-D viewport uses - see TouchGesture.h for
@@ -243,6 +320,11 @@ private:
     int pointCount_=0;
     int fullPointCount_=0;
     int colourVision_=0;
+    // Recomputed in rebuild(), where the prepared spec already exists, so the
+    // property is a read rather than a preparation each time QML binds to it.
+    bool usesColourMap_=false;
+    int fullRenderPolicy_=0;               // Automatic
+    double fullRenderAskAfterSeconds_=5.0;
     bool dirty_=true;
 
     // ---- full-resolution render, off the GUI thread
