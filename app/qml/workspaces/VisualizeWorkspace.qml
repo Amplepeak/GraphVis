@@ -221,12 +221,27 @@ Item {
             t.engine = graph
             t.variant = ""
             t.title = graph
-            if (mappings && mappings.x) t.xColumn = mappings.x
-            t.yColumns = (mappings && mappings.y) ? [mappings.y] : []
-            t.zColumn = (mappings && mappings.z) ? mappings.z : ""
-            t.colorColumn = (mappings && mappings.c) ? mappings.c : ""
+            // Only the roles the recommendation actually names.
+            //
+            // This used to CLEAR the ones it did not: a recommendation carrying
+            // an x and a z but no y set yColumns to an empty list, and a figure
+            // with no y column draws nothing at all - so clicking a
+            // recommendation read as a control that does nothing. Leaving a
+            // role alone keeps whatever was already mapped, which is at worst
+            // the previous figure and at best exactly right.
+            var m = mappings || ({})
+            var applied = []
+            if (m.x) { t.xColumn = m.x; applied.push("X " + m.x) }
+            if (m.y) { t.yColumns = [m.y]; applied.push("Y " + m.y) }
+            if (m.z) { t.zColumn = m.z; applied.push("Z " + m.z) }
+            if (m.c) { t.colorColumn = m.c; applied.push("colour " + m.c) }
             app.noteVisualisation(graph, "")
-            app.notify("Applied scan recommendation: " + graph)
+            // Says what it did. A recommendation that could only fill some of
+            // the axes is a useful thing to be told, not a thing to hide.
+            app.notify(applied.length > 0
+                       ? graph + " — " + applied.join(", ")
+                       : graph + " — the recommendation named no columns, so the "
+                               + "current mapping was kept")
         }
         }
     }

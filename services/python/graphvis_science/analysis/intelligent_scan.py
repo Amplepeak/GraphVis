@@ -458,13 +458,49 @@ def scan_dataset(dataset: Any, literature: Iterable[Any] | None = None, *, progr
     recs: list[ScanRecommendation] = []
     if progress: progress("Matching graph mathematics to variable patterns…", 52)
 
-    # Explicit literature plot intent has priority, but never invent axes.
+    # Explicit literature plot intent has priority.
+    #
+    # A recommendation still has to be DRAWABLE. The paper often names only some
+    # of the axes - an x and a z but no y is common, because that is how the
+    # caption read - and such a mapping used to be emitted exactly as matched.
+    # The old fallback only fired when the mapping was completely empty, so a
+    # partial match went out with no y column, and a plot with no y draws
+    # nothing: clicking the recommendation looked like a dead control.
+    #
+    # Missing axes are filled from the numeric columns and SAID so, rather than
+    # left out silently or the whole recommendation dropped. "Never invent axes"
+    # was the right instinct and the wrong conclusion: what matters is that the
+    # person can see which axes came from the paper and which did not.
     lit_map = {role: val[0] for role, val in lit_matches.items() if role in ("x", "y", "z")}
     for graph, title in _literature_plot_hints(literature):
-        mappings = dict(lit_map)
-        if not mappings and len(numeric) >= 2:
-            mappings = {"x": numeric[0], "y": numeric[1]}
-        _add(recs, graph, 0.98, mappings, f"Literature '{title}' explicitly indicates this plot/relationship; matched variables were used where available.", "literature")
+        mappings = {role: col for role, col in lit_map.items() if col}
+        from_paper = sorted(mappings)
+        filled: list[str] = []
+        for role in ("x", "y"):
+            if mappings.get(role):
+                continue
+            for candidate in numeric:
+                if candidate not in mappings.values():
+                    mappings[role] = candidate
+                    filled.append(role)
+                    break
+        if not mappings.get("x") or not mappings.get("y"):
+            # Fewer than two numeric columns: there is no two-axis plot to
+            # recommend, and offering one that cannot be drawn is worse than
+            # offering none.
+            continue
+        if from_paper and filled:
+            reason = (f"Literature '{title}' explicitly indicates this plot. "
+                      f"{'/'.join(from_paper).upper()} matched to the data; "
+                      f"{'/'.join(filled).upper()} chosen from the numeric columns.")
+        elif from_paper:
+            reason = (f"Literature '{title}' explicitly indicates this "
+                      f"plot/relationship; its variables were matched to the data.")
+        else:
+            reason = (f"Literature '{title}' indicates this plot type. No variable "
+                      f"in it matched a column, so the axes are the first two "
+                      f"numeric columns.")
+        _add(recs, graph, 0.98 if from_paper else 0.72, mappings, reason, "literature")
 
     # Named/time/frequency structures.
     time_cols = [c for c in profiled_numeric if profiles[c].get("time_like")]

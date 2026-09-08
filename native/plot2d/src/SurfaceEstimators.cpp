@@ -149,36 +149,39 @@ bool estimatorImplemented(Estimator e){
     case Estimator::OrdinaryKriging:
     case Estimator::MovingLeastSquares:
     case Estimator::Loess:
+    case Estimator::NaturalNeighbour:
         return true;
-    // The two that are NOT offered, and why.
+    // The one that is NOT offered, and why.
     //
-    // Clough-Tocher C1 needs estimated vertex gradients and a cubic Bezier
-    // patch per triangle - real machinery rather than a parameter on something
-    // already here. A cubic through the vertices with estimated gradients is
-    // C1 inside each triangle and only C0 across the edges, so shipping that
-    // under this name would be naming one estimator and running another.
+    // Clough-Tocher C1 is implemented below and deliberately switched off. It
+    // passes two of its three defining properties and fails the one it is named
+    // for. Measured on 306 triangles, taking the directional derivative either
+    // side of an interior edge and walking in towards it:
     //
-    // Natural Neighbour (Sibson's) IS implemented below and is deliberately
-    // switched off, because it fails the one property that defines it. Sibson
-    // coordinates are linearly precise - reproducing a plane exactly is a
-    // theorem about them, not a quality target - and the discrete construction
-    // here comes back 0.211 off a plane spanning 3.5, and produces a surface
-    // 40x ROUGHER than plain linear interpolation on the same data, when it
-    // should be smoother. Two explanations were tested and ruled out:
+    //   offset from edge     0.0200   0.0100   0.0050   0.0025
+    //   Delaunay linear        2.04     2.04     2.04     2.04
+    //   this                   2.82     3.29    24.88     3.71
     //
-    //   sample budget   320 -> 20,480 samples a node moved the error from
-    //                   0.21122 to 0.21051. It does not converge, so it is not
-    //                   discretisation.
-    //   cell truncation widening the sampled radius from the 6th-nearest site
-    //                   to the 24th made it slightly WORSE, 0.211 -> 0.216.
+    // The control is what makes that readable. A piecewise-linear surface has a
+    // genuine crease at every edge, so its gradient jump is a constant that does
+    // not shrink - which is exactly what it shows, so the instrument is sound.
+    // A C1 surface's jump must fall to zero. This one does not, and the spike at
+    // 0.0050 says the surface has discontinuities larger than a crease, not a
+    // subtle failure of smoothness.
     //
-    // So the fault is in the geometry rather than in the budget, and the next
-    // attempt should probably compute the cell exactly - clip the half-planes
-    // of the k nearest sites to get the query's Voronoi polygon, then intersect
-    // it with each neighbour's old cell - rather than sampling it. Left here
-    // with the numbers rather than deleted, so that work starts from evidence.
-    // estimateField clamps an unimplemented choice to Auto, so nothing below
-    // can reach it.
+    // The likely cause is recorded because it is the next thing to look at: the
+    // nine C1 equations in four unknowns come out RANK DEFICIENT, and the tiny
+    // ridge added to make the solve succeed then picks the minimum-norm answer
+    // rather than the Clough-Tocher one. The centroid value is not pinned by the
+    // cross-boundary conditions alone; the full construction supplies a further
+    // condition that this does not, so the element is underdetermined and the
+    // solver quietly chooses. Deriving that condition properly is the work.
+    //
+    // It reproduces a plane to 1.9e-10 and returns its own measurements exactly,
+    // which is precisely why it cannot be shipped on those two results: a cubic
+    // that is only C0 across the edges does both of those too, and draws a
+    // faceted sheen on every contour plot. estimateField clamps an unimplemented
+    // choice to Auto, so nothing below can reach it.
     default:
         return false;
     }
@@ -920,78 +923,340 @@ double localFit(const Workspace& w,double x,double y,QVector<int>& scratch,
     return rhs[0];
 }
 
+// Clough-Tocher C1.
+//
+// A cubic over each triangle, smooth across the edges as well as inside them.
+// That last part is the whole difficulty and the whole point. A single cubic
+// Bezier triangle built from the vertex values and gradients matches its
+// neighbour ALONG a shared edge but not across it, so the surface has a crease
+// at every triangle boundary - visible as a faceted sheen on a contour plot,
+// and wrong wherever a slope is being read off the picture. Clough and Tocher's
+// answer is to split each triangle at its centroid into three, which buys
+// enough freedom to make the cross-boundary derivative continuous too.
+//
+// Built here as Bezier ordinates. The outer ones follow from the vertex data;
+// the four that do not - one on each internal edge, plus the value at the
+// centroid - are solved from the C1 conditions across the three internal edges.
+// That is nine equations in four unknowns, consistent by construction, and
+// solved in least squares so that an inconsistency shows up as a residual
+// rather than as a plausible wrong surface. The residual is checked.
+
+struct CtTriangle {
+    // Ordinates for the three sub-triangles, indexed [sub][i][j] with k=3-i-j.
+    double b[3][4][4];
+    bool ok=false;
+};
+
+// Gradient at each sample, by a weighted least-squares plane through its
+// neighbourhood. Clough-Tocher needs a gradient at every vertex and a scattered
+// dataset does not carry one; this is the standard way to invent one that is at
+// least consistent with the data around it.
+QVector<QPair<double,double>> estimateGradients(const QVector<ScatterPoint>& pts,
+                                                const PointIndex& index,
+                                                double xWeight,double yWeight){
+    QVector<QPair<double,double>> out(pts.size(),{0.0,0.0});
+    QVector<int> near;
+    for(int i=0;i<pts.size();++i){
+        index.near(pts[i].x,pts[i].y,12,near);
+        double A[9]={0,0,0,0,0,0,0,0,0}, rhs[3]={0,0,0};
+        for(int j:near){
+            if(j==i) continue;
+            const double dx=(pts[j].x-pts[i].x)/qMax(1e-12,xWeight);
+            const double dy=(pts[j].y-pts[i].y)/qMax(1e-12,yWeight);
+            const double d2=dx*dx+dy*dy;
+            if(!(d2>0.0)) continue;
+            const double w=1.0/d2;
+            const double basis[3]={1.0,pts[j].x-pts[i].x,pts[j].y-pts[i].y};
+            for(int r=0;r<3;++r){
+                for(int c=0;c<3;++c) A[r*3+c]+=w*basis[r]*basis[c];
+                rhs[r]+=w*basis[r]*pts[j].v;
+            }
+        }
+        QVector<double> M(A,A+9), b(rhs,rhs+3);
+        if(solveInPlace(M,b,3)) out[i]={b[1],b[2]};
+    }
+    return out;
+}
+
+// A direction, in the barycentric coordinates of one triangle. Directions sum
+// to zero rather than to one, which is what distinguishes them from points and
+// what makes the derivative formulas below work.
+bool barycentricDirection(double ax,double ay,double bx,double by,
+                          double cx,double cy,double dx,double dy,
+                          double* d1,double* d2,double* d3){
+    // d1*A + d2*B + d3*C = d, d1 + d2 + d3 = 0.
+    QVector<double> M{ax,bx,cx, ay,by,cy, 1.0,1.0,1.0};
+    QVector<double> r{dx,dy,0.0};
+    if(!solveInPlace(M,r,3)) return false;
+    *d1=r[0]; *d2=r[1]; *d3=r[2];
+    return true;
+}
+
+CtTriangle buildCloughTocher(const ScatterPoint p[3],
+                             const QPair<double,double> g[3]){
+    CtTriangle out;
+    const double cx=(p[0].x+p[1].x+p[2].x)/3.0;
+    const double cy=(p[0].y+p[1].y+p[2].y)/3.0;
+
+    // The ordinates that follow straight from the vertex data. Each sub-triangle
+    // m has vertices (p[m], p[m+1], centroid).
+    double b300[3],b030[3],b210[3],b120[3],b201[3],b021[3],b111[3];
+    for(int m=0;m<3;++m){
+        const int n=(m+1)%3;
+        b300[m]=p[m].v;
+        b030[m]=p[n].v;
+        b210[m]=p[m].v+(g[m].first*(p[n].x-p[m].x)+g[m].second*(p[n].y-p[m].y))/3.0;
+        b120[m]=p[n].v+(g[n].first*(p[m].x-p[n].x)+g[n].second*(p[m].y-p[n].y))/3.0;
+        b201[m]=p[m].v+(g[m].first*(cx-p[m].x)+g[m].second*(cy-p[m].y))/3.0;
+        b021[m]=p[n].v+(g[n].first*(cx-p[n].x)+g[n].second*(cy-p[n].y))/3.0;
+        // The reduced element: the cross-boundary derivative along the OUTER
+        // edge is made linear rather than quadratic, which is what lets the
+        // patch be built from values and gradients alone with no extra data.
+        b111[m]=0.25*(-b300[m]+b210[m]+b120[m]-b030[m])+0.5*(b201[m]+b021[m]);
+    }
+
+    // Nine C1 equations across the three internal edges, in four unknowns:
+    // e[0..2] on the internal edges, and the value at the centroid.
+    //   unknown 0,1,2 = e[m],  unknown 3 = f(centroid)
+    QVector<double> N(16,0.0), rhs(4,0.0);
+    double worstResidual=0.0;
+    QVector<double> rowsA, rowsB;      // kept for the residual check
+    for(int m=0;m<3;++m){
+        const int prev=(m+2)%3, next=(m+1)%3;
+        // The shared edge runs p[m] -> centroid. A direction across it.
+        const double dx=p[next].x-p[prev].x, dy=p[next].y-p[prev].y;
+        double d1,d2,d3,e1,e2,e3;
+        if(!barycentricDirection(p[m].x,p[m].y,p[next].x,p[next].y,cx,cy,dx,dy,&d1,&d2,&d3))
+            return out;
+        if(!barycentricDirection(p[prev].x,p[prev].y,p[m].x,p[m].y,cx,cy,dx,dy,&e1,&e2,&e3))
+            return out;
+
+        // Each equation is  (constant) + (coefficients on the unknowns) = 0.
+        // Sub-triangle m contributes with edge v = 0; sub-triangle prev with
+        // edge u = 0, and the two parameterisations run the same way.
+        struct Eq { double c=0.0; double k[4]={0,0,0,0}; };
+        Eq eq[3];
+        // C(2,0,0) - C'(0,2,0)
+        eq[0].c = (d1*b300[m]+d2*b210[m]+d3*b201[m])
+                - (e1*b120[prev]+e2*b030[prev]+e3*b021[prev]);
+        // C(1,0,1) - C'(0,1,1):  d3*e[m] on one side, e3*e[m] on the other
+        eq[1].c = (d1*b201[m]+d2*b111[m]) - (e1*b111[prev]+e2*b021[prev]);
+        eq[1].k[m] += d3;
+        eq[1].k[m] -= e3;
+        // C(0,0,2) - C'(0,0,2): both read e[m], e[next] / e[prev], and f(c)
+        eq[2].k[m]     += d1;
+        eq[2].k[next]  += d2;
+        eq[2].k[3]     += d3;
+        eq[2].k[prev]  -= e1;
+        eq[2].k[m]     -= e2;
+        eq[2].k[3]     -= e3;
+
+        for(int q=0;q<3;++q){
+            for(int r=0;r<4;++r){
+                for(int c=0;c<4;++c) N[r*4+c]+=eq[q].k[r]*eq[q].k[c];
+                rhs[r]+=eq[q].k[r]*(-eq[q].c);
+            }
+            rowsA.append(eq[q].c);
+            for(int r=0;r<4;++r) rowsB.append(eq[q].k[r]);
+        }
+    }
+    // A tiny ridge, because the system is rank deficient in the direction that
+    // adds a constant to every unknown when the three equations of type 1
+    // cancel. It biases nothing that is determined.
+    for(int r=0;r<4;++r) N[r*4+r]+=1e-9;
+    QVector<double> solution=rhs;
+    if(!solveInPlace(N,solution,4)) return out;
+
+    for(int q=0;q<rowsA.size();++q){
+        double v=rowsA[q];
+        for(int r=0;r<4;++r) v+=rowsB[q*4+r]*solution[r];
+        worstResidual=qMax(worstResidual,std::abs(v));
+    }
+    // A construction that does not satisfy its own conditions is not this
+    // element, and drawing it anyway would be the exact failure this file
+    // refuses elsewhere. The caller falls back.
+    double scale=0.0;
+    for(int m=0;m<3;++m) scale=qMax(scale,std::abs(p[m].v));
+    if(worstResidual>1e-6*qMax(1.0,scale)) return out;
+
+    const double e0=solution[0], e1v=solution[1], e2v=solution[2], fc=solution[3];
+    const double e[3]={e0,e1v,e2v};
+    for(int m=0;m<3;++m){
+        const int n=(m+1)%3;
+        double (&B)[4][4]=out.b[m];
+        for(int i=0;i<4;++i) for(int j=0;j<4;++j) B[i][j]=0.0;
+        B[3][0]=b300[m];   // (3,0,0)
+        B[2][1]=b210[m];   // (2,1,0)
+        B[1][2]=b120[m];   // (1,2,0)
+        B[0][3]=b030[m];   // (0,3,0)
+        B[2][0]=b201[m];   // (2,0,1)
+        B[1][1]=b111[m];   // (1,1,1)
+        B[0][2]=b021[m];   // (0,2,1)
+        B[1][0]=e[m];      // (1,0,2)
+        B[0][1]=e[n];      // (0,1,2)
+        B[0][0]=fc;        // (0,0,3)
+    }
+    out.ok=true;
+    return out;
+}
+
+double evaluateCloughTocher(const CtTriangle& patch,
+                            const ScatterPoint p[3],
+                            double l0,double l1,double l2){
+    if(!patch.ok) return kNaN;
+    // Which of the three sub-triangles the point is in, and its barycentric
+    // coordinates there. With the split at the centroid, sub-triangle m holds
+    // the points where barycentric m+2 is the smallest.
+    const double lam[3]={l0,l1,l2};
+    // Sub-triangle m = (p[m], p[m+1], centroid), which is the region where the
+    // barycentric coordinate of the OPPOSITE vertex p[m+2] is the smallest.
+    int opposite=0;
+    for(int i=1;i<3;++i) if(lam[i]<lam[opposite]) opposite=i;
+    const int m=(opposite+1)%3;
+    const int n=(m+1)%3;
+
+    // Barycentric within the sub-triangle. With C the centroid, a point with
+    // full-triangle coordinates lam has sub-triangle coordinates
+    //   u = lam[m] - lam[opposite], v = lam[n] - lam[opposite], w = 3*lam[opposite]
+    const double u=lam[m]-lam[opposite];
+    const double v=lam[n]-lam[opposite];
+    const double w=3.0*lam[opposite];
+    static const double factorial[4]={1.0,1.0,2.0,6.0};
+    double sum=0.0;
+    for(int i=0;i<=3;++i)
+        for(int j=0;i+j<=3;++j){
+            const int k=3-i-j;
+            const double coeff=6.0/(factorial[i]*factorial[j]*factorial[k]);
+            sum+=coeff*patch.b[m][i][j]*std::pow(u,i)*std::pow(v,j)*std::pow(w,k);
+        }
+    (void)p;
+    return sum;
+}
+
 // Natural neighbour, Sibson's version.
 //
-// The weights are AREAS, not distances. Insert the query point into the Voronoi
-// diagram of the samples; its new cell is carved out of the cells that were
-// there before, and each old site's weight is the fraction of the new cell that
-// was taken from it. That is why the result is smooth, exactly reproduces every
-// measurement, adapts on its own to how the samples are spread, and - a theorem
-// rather than an accident - reproduces any plane exactly.
+// The weights are AREAS. Insert the query point into the Voronoi diagram of the
+// samples; its new cell is carved out of the cells that were there before, and
+// each old site's weight is the fraction of the new cell taken from it. That is
+// why the result is smooth, reproduces every measurement exactly, adapts on its
+// own to how the samples are spread, and - a theorem rather than an accident -
+// reproduces any plane exactly.
 //
-// Computed DISCRETELY: the new cell is sampled on a polar grid and each sample
-// is charged to whichever site owned it before. The exact construction needs a
-// correct Voronoi insertion and the second-order cell areas, and a subtly wrong
-// one produces a plausible smooth surface that is not this estimator - the
-// discrete form is provably the same thing in the limit and its error is
-// visible in a test rather than hidden in the geometry. The sample count below
-// is what makes a plane come back to 4 decimal places.
+// Computed EXACTLY, by clipping half-planes. A discrete version was written
+// first and thrown away: sampling the new cell on a polar grid came back 0.211
+// off a plane spanning 3.5 and produced a surface forty times rougher than
+// plain linear interpolation, and raising the budget from 320 to 20,480 samples
+// a node moved the error by 0.0007. It did not converge because the error was
+// geometric, not statistical. Areas of convex polygons are cheap and exact;
+// there was never a reason to estimate them.
+
+// Sutherland-Hodgman against one half-plane, keeping a*x + b*y <= c.
+void clipHalfPlane(QVector<QPair<double,double>>& poly,double a,double b,double c){
+    if(poly.isEmpty()) return;
+    QVector<QPair<double,double>> out;
+    out.reserve(poly.size()+2);
+    const int n=poly.size();
+    for(int i=0;i<n;++i){
+        const auto& p=poly[i];
+        const auto& q=poly[(i+1)%n];
+        const double dp=a*p.first+b*p.second-c;
+        const double dq=a*q.first+b*q.second-c;
+        if(dp<=0.0) out.append(p);
+        if((dp<0.0&&dq>0.0)||(dp>0.0&&dq<0.0)){
+            const double t=dp/(dp-dq);
+            out.append({p.first+t*(q.first-p.first),
+                        p.second+t*(q.second-p.second)});
+        }
+    }
+    poly=out;
+}
+
+double polygonArea(const QVector<QPair<double,double>>& poly){
+    const int n=poly.size();
+    if(n<3) return 0.0;
+    double a=0.0;
+    for(int i=0;i<n;++i){
+        const auto& p=poly[i];
+        const auto& q=poly[(i+1)%n];
+        a+=p.first*q.second-q.first*p.second;
+    }
+    return std::abs(a)*0.5;
+}
+
+// The half-plane of points at least as close to (px,py) as to (qx,qy).
+void bisector(double px,double py,double qx,double qy,
+              double* a,double* b,double* c){
+    *a=2.0*(qx-px);
+    *b=2.0*(qy-py);
+    *c=(qx*qx+qy*qy)-(px*px+py*py);
+}
+
 double naturalNeighbourAt(const Workspace& w,double x,double y,
                           QVector<int>& scratch){
     const double wx=qMax(1e-12,w.s.xWeight), wy=qMax(1e-12,w.s.yWeight);
-    w.index.near(x,y,24,scratch);
-    if(scratch.isEmpty()) return kNaN;
+    // Enough neighbours that the query's cell is genuinely bounded by them. A
+    // Voronoi cell in the plane has six sides on average and rarely more than
+    // a dozen; 32 is comfortable margin.
+    w.index.near(x,y,32,scratch);
+    if(scratch.size()<3) return kNaN;
 
-    QVector<QPair<double,int>> byDist;
-    byDist.reserve(scratch.size());
+    // Everything in the WEIGHTED space, so the areas mean what the picture
+    // means rather than what the raw units do.
+    const double qx=x/wx, qy=y/wy;
+    QVector<QPair<double,double>> site;
+    QVector<double> value;
+    site.reserve(scratch.size());
     for(int i:scratch){
-        const double dx=(w.pts[i].x-x)/wx, dy=(w.pts[i].y-y)/wy;
-        byDist.append({std::sqrt(dx*dx+dy*dy),i});
+        site.append({w.pts[i].x/wx,w.pts[i].y/wy});
+        value.append(w.pts[i].v);
     }
-    std::sort(byDist.begin(),byDist.end());
-    // A query sitting on a measurement takes it. Without this the polar grid
-    // degenerates - every ring is the same point - and the weights are noise.
-    if(byDist[0].first<1e-12) return w.pts[byDist[0].second].v;
+    const int k=site.size();
 
-    const int k=qMin(byDist.size(),24);
-    // The new cell cannot reach further than the sixth-nearest site; sampling
-    // past that only wastes work, because those samples are not in it.
-    const double reach=byDist[qMin(k-1,23)].first*1.05;
-    if(!(reach>0.0)) return kNaN;
-
-    constexpr int kAngles=64, kRings=20;
-    QVector<double> stolen(k,0.0);
-    double total=0.0;
-    for(int ai=0;ai<kAngles;++ai){
-        const double a=2.0*3.14159265358979323846*(double(ai)+0.5)/kAngles;
-        const double ca=std::cos(a), sa=std::sin(a);
-        for(int ri=0;ri<kRings;++ri){
-            // Radii spaced so each sample stands for the same AREA - equal
-            // steps in radius would weight the middle of the cell far too
-            // heavily, and the weights would be wrong in a way that still
-            // looked smooth.
-            const double r=reach*std::sqrt((double(ri)+0.5)/kRings);
-            const double px=x+r*ca*wx, py=y+r*sa*wy;
-            // Is this sample in the query's own cell, and if so whose was it?
-            double best=std::numeric_limits<double>::infinity();
-            int owner=-1;
-            for(int i=0;i<k;++i){
-                const ScatterPoint& p=w.pts[byDist[i].second];
-                const double dx=(p.x-px)/wx, dy=(p.y-py)/wy;
-                const double d=dx*dx+dy*dy;
-                if(d<best){ best=d; owner=i; }
-            }
-            if(owner<0) continue;
-            if(r*r>=best) continue;          // nearer to a site than to q
-            stolen[owner]+=1.0;
-            total+=1.0;
-        }
-    }
-    if(!(total>0.0)) return kNaN;
-    double sum=0.0;
+    // A query sitting on a measurement takes it: its cell would be empty and
+    // every weight zero.
     for(int i=0;i<k;++i)
-        if(stolen[i]>0.0) sum+=(stolen[i]/total)*w.pts[byDist[i].second].v;
-    return sum;
+        if(std::hypot(site[i].first-qx,site[i].second-qy)<1e-12) return value[i];
+
+    // A box big enough that it cannot clip the query's cell. The cell is
+    // bounded by the bisectors with the nearest sites, so twice the distance to
+    // the furthest neighbour considered is far more than enough.
+    double reach=0.0;
+    for(int i=0;i<k;++i)
+        reach=qMax(reach,std::hypot(site[i].first-qx,site[i].second-qy));
+    reach=qMax(reach*4.0,1e-9);
+    const QVector<QPair<double,double>> box{
+        {qx-reach,qy-reach},{qx+reach,qy-reach},
+        {qx+reach,qy+reach},{qx-reach,qy+reach}};
+
+    // The query's own cell after insertion.
+    QVector<QPair<double,double>> cell=box;
+    double a,b,c;
+    for(int i=0;i<k;++i){
+        bisector(qx,qy,site[i].first,site[i].second,&a,&b,&c);
+        clipHalfPlane(cell,a,b,c);
+        if(cell.isEmpty()) return kNaN;
+    }
+    const double total=polygonArea(cell);
+    if(!(total>1e-300)) return kNaN;
+
+    // How much of it each site used to own. A site whose old cell does not meet
+    // the new one is not a natural neighbour and contributes nothing - which
+    // falls out of the area being zero rather than needing a test of its own.
+    double sum=0.0, weightSum=0.0;
+    for(int i=0;i<k;++i){
+        QVector<QPair<double,double>> stolen=cell;
+        for(int j=0;j<k&&!stolen.isEmpty();++j){
+            if(j==i) continue;
+            bisector(site[i].first,site[i].second,site[j].first,site[j].second,&a,&b,&c);
+            clipHalfPlane(stolen,a,b,c);
+        }
+        const double area=polygonArea(stolen);
+        if(!(area>0.0)) continue;
+        sum+=area*value[i];
+        weightSum+=area;
+    }
+    if(!(weightSum>1e-300)) return kNaN;
+    return sum/weightSum;
 }
 
 // Ordinary kriging.
@@ -1222,9 +1487,24 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
     // expensive part and three of seventeen methods need it.
     QVector<Triangle> tris;
     const bool needsTriangles=(chosen==Estimator::DelaunayLinear
-                             ||chosen==Estimator::CloughTocher
-                             ||chosen==Estimator::NaturalNeighbour);
+                             ||chosen==Estimator::CloughTocher);
     if(needsTriangles) tris=delaunay(pts);
+
+    // Clough-Tocher's patches are built ONCE per triangle, not once per node.
+    // Each costs a gradient lookup and a four-unknown solve; doing that inside
+    // the node loop would repeat it a hundred times for every triangle.
+    QVector<CtTriangle> patches;
+    if(chosen==Estimator::CloughTocher){
+        const PointIndex gradIndex(pts,xLo,xHi,yLo,yHi);
+        const QVector<QPair<double,double>> grads=
+            estimateGradients(pts,gradIndex,settings.xWeight,settings.yWeight);
+        patches.reserve(tris.size());
+        for(const Triangle& t:tris){
+            const ScatterPoint tri[3]={pts[t.a],pts[t.b],pts[t.c]};
+            const QPair<double,double> g[3]={grads[t.a],grads[t.b],grads[t.c]};
+            patches.append(buildCloughTocher(tri,g));
+        }
+    }
 
     // The variogram, for kriging only. Fitted once over the whole sample; the
     // per-node solve below reads it.
@@ -1348,6 +1628,32 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
                 bool hit=false;
                 v=delaunayLinear(work,x,y,&hit);
                 if(!hit) v=kNaN;
+                break;
+            }
+            case Estimator::CloughTocher: {
+                // The triangle holding this node, and the cubic on it.
+                for(int t=0;t<tris.size();++t){
+                    const ScatterPoint& A=pts[tris[t].a];
+                    const ScatterPoint& B=pts[tris[t].b];
+                    const ScatterPoint& C=pts[tris[t].c];
+                    const double den=(B.y-C.y)*(A.x-C.x)+(C.x-B.x)*(A.y-C.y);
+                    if(std::abs(den)<1e-300) continue;
+                    const double l0=((B.y-C.y)*(x-C.x)+(C.x-B.x)*(y-C.y))/den;
+                    const double l1=((C.y-A.y)*(x-C.x)+(A.x-C.x)*(y-C.y))/den;
+                    const double l2=1.0-l0-l1;
+                    if(l0<-1e-9||l1<-1e-9||l2<-1e-9) continue;
+                    const ScatterPoint tri[3]={A,B,C};
+                    v=evaluateCloughTocher(patches[t],tri,l0,l1,l2);
+                    break;
+                }
+                // A triangle whose C1 system did not solve leaves an unusable
+                // patch; the linear value through the same triangle is the
+                // honest fallback and is still exact at the vertices.
+                if(!finite(v)){
+                    bool hit=false;
+                    v=delaunayLinear(work,x,y,&hit);
+                    if(!hit) v=kNaN;
+                }
                 break;
             }
             case Estimator::InverseDistance:
