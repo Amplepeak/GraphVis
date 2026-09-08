@@ -1,5 +1,6 @@
 #include "QtPlotBackend.h"
 #include "ColourMaps.h"
+#include "SurfaceEstimators.h"
 #include "Expression.h"
 
 #include <cmath>
@@ -1162,6 +1163,58 @@ QtPlotBackend::ValueGrid QtPlotBackend::gridFromSeries(const PlotSpec& spec,int 
         g.cells[k]=(how==GridAggregate::Count)?double(counts[k]):sums[k]/double(counts[k]);
         vLo=qMin(vLo,g.cells[k]); vHi=qMax(vHi,g.cells[k]);
     }
+    // The scattered path, when an estimator has been chosen.
+    //
+    // It replaces the binned grid entirely rather than filling its holes: the
+    // binning is what threw the measurements away, so an estimate built on top
+    // of it inherits that loss. Only for a measured field - for a density the
+    // count in a bin IS the quantity, and interpolating between counts would
+    // report a fractional number of events.
+    if(how==GridAggregate::Mean&&spec.style.fieldEstimator>=0){
+        QVector<ScatterPoint> scatter;
+        scatter.reserve(n);
+        for(int i=0;i<n;++i){
+            if(!finite(xs[i])||!finite(ys[i])||!finite(vs[i])) continue;
+            scatter.append({xs[i],ys[i],vs[i]});
+        }
+        EstimatorSettings settings;
+        settings.estimator=Estimator(qBound(0,spec.style.fieldEstimator,
+                                            int(Estimator::Count)-1));
+        settings.extrapolation=Extrapolation(qBound(0,spec.style.fieldExtrapolation,
+                                                    int(Extrapolation::Count)-1));
+        settings.valuePolicy=ValuePolicy(qBound(0,spec.style.fieldValuePolicy,
+                                                int(ValuePolicy::Count)-1));
+        settings.responseSpace=ResponseSpace(qBound(0,spec.style.fieldResponseSpace,
+                                                    int(ResponseSpace::Count)-1));
+        settings.neighbours=qBound(4,spec.style.fieldNeighbours,512);
+        settings.idwPower=spec.style.fieldIdwPower;
+        settings.smoothing=qMax(0.0,spec.style.fieldSmoothing);
+        // The distance weights make the two axes comparable. Without them a
+        // sweep that spans 0..1 in x and 0..10000 in y has every neighbourhood
+        // stretched into a horizontal sliver, and the field is smeared along
+        // one axis for no reason but the units.
+        settings.xWeight=qMax(1e-12,xHi-xLo);
+        settings.yWeight=qMax(1e-12,yHi-yLo);
+        const EstimatedField f=estimateField(scatter,side,side,xLo,xHi,yLo,yHi,settings);
+        if(f.valid){
+            g.cells=f.value;
+            vLo=std::numeric_limits<double>::infinity(); vHi=-vLo;
+            for(int k=0;k<side*side;++k){
+                if(!finite(g.cells[k])) continue;
+                vLo=qMin(vLo,g.cells[k]); vHi=qMax(vHi,g.cells[k]);
+            }
+            if(!finite(vLo)||!finite(vHi)) return g;
+            if(qFuzzyCompare(vLo,vHi)) vHi=vLo+1.0;
+            g.vLo=vLo; g.vHi=vHi;
+            g.valid=true;
+            return g;
+        }
+        // An estimator that could not run - fewer than three usable points,
+        // or a singular solve - falls through to the binned grid rather than
+        // drawing nothing. A worse picture beats no picture, and the notice
+        // under the figure says which was used.
+    }
+
     // Estimate the cells no sample landed in, if asked to. Only for a measured
     // field: for a count an empty cell is a measured zero and was filled above.
     if(how==GridAggregate::Mean&&spec.style.fieldInterpolation>0){
@@ -3901,6 +3954,16 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     // something else forced a rebuild.
     fnvBytes(h,&spec.style.fieldInterpolation,sizeof(spec.style.fieldInterpolation));
     fnvBytes(h,&spec.style.fieldResolution,sizeof(spec.style.fieldResolution));
+    // Every one of the scattered-estimator settings, for exactly the same
+    // reason: each changes what the grid CONTAINS, and a control that silently
+    // returns the previous grid is a control that appears to do nothing.
+    fnvBytes(h,&spec.style.fieldEstimator,sizeof(spec.style.fieldEstimator));
+    fnvBytes(h,&spec.style.fieldExtrapolation,sizeof(spec.style.fieldExtrapolation));
+    fnvBytes(h,&spec.style.fieldValuePolicy,sizeof(spec.style.fieldValuePolicy));
+    fnvBytes(h,&spec.style.fieldResponseSpace,sizeof(spec.style.fieldResponseSpace));
+    fnvBytes(h,&spec.style.fieldNeighbours,sizeof(spec.style.fieldNeighbours));
+    fnvBytes(h,&spec.style.fieldIdwPower,sizeof(spec.style.fieldIdwPower));
+    fnvBytes(h,&spec.style.fieldSmoothing,sizeof(spec.style.fieldSmoothing));
     return h;
 }
 

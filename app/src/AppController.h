@@ -111,6 +111,17 @@ class AppController final : public QObject {
     // workspace; kept as its own name because that is the question it asks.
     Q_PROPERTY(bool notebookLayout READ notebookLayout NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList plotFieldInterpolationNames READ plotFieldInterpolationNames CONSTANT)
+    // The scattered-field estimator and its policies, persisted. See
+    // native/plot2d/include/SurfaceEstimators.h - GraphVis 17 offered
+    // seventeen estimators and five extrapolation policies here and this port
+    // shipped four hole-filling passes.
+    Q_PROPERTY(int plotFieldEstimator READ plotFieldEstimator WRITE setPlotFieldEstimator NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldExtrapolation READ plotFieldExtrapolation WRITE setPlotFieldExtrapolation NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldValuePolicy READ plotFieldValuePolicy WRITE setPlotFieldValuePolicy NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldResponseSpace READ plotFieldResponseSpace WRITE setPlotFieldResponseSpace NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotFieldNeighbours READ plotFieldNeighbours WRITE setPlotFieldNeighbours NOTIFY plotDisplayChanged)
+    Q_PROPERTY(double plotFieldIdwPower READ plotFieldIdwPower WRITE setPlotFieldIdwPower NOTIFY plotDisplayChanged)
+    Q_PROPERTY(double plotFieldSmoothing READ plotFieldSmoothing WRITE setPlotFieldSmoothing NOTIFY plotDisplayChanged)
 
     // What was open last time.
     //
@@ -318,6 +329,20 @@ public:
     bool plotScaleLabels() const{return plotScaleLabels_;}
     void setPlotScaleLabels(bool on);
     int plotFieldInterpolation() const{return plotFieldInterpolation_;}
+    int plotFieldEstimator() const{return plotFieldEstimator_;}
+    int plotFieldExtrapolation() const{return plotFieldExtrapolation_;}
+    int plotFieldValuePolicy() const{return plotFieldValuePolicy_;}
+    int plotFieldResponseSpace() const{return plotFieldResponseSpace_;}
+    int plotFieldNeighbours() const{return plotFieldNeighbours_;}
+    double plotFieldIdwPower() const{return plotFieldIdwPower_;}
+    double plotFieldSmoothing() const{return plotFieldSmoothing_;}
+    void setPlotFieldEstimator(int v);
+    void setPlotFieldExtrapolation(int v);
+    void setPlotFieldValuePolicy(int v);
+    void setPlotFieldResponseSpace(int v);
+    void setPlotFieldNeighbours(int v);
+    void setPlotFieldIdwPower(double v);
+    void setPlotFieldSmoothing(double v);
     void setPlotFieldInterpolation(int mode);
     int uiLayout() const{return uiLayout_;}
     void setUiLayout(int layout);
@@ -491,6 +516,13 @@ private:
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
     bool plotScaleLabels_=true;
     int plotFieldInterpolation_=2;          // Linear
+    int plotFieldEstimator_=-1;
+    int plotFieldExtrapolation_=0;
+    int plotFieldValuePolicy_=0;
+    int plotFieldResponseSpace_=0;
+    int plotFieldNeighbours_=32;
+    double plotFieldIdwPower_=2.0;
+    double plotFieldSmoothing_=0.0;
     QStringList messageLog_;
     int uiLayout_=0;                        // Notebook
     // Newest first, capped. Each entry is {path, name}; visualisations are

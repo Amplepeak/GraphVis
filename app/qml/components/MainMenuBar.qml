@@ -202,8 +202,120 @@ MenuBar {
             onTriggered: root.app.plotScaleLabels = !root.app.plotScaleLabels
         }
 
+        // How a field is estimated between the measurements.
+        //
+        // Two different things live here and the difference is the point. The
+        // first fills the holes of an already-binned grid: cheap, and it is
+        // what every figure has used so far. The second estimates from the
+        // SCATTERED measurements themselves, which is what GraphVis 17 did -
+        // binning first throws away where in its cell each sample was, and no
+        // estimator afterwards can recover that.
         Menu {
-            title: "Filling gaps in a field"
+            title: "Estimating a field"
+
+            Menu {
+                title: "Method"
+                MenuItem {
+                    text: "Fill the grid (fast)"
+                    checkable: true
+                    checked: root.app.plotFieldEstimator < 0
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Bin the measurements into cells first, then fill the "
+                                + "cells nothing landed in. Fast, and good enough when the "
+                                + "sweep is dense."
+                    onTriggered: root.app.plotFieldEstimator = -1
+                }
+                MenuSeparator {}
+                Repeater {
+                    // Only what this build computes. An estimator that is named
+                    // and not implemented draws something under a name that
+                    // means something else.
+                    model: {
+                        var out = []
+                        var all = root.canvas ? root.canvas.fieldEstimatorList() : []
+                        for (var i = 0; i < all.length; ++i)
+                            if (all[i].available) out.push(all[i])
+                        return out
+                    }
+                    delegate: MenuItem {
+                        id: estimatorItem
+                        required property var modelData
+                        text: estimatorItem.modelData.name
+                        checkable: true
+                        checked: root.app.plotFieldEstimator === estimatorItem.modelData.index
+                        ToolTip.visible: estimatorItem.hovered
+                        ToolTip.text: estimatorItem.modelData.group
+                        onTriggered: root.app.plotFieldEstimator = estimatorItem.modelData.index
+                    }
+                }
+            }
+
+            Menu {
+                title: "Beyond the measurements"
+                enabled: root.app.plotFieldEstimator >= 0
+                Repeater {
+                    model: root.canvas ? root.canvas.fieldExtrapolationNames() : []
+                    delegate: MenuItem {
+                        required property string modelData
+                        required property int index
+                        text: modelData
+                        checkable: true
+                        checked: root.app.plotFieldExtrapolation === index
+                        ToolTip.visible: hovered
+                        ToolTip.text: index === 0
+                            ? "The conservative default. The convex hull of the samples is "
+                            + "the boundary of what was measured, and colouring past it puts "
+                            + "an extrapolation on the page in the same ink as a measurement."
+                            : "Extends the estimate to the whole rectangle. For when the "
+                            + "rectangle IS the experiment and the corners simply failed."
+                        onTriggered: root.app.plotFieldExtrapolation = index
+                    }
+                }
+            }
+
+            Menu {
+                title: "Values"
+                enabled: root.app.plotFieldEstimator >= 0
+                Repeater {
+                    model: root.canvas ? root.canvas.fieldValuePolicyNames() : []
+                    delegate: MenuItem {
+                        required property string modelData
+                        required property int index
+                        text: modelData
+                        checkable: true
+                        checked: root.app.plotFieldValuePolicy === index
+                        ToolTip.visible: hovered
+                        ToolTip.text: index === 1
+                            ? "A spline through noisy data overshoots, and an overshoot on a "
+                            + "colour scale reads as a peak nobody recorded."
+                            : "Let the estimator go past the measured range where the fit says so."
+                        onTriggered: root.app.plotFieldValuePolicy = index
+                    }
+                }
+                MenuSeparator {}
+                Repeater {
+                    model: root.canvas ? root.canvas.fieldResponseSpaceNames() : []
+                    delegate: MenuItem {
+                        required property string modelData
+                        required property int index
+                        text: modelData
+                        checkable: true
+                        checked: root.app.plotFieldResponseSpace === index
+                        ToolTip.visible: hovered
+                        ToolTip.text: index === 1
+                            ? "Estimate in log10 of the response. Halfway between 1 and 10000 "
+                            + "is 5000 in linear values and 100 in log ones; for a quantity "
+                            + "spanning decades the second is the one you meant."
+                            : "Estimate in the values as measured."
+                        onTriggered: root.app.plotFieldResponseSpace = index
+                    }
+                }
+            }
+
+            MenuSeparator {}
+
+            Menu {
+                title: "Filling gaps in a field"
             // Heat maps, contours and surfaces bin scattered measurements into
             // a grid, and most of that grid catches nothing. None is honest and
             // unreadable; the rest estimate, which is a choice the person makes
@@ -218,6 +330,7 @@ MenuBar {
                     checked: root.app.plotFieldInterpolation === index
                     onTriggered: root.app.plotFieldInterpolation = index
                 }
+            }
             }
         }
 

@@ -111,6 +111,15 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(double azimuth READ azimuth WRITE setAzimuth NOTIFY styleChanged)
     Q_PROPERTY(double elevation READ elevation WRITE setElevation NOTIFY styleChanged)
     Q_PROPERTY(int fieldInterpolation READ fieldInterpolation WRITE setFieldInterpolation NOTIFY styleChanged)
+    // The scattered estimator and its policies. -1 on fieldEstimator keeps the
+    // grid-filling path, which is what every existing figure uses.
+    Q_PROPERTY(int fieldEstimator READ fieldEstimator WRITE setFieldEstimator NOTIFY styleChanged)
+    Q_PROPERTY(int fieldExtrapolation READ fieldExtrapolation WRITE setFieldExtrapolation NOTIFY styleChanged)
+    Q_PROPERTY(int fieldValuePolicy READ fieldValuePolicy WRITE setFieldValuePolicy NOTIFY styleChanged)
+    Q_PROPERTY(int fieldResponseSpace READ fieldResponseSpace WRITE setFieldResponseSpace NOTIFY styleChanged)
+    Q_PROPERTY(int fieldNeighbours READ fieldNeighbours WRITE setFieldNeighbours NOTIFY styleChanged)
+    Q_PROPERTY(double fieldIdwPower READ fieldIdwPower WRITE setFieldIdwPower NOTIFY styleChanged)
+    Q_PROPERTY(double fieldSmoothing READ fieldSmoothing WRITE setFieldSmoothing NOTIFY styleChanged)
     Q_PROPERTY(int fieldResolution READ fieldResolution WRITE setFieldResolution NOTIFY styleChanged)
 
     // 0 Standard, 1 Protanopia, 2 Deuteranopia, 3 Tritanopia, 4 Monochrome.
@@ -311,6 +320,27 @@ public:
     // How the unsampled cells of a gridded field are estimated, and how fine
     // that grid is. See PlotStyle::fieldInterpolation.
     int fieldInterpolation() const { return spec_.style.fieldInterpolation; }
+    int fieldEstimator() const { return spec_.style.fieldEstimator; }
+    int fieldExtrapolation() const { return spec_.style.fieldExtrapolation; }
+    int fieldValuePolicy() const { return spec_.style.fieldValuePolicy; }
+    int fieldResponseSpace() const { return spec_.style.fieldResponseSpace; }
+    int fieldNeighbours() const { return spec_.style.fieldNeighbours; }
+    double fieldIdwPower() const { return spec_.style.fieldIdwPower; }
+    double fieldSmoothing() const { return spec_.style.fieldSmoothing; }
+    void setFieldEstimator(int v);
+    void setFieldExtrapolation(int v);
+    void setFieldValuePolicy(int v);
+    void setFieldResponseSpace(int v);
+    void setFieldNeighbours(int v);
+    void setFieldIdwPower(double v);
+    void setFieldSmoothing(double v);
+    // The names, and which of them this build computes, so a picker cannot
+    // drift from the module.
+    Q_INVOKABLE static QStringList fieldEstimatorNames();
+    Q_INVOKABLE static QVariantList fieldEstimatorList();
+    Q_INVOKABLE static QStringList fieldExtrapolationNames();
+    Q_INVOKABLE static QStringList fieldValuePolicyNames();
+    Q_INVOKABLE static QStringList fieldResponseSpaceNames();
     void setFieldInterpolation(int mode);
     int fieldResolution() const { return spec_.style.fieldResolution; }
     void setFieldResolution(int cells);

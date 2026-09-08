@@ -575,6 +575,15 @@ Item {
                         gridDensity: root.app.plotGridDensity
                         scaleLabelsVisible: root.app.plotScaleLabels
                         fieldInterpolation: root.app.plotFieldInterpolation
+                        // The scattered estimator and its policies. -1 keeps
+                        // the grid-filling path above.
+                        fieldEstimator: root.app.plotFieldEstimator
+                        fieldExtrapolation: root.app.plotFieldExtrapolation
+                        fieldValuePolicy: root.app.plotFieldValuePolicy
+                        fieldResponseSpace: root.app.plotFieldResponseSpace
+                        fieldNeighbours: root.app.plotFieldNeighbours
+                        fieldIdwPower: root.app.plotFieldIdwPower
+                        fieldSmoothing: root.app.plotFieldSmoothing
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision

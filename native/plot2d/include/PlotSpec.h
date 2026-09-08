@@ -160,6 +160,24 @@ struct PlotStyle {
     // Cells across the gridded field. 0 chooses from the sample count. Higher
     // is smoother once the gaps are filled, and meaningless while they are not.
     int fieldResolution = 0;
+    // The SCATTERED estimator, when one is chosen. -1 keeps the grid-filling
+    // path above, which is what every existing figure uses.
+    //
+    // The difference between the two is not a quality setting, it is where the
+    // estimate comes from. Filling bins the measurements FIRST - every sample
+    // in a cell becomes one number at the cell's centre - and then guesses at
+    // the empty cells, so a sample near a cell edge and one at its centre are
+    // indistinguishable and no amount of cleverness afterwards can recover what
+    // the binning discarded. A scattered estimator uses each measurement where
+    // it actually is. Filling is cheap and good enough for a dense sweep;
+    // estimating is what a thin one needs. See SurfaceEstimators.h.
+    int fieldEstimator = -1;        // index into graphvis::estimatorNames()
+    int fieldExtrapolation = 0;     // what happens outside the measured region
+    int fieldValuePolicy = 0;       // may an estimate exceed what was measured
+    int fieldResponseSpace = 0;     // estimate in linear or log10 values
+    int fieldNeighbours = 32;       // sample size for the local methods
+    double fieldIdwPower = 2.0;
+    double fieldSmoothing = 0.0;    // 0 interpolates exactly
 };
 
 // A note on the figure: a label at a point, optionally with a leader line back

@@ -64,6 +64,13 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotGridDensity_=qBound(0,settings.value(QStringLiteral("plot/gridDensity"),0).toInt(),25);
     plotScaleLabels_=settings.value(QStringLiteral("plot/scaleLabels"),true).toBool();
     plotFieldInterpolation_=qBound(0,settings.value(QStringLiteral("plot/fieldInterpolation"),2).toInt(),3);
+    plotFieldEstimator_=qBound(-1,settings.value(QStringLiteral("plot/fieldEstimator"),-1).toInt(),16);
+    plotFieldExtrapolation_=qBound(0,settings.value(QStringLiteral("plot/fieldExtrapolation"),0).toInt(),4);
+    plotFieldValuePolicy_=qBound(0,settings.value(QStringLiteral("plot/fieldValuePolicy"),0).toInt(),1);
+    plotFieldResponseSpace_=qBound(0,settings.value(QStringLiteral("plot/fieldResponseSpace"),0).toInt(),1);
+    plotFieldNeighbours_=qBound(4,settings.value(QStringLiteral("plot/fieldNeighbours"),32).toInt(),512);
+    plotFieldIdwPower_=qBound(0.5,settings.value(QStringLiteral("plot/fieldIdwPower"),2.0).toDouble(),8.0);
+    plotFieldSmoothing_=qBound(0.0,settings.value(QStringLiteral("plot/fieldSmoothing"),0.0).toDouble(),10.0);
     uiLayout_=qBound(0,settings.value(QStringLiteral("ui/layout"),0).toInt(),5);
     loadRecents();
     // Every signal connection below has to happen whether or not the native
@@ -1881,6 +1888,28 @@ void AppController::setUiLayout(int layout){
     emit plotDisplayChanged();
     setStatus(QStringLiteral("Layout: %1").arg(uiLayoutNames().value(uiLayout_)));
 }
+
+// The scattered-estimator settings. Seven near-identical setters, written out
+// through one macro rather than seven times: each stores, persists and notifies,
+// and seven hand-written copies is seven places for one of them to forget the
+// QSettings write.
+#define GV_FIELD_SETTING(Name,Member,Key,Type,Clamp)                       \
+void AppController::setPlotField##Name(Type v){                            \
+    const Type clamped=Clamp;                                              \
+    if(Member==clamped) return;                                            \
+    Member=clamped;                                                        \
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))   \
+        .setValue(QStringLiteral(Key),Member);                             \
+    emit plotDisplayChanged();                                             \
+}
+GV_FIELD_SETTING(Estimator,plotFieldEstimator_,"plot/fieldEstimator",int,qBound(-1,v,16))
+GV_FIELD_SETTING(Extrapolation,plotFieldExtrapolation_,"plot/fieldExtrapolation",int,qBound(0,v,4))
+GV_FIELD_SETTING(ValuePolicy,plotFieldValuePolicy_,"plot/fieldValuePolicy",int,qBound(0,v,1))
+GV_FIELD_SETTING(ResponseSpace,plotFieldResponseSpace_,"plot/fieldResponseSpace",int,qBound(0,v,1))
+GV_FIELD_SETTING(Neighbours,plotFieldNeighbours_,"plot/fieldNeighbours",int,qBound(4,v,512))
+GV_FIELD_SETTING(IdwPower,plotFieldIdwPower_,"plot/fieldIdwPower",double,qBound(0.5,v,8.0))
+GV_FIELD_SETTING(Smoothing,plotFieldSmoothing_,"plot/fieldSmoothing",double,qBound(0.0,v,10.0))
+#undef GV_FIELD_SETTING
 
 void AppController::setPlotFieldInterpolation(int mode){
     const int clamped=qBound(0,mode,3);

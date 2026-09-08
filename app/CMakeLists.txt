@@ -33,6 +33,7 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/src/PlotCanvas.cpp
   ${GRAPHVIS_PLOT2D_DIR}/src/PlotSelfTest.cpp
   ${GRAPHVIS_PLOT2D_DIR}/src/Units.cpp
+  ${GRAPHVIS_PLOT2D_DIR}/src/SurfaceEstimators.cpp
   ${GRAPHVIS_PLOT2D_DIR}/include/ColourVision.h
   ${GRAPHVIS_PLOT2D_DIR}/include/Expression.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PublicationProfile.h

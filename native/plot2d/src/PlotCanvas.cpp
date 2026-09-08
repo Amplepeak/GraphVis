@@ -1,4 +1,5 @@
 #include "PlotCanvas.h"
+#include "SurfaceEstimators.h"
 #include "ArrowTable.h"
 #include "ColourVision.h"
 #include "ColourMaps.h"
@@ -552,6 +553,68 @@ void PlotCanvas::setColourMap(const QString& name){
     scheduleFullRender();
     emit styleChanged();
 }
+
+// The scattered-estimator settings. Every one of these changes what the grid
+// CONTAINS rather than how it is painted, so each has to invalidate the cached
+// grid - which specFingerprint does, because it hashes them.
+#define GV_FIELD_SETTER(Name,Member,Clamp)                       \
+void PlotCanvas::set##Name(int v){                               \
+    const int clamped=Clamp;                                     \
+    if(spec_.style.Member==clamped) return;                      \
+    spec_.style.Member=clamped;                                  \
+    showingFull_=false;                                          \
+    update();                                                    \
+    scheduleFullRender();                                        \
+    emit styleChanged();                                         \
+}
+GV_FIELD_SETTER(FieldEstimator,fieldEstimator,
+                qBound(-1,v,int(Estimator::Count)-1))
+GV_FIELD_SETTER(FieldExtrapolation,fieldExtrapolation,
+                qBound(0,v,int(Extrapolation::Count)-1))
+GV_FIELD_SETTER(FieldValuePolicy,fieldValuePolicy,
+                qBound(0,v,int(ValuePolicy::Count)-1))
+GV_FIELD_SETTER(FieldResponseSpace,fieldResponseSpace,
+                qBound(0,v,int(ResponseSpace::Count)-1))
+GV_FIELD_SETTER(FieldNeighbours,fieldNeighbours,qBound(4,v,512))
+#undef GV_FIELD_SETTER
+
+void PlotCanvas::setFieldIdwPower(double v){
+    const double clamped=qBound(0.5,v,8.0);
+    if(qFuzzyCompare(spec_.style.fieldIdwPower,clamped)) return;
+    spec_.style.fieldIdwPower=clamped;
+    showingFull_=false; update(); scheduleFullRender(); emit styleChanged();
+}
+
+void PlotCanvas::setFieldSmoothing(double v){
+    const double clamped=qBound(0.0,v,10.0);
+    if(qFuzzyCompare(spec_.style.fieldSmoothing,clamped)) return;
+    spec_.style.fieldSmoothing=clamped;
+    showingFull_=false; update(); scheduleFullRender(); emit styleChanged();
+}
+
+QStringList PlotCanvas::fieldEstimatorNames(){ return estimatorNames(); }
+
+QVariantList PlotCanvas::fieldEstimatorList(){
+    // Name, family and whether this build computes it. The interface offers
+    // only the implemented ones; the rest are in the list so a figure saved by
+    // GraphVis 17 still round-trips through the same indices.
+    const QStringList names=estimatorNames();
+    const QStringList groups=estimatorGroupNames();
+    QVariantList out;
+    for(int i=0;i<names.size();++i){
+        QVariantMap m;
+        m.insert(QStringLiteral("index"),i);
+        m.insert(QStringLiteral("name"),names.at(i));
+        m.insert(QStringLiteral("group"),groups.value(i));
+        m.insert(QStringLiteral("available"),estimatorImplemented(Estimator(i)));
+        out.append(m);
+    }
+    return out;
+}
+
+QStringList PlotCanvas::fieldExtrapolationNames(){ return extrapolationNames(); }
+QStringList PlotCanvas::fieldValuePolicyNames(){ return valuePolicyNames(); }
+QStringList PlotCanvas::fieldResponseSpaceNames(){ return responseSpaceNames(); }
 
 void PlotCanvas::setFieldInterpolation(int mode){
     const int clamped=qBound(0,mode,3);
