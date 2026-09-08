@@ -39,25 +39,43 @@ if exist "%OUT%\selftest.pdf" (
 )
 
 echo.
-echo [2/3] Collecting the startup log...
-set LOGDIR=%LOCALAPPDATA%\GraphVis\18.4\logs
-if exist "%LOGDIR%" (
-  copy /y "%LOGDIR%\*.log" "%OUT%\" >nul 2>&1
-  echo   copied from %LOGDIR%
-  echo startup logs from %LOGDIR% >> "%OUT%\summary.txt"
-) else (
-  set LOGDIR=%LOCALAPPDATA%\GraphVis\GraphVis 18.4\18.4\logs
-  if exist "%LOGDIR%" (
-    copy /y "%LOGDIR%\*.log" "%OUT%\" >nul 2>&1
-    echo   copied from %LOGDIR%
-    echo startup logs from %LOGDIR% >> "%OUT%\summary.txt"
-  ) else (
-    echo   no startup log directory found
-    echo NO startup log directory >> "%OUT%\summary.txt"
+echo [2/3] Collecting the startup log and the data cache listing...
+REM Qt puts AppLocalDataLocation at %LOCALAPPDATA%\<Org>\<App>, so the real
+REM path is "GraphVis\GraphVis 18.4\18.4\logs" - one level deeper than the
+REM obvious guess. The first version of this script tested the shallow path,
+REM found the directory existed, copied nothing out of it and stopped looking.
+REM Both are tried now, and neither is treated as the end of the search.
+set FOUNDLOG=0
+for %%D in (
+  "%LOCALAPPDATA%\GraphVis\GraphVis 18.4\18.4\logs"
+  "%LOCALAPPDATA%\GraphVis\18.4\logs"
+  "%LOCALAPPDATA%\GraphVis\GraphVis 18.4\logs"
+) do (
+  if exist "%%~D\*.log" (
+    copy /y "%%~D\*.log" "%OUT%\" >nul 2>&1
+    echo   copied logs from %%~D
+    echo logs from %%~D >> "%OUT%\summary.txt"
+    set FOUNDLOG=1
+  )
+)
+if "%FOUNDLOG%"=="0" (
+  echo   no .log files found in any known location
+  echo NO log files found >> "%OUT%\summary.txt"
+)
+
+REM What the importer actually produced. The file itself is not copied - it can
+REM be hundreds of megabytes - only its name and size, which is enough to say
+REM whether the conversion ran at all.
+for %%D in (
+  "%LOCALAPPDATA%\GraphVis\GraphVis 18.4\18.4\arrow-cache"
+  "%LOCALAPPDATA%\GraphVis\18.4\arrow-cache"
+) do (
+  if exist "%%~D" (
+    dir "%%~D" > "%OUT%\arrow-cache.txt" 2>&1
+    echo   listed %%~D
   )
 )
 
-echo.
 echo [3/3] Recording what is deployed beside the executable...
 dir /b "%~dp0build\stage" > "%OUT%\stage-files.txt" 2>&1
 dir /b "%~dp0build\stage\platforms" > "%OUT%\stage-platforms.txt" 2>&1

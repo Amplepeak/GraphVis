@@ -1339,6 +1339,75 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
             "rejected the data - most often too few rows, or values it cannot "
             "use such as zero or negative numbers on a log axis.").arg(e);
 
+    // DEGENERATE, which is not the same as empty and looks identical.
+    //
+    // A plot can draw every one of its points and still show nothing, because
+    // they all landed in the same few pixels. That is what a 200,000-row
+    // parameter sweep did: its x column was a five-value solver flag with one
+    // stray outlier, so the axis stretched across 200,000 while every point sat
+    // at one end - and 97% of the y column was within 1% of zero, so they sat
+    // on the bottom axis too. The line WAS drawn, exactly on the gridline, and
+    // the only honest reading of the picture was that the application was
+    // broken.
+    //
+    // Measured on the data, not on the pixels: the renderer must not have to
+    // look at its own output, and the answer has to be the same in a PDF at any
+    // size as it is on screen.
+    const auto spread=[](bool useX,const PlotSpec& p,QString& why){
+        double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+        int finite=0;
+        QSet<double> levels;
+        for(const PlotSeries& s:p.series){
+            const QVector<double>& v=useX?s.x:s.y;
+            for(double d:v){
+                if(!std::isfinite(d)) continue;
+                ++finite;
+                lo=qMin(lo,d); hi=qMax(hi,d);
+                if(levels.size()<8) levels.insert(d);
+            }
+        }
+        if(finite<8||!(hi>lo)) return false;
+        // How much of the span the middle 98% of the values actually occupy.
+        // One outlier can own the axis while everything else shares a pixel.
+        QVector<double> all;
+        all.reserve(finite);
+        for(const PlotSeries& s:p.series){
+            const QVector<double>& v=useX?s.x:s.y;
+            for(double d:v) if(std::isfinite(d)) all.append(d);
+        }
+        std::sort(all.begin(),all.end());
+        const double p01=all.at(int(all.size()*0.01));
+        const double p99=all.at(qMin(int(all.size())-1,int(all.size()*0.99)));
+        const double span=hi-lo;
+        const double used=p99-p01;
+        const QString axis=useX?QStringLiteral("x"):QStringLiteral("y");
+        if(levels.size()<=5&&int(all.size())>200){
+            why=QStringLiteral(
+                "The %1 column has only %2 distinct values across %3 points, so every "
+                "point is stacked onto %2 positions. It is probably a flag or a "
+                "category rather than an axis - choose a measured column, or an "
+                "engine that expects categories.")
+                .arg(axis).arg(levels.size()).arg(all.size());
+            return true;
+        }
+        if(used<span*0.02){
+            why=QStringLiteral(
+                // A single %, not %%: QString::arg is not printf and does not
+                // collapse a doubled one, so "%%" reaches the user verbatim.
+                // Safe because neither % here is followed by a digit.
+                "99% of the %1 values lie within %2% of the axis range - one or "
+                "two outliers are holding the axis open and everything else is drawn "
+                "into a couple of pixels. Try a log %1 axis, or zoom, or plot the "
+                "distribution instead.")
+                .arg(axis).arg(100.0*used/span,0,'f',2);
+            return true;
+        }
+        return false;
+    };
+    QString why;
+    if(spread(true,prepared,why))  return why;
+    if(spread(false,prepared,why)) return why;
+
     return QString();
 }
 

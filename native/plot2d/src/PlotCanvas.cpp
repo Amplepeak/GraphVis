@@ -15,6 +15,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QHoverEvent>
+#include <QSet>
 #include <QTouchEvent>
 #include <QWheelEvent>
 #include <QPdfWriter>
@@ -394,6 +395,102 @@ void PlotCanvas::applyVariant(){
     emit stateChanged();
 }
 
+namespace {
+
+// How many distinct finite values a column has, counted no further than `upTo`.
+//
+// Stopping early matters: this runs on every rebuild over columns of a couple
+// of hundred thousand rows, and the questions asked of it are "is this
+// constant" and "does this have more than a handful of levels". Neither needs
+// the exact answer for a column with a hundred thousand of them.
+int distinctValueCount(const QVector<double>& v,int upTo){
+    QSet<double> seen;
+    seen.reserve(qMin(upTo,64)*2);
+    for(double d:v){
+        if(d!=d) continue;                      // a gap is not a value
+        seen.insert(d);
+        if(seen.size()>=upTo) return upTo;
+    }
+    return seen.size();
+}
+
+// How well spread a column is: what fraction of its full range the middle 98%
+// of its values actually occupy. 1.0 is a uniform sweep; near 0 means one or
+// two outliers hold the range open while everything else shares a pixel.
+//
+// Sampled, not sorted whole. This is asked of every column of a 200,000-row
+// file and only to rank them, so a few thousand evenly spaced values give the
+// same ordering for a fraction of the work.
+double columnSpread(const QVector<double>& v){
+    constexpr int kSamples=4096;
+    QVector<double> sample;
+    sample.reserve(qMin(v.size(),qsizetype(kSamples)));
+    const int stride=qMax(1,int(v.size()/kSamples));
+    for(int i=0;i<v.size();i+=stride){
+        const double d=v[i];
+        if(std::isfinite(d)) sample.append(d);
+    }
+    if(sample.size()<16) return 0.0;
+    std::sort(sample.begin(),sample.end());
+    const double lo=sample.first(), hi=sample.last();
+    const double span=hi-lo;
+    if(!(span>0.0)||!std::isfinite(span)) return 0.0;
+    const double p01=sample.at(int(sample.size()*0.01));
+    const double p99=sample.at(qMin(sample.size()-1,qsizetype(sample.size()*0.99)));
+    return qBound(0.0,(p99-p01)/span,1.0);
+}
+
+// The column to put on the x axis when the user has not chosen one.
+//
+// Two things make a column readable as an axis, and the old rule - "the first
+// one" - tested neither:
+//
+//   How many DISTINCT values it has. A column with five levels across two
+//   hundred thousand rows is a flag, and drawing against it stacks every point
+//   onto five verticals. That is what happened: the first column of a
+//   Latin-hypercube sweep was named "x", was a solver flag with five values and
+//   one stray outlier at 200,000, and every engine drew every point into one
+//   corner of an axis stretched across the whole range.
+//
+//   How well SPREAD it is. Cardinality alone is not enough - the fix that only
+//   counted distinct values went straight from a five-level flag to a column
+//   that is 97% zeros, which is degenerate in the same way for the same reason.
+//
+// The name is a tie-break only. "x", "time" and the rest are usually meant as
+// an axis and are usually also well spread, so the tests agree except in
+// exactly the case that broke.
+QString chooseAxisColumn(const ArrowTable& table,const QStringList& columns){
+    if(columns.isEmpty()) return QString();
+    constexpr int kCeiling=512;
+    static const QStringList kAxisNames{
+        QStringLiteral("x"),QStringLiteral("time"),QStringLiteral("t"),
+        QStringLiteral("index"),QStringLiteral("i"),QStringLiteral("step"),
+        QStringLiteral("sample"),QStringLiteral("depth"),QStringLiteral("date"),
+        QStringLiteral("timestamp"),QStringLiteral("wavelength"),QStringLiteral("frequency")};
+
+    QString best;
+    double bestScore=-1.0;
+    bool bestNamed=false;
+    for(const QString& name:columns){
+        const QVector<double> v=table.column(name);
+        const int distinct=distinctValueCount(v,kCeiling);
+        if(distinct<2) continue;                       // constant: never an axis
+        const double spread=columnSpread(v);
+        // Cardinality carries the decision, spread vetoes the degenerate ones.
+        // Both are normalised so neither can dominate on units alone.
+        const double score=(double(distinct)/double(kCeiling))*qMax(0.05,spread);
+        const bool named=kAxisNames.contains(name.trimmed().toLower());
+        const bool better=(score>bestScore*1.0001)
+                        ||(qFuzzyCompare(score+1.0,bestScore+1.0)&&named&&!bestNamed);
+        if(better){ best=name; bestScore=score; bestNamed=named; }
+    }
+    // Everything was constant. The old rule, so the caller still gets a column
+    // and the empty-plot message can explain the rest.
+    return best.isEmpty()?columns.first():best;
+}
+
+} // namespace
+
 void PlotCanvas::rebuild(){
     if(!dirty_) return;
     dirty_=false;
@@ -432,13 +529,37 @@ void PlotCanvas::rebuild(){
         emit stateChanged(); return;
     }
 
-    // Fall back to the first numeric columns so a freshly staged graph draws
+    // Fall back to a sensible pair of columns so a freshly staged graph draws
     // something meaningful before the user has chosen a mapping.
+    //
+    // "The first column" was the old rule and it is a bad one. A 200,000-row
+    // Latin-hypercube sweep arrived with its first column literally named "x" -
+    // which looked like an obvious axis and was in fact a solver flag with FIVE
+    // distinct values, 194,762 rows sharing one of them and a single stray row
+    // holding 200,000. Every engine then drew every point into the bottom-left
+    // corner of an axis stretched across 200,000, and the user reasonably
+    // reported that no visualisation worked at all.
+    //
+    // So the x axis is chosen by what makes a readable axis - how many DISTINCT
+    // values a column has - rather than by where it happens to sit in the file.
+    // The name is worth something too, but only as a tie-break: a column called
+    // "x" or "time" is usually meant as an axis, and is usually also
+    // high-cardinality, so the two agree except in exactly the case that broke.
     QString xName=xColumn_;
     QStringList yNames=yColumns_;
-    if(xName.isEmpty()&&!available_.isEmpty()) xName=available_.first();
+    if(xName.isEmpty()&&!available_.isEmpty()) xName=chooseAxisColumn(table,available_);
     if(yNames.isEmpty()){
-        for(const QString& c:std::as_const(available_)){ if(c!=xName){ yNames.append(c); break; } }
+        // The first column that is not the x axis AND is not constant. A column
+        // with one value draws a flat line whatever is on the other axis.
+        for(const QString& c:std::as_const(available_)){
+            if(c==xName) continue;
+            if(distinctValueCount(table.column(c),3)<2) continue;
+            yNames.append(c); break;
+        }
+        // Nothing varied: fall back to the old rule rather than refusing to
+        // draw, so the picture and the message below agree about what happened.
+        if(yNames.isEmpty())
+            for(const QString& c:std::as_const(available_)){ if(c!=xName){ yNames.append(c); break; } }
     }
     if(yNames.isEmpty()){ message_=QStringLiteral("Need at least two numeric columns to plot"); emit stateChanged(); return; }
 
