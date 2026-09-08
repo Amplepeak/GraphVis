@@ -57,6 +57,20 @@ class AppController final : public QObject {
     Q_PROPERTY(int fullRenderPolicy READ fullRenderPolicy WRITE setFullRenderPolicy NOTIFY plotDisplayChanged)
     Q_PROPERTY(double fullRenderAskAfterSeconds READ fullRenderAskAfterSeconds WRITE setFullRenderAskAfterSeconds NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList fullRenderPolicyNames READ fullRenderPolicyNames CONSTANT)
+    // The FIGURE's background, which is not the interface's.
+    //
+    //   0 Follow the interface theme (what it always did)
+    //   1 Dark      2 Light      3 White
+    //
+    // A figure going into a paper is white whatever the person likes to work
+    // in, and someone working at night wants a dark interface around a white
+    // plot without switching the whole application. Tying the two together made
+    // one of those impossible.
+    Q_PROPERTY(int figureTheme READ figureTheme WRITE setFigureTheme NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList figureThemeNames READ figureThemeNames CONSTANT)
+    // The grid, on its own terms. 0 density means the long-standing default.
+    Q_PROPERTY(bool plotGridVisible READ plotGridVisible WRITE setPlotGridVisible NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotGridDensity READ plotGridDensity WRITE setPlotGridDensity NOTIFY plotDisplayChanged)
     Q_PROPERTY(bool dataFormatsInstallerAvailable READ dataFormatsInstallerAvailable CONSTANT)
     Q_PROPERTY(QVariantMap smartRenderPlan READ smartRenderPlan NOTIFY smartRenderChanged)
     // GraphVis 17 graph catalogue: 318 entries in 30 categories, loaded from
@@ -226,6 +240,16 @@ public:
                 QStringLiteral("Ask every time"),
                 QStringLiteral("Ask only when the render was slow")};
     }
+    int figureTheme() const{return figureTheme_;}
+    void setFigureTheme(int mode);
+    QStringList figureThemeNames() const{
+        return {QStringLiteral("Follow the interface theme"),
+                QStringLiteral("Dark"),QStringLiteral("Light"),QStringLiteral("White")};
+    }
+    bool plotGridVisible() const{return plotGridVisible_;}
+    void setPlotGridVisible(bool on);
+    int plotGridDensity() const{return plotGridDensity_;}
+    void setPlotGridDensity(int ticks);
     void setPlotColourVision(int value);
     QStringList plotColourVisionNames() const;
     QString plotColourVisionSummary() const;
@@ -353,6 +377,9 @@ private:
     QString plotColourMap_;                 // empty means Viridis
     int fullRenderPolicy_=0;                // 0 automatic, 1 always ask, 2 ask when slow
     double fullRenderAskAfterSeconds_=5.0;
+    int figureTheme_=0;                     // follow the interface theme
+    bool plotGridVisible_=true;
+    int plotGridDensity_=0;                 // 0 = the default 7 x 6
     QStringList importQueue_;
     // Converted Arrow file -> the file the user actually chose, so the log row
     // stays on their file rather than sprouting a second row for a temporary.

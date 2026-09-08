@@ -111,6 +111,7 @@ set(GRAPHVIS_QML_FILES
   qml/components/ActiveDatasetBar.qml
   qml/components/AnnotationLayer.qml
   qml/components/ColourMapSelector.qml
+  qml/components/FigureStyleBar.qml
   qml/components/FullRenderPolicyBox.qml
   qml/components/UnitSelector.qml
   qml/components/SolverPanel.qml

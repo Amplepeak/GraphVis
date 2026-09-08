@@ -77,6 +77,12 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY styleChanged)
     Q_PROPERTY(QColor foregroundColor READ foregroundColor WRITE setForegroundColor NOTIFY styleChanged)
     Q_PROPERTY(QColor gridColor READ gridColor WRITE setGridColor NOTIFY styleChanged)
+    // The grid, on its own terms rather than the theme's. Some figures are
+    // read off the grid and want it fine; a figure going into a paper usually
+    // wants it gone. Neither is a property of the interface's colour scheme,
+    // which is what it used to be tied to.
+    Q_PROPERTY(bool gridVisible READ gridVisible WRITE setGridVisible NOTIFY styleChanged)
+    Q_PROPERTY(int gridDensity READ gridDensity WRITE setGridDensity NOTIFY styleChanged)
     // 0 Standard, 1 Protanopia, 2 Deuteranopia, 3 Tritanopia, 4 Monochrome.
     // Owned by AppController and persisted, so it survives theme changes and
     // restarts - see ColourVision.h for why it is separate from the UI theme.
@@ -251,6 +257,10 @@ public:
     Q_INVOKABLE void zoomBy(double factor);
     QColor gridColor() const { return spec_.style.gridColor; }
     QString colourMap() const { return spec_.style.colourMap; }
+    bool gridVisible() const { return spec_.style.gridVisible; }
+    int gridDensity() const { return spec_.style.gridDensity; }
+    void setGridVisible(bool on);
+    void setGridDensity(int ticks);
     bool usesColourMap() const { return usesColourMap_; }
     void setBackgroundColor(const QColor& c);
     void setForegroundColor(const QColor& c);

@@ -57,6 +57,9 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     // shown until asked for, which is the wrong default for a viewer.
     fullRenderPolicy_=qBound(0,settings.value(QStringLiteral("plot/fullRenderPolicy"),0).toInt(),2);
     fullRenderAskAfterSeconds_=qBound(0.0,settings.value(QStringLiteral("plot/fullRenderAskAfterSeconds"),5.0).toDouble(),600.0);
+    figureTheme_=qBound(0,settings.value(QStringLiteral("plot/figureTheme"),0).toInt(),3);
+    plotGridVisible_=settings.value(QStringLiteral("plot/gridVisible"),true).toBool();
+    plotGridDensity_=qBound(0,settings.value(QStringLiteral("plot/gridDensity"),0).toInt(),25);
     // Every signal connection below has to happen whether or not the native
     // core loads. When the DLL is missing this constructor used to return here,
     // leaving the science process with no reply path at all - so Literature
@@ -1737,6 +1740,33 @@ QString AppController::plotColourVisionSummary() const{
     return plotColourVision_==0
         ? QStringLiteral("Graph colours: %1 - distinguishable for protanopia, deuteranopia and tritanopia").arg(chosen)
         : QStringLiteral("Graph colours: %1 - series palette fixed for this vision type").arg(chosen);
+}
+
+void AppController::setFigureTheme(int mode){
+    const int clamped=qBound(0,mode,3);
+    if(figureTheme_==clamped) return;
+    figureTheme_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/figureTheme"),figureTheme_);
+    emit plotDisplayChanged();
+    setStatus(QStringLiteral("Figure background: %1").arg(figureThemeNames().value(figureTheme_)));
+}
+
+void AppController::setPlotGridVisible(bool on){
+    if(plotGridVisible_==on) return;
+    plotGridVisible_=on;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/gridVisible"),plotGridVisible_);
+    emit plotDisplayChanged();
+}
+
+void AppController::setPlotGridDensity(int ticks){
+    const int clamped=qBound(0,ticks,25);
+    if(plotGridDensity_==clamped) return;
+    plotGridDensity_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/gridDensity"),plotGridDensity_);
+    emit plotDisplayChanged();
 }
 
 void AppController::setPlotColourMap(const QString& name){

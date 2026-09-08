@@ -483,8 +483,13 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
     // picture each one lands on is toDevice's business.
     const double xFrom=qMin(xLo,xHi),xTo=qMax(xLo,xHi);
     const double yFrom=qMin(yLo,yHi),yTo=qMax(yLo,yHi);
-    xTicks=f.xLog?logTicks(xFrom,xTo):linearTicks(xFrom,xTo,7);
-    yTicks=f.yLog?logTicks(yFrom,yTo):linearTicks(yFrom,yTo,6);
+    // 7 across and 6 up unless the figure asks for something else. Clamped:
+    // below two an axis has no scale to read, and above about twenty-five the
+    // labels collide and the grid becomes the picture.
+    const int wantX=spec.style.gridDensity>0?qBound(2,spec.style.gridDensity,25):7;
+    const int wantY=spec.style.gridDensity>0?qBound(2,spec.style.gridDensity-1,25):6;
+    xTicks=f.xLog?logTicks(xFrom,xTo):linearTicks(xFrom,xTo,wantX);
+    yTicks=f.yLog?logTicks(yFrom,yTo):linearTicks(yFrom,yTo,wantY);
 
     // Widen the left margin so the longest y label always fits.
     const QFontMetricsF fm(font(spec,spec.style.tickSize),p->device());

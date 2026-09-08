@@ -139,9 +139,35 @@ SplitView {
                         anchors.fill: parent
                         anchors.margins: 6
                         arrowPath: root.app.activeArrowPath
-                        backgroundColor: Theme.background
-                        foregroundColor: Theme.text
-                        gridColor: Theme.border
+                        // The figure's own background, which need not be the
+                        // interface's. A plot going into a paper is white
+                        // whatever the person likes to work in.
+                        //   0 follow the theme   1 dark   2 light   3 white
+                        backgroundColor: {
+                            switch (root.app.figureTheme) {
+                            case 1: return "#111820"
+                            case 2: return "#f4f6f9"
+                            case 3: return "#ffffff"
+                            default: return Theme.background
+                            }
+                        }
+                        foregroundColor: {
+                            switch (root.app.figureTheme) {
+                            case 1: return "#dbe6f0"
+                            case 2: case 3: return "#14181d"
+                            default: return Theme.text
+                            }
+                        }
+                        gridColor: {
+                            switch (root.app.figureTheme) {
+                            case 1: return "#26384f"
+                            case 2: return "#d3d9e2"
+                            case 3: return "#e2e6ec"
+                            default: return Theme.border
+                            }
+                        }
+                        gridVisible: root.app.plotGridVisible
+                        gridDensity: root.app.plotGridDensity
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision

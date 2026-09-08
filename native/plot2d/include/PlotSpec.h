@@ -72,6 +72,12 @@ struct PlotStyle {
     double legendSize = 7.0;
     double lineWidth = 1.2;
     bool gridVisible = true;
+    // Roughly how many labelled ticks each axis should aim for, and so how many
+    // grid lines there are. 0 keeps the long-standing default of 7 across and 6
+    // up; the tick chooser still rounds to a round number, so this is a target
+    // rather than a count - asking for 12 on a range of 0 to 1 gives steps of
+    // 0.1, not 0.0833.
+    int gridDensity = 0;
     int dpi = 100;
     double figureWidthIn = unsetValue();
     double figureHeightIn = unsetValue();

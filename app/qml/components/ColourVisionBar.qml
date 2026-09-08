@@ -111,5 +111,11 @@ Rectangle {
             color: Theme.textMuted
             text: root.app.plotColourVisionSummary
         }
+
+        // The figure's background and grid. Beside the colour settings because
+        // it is the same question - what the picture looks like - and not the
+        // same question as what the interface looks like.
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        FigureStyleBar { app: root.app; Layout.fillWidth: true }
     }
 }

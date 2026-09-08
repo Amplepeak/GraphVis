@@ -392,6 +392,28 @@ void PlotCanvas::clearAnnotations(){
     scheduleFullRender();
 }
 
+void PlotCanvas::setGridVisible(bool on){
+    if(spec_.style.gridVisible==on) return;
+    spec_.style.gridVisible=on;
+    // Chrome, not data: the prepared spec and the series are unchanged, so this
+    // is a repaint rather than a rebuild. The accepted full-resolution image is
+    // a picture of the old grid though, so it stops being the current one.
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setGridDensity(int ticks){
+    const int clamped=qBound(0,ticks,25);
+    if(spec_.style.gridDensity==clamped) return;
+    spec_.style.gridDensity=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
 void PlotCanvas::setColourMap(const QString& name){
     if(spec_.style.colourMap==name) return;
     spec_.style.colourMap=name;
