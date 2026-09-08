@@ -269,13 +269,59 @@ if(WIN32)
       file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}\" TYPE SHARED_LIBRARY FILES \${_gv_root_dlls})
     endif()
 
-    # Qt plugin directories. Missing ones are simply skipped.
+    # Qt plugin directories.
+    #
+    # TWO sources, and the order matters. The build root is where vcpkg's
+    # applocal deploy is SUPPOSED to put them, and where they are when it runs.
+    # vcpkg_installed/.../Qt6/plugins is where they actually live, is populated
+    # at configure time, and cannot be empty.
+    #
+    # Globbing only the build root is what shipped an application that could
+    # not open a window:
+    #
+    #     This application failed to start because no Qt platform plugin
+    #     could be initialized.
+    #
+    # The deploy step had not run on that build, the glob matched nothing, the
+    # install reported success, and the missing file was qwindows.dll - which
+    # was sitting in vcpkg_installed the whole time. An install rule must not
+    # depend on another step having happened when it can read the real source
+    # directly. The build-root pass is kept because a fast-preset tree may
+    # carry a plugin the vcpkg tree does not, and file(INSTALL) skips a file
+    # that is already there and identical.
     foreach(_gv_plugin_dir platforms imageformats iconengines styles tls networkinformation generic)
-      file(GLOB _gv_plugin_dlls \"${CMAKE_BINARY_DIR}/\${_gv_plugin_dir}/*.dll\")
+      # unset, not set to \"\": list(APPEND) onto an empty STRING leaves a
+      # leading empty element, and file(INSTALL) on an empty path errors.
+      unset(_gv_plugin_dlls)
+      file(GLOB _gv_vcpkg_plugins
+           \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/plugins/\${_gv_plugin_dir}/*.dll\")
+      file(GLOB _gv_build_plugins \"${CMAKE_BINARY_DIR}/\${_gv_plugin_dir}/*.dll\")
+      if(_gv_vcpkg_plugins)
+        list(APPEND _gv_plugin_dlls \${_gv_vcpkg_plugins})
+      endif()
+      if(_gv_build_plugins)
+        list(APPEND _gv_plugin_dlls \${_gv_build_plugins})
+      endif()
+      if(_gv_plugin_dlls)
+        list(REMOVE_DUPLICATES _gv_plugin_dlls)
+      endif()
       if(_gv_plugin_dlls)
         file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/\${_gv_plugin_dir}\" TYPE SHARED_LIBRARY FILES \${_gv_plugin_dlls})
       endif()
     endforeach()
+
+    # The platform plugin is not optional and its absence is not a warning:
+    # without it the application starts, fails, and shows a dialog that tells
+    # the user to reinstall - which does not help, because the installer is
+    # what is missing it. Better to fail the install than to package that.
+    if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/platforms/qwindows.dll\")
+      message(FATAL_ERROR
+        \"No Qt platform plugin was installed: platforms/qwindows.dll is missing \"
+        \"from \${CMAKE_INSTALL_PREFIX}. The application would start and immediately \"
+        \"fail with 'no Qt platform plugin could be initialized'. Looked in \"
+        \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/plugins/platforms \"
+        \"and ${CMAKE_BINARY_DIR}/platforms.\")
+    endif()
   ")
 endif()
 
