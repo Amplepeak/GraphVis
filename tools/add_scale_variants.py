@@ -102,6 +102,21 @@ NO_SCALE = {
     "Composite Curves (Pinch)", "Harmonic Spectrum", "Sound Level Statistics",
     "Beam Caustic", "Youden Plot", "Levey-Jennings Chart",
     "Cumulative Gain Chart", "Ratkowsky Square-Root Plot",
+    # Batch 9, on the same two tests. Reading an answer off a straight line:
+    # the Guinier radius, the Hill coefficient, the Kissinger activation
+    # energy, the Avrami exponent, the Wilson intercept, the Hubble constant,
+    # the roughness length, the learning rate, Lenth's error. Axes that are
+    # not free to be transformed: an Ellingham diagram carries a reference line
+    # in the data's own units, a Kratky and a Van Krevelen plot are read by
+    # SHAPE against fixed paths, a Hertzsprung-Russell diagram already inverts
+    # both of its axes, a rotation curve is compared against a square-root law
+    # drawn through it, a constellation carries an ideal grid, and a response
+    # waterfall's thresholds are at fixed percentages.
+    "Guinier Plot", "Kratky Plot", "Hill Plot", "Ellingham Diagram",
+    "Kissinger Plot", "Avrami Plot", "Wilson Plot", "Van Krevelen Diagram",
+    "Hertzsprung-Russell Diagram", "Rotation Curve", "Hubble Diagram",
+    "Constellation Diagram", "Wind Profile (Log Law)", "Experience Curve",
+    "Half-Normal Plot", "Response Waterfall",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

@@ -875,6 +875,145 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 9's inputs. A sphere rather than a pure Guinier curve for the
+    // scattering pair, because a pure Guinier curve cannot tell whether the
+    // fitting RANGE was chosen correctly - it is a straight line everywhere.
+    // The sphere's true radius of gyration is R*sqrt(3/5), and the Guinier fit
+    // over qRg <= 1.3 comes back about two per cent high: that is the
+    // approximation's own bias, verified against a pure Guinier curve which
+    // returns the radius exactly.
+    QVector<double> scatterQ,scatterI;
+    QVector<double> hillLigand,hillTheta;
+    QVector<double> ellinghamT,ellinghamAlumina,ellinghamZincite;
+    QVector<double> heatingRate,peakTemperature;
+    QVector<double> avramiTime,avramiFraction;
+    QVector<double> wilsonVelocity,wilsonCoefficient;
+    QVector<double> krevelenOxygen,krevelenHydrogen;
+    QVector<double> starColour,starMagnitude;
+    QVector<double> orbitRadius,orbitSpeed;
+    QVector<double> hubbleDistance,hubbleSpeed;
+    QVector<double> symbolI,symbolQ;
+    QVector<double> delayFrequency,delayPhase;
+    QVector<double> profileHeight,profileSpeed;
+    QVector<double> cumulativeVolume,unitCost;
+    QVector<double> orderQuantity,orderingCost,holdingCost;
+    QVector<double> effectIndex,effectEstimate;
+    QVector<double> patientIndex,bestChange;
+    {
+        const double sphereRadius=25.0/std::sqrt(0.6);   // gives Rg exactly 25
+        for(int i=1;i<=300;++i){
+            const double q=0.0008*double(i);
+            const double x=q*sphereRadius;
+            const double f=3.0*(std::sin(x)-x*std::cos(x))/(x*x*x);
+            scatterQ.append(q); scatterI.append(100.0*f*f);
+        }
+        for(int i=0;i<24;++i){
+            const double ligand=0.5*std::pow(400.0,double(i)/23.0);
+            hillLigand.append(ligand);
+            hillTheta.append(std::pow(ligand,2.5)
+                             /(std::pow(10.0,2.5)+std::pow(ligand,2.5)));
+        }
+        for(int i=0;i<=20;++i){
+            const double t=300.0+double(i)*85.0;
+            ellinghamT.append(t);
+            ellinghamAlumina.append(-1100.0+0.20*t);
+            ellinghamZincite.append(-700.0+0.22*t);
+        }
+        {
+            const double activation=120000.0,gasConstant=8.314462618;
+            for(int i=0;i<5;++i){
+                const double tp=400.0+double(i)*15.0;
+                peakTemperature.append(tp);
+                heatingRate.append(tp*tp*std::exp(-activation/(gasConstant*tp)));
+            }
+        }
+        for(int i=1;i<=60;++i){
+            const double t=double(i)*0.4;
+            avramiTime.append(t);
+            avramiFraction.append(1.0-std::exp(-std::pow(0.1*t,3.0)));
+        }
+        for(int i=0;i<10;++i){
+            const double v=0.5+double(i)*0.35;
+            wilsonVelocity.append(v);
+            wilsonCoefficient.append(1.0/(0.002+0.05*std::pow(v,-0.8)));
+        }
+        // Walked out along the dehydration path, so the -H2O line the engine
+        // draws must land on the samples themselves.
+        for(int i=0;i<12;++i){
+            const double e=double(i)*0.03;
+            krevelenOxygen.append(0.55-e); krevelenHydrogen.append(1.60-2.0*e);
+        }
+        for(int i=0;i<300;++i){
+            const double colour=-0.3+2.3*double(i)/299.0;
+            const double wobble=std::sin(double(i)*12.9898)*std::cos(double(i)*4.1414);
+            starColour.append(colour);
+            starMagnitude.append(5.0*colour-1.0+0.4*wobble);
+        }
+        for(int i=1;i<=30;++i){
+            const double r=double(i);
+            orbitRadius.append(r); orbitSpeed.append(200.0*qMin(1.0,r/5.0));
+        }
+        for(int i=1;i<=25;++i){
+            hubbleDistance.append(double(i)*8.0);
+            hubbleSpeed.append(70.0*double(i)*8.0);
+        }
+        {
+            quint32 seed=88675123u;
+            const auto jitter=[&seed]{
+                double u=0.0;
+                for(int k=0;k<12;++k){
+                    seed^=seed<<13; seed^=seed>>17; seed^=seed<<5;
+                    u+=double(seed)/4294967296.0;
+                }
+                return u-6.0;
+            };
+            for(int n=0;n<800;++n){
+                const int a=n%4,b=(n/4)%4;
+                symbolI.append((2.0*a-3.0)+0.10*jitter());
+                symbolQ.append((2.0*b-3.0)+0.10*jitter());
+            }
+        }
+        // A pure 1 ms delay, WRAPPED into the range an instrument reports, so
+        // the unwrapping is exercised rather than assumed.
+        for(int i=0;i<200;++i){
+            const double f=10.0+double(i)*20.0;
+            delayFrequency.append(f);
+            double phase=std::fmod(-360.0*f*1.0e-3,360.0);
+            if(phase>180.0) phase-=360.0;
+            if(phase<-180.0) phase+=360.0;
+            delayPhase.append(phase);
+        }
+        for(int i=0;i<8;++i){
+            const double z=2.0*std::pow(2.0,double(i)*0.6);
+            profileHeight.append(z);
+            profileSpeed.append((0.40/0.41)*std::log(z/0.03));
+        }
+        for(int i=0;i<20;++i){
+            const double volume=100.0*std::pow(2.0,double(i)*0.5);
+            cumulativeVolume.append(volume);
+            unitCost.append(100.0*std::pow(volume/100.0,std::log2(0.85)));
+        }
+        // Ordering DS/Q with DS = 10000 and holding Q, so the cheapest order
+        // and the crossing of the two components are both exactly 100.
+        for(int i=1;i<=60;++i){
+            const double q=double(i)*5.0;
+            orderQuantity.append(q); orderingCost.append(10000.0/q); holdingCost.append(q);
+        }
+        {
+            const double inactive[]={0.3,-0.5,0.8,-0.2,1.1,0.6,-0.9,0.4,-1.2,0.7,-0.35,0.55};
+            for(double v:inactive){
+                effectIndex.append(double(effectIndex.size())); effectEstimate.append(v);
+            }
+            const double active[]={8.0,-10.0,12.0};
+            for(double v:active){
+                effectIndex.append(double(effectIndex.size())); effectEstimate.append(v);
+            }
+        }
+        for(int i=0;i<5;++i){ patientIndex.append(double(patientIndex.size())); bestChange.append(40.0+double(i)); }
+        for(int i=0;i<10;++i){ patientIndex.append(double(patientIndex.size())); bestChange.append(10.0-double(i)*3.5); }
+        for(int i=0;i<5;++i){ patientIndex.append(double(patientIndex.size())); bestChange.append(-35.0-double(i)*5.0); }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1158,6 +1297,45 @@ bool runEngineSweep(){
             {column("temperature",growthTemperature),column("rate",ratkowskyRate)}},
         {QStringLiteral("Phenology Curve"),
             {column("day of year",phenologyDay),column("index",phenologyIndex)}},
+        // Batch 9.
+        {QStringLiteral("Guinier Plot"),
+            {column("q",scatterQ),column("I",scatterI)}},
+        {QStringLiteral("Kratky Plot"),
+            {column("q",scatterQ),column("I",scatterI)}},
+        {QStringLiteral("Hill Plot"),
+            {column("ligand",hillLigand),column("occupancy",hillTheta)}},
+        {QStringLiteral("Ellingham Diagram"),
+            {column("T",ellinghamT),column("Al2O3",ellinghamAlumina),
+             column("ZnO",ellinghamZincite)}},
+        {QStringLiteral("Kissinger Plot"),
+            {column("heating rate",heatingRate),column("peak T",peakTemperature)}},
+        {QStringLiteral("Avrami Plot"),
+            {column("time",avramiTime),column("transformed",avramiFraction)}},
+        {QStringLiteral("Wilson Plot"),
+            {column("velocity",wilsonVelocity),column("U",wilsonCoefficient)}},
+        {QStringLiteral("Van Krevelen Diagram"),
+            {column("O/C",krevelenOxygen),column("H/C",krevelenHydrogen)}},
+        {QStringLiteral("Hertzsprung-Russell Diagram"),
+            {column("B-V",starColour),column("Mv",starMagnitude)}},
+        {QStringLiteral("Rotation Curve"),
+            {column("radius",orbitRadius),column("speed",orbitSpeed)}},
+        {QStringLiteral("Hubble Diagram"),
+            {column("distance",hubbleDistance),column("speed",hubbleSpeed)}},
+        {QStringLiteral("Constellation Diagram"),
+            {column("I",symbolI),column("Q",symbolQ)}},
+        {QStringLiteral("Group Delay"),
+            {column("frequency",delayFrequency),column("phase",delayPhase)}},
+        {QStringLiteral("Wind Profile (Log Law)"),
+            {column("height",profileHeight),column("speed",profileSpeed)}},
+        {QStringLiteral("Experience Curve"),
+            {column("cumulative",cumulativeVolume),column("unit cost",unitCost)}},
+        {QStringLiteral("EOQ Cost Curve"),
+            {column("quantity",orderQuantity),column("ordering",orderingCost),
+             column("holding",holdingCost)}},
+        {QStringLiteral("Half-Normal Plot"),
+            {column("effect",effectIndex),column("estimate",effectEstimate)}},
+        {QStringLiteral("Response Waterfall"),
+            {column("patient",patientIndex),column("best change",bestChange)}},
     };
 
     for(const QString& engine:engines){

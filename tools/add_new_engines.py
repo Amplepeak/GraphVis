@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 8.
+"""Catalogue entries for the engine expansion, batches 1 to 9.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -305,6 +305,45 @@ NEW = [
      "Square root of growth rate against temperature, extrapolated to the minimum growth temperature"),
     ("Earth & Ocean Science", "phenology", "Phenology Curve",
      "A vegetation index through the year with green-up, peak and senescence at half amplitude"),
+
+    # ---- batch 9: scattering, thermal kinetics, astronomy, radio, and three
+    # decision curves from operations and trials
+    ("Spectroscopy & Chromatography", "guinier", "Guinier Plot",
+     "ln I against q squared, with the radius of gyration and the qRg range the fit actually used"),
+    ("Spectroscopy & Chromatography", "kratky", "Kratky Plot",
+     "q squared times intensity against q, where a compact particle is a bell and a chain is not"),
+    ("Materials & Chemistry", "hill", "Hill Plot",
+     "Log bound over unbound against log ligand, giving the Hill coefficient and half occupancy"),
+    ("Materials & Chemistry", "ellingham", "Ellingham Diagram",
+     "Free energy of oxide formation against temperature, over the carbon monoxide line"),
+    ("Materials & Chemistry", "kissinger", "Kissinger Plot",
+     "How the peak temperature moves with heating rate, giving the activation energy"),
+    ("Materials & Chemistry", "avrami", "Avrami Plot",
+     "Double log of the untransformed fraction against log time, giving the Avrami exponent"),
+    ("Energy & Building Services", "wilson", "Wilson Plot",
+     "1/U against velocity to the minus 0.8, separating fouling from the tube-side film"),
+    ("Materials & Chemistry", "vankrevelen", "Van Krevelen Diagram",
+     "H/C against O/C with the dehydration, decarboxylation and demethanation paths walked out"),
+    ("Spatial & Specialized", "hrdiagram", "Hertzsprung-Russell Diagram",
+     "Magnitude against colour with both astronomical inversions, and the observed ridge line"),
+    ("Spatial & Specialized", "rotationcurve", "Rotation Curve",
+     "Orbital speed against radius, against the Keplerian curve anchored at the peak"),
+    ("Spatial & Specialized", "hubble", "Hubble Diagram",
+     "Recession speed against distance through the origin, with H0 and the Hubble time"),
+    ("Signals & RF", "constellation", "Constellation Diagram",
+     "Received symbols against the best-fitting square QAM grid, with the error vector magnitude"),
+    ("Signals & RF", "groupdelay", "Group Delay",
+     "The slope of the unwrapped phase, with the mean delay and the ripple across the band"),
+    ("Earth & Ocean Science", "windprofile", "Wind Profile (Log Law)",
+     "Wind speed against log height, giving the friction velocity and the roughness length"),
+    ("Presentation & Comparison", "experiencecurve", "Experience Curve",
+     "Unit cost against cumulative production, reported as the learning rate per doubling"),
+    ("Logistics & Infrastructure", "eoq", "EOQ Cost Curve",
+     "Ordering and holding cost against order quantity, with the cheapest order and their crossing"),
+    ("Quality, Process & Reliability", "halfnormal", "Half-Normal Plot",
+     "Absolute effects against half-normal quantiles, with Lenth's pseudo standard error"),
+    ("Clinical & Meta-analysis", "responsewaterfall", "Response Waterfall",
+     "Best change from baseline per patient, sorted, against the RECIST thresholds"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -344,5 +383,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-8: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-9: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))
