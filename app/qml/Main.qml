@@ -183,6 +183,17 @@ ApplicationWindow {
 
     FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:root.app.importNameFilters();onAccepted:root.app.importDataset(selectedFile)}
 
+    // Ctrl+K, in every layout - and the primary control in the Command bar one,
+    // where there is deliberately almost nothing else on screen.
+    CommandPalette {
+        id: palette
+        app: root.app
+        canvas: shellLoader.item ? shellLoader.item.canvas : null
+        onImportRequested: importDialog.open()
+        onLiteratureRequested: literatureDialog.open()
+    }
+    Shortcut { sequences: ["Ctrl+K"]; onActivated: palette.open() }
+
     // Drop a file on the window to import it.
     //
     // The shortest path from "my data is in that folder" to "it is on screen"
@@ -288,7 +299,7 @@ ApplicationWindow {
         anchors{left:parent.left;right:parent.right;top:parent.top;bottom:status.top}
         sourceComponent:root.app.experimentalUi?experimentalShell:classicShell
     }
-    Component{id:classicShell;ClassicShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open()}}
-    Component{id:experimentalShell;ExperimentalShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open()}}
+    Component{id:classicShell;ClassicShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onCommandRequested:palette.open()}}
+    Component{id:experimentalShell;ExperimentalShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onCommandRequested:palette.open()}}
     StatusStrip{id:status;anchors{left:parent.left;right:parent.right;bottom:parent.bottom} app:root.app}
 }

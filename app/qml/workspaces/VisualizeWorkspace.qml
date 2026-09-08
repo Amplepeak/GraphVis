@@ -28,7 +28,22 @@ SplitView {
     // way to open a file was the Data tab. A signal with no receiver is
     // indistinguishable, from the outside, from a button that is broken.
     signal importRequested()
+    // The Ribbon's Find-a-graph button and the Command bar's hint both open the
+    // window's palette, which the shell owns.
+    signal commandRequested()
     orientation:Qt.Horizontal
+
+    // The six window shapes.
+    //
+    // They differ in where the controls live, not in what they are: the same
+    // sidebar, the same canvas, the same menu bar. Mirroring the SplitView is
+    // what puts the controls on the right for Inspector - reordering a
+    // SplitView's children at run time is not something QML does, and two
+    // copies of the sidebar would be two things to keep in step.
+    readonly property int layout: root.app.uiLayout
+    readonly property bool sidebarDocked: root.layout !== 2 && root.layout !== 5
+    LayoutMirroring.enabled: root.layout === 1
+    LayoutMirroring.childrenInherit: false
 
     // Opening a .gvfig restores the canvas. The controller imports the figure's
     // datasets first and only then emits this, so the columns the state names
@@ -36,7 +51,7 @@ SplitView {
     Connections {
         target: root.app
         function onFigureLoaded(canvasState) {
-            plot.applyFigureState(canvasState)
+            if (root.canvas) root.canvas.applyFigureState(canvasState)
             root.app.rendererMode = "Qt 2-D"
         }
     }
@@ -45,10 +60,16 @@ SplitView {
     DockPanel {
         id: sidebarDock
         title: "GraphVis Controls"
+        visible: root.sidebarDocked || sidebarDock.floating
+        // Studio floats the controls over the figure; Command bar has none on
+        // screen at all until Ctrl+K asks for them.
+        floating: root.layout === 5
+        // The rail is narrower, because its job is to be a list of datasets and
+        // graphs rather than a full settings panel.
+        SplitView.preferredWidth: root.layout === 3 ? 330 : 400
         // Explicit travel limits on both panes. Without a maximum here and a
         // minimum on the canvas, the handle could not be dragged to the right
         // and panel content was clipped instead of the panel growing.
-        SplitView.preferredWidth:400
         SplitView.minimumWidth:280
         SplitView.maximumWidth:Math.max(280, root.width - 360)
 
@@ -56,6 +77,7 @@ SplitView {
         id:sidebar
         anchors.fill: parent
         app:root.app
+        inspectorMode: root.layout === 1
         canvas: plot
         onImportRequested: root.importRequested()
         onApplyMapping:(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)=>{
@@ -76,17 +98,24 @@ SplitView {
             // one of them got a single series, drew a frame with nothing in it,
             // and only Line Chart worked. The canvas composes them according to
             // what the engine actually needs; see PlotCanvas::rebuild.
-            plot.xColumn = x
-            plot.yColumns = y ? [y] : []
-            plot.zColumn = z ? z : ""
-            plot.colorColumn = c ? c : ""
+            var target = root.canvas
+            if (!target) return
+            target.xColumn = x
+            target.yColumns = y ? [y] : []
+            target.zColumn = z ? z : ""
+            target.colorColumn = c ? c : ""
         }
         // Applying a catalogue entry switches to the 2-D renderer and draws it.
         onGraphSelected:(entry)=>{
             app.rendererMode = "Qt 2-D"
-            plot.engine = entry.engine
-            plot.variant = entry.scale ? entry.scale : ""
-            plot.title = entry.engine
+            // root.canvas, not `plot`: in the notebook the figure being edited
+            // is whichever cell is current, and writing to the hidden single
+            // canvas meant choosing a graph did nothing visible at all.
+            var c = root.canvas
+            if (!c) return
+            c.engine = entry.engine
+            c.variant = entry.scale ? entry.scale : ""
+            c.title = entry.engine
             // Recorded here rather than in the library, so the list under File
             // is what was actually drawn rather than what was clicked and then
             // abandoned.
@@ -96,13 +125,15 @@ SplitView {
         // the graph and the axes together - the point of the scan.
         onScanRecommendation:(graph, mappings)=>{
             app.rendererMode = "Qt 2-D"
-            plot.engine = graph
-            plot.variant = ""
-            plot.title = graph
-            if (mappings && mappings.x) plot.xColumn = mappings.x
-            plot.yColumns = (mappings && mappings.y) ? [mappings.y] : []
-            plot.zColumn = (mappings && mappings.z) ? mappings.z : ""
-            plot.colorColumn = (mappings && mappings.c) ? mappings.c : ""
+            var t = root.canvas
+            if (!t) return
+            t.engine = graph
+            t.variant = ""
+            t.title = graph
+            if (mappings && mappings.x) t.xColumn = mappings.x
+            t.yColumns = (mappings && mappings.y) ? [mappings.y] : []
+            t.zColumn = (mappings && mappings.z) ? mappings.z : ""
+            t.colorColumn = (mappings && mappings.c) ? mappings.c : ""
             app.noteVisualisation(graph, "")
             app.notify("Applied scan recommendation: " + graph)
         }
@@ -209,8 +240,58 @@ SplitView {
         Rectangle {
             anchors.fill: parent
             color:Theme.background; border.color:Theme.border; radius:Theme.radius
+
+            ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
+
+            // The Ribbon layout's band. Only in that layout: in the other five
+            // the same controls are already somewhere the person can see them,
+            // and a second copy is a second thing to keep in step.
+            RibbonBar {
+                Layout.fillWidth: true
+                visible: root.layout === 4
+                app: root.app
+                canvas: root.canvas
+                onGraphSearchRequested: root.commandRequested()
+            }
+
+            // Command bar and Studio hide the sidebar, so something has to say
+            // how to get it back. One line, once, rather than an empty window
+            // and a shortcut nobody was told about.
+            Rectangle {
+                Layout.fillWidth: true
+                visible: root.layout === 2
+                implicitHeight: 30
+                color: Theme.surfaceAlt
+                border.color: Theme.border
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    spacing: 8
+                    Label {
+                        text: "⌕"
+                        color: Theme.accent
+                        font.pixelSize: 15
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        text: "Press Ctrl+K to find a graph, a column, a layout or an action"
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeSmall
+                        elide: Text.ElideRight
+                    }
+                    Button {
+                        text: "Search"
+                        flat: true
+                        onClicked: root.commandRequested()
+                    }
+                }
+            }
+
             StackLayout {
-                anchors.fill:parent
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 currentIndex: root.app.rendererMode==="Qt 2-D" ? 2 : (root.app.rendererMode==="VTK / PBR" ? 1 : 0)
                 Item {
                     WindowContainer { anchors.fill:parent; window:root.app.viewportWindow }
@@ -335,6 +416,7 @@ SplitView {
                 }
                 }
                 }
+            }
             }
         }
     }

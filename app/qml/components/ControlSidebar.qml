@@ -9,6 +9,11 @@ Rectangle {
     // The live PlotCanvas, handed down so the Publication Studio can export the
     // figure that is actually on screen rather than rebuilding one.
     property var canvas: null
+    // Inspector layout: no tab bar, everything for the current figure in one
+    // scrolling column. The eight tabs are what makes the graph chooser, the
+    // axis mapping and the data three clicks apart, so the layout that removes
+    // them removes the tab bar rather than merely renaming it.
+    property bool inspectorMode: false
     // Raised by the dataset bar's Import button, so the shell opens the file
     // dialog it already owns instead of this panel growing one of its own.
     signal importRequested()
@@ -36,7 +41,8 @@ Rectangle {
         // cannot read is a row of tabs you have to click to identify.
         ScrollView {
             Layout.fillWidth: true
-            Layout.preferredHeight: tabs.implicitHeight
+            visible: !root.inspectorMode
+            Layout.preferredHeight: root.inspectorMode ? 0 : tabs.implicitHeight
             ScrollBar.vertical.policy: ScrollBar.AlwaysOff
             ScrollBar.horizontal.policy: ScrollBar.AsNeeded
             clip: true
@@ -52,7 +58,41 @@ Rectangle {
         // that is the order the questions are asked in - what data, then what
         // picture of it - and because switching used to mean leaving this tab
         // for the Data tab and coming back.
+        // Inspector: one column, sections in the order the work happens.
+        PanelScroll {
+            visible: root.inspectorMode
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentSpacing: 10
+            ActiveDatasetBar {
+                app: root.app
+                Layout.fillWidth: true
+                onImportRequested: root.importRequested()
+            }
+            ColourVisionBar { app: root.app; canvas: root.canvas; Layout.fillWidth: true }
+            GvGroupBox {
+                title: "Axes"
+                Layout.fillWidth: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    AxisScaleBar { canvas: root.canvas; Layout.fillWidth: true }
+                }
+            }
+            GvGroupBox {
+                title: "Graph"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 460
+                GraphLibrary {
+                    anchors.fill: parent
+                    app: root.app
+                    onApplyRequested: (entry) => root.graphSelected(entry)
+                    onScanApplied: (g, m) => root.scanRecommendation(g, m)
+                }
+            }
+        }
+
         StackLayout {
+            visible: !root.inspectorMode
             Layout.fillWidth:true; Layout.fillHeight:true; currentIndex:tabs.currentIndex
             // The Graphs tab, split so the person decides how the height is
             // shared.

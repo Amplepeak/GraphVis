@@ -223,11 +223,24 @@ MenuBar {
 
         MenuSeparator {}
 
-        Action {
-            text: "Notebook — several figures at once"
-            checkable: true
-            checked: root.app.notebookLayout
-            onTriggered: root.app.notebookLayout = !root.app.notebookLayout
+        Menu {
+            title: "Layout"
+            // The six window shapes. Notebook is the default; the rest are here
+            // rather than discarded, because which one suits a person is not
+            // something the application can decide for them.
+            Repeater {
+                model: root.app.uiLayoutNames
+                delegate: MenuItem {
+                    required property string modelData
+                    required property int index
+                    text: modelData
+                    checkable: true
+                    checked: root.app.uiLayout === index
+                    ToolTip.visible: hovered
+                    ToolTip.text: root.app.uiLayoutDescriptions[index]
+                    onTriggered: root.app.uiLayout = index
+                }
+            }
         }
 
         MenuSeparator {}

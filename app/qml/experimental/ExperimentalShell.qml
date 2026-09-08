@@ -17,6 +17,7 @@ Rectangle {
     required property var app
     signal importRequested()
     signal literatureRequested()
+    signal commandRequested()
     // The live canvas, so the window's menu bar can act on the figure whichever
     // shell is loaded.
     readonly property alias canvas: visualise.canvas
@@ -94,6 +95,7 @@ Rectangle {
                 app: root.app
                 visible: root.visualiseMode
                 onImportRequested: root.importRequested()
+                onCommandRequested: root.commandRequested()
             }
             Loader {
                 anchors.fill:parent; anchors.margins:root.app.workspaceMode==="Literature"?0:4

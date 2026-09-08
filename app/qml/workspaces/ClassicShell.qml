@@ -13,6 +13,7 @@ Item {
     required property var app
     signal importRequested()
     signal literatureRequested()
+    signal commandRequested()
     // The live canvas, so the window's menu bar can act on the figure. The
     // shell owns the Visualize workspace, which owns the plot; nothing above
     // this could reach it before.
@@ -33,6 +34,7 @@ Item {
         app: root.app
         visible: root.visualiseMode
         onImportRequested: root.importRequested()
+        onCommandRequested: root.commandRequested()
     }
     Loader {
         anchors.fill:parent

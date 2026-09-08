@@ -62,7 +62,7 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotGridDensity_=qBound(0,settings.value(QStringLiteral("plot/gridDensity"),0).toInt(),25);
     plotScaleLabels_=settings.value(QStringLiteral("plot/scaleLabels"),true).toBool();
     plotFieldInterpolation_=qBound(0,settings.value(QStringLiteral("plot/fieldInterpolation"),2).toInt(),3);
-    notebookLayout_=settings.value(QStringLiteral("ui/notebookLayout"),true).toBool();
+    uiLayout_=qBound(0,settings.value(QStringLiteral("ui/layout"),0).toInt(),5);
     loadRecents();
     // Every signal connection below has to happen whether or not the native
     // core loads. When the DLL is missing this constructor used to return here,
@@ -1769,14 +1769,14 @@ void AppController::setPlotGridVisible(bool on){
     emit plotDisplayChanged();
 }
 
-void AppController::setNotebookLayout(bool on){
-    if(notebookLayout_==on) return;
-    notebookLayout_=on;
+void AppController::setUiLayout(int layout){
+    const int clamped=qBound(0,layout,5);
+    if(uiLayout_==clamped) return;
+    uiLayout_=clamped;
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
-        .setValue(QStringLiteral("ui/notebookLayout"),notebookLayout_);
+        .setValue(QStringLiteral("ui/layout"),uiLayout_);
     emit plotDisplayChanged();
-    setStatus(notebookLayout_?QStringLiteral("Notebook: several figures at once")
-                             :QStringLiteral("One figure at a time"));
+    setStatus(QStringLiteral("Layout: %1").arg(uiLayoutNames().value(uiLayout_)));
 }
 
 void AppController::setPlotFieldInterpolation(int mode){

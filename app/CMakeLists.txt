@@ -120,6 +120,9 @@ set(GRAPHVIS_QML_FILES
   qml/components/PlotNotice.qml
   qml/components/DockPanel.qml
   qml/components/MainMenuBar.qml
+  qml/components/LayoutPicker.qml
+  qml/components/CommandPalette.qml
+  qml/components/RibbonBar.qml
   qml/components/AxisScaleBar.qml
   qml/components/FigureCell.qml
   qml/workspaces/NotebookCanvas.qml

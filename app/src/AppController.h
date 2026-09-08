@@ -79,10 +79,22 @@ class AppController final : public QObject {
     // cells that were hit gives coloured confetti rather than a map. See
     // PlotStyle::fieldInterpolation.
     Q_PROPERTY(int plotFieldInterpolation READ plotFieldInterpolation WRITE setPlotFieldInterpolation NOTIFY plotDisplayChanged)
-    // Several figures stacked as a document, rather than one canvas. The
-    // default, because comparing two graphs was previously a matter of drawing
-    // one and remembering it.
-    Q_PROPERTY(bool notebookLayout READ notebookLayout WRITE setNotebookLayout NOTIFY plotDisplayChanged)
+    // The shape of the window. Six of them, because six different ways of
+    // working came out of the design comparison and there was no reason to
+    // throw five away: the engine does not care what the window looks like.
+    //
+    //   0 Notebook       several figures as a document        (the default)
+    //   1 Inspector      one scrolling column on the right, no tabs
+    //   2 Command bar    almost no chrome; everything through a search box
+    //   3 Workflow rail  data, then graph, then figure, left to right
+    //   4 Ribbon         a contextual band across the top
+    //   5 Studio         full-bleed canvas with the controls floating over it
+    Q_PROPERTY(int uiLayout READ uiLayout WRITE setUiLayout NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList uiLayoutNames READ uiLayoutNames CONSTANT)
+    Q_PROPERTY(QStringList uiLayoutDescriptions READ uiLayoutDescriptions CONSTANT)
+    // True when the current layout draws several figures at once. Read by the
+    // workspace; kept as its own name because that is the question it asks.
+    Q_PROPERTY(bool notebookLayout READ notebookLayout NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList plotFieldInterpolationNames READ plotFieldInterpolationNames CONSTANT)
 
     // What was open last time.
@@ -277,8 +289,29 @@ public:
     void setPlotScaleLabels(bool on);
     int plotFieldInterpolation() const{return plotFieldInterpolation_;}
     void setPlotFieldInterpolation(int mode);
-    bool notebookLayout() const{return notebookLayout_;}
-    void setNotebookLayout(bool on);
+    int uiLayout() const{return uiLayout_;}
+    void setUiLayout(int layout);
+    bool notebookLayout() const{return uiLayout_==0;}
+    QStringList uiLayoutNames() const{
+        return {QStringLiteral("Notebook"),QStringLiteral("Inspector"),
+                QStringLiteral("Command bar"),QStringLiteral("Workflow rail"),
+                QStringLiteral("Ribbon"),QStringLiteral("Studio")};
+    }
+    QStringList uiLayoutDescriptions() const{
+        return {
+            QStringLiteral("Several figures stacked as a document, so two graphs can be "
+                           "compared side by side rather than one at a time."),
+            QStringLiteral("One scrolling column of settings on the right, no tabs. "
+                           "Nothing is ever hidden behind another tab."),
+            QStringLiteral("Almost no permanent chrome. The figure gets the whole window "
+                           "and the controls appear only while they are being used."),
+            QStringLiteral("Data, then graph, then figure, left to right — the order the "
+                           "work actually happens in."),
+            QStringLiteral("A band across the top that changes with the task, as Excel and "
+                           "Origin do."),
+            QStringLiteral("Full-bleed canvas with the controls floating over it, movable "
+                           "and closable.")};
+    }
     QStringList plotFieldInterpolationNames() const{
         return {QStringLiteral("None - only the cells that were measured"),
                 QStringLiteral("Nearest - each gap takes its closest measurement"),
@@ -440,7 +473,7 @@ private:
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
     bool plotScaleLabels_=true;
     int plotFieldInterpolation_=2;          // Linear
-    bool notebookLayout_=true;
+    int uiLayout_=0;                        // Notebook
     // Newest first, capped. Each entry is {path, name}; visualisations are
     // {engine, variant, label}.
     QVariantList recentDatasets_;

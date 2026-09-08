@@ -88,6 +88,19 @@ ToolBar {
             onToggled: root.app.experimentalUi = checked
         }
 
+        // The window's shape. Beside the renderer because they are the same
+        // kind of question - which machinery is drawing, and what the window
+        // looks like around it - and both belong to the Visualize workspace.
+        Label {
+            text: "Layout"; color: Theme.textSecondary
+            visible: root.app.workspaceMode === "Visualize" && !root.compact
+        }
+        LayoutPicker {
+            app: root.app
+            Layout.preferredWidth: root.compact ? 130 : 168
+            visible: root.app.workspaceMode === "Visualize"
+        }
+
         Label {
             text: "Renderer"; color: Theme.textSecondary
             visible: root.app.workspaceMode === "Visualize" && !root.compact

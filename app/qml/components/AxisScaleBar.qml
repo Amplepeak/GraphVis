@@ -49,7 +49,7 @@ ColumnLayout {
             enabled: root.canvas !== null
             model: root.names
             currentIndex: root.canvas ? root.canvas.xTransform : 0
-            onActivated: if (root.canvas) root.canvas.xTransform = currentIndex
+            onActivated: if (root.canvas) root.canvas.xTransform = xBox.currentIndex
             ToolTip.visible: xBox.hovered
             ToolTip.text: root.why[Math.max(0, Math.min(xBox.currentIndex, root.why.length - 1))]
         }
@@ -73,7 +73,7 @@ ColumnLayout {
             enabled: root.canvas !== null && !linkBox.checked
             model: root.names
             currentIndex: root.canvas ? root.canvas.yTransform : 0
-            onActivated: if (root.canvas) root.canvas.yTransform = currentIndex
+            onActivated: if (root.canvas) root.canvas.yTransform = yBox.currentIndex
             ToolTip.visible: yBox.hovered
             ToolTip.text: root.why[Math.max(0, Math.min(yBox.currentIndex, root.why.length - 1))]
         }
