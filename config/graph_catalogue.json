@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 1359,
- "engine_count": 223,
+ "entry_count": 1667,
+ "engine_count": 267,
  "categories": [
   {
    "name": "Line Plots",
@@ -1320,16 +1320,6 @@
     },
     {
      "category": "Data Distribution Plots",
-     "name": "rankabundance",
-     "engine": "Rank-Abundance Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Data Distribution Plots",
      "name": "rankabundance · Semi-Log Y",
      "engine": "Rank-Abundance Curve",
      "scale": "Semi-Log Y",
@@ -1385,6 +1375,16 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Value against rank, commonest first, on a log axis — dominance versus evenness — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Data Distribution Plots",
+     "name": "rankabundance",
+     "engine": "Rank-Abundance Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Value against rank, commonest first, on a log axis — dominance versus evenness",
      "preview": "",
      "thumbnail": ""
     }
@@ -3852,6 +3852,146 @@
      "description": "Midpoint step plot — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "_┐_┌_",
      "thumbnail": "stepmid_17ce106521.png"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell · Semi-Log Y",
+     "engine": "Campbell Diagram",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Natural frequencies against shaft speed with the engine-order rays — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell · Logarithmic Scale",
+     "engine": "Campbell Diagram",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Natural frequencies against shaft speed with the engine-order rays — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell · Semi-Log X",
+     "engine": "Campbell Diagram",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Natural frequencies against shaft speed with the engine-order rays — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell · Semi-Log(1+x) Y",
+     "engine": "Campbell Diagram",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Natural frequencies against shaft speed with the engine-order rays — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell · Standardised (Z-Score)",
+     "engine": "Campbell Diagram",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Natural frequencies against shaft speed with the engine-order rays — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell · Quantile X",
+     "engine": "Campbell Diagram",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Natural frequencies against shaft speed with the engine-order rays — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit · Semi-Log Y",
+     "engine": "Shaft Orbit",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit · Logarithmic Scale",
+     "engine": "Shaft Orbit",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit · Semi-Log X",
+     "engine": "Shaft Orbit",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit · Semi-Log(1+x) Y",
+     "engine": "Shaft Orbit",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit · Standardised (Z-Score)",
+     "engine": "Shaft Orbit",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit · Quantile X",
+     "engine": "Shaft Orbit",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "campbell",
+     "engine": "Campbell Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Natural frequencies against shaft speed with the engine-order rays",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "shaftorbit",
+     "engine": "Shaft Orbit",
+     "scale": null,
+     "advanced": false,
+     "description": "The journal centre's path from a pair of proximity probes — the shape is the diagnosis",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -4717,6 +4857,216 @@
      "description": "Jittered strip distribution — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "••••",
      "thumbnail": "stripplot_fd365905ad.png"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence",
+     "engine": "Influence Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Studentised residual against leverage, with the conventional cut-offs",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar",
+     "engine": "Added-Variable Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction",
+     "engine": "Interaction Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Cell means across one factor, one line per level of a second",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar · Semi-Log Y",
+     "engine": "Added-Variable Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar · Logarithmic Scale",
+     "engine": "Added-Variable Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar · Semi-Log X",
+     "engine": "Added-Variable Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar · Semi-Log(1+x) Y",
+     "engine": "Added-Variable Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar · Standardised (Z-Score)",
+     "engine": "Added-Variable Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "addedvar · Quantile X",
+     "engine": "Added-Variable Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Partial regression: the slope of this scatter is the coefficient in the full model — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence · Semi-Log Y",
+     "engine": "Influence Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Studentised residual against leverage, with the conventional cut-offs — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence · Logarithmic Scale",
+     "engine": "Influence Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Studentised residual against leverage, with the conventional cut-offs — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence · Semi-Log X",
+     "engine": "Influence Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Studentised residual against leverage, with the conventional cut-offs — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence · Semi-Log(1+x) Y",
+     "engine": "Influence Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Studentised residual against leverage, with the conventional cut-offs — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence · Standardised (Z-Score)",
+     "engine": "Influence Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Studentised residual against leverage, with the conventional cut-offs — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "influence · Quantile X",
+     "engine": "Influence Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Studentised residual against leverage, with the conventional cut-offs — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction · Semi-Log Y",
+     "engine": "Interaction Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cell means across one factor, one line per level of a second — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction · Logarithmic Scale",
+     "engine": "Interaction Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cell means across one factor, one line per level of a second — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction · Semi-Log X",
+     "engine": "Interaction Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cell means across one factor, one line per level of a second — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction · Semi-Log(1+x) Y",
+     "engine": "Interaction Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cell means across one factor, one line per level of a second — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction · Standardised (Z-Score)",
+     "engine": "Interaction Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cell means across one factor, one line per level of a second — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "interaction · Quantile X",
+     "engine": "Interaction Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cell means across one factor, one line per level of a second — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -5577,6 +5927,286 @@
      "description": "Hydrochemical trilinear diagram — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "◇△",
      "thumbnail": "piper_744098fc2c.png"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd · Semi-Log Y",
+     "engine": "Particle Size Distribution",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60 — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd · Logarithmic Scale",
+     "engine": "Particle Size Distribution",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60 — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd · Semi-Log X",
+     "engine": "Particle Size Distribution",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60 — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd · Semi-Log(1+x) Y",
+     "engine": "Particle Size Distribution",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60 — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd · Standardised (Z-Score)",
+     "engine": "Particle Size Distribution",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60 — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd · Quantile X",
+     "engine": "Particle Size Distribution",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60 — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity · Semi-Log Y",
+     "engine": "Plasticity Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity · Logarithmic Scale",
+     "engine": "Plasticity Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity · Semi-Log X",
+     "engine": "Plasticity Chart",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity · Semi-Log(1+x) Y",
+     "engine": "Plasticity Chart",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity · Standardised (Z-Score)",
+     "engine": "Plasticity Chart",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity · Quantile X",
+     "engine": "Plasticity Chart",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram · Semi-Log Y",
+     "engine": "O-C Diagram",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram · Logarithmic Scale",
+     "engine": "O-C Diagram",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram · Semi-Log X",
+     "engine": "O-C Diagram",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram · Semi-Log(1+x) Y",
+     "engine": "O-C Diagram",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram · Standardised (Z-Score)",
+     "engine": "O-C Diagram",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram · Quantile X",
+     "engine": "O-C Diagram",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold · Semi-Log Y",
+     "engine": "Phase-Folded Light Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold · Logarithmic Scale",
+     "engine": "Phase-Folded Light Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold · Semi-Log X",
+     "engine": "Phase-Folded Light Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold · Semi-Log(1+x) Y",
+     "engine": "Phase-Folded Light Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold · Standardised (Z-Score)",
+     "engine": "Phase-Folded Light Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold · Quantile X",
+     "engine": "Phase-Folded Light Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "plasticity",
+     "engine": "Plasticity Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Plasticity index against liquid limit over Casagrande's A-line and U-line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "psd",
+     "engine": "Particle Size Distribution",
+     "scale": null,
+     "advanced": false,
+     "description": "Percent finer against grain size on a reversed log axis, with D10, D30 and D60",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "phasefold",
+     "engine": "Phase-Folded Light Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Flux against phase after folding on a trial period, drawn over two cycles",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "ocdiagram",
+     "engine": "O-C Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Observed minus computed event time against epoch, with the ephemeris fitted",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -5762,6 +6392,146 @@
      "description": "Derivative view highlighting abrupt transitions",
      "preview": "Δ↗",
      "thumbnail": "change-point_overview_32aac58eae.png"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart",
+     "engine": "Fan Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "A forecast as nested probability bands widening into the future",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail",
+     "engine": "Snail Trail",
+     "scale": null,
+     "advanced": false,
+     "description": "Trailing risk against trailing return, joined in time order",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart · Semi-Log Y",
+     "engine": "Fan Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A forecast as nested probability bands widening into the future — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart · Logarithmic Scale",
+     "engine": "Fan Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A forecast as nested probability bands widening into the future — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart · Semi-Log X",
+     "engine": "Fan Chart",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A forecast as nested probability bands widening into the future — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart · Semi-Log(1+x) Y",
+     "engine": "Fan Chart",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A forecast as nested probability bands widening into the future — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart · Standardised (Z-Score)",
+     "engine": "Fan Chart",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A forecast as nested probability bands widening into the future — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "fanchart · Quantile X",
+     "engine": "Fan Chart",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A forecast as nested probability bands widening into the future — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail · Semi-Log Y",
+     "engine": "Snail Trail",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Trailing risk against trailing return, joined in time order — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail · Logarithmic Scale",
+     "engine": "Snail Trail",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Trailing risk against trailing return, joined in time order — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail · Semi-Log X",
+     "engine": "Snail Trail",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Trailing risk against trailing return, joined in time order — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail · Semi-Log(1+x) Y",
+     "engine": "Snail Trail",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Trailing risk against trailing return, joined in time order — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail · Standardised (Z-Score)",
+     "engine": "Snail Trail",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Trailing risk against trailing return, joined in time order — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "snailtrail · Quantile X",
+     "engine": "Snail Trail",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Trailing risk against trailing return, joined in time order — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -5917,6 +6687,76 @@
      "description": "Derivative spectroscopy view",
      "preview": "dI/dx",
      "thumbnail": "peak_derivative_b38e0a97b7.png"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter · Semi-Log Y",
+     "engine": "van Deemter Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter · Logarithmic Scale",
+     "engine": "van Deemter Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter · Semi-Log X",
+     "engine": "van Deemter Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter · Semi-Log(1+x) Y",
+     "engine": "van Deemter Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter · Standardised (Z-Score)",
+     "engine": "van Deemter Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter · Quantile X",
+     "engine": "van Deemter Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "vandeemter",
+     "engine": "van Deemter Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Plate height against velocity with the A + B/u + Cu fit and its optimum",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -6145,26 +6985,6 @@
     },
     {
      "category": "Statistical Inference & Effect",
-     "name": "lorenz",
-     "engine": "Lorenz Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Statistical Inference & Effect",
-     "name": "concentration",
-     "engine": "Concentration Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Cumulative share of an outcome against population ranked by a second variable",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Statistical Inference & Effect",
      "name": "concentration · Semi-Log Y",
      "engine": "Concentration Curve",
      "scale": "Semi-Log Y",
@@ -6280,6 +7100,96 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "lorenz",
+     "engine": "Lorenz Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative share of the total against cumulative share of the population, with the Gini coefficient",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "concentration",
+     "engine": "Concentration Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative share of an outcome against population ranked by a second variable",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado",
+     "engine": "Tornado Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado · Semi-Log Y",
+     "engine": "Tornado Diagram",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado · Logarithmic Scale",
+     "engine": "Tornado Diagram",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado · Semi-Log X",
+     "engine": "Tornado Diagram",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado · Semi-Log(1+x) Y",
+     "engine": "Tornado Diagram",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado · Standardised (Z-Score)",
+     "engine": "Tornado Diagram",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tornado · Quantile X",
+     "engine": "Tornado Diagram",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Each input's low-to-high swing around the base case, sorted longest first — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": ""
     }
@@ -7707,6 +8617,76 @@
      "description": "Multivariate parallel-axis comparison",
      "preview": "╲│╱",
      "thumbnail": "parallel_comparison_0ad1983c67.png"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier",
+     "engine": "Efficient Frontier",
+     "scale": null,
+     "advanced": false,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier · Semi-Log Y",
+     "engine": "Efficient Frontier",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier · Logarithmic Scale",
+     "engine": "Efficient Frontier",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier · Semi-Log X",
+     "engine": "Efficient Frontier",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier · Semi-Log(1+x) Y",
+     "engine": "Efficient Frontier",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier · Standardised (Z-Score)",
+     "engine": "Efficient Frontier",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "frontier · Quantile X",
+     "engine": "Efficient Frontier",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Return against risk with the non-dominated frontier drawn through the cloud — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -8132,6 +9112,146 @@
      "description": "Curl of the response gradient: rotational structure of the field — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "↻↺",
      "thumbnail": "vorticity_map_f9f5fa3c3c.png"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody · Semi-Log Y",
+     "engine": "Moody Diagram",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody · Logarithmic Scale",
+     "engine": "Moody Diagram",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody · Semi-Log X",
+     "engine": "Moody Diagram",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody · Semi-Log(1+x) Y",
+     "engine": "Moody Diagram",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody · Standardised (Z-Score)",
+     "engine": "Moody Diagram",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody · Quantile X",
+     "engine": "Moody Diagram",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve · Semi-Log Y",
+     "engine": "Pump Performance Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Head against flow with the system resistance curve and the duty point marked — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve · Logarithmic Scale",
+     "engine": "Pump Performance Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Head against flow with the system resistance curve and the duty point marked — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve · Semi-Log X",
+     "engine": "Pump Performance Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Head against flow with the system resistance curve and the duty point marked — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve · Semi-Log(1+x) Y",
+     "engine": "Pump Performance Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Head against flow with the system resistance curve and the duty point marked — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve · Standardised (Z-Score)",
+     "engine": "Pump Performance Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Head against flow with the system resistance curve and the duty point marked — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve · Quantile X",
+     "engine": "Pump Performance Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Head against flow with the system resistance curve and the duty point marked — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "moody",
+     "engine": "Moody Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Darcy friction factor against Reynolds number over the Colebrook-White roughness family",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pumpcurve",
+     "engine": "Pump Performance Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Head against flow with the system resistance curve and the duty point marked",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -9587,6 +10707,76 @@
      "description": "Loadings tested against the CG envelope — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "⚖",
      "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp · Semi-Log Y",
+     "engine": "Airfoil Cp Distribution",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp · Logarithmic Scale",
+     "engine": "Airfoil Cp Distribution",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp · Semi-Log X",
+     "engine": "Airfoil Cp Distribution",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp · Semi-Log(1+x) Y",
+     "engine": "Airfoil Cp Distribution",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp · Standardised (Z-Score)",
+     "engine": "Airfoil Cp Distribution",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp · Quantile X",
+     "engine": "Airfoil Cp Distribution",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Aviation & Flight",
+     "name": "airfoilcp",
+     "engine": "Airfoil Cp Distribution",
+     "scale": null,
+     "advanced": false,
+     "description": "Pressure coefficient along the chord, y axis inverted as convention requires",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -10055,36 +11245,6 @@
     },
     {
      "category": "Maintenance & Reliability",
-     "name": "bathtub",
-     "engine": "Bathtub Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Hazard rate against age — infant mortality, useful life and wear-out",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Maintenance & Reliability",
-     "name": "duane",
-     "engine": "Duane Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Maintenance & Reliability",
-     "name": "mcf",
-     "engine": "Mean Cumulative Function",
-     "scale": null,
-     "advanced": false,
-     "description": "Mean cumulative repairs per unit against age, for repairable systems",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Maintenance & Reliability",
      "name": "bathtub · Semi-Log Y",
      "engine": "Bathtub Curve",
      "scale": "Semi-Log Y",
@@ -10260,6 +11420,36 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Mean cumulative repairs per unit against age, for repairable systems — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "bathtub",
+     "engine": "Bathtub Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Hazard rate against age — infant mortality, useful life and wear-out",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "duane",
+     "engine": "Duane Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative MTBF against cumulative operating time on log-log axes, with the growth slope",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Maintenance & Reliability",
+     "name": "mcf",
+     "engine": "Mean Cumulative Function",
+     "scale": null,
+     "advanced": false,
+     "description": "Mean cumulative repairs per unit against age, for repairable systems",
      "preview": "",
      "thumbnail": ""
     }
@@ -11092,6 +12282,776 @@
      "description": "pH against titrant volume, equivalence point at the steepest slope — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🧪",
      "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn · Semi-Log Y",
+     "engine": "Crack Growth Rate",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn · Logarithmic Scale",
+     "engine": "Crack Growth Rate",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn · Semi-Log X",
+     "engine": "Crack Growth Rate",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn · Semi-Log(1+x) Y",
+     "engine": "Crack Growth Rate",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn · Standardised (Z-Score)",
+     "engine": "Crack Growth Rate",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn · Quantile X",
+     "engine": "Crack Growth Rate",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh · Semi-Log Y",
+     "engine": "Haigh Diagram",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh · Logarithmic Scale",
+     "engine": "Haigh Diagram",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh · Semi-Log X",
+     "engine": "Haigh Diagram",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh · Semi-Log(1+x) Y",
+     "engine": "Haigh Diagram",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh · Standardised (Z-Score)",
+     "engine": "Haigh Diagram",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh · Quantile X",
+     "engine": "Haigh Diagram",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller · Semi-Log Y",
+     "engine": "Larson-Miller Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller · Logarithmic Scale",
+     "engine": "Larson-Miller Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller · Semi-Log X",
+     "engine": "Larson-Miller Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller · Semi-Log(1+x) Y",
+     "engine": "Larson-Miller Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller · Standardised (Z-Score)",
+     "engine": "Larson-Miller Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller · Quantile X",
+     "engine": "Larson-Miller Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife · Semi-Log Y",
+     "engine": "Strain-Life Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Strain amplitude against reversals to failure — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife · Logarithmic Scale",
+     "engine": "Strain-Life Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Strain amplitude against reversals to failure — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife · Semi-Log X",
+     "engine": "Strain-Life Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Strain amplitude against reversals to failure — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife · Semi-Log(1+x) Y",
+     "engine": "Strain-Life Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Strain amplitude against reversals to failure — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife · Standardised (Z-Score)",
+     "engine": "Strain-Life Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Strain amplitude against reversals to failure — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife · Quantile X",
+     "engine": "Strain-Life Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Strain amplitude against reversals to failure — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck · Semi-Log Y",
+     "engine": "Stribeck Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck · Logarithmic Scale",
+     "engine": "Stribeck Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck · Semi-Log X",
+     "engine": "Stribeck Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck · Semi-Log(1+x) Y",
+     "engine": "Stribeck Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck · Standardised (Z-Score)",
+     "engine": "Stribeck Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck · Quantile X",
+     "engine": "Stribeck Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet · Semi-Log Y",
+     "engine": "BET Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet · Logarithmic Scale",
+     "engine": "BET Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet · Semi-Log X",
+     "engine": "BET Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet · Semi-Log(1+x) Y",
+     "engine": "BET Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet · Standardised (Z-Score)",
+     "engine": "BET Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet · Quantile X",
+     "engine": "BET Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie · Semi-Log Y",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "v against v/[S] — the same constants with the error placed differently — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie · Logarithmic Scale",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "v against v/[S] — the same constants with the error placed differently — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie · Semi-Log X",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "v against v/[S] — the same constants with the error placed differently — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie · Semi-Log(1+x) Y",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "v against v/[S] — the same constants with the error placed differently — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie · Standardised (Z-Score)",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "v against v/[S] — the same constants with the error placed differently — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie · Quantile X",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "v against v/[S] — the same constants with the error placed differently — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf · Semi-Log Y",
+     "engine": "Hanes-Woolf Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf · Logarithmic Scale",
+     "engine": "Hanes-Woolf Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf · Semi-Log X",
+     "engine": "Hanes-Woolf Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf · Semi-Log(1+x) Y",
+     "engine": "Hanes-Woolf Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf · Standardised (Z-Score)",
+     "engine": "Hanes-Woolf Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf · Quantile X",
+     "engine": "Hanes-Woolf Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot · Semi-Log Y",
+     "engine": "Job Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot · Logarithmic Scale",
+     "engine": "Job Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot · Semi-Log X",
+     "engine": "Job Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot · Semi-Log(1+x) Y",
+     "engine": "Job Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot · Standardised (Z-Score)",
+     "engine": "Job Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot · Quantile X",
+     "engine": "Job Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver · Semi-Log Y",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver · Logarithmic Scale",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver · Semi-Log X",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver · Semi-Log(1+x) Y",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver · Standardised (Z-Score)",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver · Quantile X",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard · Semi-Log Y",
+     "engine": "Scatchard Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard · Logarithmic Scale",
+     "engine": "Scatchard Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard · Semi-Log X",
+     "engine": "Scatchard Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard · Semi-Log(1+x) Y",
+     "engine": "Scatchard Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard · Standardised (Z-Score)",
+     "engine": "Scatchard Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard · Quantile X",
+     "engine": "Scatchard Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "stribeck",
+     "engine": "Stribeck Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Friction coefficient against Hersey number — boundary, mixed and hydrodynamic regimes",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haigh",
+     "engine": "Haigh Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Alternating against mean stress with the Goodman, Gerber and Soderberg envelopes",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dadn",
+     "engine": "Crack Growth Rate",
+     "scale": null,
+     "advanced": false,
+     "description": "da/dN against dK on log-log axes, with the Paris exponent and coefficient fitted",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "strainlife",
+     "engine": "Strain-Life Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Strain amplitude against reversals to failure",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "larsonmiller",
+     "engine": "Larson-Miller Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Stress against the Larson-Miller parameter, collapsing creep-rupture tests onto one curve",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "lineweaver",
+     "engine": "Lineweaver-Burk Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "1/v against 1/[S] with Vmax and Km read off the fitted line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "eadie",
+     "engine": "Eadie-Hofstee Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "v against v/[S] — the same constants with the error placed differently",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "haneswoolf",
+     "engine": "Hanes-Woolf Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "[S]/v against [S] — the third rearrangement, and the best conditioned of them",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "scatchard",
+     "engine": "Scatchard Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Bound/free against bound; slope −1/Kd, x intercept the number of sites",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "bet",
+     "engine": "BET Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "The BET transform over the 0.05–0.35 linear region, with monolayer capacity",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "jobplot",
+     "engine": "Job Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Signal against mole fraction; the maximum gives the complex stoichiometry",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -11236,76 +13196,6 @@
      "advanced": true,
      "description": "Survival probability as a step function, censoring ticked — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🩺",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "radialplot",
-     "engine": "Radial Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "Galbraith plot: standardised effect against precision, with the pooled slope",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "labbe",
-     "engine": "L'Abbé Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "Treated-arm rate against control-arm rate, one point per study",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "caterpillar",
-     "engine": "Caterpillar Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "cumulativemeta",
-     "engine": "Cumulative Meta-Analysis",
-     "scale": null,
-     "advanced": false,
-     "description": "The pooled estimate recomputed as each study is added, with its interval",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "nelsonaalen",
-     "engine": "Nelson-Aalen Cumulative Hazard",
-     "scale": null,
-     "advanced": false,
-     "description": "Cumulative hazard against time, where a constant hazard is a straight line",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "cumincidence",
-     "engine": "Cumulative Incidence",
-     "scale": null,
-     "advanced": false,
-     "description": "Cumulative incidence against time, from event times and an event flag",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Clinical & Meta-analysis",
-     "name": "decisioncurve",
-     "engine": "Decision Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Net benefit against threshold probability, with treat-all and treat-none",
-     "preview": "",
      "thumbnail": ""
     },
     {
@@ -11725,6 +13615,496 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Galbraith plot: standardised effect against precision, with the pooled slope — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume · Semi-Log Y",
+     "engine": "Flow-Volume Loop",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume · Logarithmic Scale",
+     "engine": "Flow-Volume Loop",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume · Semi-Log X",
+     "engine": "Flow-Volume Loop",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume · Semi-Log(1+x) Y",
+     "engine": "Flow-Volume Loop",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume · Standardised (Z-Score)",
+     "engine": "Flow-Volume Loop",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume · Quantile X",
+     "engine": "Flow-Volume Loop",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop · Semi-Log Y",
+     "engine": "Pressure-Volume Loop",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop · Logarithmic Scale",
+     "engine": "Pressure-Volume Loop",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop · Semi-Log X",
+     "engine": "Pressure-Volume Loop",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop · Semi-Log(1+x) Y",
+     "engine": "Pressure-Volume Loop",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop · Standardised (Z-Score)",
+     "engine": "Pressure-Volume Loop",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop · Quantile X",
+     "engine": "Pressure-Volume Loop",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "radialplot",
+     "engine": "Radial Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Galbraith plot: standardised effect against precision, with the pooled slope",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "labbe",
+     "engine": "L'Abbé Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Treated-arm rate against control-arm rate, one point per study",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "caterpillar",
+     "engine": "Caterpillar Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A forest plot sorted by estimate, so the shape of the evidence is visible",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumulativemeta",
+     "engine": "Cumulative Meta-Analysis",
+     "scale": null,
+     "advanced": false,
+     "description": "The pooled estimate recomputed as each study is added, with its interval",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "nelsonaalen",
+     "engine": "Nelson-Aalen Cumulative Hazard",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative hazard against time, where a constant hazard is a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "cumincidence",
+     "engine": "Cumulative Incidence",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative incidence against time, from event times and an event flag",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "decisioncurve",
+     "engine": "Decision Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Net benefit against threshold probability, with treat-all and treat-none",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "flowvolume",
+     "engine": "Flow-Volume Loop",
+     "scale": null,
+     "advanced": false,
+     "description": "Flow against volume as a closed loop — the shape is the diagnosis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pvloop",
+     "engine": "Pressure-Volume Loop",
+     "scale": null,
+     "advanced": false,
+     "description": "Ventricular pressure against volume; the enclosed area is stroke work",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": null,
+     "advanced": false,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac",
+     "engine": "Acceptability Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Probability an option is cost-effective, against willingness to pay",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna",
+     "engine": "Lasagna Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer",
+     "engine": "Swimmer Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "One lane per subject from start to stop, longest at the top",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac · Semi-Log Y",
+     "engine": "Acceptability Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Probability an option is cost-effective, against willingness to pay — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac · Logarithmic Scale",
+     "engine": "Acceptability Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Probability an option is cost-effective, against willingness to pay — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac · Semi-Log X",
+     "engine": "Acceptability Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Probability an option is cost-effective, against willingness to pay — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac · Semi-Log(1+x) Y",
+     "engine": "Acceptability Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Probability an option is cost-effective, against willingness to pay — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac · Standardised (Z-Score)",
+     "engine": "Acceptability Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Probability an option is cost-effective, against willingness to pay — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceac · Quantile X",
+     "engine": "Acceptability Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Probability an option is cost-effective, against willingness to pay — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane · Semi-Log Y",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane · Logarithmic Scale",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane · Semi-Log X",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane · Semi-Log(1+x) Y",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane · Standardised (Z-Score)",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "ceplane · Quantile X",
+     "engine": "Cost-Effectiveness Plane",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Incremental cost against incremental effect with the willingness-to-pay ray — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna · Semi-Log Y",
+     "engine": "Lasagna Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna · Logarithmic Scale",
+     "engine": "Lasagna Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna · Semi-Log X",
+     "engine": "Lasagna Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna · Semi-Log(1+x) Y",
+     "engine": "Lasagna Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna · Standardised (Z-Score)",
+     "engine": "Lasagna Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lasagna · Quantile X",
+     "engine": "Lasagna Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A subject-by-time raster — the readable alternative to a spaghetti plot — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer · Semi-Log Y",
+     "engine": "Swimmer Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "One lane per subject from start to stop, longest at the top — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer · Logarithmic Scale",
+     "engine": "Swimmer Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "One lane per subject from start to stop, longest at the top — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer · Semi-Log X",
+     "engine": "Swimmer Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "One lane per subject from start to stop, longest at the top — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer · Semi-Log(1+x) Y",
+     "engine": "Swimmer Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "One lane per subject from start to stop, longest at the top — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer · Standardised (Z-Score)",
+     "engine": "Swimmer Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "One lane per subject from start to stop, longest at the top — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "swimmer · Quantile X",
+     "engine": "Swimmer Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "One lane per subject from start to stop, longest at the top — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": ""
     }
@@ -12507,6 +14887,216 @@
      "description": "Temperature against salinity with density contours drawn behind — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🌊",
      "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass · Semi-Log Y",
+     "engine": "Double-Mass Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass · Logarithmic Scale",
+     "engine": "Double-Mass Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass · Semi-Log X",
+     "engine": "Double-Mass Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass · Semi-Log(1+x) Y",
+     "engine": "Double-Mass Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass · Standardised (Z-Score)",
+     "engine": "Double-Mass Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass · Quantile X",
+     "engine": "Double-Mass Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg · Semi-Log Y",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg · Logarithmic Scale",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg · Semi-Log X",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg · Semi-Log(1+x) Y",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg · Standardised (Z-Score)",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg · Quantile X",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph · Semi-Log Y",
+     "engine": "Hodograph",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Wind u against v traced with height, with speed rings — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph · Logarithmic Scale",
+     "engine": "Hodograph",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Wind u against v traced with height, with speed rings — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph · Semi-Log X",
+     "engine": "Hodograph",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Wind u against v traced with height, with speed rings — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph · Semi-Log(1+x) Y",
+     "engine": "Hodograph",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Wind u against v traced with height, with speed rings — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph · Standardised (Z-Score)",
+     "engine": "Hodograph",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Wind u against v traced with height, with speed rings — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph · Quantile X",
+     "engine": "Hodograph",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Wind u against v traced with height, with speed rings — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "gutenberg",
+     "engine": "Gutenberg-Richter Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Log cumulative event count against magnitude, with the b-value fitted",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "doublemass",
+     "engine": "Double-Mass Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative station total against a reference; a slope change is an inhomogeneity",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "hodograph",
+     "engine": "Hodograph",
+     "scale": null,
+     "advanced": false,
+     "description": "Wind u against v traced with height, with speed rings",
+     "preview": "",
+     "thumbnail": ""
     }
    ]
   },
@@ -12651,6 +15241,76 @@
      "advanced": true,
      "description": "Turbine power against wind speed with cut-in, rated and cut-out — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "💨",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose · Semi-Log Y",
+     "engine": "P-V Nose Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose · Logarithmic Scale",
+     "engine": "P-V Nose Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose · Semi-Log X",
+     "engine": "P-V Nose Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose · Semi-Log(1+x) Y",
+     "engine": "P-V Nose Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose · Standardised (Z-Score)",
+     "engine": "P-V Nose Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose · Quantile X",
+     "engine": "P-V Nose Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "pvnose",
+     "engine": "P-V Nose Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Bus voltage against transferred power, with the voltage-collapse point",
+     "preview": "",
      "thumbnail": ""
     }
    ]
@@ -12821,6 +15481,286 @@
      "advanced": false,
      "description": "Normalised impedance on the constant-R and constant-X circles",
      "preview": "📡",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols · Semi-Log Y",
+     "engine": "Nichols Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols · Logarithmic Scale",
+     "engine": "Nichols Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols · Semi-Log X",
+     "engine": "Nichols Chart",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols · Semi-Log(1+x) Y",
+     "engine": "Nichols Chart",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols · Standardised (Z-Score)",
+     "engine": "Nichols Chart",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols · Quantile X",
+     "engine": "Nichols Chart",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero · Semi-Log Y",
+     "engine": "Pole-Zero Map",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Poles and zeros on the complex plane with the stability boundary — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero · Logarithmic Scale",
+     "engine": "Pole-Zero Map",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Poles and zeros on the complex plane with the stability boundary — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero · Semi-Log X",
+     "engine": "Pole-Zero Map",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Poles and zeros on the complex plane with the stability boundary — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero · Semi-Log(1+x) Y",
+     "engine": "Pole-Zero Map",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Poles and zeros on the complex plane with the stability boundary — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero · Standardised (Z-Score)",
+     "engine": "Pole-Zero Map",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Poles and zeros on the complex plane with the stability boundary — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero · Quantile X",
+     "engine": "Pole-Zero Map",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Poles and zeros on the complex plane with the stability boundary — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan · Semi-Log Y",
+     "engine": "Allan Deviation",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan · Logarithmic Scale",
+     "engine": "Allan Deviation",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan · Semi-Log X",
+     "engine": "Allan Deviation",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan · Semi-Log(1+x) Y",
+     "engine": "Allan Deviation",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan · Standardised (Z-Score)",
+     "engine": "Allan Deviation",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan · Quantile X",
+     "engine": "Allan Deviation",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen · Semi-Log Y",
+     "engine": "Paschen Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen · Logarithmic Scale",
+     "engine": "Paschen Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen · Semi-Log X",
+     "engine": "Paschen Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen · Semi-Log(1+x) Y",
+     "engine": "Paschen Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen · Standardised (Z-Score)",
+     "engine": "Paschen Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen · Quantile X",
+     "engine": "Paschen Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nichols",
+     "engine": "Nichols Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Open-loop gain against phase, with the critical point at −180°, 0 dB",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "polezero",
+     "engine": "Pole-Zero Map",
+     "scale": null,
+     "advanced": false,
+     "description": "Poles and zeros on the complex plane with the stability boundary",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "allan",
+     "engine": "Allan Deviation",
+     "scale": null,
+     "advanced": false,
+     "description": "Overlapping Allan deviation against averaging time on log-log axes",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Signals & RF",
+     "name": "paschen",
+     "engine": "Paschen Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Breakdown voltage against pressure × gap, with the Paschen minimum",
+     "preview": "",
      "thumbnail": ""
     }
    ]
@@ -13081,76 +16021,6 @@
      "advanced": true,
      "description": "Precision against recall with the average precision — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🎯",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "scree",
-     "engine": "Scree Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "Eigenvalues by component with the cumulative share over the top",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "predictionerror",
-     "engine": "Prediction Error Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "Observed against predicted with the identity line, the best fit and R²",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "learningcurve",
-     "engine": "Learning Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Training and validation score against training-set size — the gap is overfitting",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "validationcurve",
-     "engine": "Validation Curve",
-     "scale": null,
-     "advanced": false,
-     "description": "Training and validation score against one hyperparameter",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "discrimination",
-     "engine": "Discrimination Threshold",
-     "scale": null,
-     "advanced": false,
-     "description": "Precision, recall, F1 and queue rate against the decision threshold",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "silhouette",
-     "engine": "Silhouette Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "One bar per observation, sorted within its cluster, with the overall mean",
-     "preview": "",
-     "thumbnail": ""
-    },
-    {
-     "category": "Model Evaluation",
-     "name": "elbow",
-     "engine": "Elbow Plot",
-     "scale": null,
-     "advanced": false,
-     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance",
-     "preview": "",
      "thumbnail": ""
     },
     {
@@ -13570,6 +16440,216 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Training and validation score against one hyperparameter — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "scree",
+     "engine": "Scree Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Eigenvalues by component with the cumulative share over the top",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "predictionerror",
+     "engine": "Prediction Error Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Observed against predicted with the identity line, the best fit and R²",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "learningcurve",
+     "engine": "Learning Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Training and validation score against training-set size — the gap is overfitting",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "validationcurve",
+     "engine": "Validation Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Training and validation score against one hyperparameter",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "discrimination",
+     "engine": "Discrimination Threshold",
+     "scale": null,
+     "advanced": false,
+     "description": "Precision, recall, F1 and queue rate against the decision threshold",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "silhouette",
+     "engine": "Silhouette Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "One bar per observation, sorted within its cluster, with the overall mean",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "elbow",
+     "engine": "Elbow Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Clustering score against number of clusters, with the knee found by maximum chord distance",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp",
+     "engine": "Partial Dependence Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Average predicted response as one feature is varied",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice",
+     "engine": "ICE Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "One curve per observation, with the partial dependence as their average",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice · Semi-Log Y",
+     "engine": "ICE Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "One curve per observation, with the partial dependence as their average — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice · Logarithmic Scale",
+     "engine": "ICE Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "One curve per observation, with the partial dependence as their average — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice · Semi-Log X",
+     "engine": "ICE Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "One curve per observation, with the partial dependence as their average — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice · Semi-Log(1+x) Y",
+     "engine": "ICE Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "One curve per observation, with the partial dependence as their average — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice · Standardised (Z-Score)",
+     "engine": "ICE Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "One curve per observation, with the partial dependence as their average — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "ice · Quantile X",
+     "engine": "ICE Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "One curve per observation, with the partial dependence as their average — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp · Semi-Log Y",
+     "engine": "Partial Dependence Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Average predicted response as one feature is varied — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp · Logarithmic Scale",
+     "engine": "Partial Dependence Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Average predicted response as one feature is varied — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp · Semi-Log X",
+     "engine": "Partial Dependence Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Average predicted response as one feature is varied — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp · Semi-Log(1+x) Y",
+     "engine": "Partial Dependence Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Average predicted response as one feature is varied — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp · Standardised (Z-Score)",
+     "engine": "Partial Dependence Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Average predicted response as one feature is varied — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": ""
+    },
+    {
+     "category": "Model Evaluation",
+     "name": "pdp · Quantile X",
+     "engine": "Partial Dependence Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Average predicted response as one feature is varied — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": ""
     }

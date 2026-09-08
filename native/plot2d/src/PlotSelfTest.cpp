@@ -168,6 +168,147 @@ bool runEngineSweep(){
         ciLo.append(e-1.96*se);
         ciHi.append(e+1.96*se);
     }
+    // Batch 2's inputs. Each is the physical shape its engine reads.
+    QVector<double> reynolds,frictionFactor,pumpFlow,pumpHead,hersey,friction;
+    QVector<double> meanStress,altStress,deltaK,growthRate,reversals,strainAmp;
+    QVector<double> creepTemp,creepHours,creepStress;
+    QVector<double> shaftSpeed,mode1,mode2,orbitX,orbitY;
+    QVector<double> liquidLimit,plasticIndex,grainSize,percentFiner;
+    QVector<double> openPhase,openGain,poleRe,poleIm,busPower,busVoltage;
+    QVector<double> chord,cpUpper,cpLower;
+    for(int i=0;i<50;++i){
+        const double u=double(i)/49.0;
+        reynolds.append(5.0e3*std::pow(1.35,double(i)));       // 5e3 up to ~1e9
+        frictionFactor.append(0.02+0.012*std::sin(u*6.0));
+        pumpFlow.append(u*120.0);
+        pumpHead.append(60.0-0.0028*u*120.0*u*120.0);          // a falling pump curve
+        hersey.append(1e-4*std::pow(1.25,double(i)));
+        friction.append(0.14*std::exp(-double(i)*0.18)+0.002*double(i));  // a real minimum
+        meanStress.append(u*400.0);
+        altStress.append(200.0*(1.0-u)*0.8+15.0);
+        deltaK.append(6.0*std::pow(1.06,double(i)));
+        growthRate.append(1e-9*std::pow(6.0*std::pow(1.06,double(i)),3.2));  // Paris, m=3.2
+        reversals.append(1.0e3*std::pow(1.22,double(i)));
+        strainAmp.append(0.02*std::pow(1.0e3*std::pow(1.22,double(i)),-0.12));
+        creepTemp.append(800.0+double(i%5)*40.0);
+        creepHours.append(50.0*std::pow(1.15,double(i)));
+        creepStress.append(300.0*std::exp(-double(i)*0.03));
+        shaftSpeed.append(double(i)*240.0);
+        mode1.append(40.0+0.004*double(i)*240.0);
+        mode2.append(120.0+0.002*double(i)*240.0);
+        const double th=u*4.0*M_PI;
+        orbitX.append(30.0*std::cos(th));
+        orbitY.append(18.0*std::sin(th)+6.0*std::sin(2.0*th));  // a figure of eight
+        liquidLimit.append(25.0+u*55.0);
+        plasticIndex.append(0.73*(25.0+u*55.0-20.0)+4.0*std::sin(u*9.0));
+        grainSize.append(0.002*std::pow(1.25,double(i)));
+        percentFiner.append(qBound(0.0,100.0*u,100.0));
+        openPhase.append(-30.0-u*200.0);
+        openGain.append(30.0-u*55.0);
+        poleRe.append(-1.0-2.0*std::fmod(double(i)*0.31,1.0));
+        poleIm.append(-4.0+u*8.0);
+        busPower.append(u*u*(2.0-u)*100.0);                     // rises then turns back
+        busVoltage.append(1.02-0.55*u*u);
+        chord.append(u);
+        cpUpper.append(-2.6*std::exp(-u*3.0)+0.4);
+        cpLower.append(0.9*std::exp(-u*2.0)-0.1);
+    }
+    // Batch 3's inputs.
+    QVector<double> substrate,rate,boundLigand,freeLigand,velocity,plateHeight;
+    QVector<double> relPressure,adsorbed,moleFraction,jobSignal,magnitudes;
+    QVector<double> stationRain,referenceRain,windU,windV;
+    QVector<double> spiroVolume,spiroFlow,lvVolume,lvPressure,clockPhase;
+    QVector<double> paschenPd,paschenV,obsTime,obsFlux,trialPeriod;
+    QVector<double> epochNumber,observedTime;
+    for(int i=0;i<40;++i){
+        const double u=double(i)/39.0;
+        const double sconc=0.05*std::pow(1.16,double(i));
+        substrate.append(sconc);
+        rate.append(12.0*sconc/(0.8+sconc));              // Michaelis-Menten, Vmax 12, Km 0.8
+        const double f=0.02*std::pow(1.15,double(i));
+        freeLigand.append(f);
+        boundLigand.append(90.0*f/(1.5+f));               // saturation binding
+        const double uu=0.05+u*1.2;
+        velocity.append(uu);
+        plateHeight.append(4.0+2.5/uu+3.0*uu);            // van Deemter A=4, B=2.5, C=3
+        const double pr=0.01+u*0.85;
+        relPressure.append(pr);
+        adsorbed.append(30.0*pr/((1.0-pr)*(1.0+9.0*pr))); // a BET isotherm, C=10
+        moleFraction.append(u);
+        jobSignal.append(u*(1.0-u)*4.0);                  // peaks at 0.5, a 1:1 complex
+        stationRain.append(20.0+8.0*std::sin(u*7.0));
+        referenceRain.append(22.0+7.0*std::cos(u*5.0));
+        const double zkm=u*10.0;
+        windU.append(4.0+zkm*1.8);
+        windV.append(2.0+6.0*std::sin(zkm*0.35));         // a curved hodograph
+        const double th=u*2.0*M_PI;
+        spiroVolume.append(2.5+2.0*std::cos(th));
+        spiroFlow.append(6.0*std::sin(th)*(1.0-0.4*std::cos(th)));
+        lvVolume.append(90.0+45.0*std::cos(th));
+        lvPressure.append(60.0+58.0*std::sin(th)+35.0*std::sin(2.0*th));
+        paschenPd.append(0.1*std::pow(1.3,double(i)));
+        paschenV.append(400.0+900.0*std::abs(std::log10(0.1*std::pow(1.3,double(i))/1.0)));
+        obsTime.append(u*37.0);
+        obsFlux.append(1.0-0.25*std::pow(std::cos(M_PI*std::fmod(u*37.0,2.7)/2.7),8.0));
+        epochNumber.append(double(i));
+        observedTime.append(2450000.0+double(i)*2.7+0.004*std::sin(u*6.0));
+    }
+    trialPeriod.append(2.7);
+    // 200 magnitudes on a Gutenberg-Richter distribution: N(>=m) falls by a
+    // decade per unit magnitude, which is a b-value of 1.
+    for(int i=0;i<200;++i){
+        const double p=(double(i)+0.5)/200.0;
+        magnitudes.append(2.0-std::log10(1.0-p*0.999));
+    }
+    // A clock with white frequency noise plus a slow drift, so the Allan
+    // deviation has a real minimum rather than a monotone slope.
+    {
+        double drift=0.0;
+        for(int i=0;i<512;++i){
+            drift+=0.0004;
+            clockPhase.append(drift+0.02*std::sin(double(i)*2.399963));
+        }
+    }
+    // Batch 4's inputs.
+    QVector<double> iceFeature,icePrediction,iceId,avpY,avpFocus,avpOther;
+    QVector<double> factorA,factorB,cellValue,swingLow,swingHigh;
+    QVector<double> portRisk,portReturn,incEffect,incCost;
+    QVector<double> lasSubject,lasTime,lasValue,swimSubject,swimStart,swimStop;
+    QVector<double> leverage,studentised;
+    for(int i=0;i<120;++i){
+        const double u=double(i)/119.0;
+        // Twelve individuals, each with its own slope, so the ICE curves fan
+        // out and the average is genuinely their average.
+        const double who=double(i%12);
+        iceId.append(who);
+        iceFeature.append(std::fmod(u*12.0,1.0));
+        icePrediction.append(0.3+who*0.05+std::fmod(u*12.0,1.0)*(0.2+who*0.06));
+        avpOther.append(u*10.0);
+        avpFocus.append(u*10.0*0.6+3.0*std::sin(u*8.0));
+        avpY.append(2.0*(u*10.0*0.6+3.0*std::sin(u*8.0))+0.5*u*10.0+std::cos(u*5.0));
+        factorA.append(double(i%4));
+        factorB.append(double((i/4)%3));
+        // A real interaction: B changes the slope across A rather than
+        // shifting it, so the lines cross.
+        cellValue.append(5.0+double(i%4)*(1.0-double((i/4)%3)));
+        portRisk.append(0.04+0.14*u+0.02*std::sin(u*11.0));
+        portReturn.append(0.02+0.10*std::sqrt(u)+0.012*std::cos(u*9.0));
+        incEffect.append(0.6+0.9*std::sin(u*6.3)+0.4*std::cos(u*2.1));
+        incCost.append(9000.0*(0.6+0.9*std::sin(u*6.3))+3000.0*std::cos(u*3.7));
+        lasSubject.append(double(i%20));
+        lasTime.append(double(i/20));
+        lasValue.append(4.0+2.0*std::sin(double(i%20)*0.4+double(i/20)*0.9));
+        leverage.append(0.01+0.12*std::fmod(double(i)*0.37,1.0));
+        studentised.append(3.2*std::sin(double(i)*0.9)*std::fmod(double(i)*0.11,1.0));
+    }
+    for(int i=0;i<14;++i){
+        const double w=1.0-double(i)/14.0;
+        swingLow.append(-w*40.0-2.0);
+        swingHigh.append(w*55.0+2.0);
+        swimSubject.append(double(i));
+        swimStart.append(double(i%3)*1.5);
+        swimStop.append(double(i%3)*1.5+4.0+double(i)*1.3);
+    }
     // A Duane plot reads cumulative time on x and cumulative failures on y,
     // which is the one engine here that needs its x column shaped too.
     PlotSeries duaneSeries;
@@ -226,6 +367,94 @@ bool runEngineSweep(){
         {QStringLiteral("Caterpillar Plot"),
             {column("estimate",effect),column("lower",ciLo),column("upper",ciHi)}},
         {QStringLiteral("Duane Plot"),{duaneSeries}},
+        // Batch 2. Each of these reads a physical pair or triple, and the
+        // shared smooth signal is not one: a Reynolds number that goes to 12
+        // never leaves the laminar region, and a plasticity chart of a decaying
+        // exponential classifies nothing.
+        {QStringLiteral("Moody Diagram"),
+            {column("Re",reynolds),column("f",frictionFactor)}},
+        {QStringLiteral("Pump Performance Curve"),
+            {column("flow",pumpFlow),column("head",pumpHead)}},
+        {QStringLiteral("Stribeck Curve"),
+            {column("Hersey",hersey),column("mu",friction)}},
+        {QStringLiteral("Haigh Diagram"),
+            {column("mean stress",meanStress),column("alternating",altStress)}},
+        {QStringLiteral("Crack Growth Rate"),
+            {column("dK",deltaK),column("da/dN",growthRate)}},
+        {QStringLiteral("Strain-Life Curve"),
+            {column("2Nf",reversals),column("strain",strainAmp)}},
+        {QStringLiteral("Larson-Miller Curve"),
+            {column("T",creepTemp),column("hours",creepHours),column("stress",creepStress)}},
+        {QStringLiteral("Campbell Diagram"),
+            {column("rpm",shaftSpeed),column("mode 1",mode1),column("mode 2",mode2)}},
+        {QStringLiteral("Shaft Orbit"),
+            {column("probe X",orbitX),column("probe Y",orbitY)}},
+        {QStringLiteral("Plasticity Chart"),
+            {column("LL",liquidLimit),column("PI",plasticIndex)}},
+        {QStringLiteral("Particle Size Distribution"),
+            {column("size",grainSize),column("finer",percentFiner)}},
+        {QStringLiteral("Nichols Chart"),
+            {column("phase",openPhase),column("gain",openGain)}},
+        {QStringLiteral("Pole-Zero Map"),
+            {column("real",poleRe),column("imag",poleIm)}},
+        {QStringLiteral("P-V Nose Curve"),
+            {column("P",busPower),column("V",busVoltage)}},
+        {QStringLiteral("Airfoil Cp Distribution"),
+            {column("x/c",chord),column("upper",cpUpper),column("lower",cpLower)}},
+        // Batch 3.
+        {QStringLiteral("Lineweaver-Burk Plot"),
+            {column("[S]",substrate),column("v",rate)}},
+        {QStringLiteral("Eadie-Hofstee Plot"),
+            {column("[S]",substrate),column("v",rate)}},
+        {QStringLiteral("Hanes-Woolf Plot"),
+            {column("[S]",substrate),column("v",rate)}},
+        {QStringLiteral("Scatchard Plot"),
+            {column("bound",boundLigand),column("free",freeLigand)}},
+        {QStringLiteral("van Deemter Plot"),
+            {column("u",velocity),column("H",plateHeight)}},
+        {QStringLiteral("BET Plot"),
+            {column("P/P0",relPressure),column("Q",adsorbed)}},
+        {QStringLiteral("Job Plot"),
+            {column("fraction",moleFraction),column("signal",jobSignal)}},
+        {QStringLiteral("Gutenberg-Richter Plot"),{column("magnitude",magnitudes)}},
+        {QStringLiteral("Double-Mass Curve"),
+            {column("station",stationRain),column("reference",referenceRain)}},
+        {QStringLiteral("Hodograph"),{column("u",windU),column("v",windV)}},
+        {QStringLiteral("Flow-Volume Loop"),
+            {column("volume",spiroVolume),column("flow",spiroFlow)}},
+        {QStringLiteral("Pressure-Volume Loop"),
+            {column("volume",lvVolume),column("pressure",lvPressure)}},
+        {QStringLiteral("Allan Deviation"),{column("y",clockPhase)}},
+        {QStringLiteral("Paschen Curve"),
+            {column("pd",paschenPd),column("Vb",paschenV)}},
+        {QStringLiteral("Phase-Folded Light Curve"),
+            {column("time",obsTime),column("flux",obsFlux),column("period",trialPeriod)}},
+        {QStringLiteral("O-C Diagram"),
+            {column("epoch",epochNumber),column("observed",observedTime)}},
+        // Batch 4.
+        {QStringLiteral("ICE Plot"),
+            {column("feature",iceFeature),column("prediction",icePrediction),
+             column("id",iceId)}},
+        {QStringLiteral("Added-Variable Plot"),
+            {column("y",avpY),column("focus",avpFocus),column("other",avpOther)}},
+        {QStringLiteral("Interaction Plot"),
+            {column("A",factorA),column("B",factorB),column("response",cellValue)}},
+        {QStringLiteral("Tornado Diagram"),
+            {column("low",swingLow),column("high",swingHigh)}},
+        {QStringLiteral("Efficient Frontier"),
+            {column("risk",portRisk),column("return",portReturn)}},
+        {QStringLiteral("Snail Trail"),
+            {column("risk",portRisk),column("return",portReturn)}},
+        {QStringLiteral("Cost-Effectiveness Plane"),
+            {column("effect",incEffect),column("cost",incCost)}},
+        {QStringLiteral("Acceptability Curve"),
+            {column("effect",incEffect),column("cost",incCost)}},
+        {QStringLiteral("Lasagna Plot"),
+            {column("subject",lasSubject),column("time",lasTime),column("value",lasValue)}},
+        {QStringLiteral("Swimmer Plot"),
+            {column("subject",swimSubject),column("start",swimStart),column("stop",swimStop)}},
+        {QStringLiteral("Influence Plot"),
+            {column("leverage",leverage),column("residual",studentised)}},
     };
 
     for(const QString& engine:engines){
