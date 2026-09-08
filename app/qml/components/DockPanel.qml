@@ -25,6 +25,15 @@ Item {
     property int floatingWidth: 820
     property int floatingHeight: 620
     default property alias content: contentHost.data
+    // Controls that belong to the panel rather than to what is inside it, laid
+    // out in the header to the left of the pop-out button.
+    //
+    // Before this, the canvas's own controls had nowhere to go but a floating
+    // row along the bottom of the figure, where they sat on top of the plot,
+    // covered whatever was drawn near that corner, and grew sideways over each
+    // other as more of them appeared. A panel header is where a panel's buttons
+    // belong, and it is the one strip of the canvas that is not the figure.
+    property alias headerActions: headerActionRow.data
 
     implicitWidth: 240
     implicitHeight: 240
@@ -36,7 +45,9 @@ Item {
         // Compact chrome, close to GraphVis 17's 22-24 px panel headers.
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 26
+            // Tall enough for a combo box when the header carries controls, and
+            // back to GraphVis 17's 26 px strip when it does not.
+            implicitHeight: headerActionRow.children.length > 0 ? 34 : 26
             color: Theme.surfaceAlt
             border.color: Theme.border
 
@@ -48,12 +59,22 @@ Item {
 
                 Label { text: "⠿"; color: Theme.textMuted; font.pixelSize: Theme.fontSizeSmall }
                 Label {
-                    Layout.fillWidth: true
                     text: root.title
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeSmall
                     font.bold: true
                     elide: Text.ElideRight
+                    // Gives way to the controls rather than pushing them off the
+                    // end: a button that has been shoved past the edge cannot be
+                    // clicked, and a title that has been elided can still be
+                    // read from what is left of it.
+                    Layout.maximumWidth: Math.max(120, root.width * 0.34)
+                }
+                Item { Layout.fillWidth: true }
+                RowLayout {
+                    id: headerActionRow
+                    spacing: 6
+                    Layout.alignment: Qt.AlignVCenter
                 }
                 ToolButton {
                     visible: root.floatable

@@ -72,6 +72,12 @@ struct PlotStyle {
     double legendSize = 7.0;
     double lineWidth = 1.2;
     bool gridVisible = true;
+    // Numbers on the axes. On, because an axis without a scale is a picture of
+    // a shape rather than a measurement - which is what the 3-D engines were
+    // drawing: three named axes, a coloured surface, and no way to read a
+    // single value off it. Off is for a figure whose shape is the whole point,
+    // and for a thumbnail too small to read anything.
+    bool scaleLabelsVisible = true;
     // Roughly how many labelled ticks each axis should aim for, and so how many
     // grid lines there are. 0 keeps the long-standing default of 7 across and 6
     // up; the tick chooser still rounds to a round number, so this is a target
@@ -127,6 +133,22 @@ struct PlotAnnotation {
     QColor color;
 };
 
+// Where the camera is, for the engines drawn as a projection rather than
+// against a pair of axes: the 3-D family, the surfaces, the vector and volume
+// fields. The 2-D engines carry their view on PlotAxis::min/max; these had
+// nowhere to carry one, so the angles were written into the painter as -35 and
+// 24 and the figure could not be turned.
+//
+// Angles are degrees and zoom is a multiplier on the fitted size, so the
+// defaults are the view the figure has always had and 1.0 means "as large as
+// fits". It lives on the spec, which means a rotated figure exports rotated
+// and the full-resolution render agrees with the preview.
+struct PlotView3D {
+    double azimuth = -35.0;
+    double elevation = 24.0;
+    double zoom = 1.0;
+};
+
 struct PlotSpec {
     QString engine;   // catalogue engine key, e.g. "Line Chart", "3D Scatter"
     QString variant;  // catalogue scale variant, e.g. "Semi-Log X"
@@ -139,6 +161,7 @@ struct PlotSpec {
     // travel with the spec; every other engine ignores it.
     QString expression;
     PlotStyle style;
+    PlotView3D view3d;
     bool legendVisible = true;
     // Notes on the figure. Drawn last, over everything, and clipped to the plot
     // area - a note whose anchor has been zoomed out of view must not appear

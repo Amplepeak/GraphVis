@@ -119,6 +119,7 @@ set(GRAPHVIS_QML_FILES
   qml/components/PanelScroll.qml
   qml/components/PlotNotice.qml
   qml/components/DockPanel.qml
+  qml/components/MainMenuBar.qml
   qml/components/ScanPanel.qml
   qml/workspaces/ClassicShell.qml
   qml/workspaces/HomeWorkspace.qml

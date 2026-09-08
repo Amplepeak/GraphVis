@@ -60,6 +60,8 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     figureTheme_=qBound(0,settings.value(QStringLiteral("plot/figureTheme"),0).toInt(),3);
     plotGridVisible_=settings.value(QStringLiteral("plot/gridVisible"),true).toBool();
     plotGridDensity_=qBound(0,settings.value(QStringLiteral("plot/gridDensity"),0).toInt(),25);
+    plotScaleLabels_=settings.value(QStringLiteral("plot/scaleLabels"),true).toBool();
+    loadRecents();
     // Every signal connection below has to happen whether or not the native
     // core loads. When the DLL is missing this constructor used to return here,
     // leaving the science process with no reply path at all - so Literature
@@ -572,6 +574,11 @@ void AppController::handleImportFinished(){
                    .arg(loaded.value(QStringLiteral("numeric_columns")).toList().size()));
     convertedFrom_.remove(path);
     setStatus(QStringLiteral("Imported %1 into the Arrow-native workspace").arg(shown));
+    // Remembered only now that it has loaded. A path that failed to import is
+    // not one to offer again at the top of the File menu.
+    rememberDataset(convertedFrom_.value(path,path),
+                    loaded.value(QStringLiteral("name")).toString().isEmpty()
+                        ? shown : loaded.value(QStringLiteral("name")).toString());
     workspaceMode_=QStringLiteral("Visualize"); emit workspaceModeChanged();
     pumpImportQueue();
 }
@@ -1758,6 +1765,94 @@ void AppController::setPlotGridVisible(bool on){
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
         .setValue(QStringLiteral("plot/gridVisible"),plotGridVisible_);
     emit plotDisplayChanged();
+}
+
+void AppController::setPlotScaleLabels(bool on){
+    if(plotScaleLabels_==on) return;
+    plotScaleLabels_=on;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/scaleLabels"),plotScaleLabels_);
+    emit plotDisplayChanged();
+}
+
+// ---------------------------------------------------------------- recents
+//
+// Two short lists in QSettings: the files that have been opened, and the
+// figures that have been drawn. Both newest first, both deduplicated by
+// identity rather than appended to, so opening the same file twice does not
+// fill the menu with it.
+//
+// Nothing here reopens anything by itself. A dataset that took a renderer down
+// with it last time would then take it down again on the next start, before
+// there was any way to choose differently.
+namespace {
+constexpr int kRecentLimit=12;
+
+void promote(QVariantList& list,const QVariantMap& entry,const QString& key){
+    const QString id=entry.value(key).toString();
+    for(int i=int(list.size())-1;i>=0;--i)
+        if(list.at(i).toMap().value(key).toString()==id) list.removeAt(i);
+    list.prepend(entry);
+    while(list.size()>kRecentLimit) list.removeLast();
+}
+} // namespace
+
+void AppController::loadRecents(){
+    const QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
+    recentDatasets_=settings.value(QStringLiteral("recent/datasets")).toList();
+    recentVisualisations_=settings.value(QStringLiteral("recent/visualisations")).toList();
+}
+
+void AppController::saveRecents(){
+    QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
+    settings.setValue(QStringLiteral("recent/datasets"),recentDatasets_);
+    settings.setValue(QStringLiteral("recent/visualisations"),recentVisualisations_);
+    emit recentsChanged();
+}
+
+void AppController::rememberDataset(const QString& path,const QString& name){
+    if(path.isEmpty()) return;
+    QVariantMap entry;
+    entry.insert(QStringLiteral("path"),path);
+    entry.insert(QStringLiteral("name"),name.isEmpty()?QFileInfo(path).fileName():name);
+    promote(recentDatasets_,entry,QStringLiteral("path"));
+    saveRecents();
+}
+
+void AppController::noteVisualisation(const QString& engine,const QString& variant){
+    if(engine.isEmpty()) return;
+    QVariantMap entry;
+    entry.insert(QStringLiteral("engine"),engine);
+    entry.insert(QStringLiteral("variant"),variant);
+    entry.insert(QStringLiteral("label"),variant.isEmpty()
+                                             ? engine
+                                             : QStringLiteral("%1 · %2").arg(engine,variant));
+    promote(recentVisualisations_,entry,QStringLiteral("label"));
+    saveRecents();
+}
+
+void AppController::openRecentDataset(const QString& path){
+    if(path.isEmpty()) return;
+    if(!QFileInfo::exists(path)){
+        // Dropped from the list as well as reported. An entry that cannot be
+        // opened is not worth offering again, and leaving it there means the
+        // same disappointment on the next visit to the menu.
+        for(int i=int(recentDatasets_.size())-1;i>=0;--i)
+            if(recentDatasets_.at(i).toMap().value(QStringLiteral("path")).toString()==path)
+                recentDatasets_.removeAt(i);
+        saveRecents();
+        setStatus(QStringLiteral("%1 is no longer there - moved, renamed or deleted")
+                      .arg(QFileInfo(path).fileName()));
+        return;
+    }
+    importDatasetPath(path);
+}
+
+void AppController::clearRecents(){
+    recentDatasets_.clear();
+    recentVisualisations_.clear();
+    saveRecents();
+    setStatus(QStringLiteral("Recent files cleared"));
 }
 
 void AppController::setPlotGridDensity(int ticks){

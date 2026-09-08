@@ -116,6 +116,51 @@ Rectangle {
             Label { text: root.app.graphEntryCount + " graphs"; color: Theme.textMuted; font.pixelSize: 11 }
         }
 
+        // Which graphs suit THIS data, above the 433 that might suit anything.
+        //
+        // This was at the bottom of the list, collapsed, behind a checkbox
+        // called "Smart Suite" - a feature name, not a description of what it
+        // does - so the one control that answers "which of these should I be
+        // using" was the hardest thing in the panel to find. It is the first
+        // thing now, it says what it does, and the results land at the top of
+        // the list where they can be clicked.
+        Button {
+            id: bestButton
+            Layout.fillWidth: true
+            enabled: root.app.activeArrowPath !== ""
+            highlighted: true
+            text: root.app.scanning
+                  ? "Finding the best graphs…"
+                  : (root.app.scanRecommendations.length > 0
+                     ? "★  Best for this data  (" + root.app.scanRecommendations.length + " found)"
+                     : "★  Best for this data")
+            ToolTip.visible: bestButton.hovered
+            ToolTip.text: root.app.activeArrowPath !== ""
+                          ? "Reads the loaded data - and the open paper, if there is one - "
+                            + "and ranks the graphs that suit it, each with the axis mapping "
+                            + "it should use. Click one to draw it."
+                          : "Import a dataset first."
+            onClicked: scanOpen.checked = !scanOpen.checked
+        }
+
+        ScanPanel {
+            id: scan
+            Layout.fillWidth: true
+            Layout.preferredHeight: scanOpen.checked ? 320 : 0
+            visible: scanOpen.checked
+            app: root.app
+            onRecommendationChosen: (graph, mappings) => root.scanApplied(graph, mappings)
+        }
+
+        // Not shown; it is the open/closed state the button above toggles, kept
+        // as a CheckBox so nothing else in this file had to change.
+        CheckBox { id: scanOpen; visible: false; checked: false }
+
+        Rectangle {
+            Layout.fillWidth: true; Layout.preferredHeight: 1
+            color: Theme.border
+        }
+
         TextField {
             id: searchField
             Layout.fillWidth: true
@@ -255,34 +300,6 @@ Rectangle {
                     HoverHandler { id: hover }
                     TapHandler { onTapped: { if (entry.modelData.entry) { root.staged = entry.modelData.entry; root.app.notify("Staged: " + entry.modelData.entry.engine) } } }
                 }
-            }
-        }
-
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
-
-        // Smart Suite: let the scanner pick the graph and its mapping.
-        ScanPanel {
-            id: scan
-            Layout.fillWidth: true
-            Layout.preferredHeight: scanOpen.checked ? 300 : 0
-            visible: scanOpen.checked
-            app: root.app
-            onRecommendationChosen: (graph, mappings) => root.scanApplied(graph, mappings)
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            CheckBox {
-                id: scanOpen
-                text: "Smart Suite"
-                checked: false
-            }
-            Item { Layout.fillWidth: true }
-            Label {
-                visible: root.app.scanRecommendations.length > 0
-                text: root.app.scanRecommendations.length + " suggested"
-                color: Theme.textMuted
-                font.pixelSize: Theme.fontSizeSmall
             }
         }
 

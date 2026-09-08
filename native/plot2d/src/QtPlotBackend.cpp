@@ -1905,14 +1905,44 @@ struct Projection {
     double scale;
 };
 
-Projection makeProjection(const QRectF& target,double azimuthDeg,double elevationDeg){
+// Fitted to the frame it is given, rather than to a fraction of its shorter
+// side.
+//
+// The old rule was `qMin(width,height)*0.34`, which is two guesses stacked: it
+// assumed the projected cube is as wide as it is tall, and it left a third of
+// the smaller dimension spare in case it was not. At -35 degrees the cube
+// projects 1.39 units wide and 1.06 tall, so on a 780 x 590 canvas the figure
+// came out 280 px across inside a 780 px frame and the rest was margin. The
+// person reasonably read that as the plot being broken.
+//
+// So: project the eight corners, measure what they actually span, and scale to
+// the space available. The cube is symmetric about the origin and the
+// projection is linear, so the projected box is centred there too and only the
+// half-extents are needed. `margin` is the room the caller wants kept for tick
+// numbers and axis names, in pixels.
+Projection makeProjection(const QRectF& target,double azimuthDeg,double elevationDeg,
+                          double zoom=1.0,double margin=0.0){
     Projection p;
     const double az=azimuthDeg*3.14159265358979323846/180.0;
     const double el=elevationDeg*3.14159265358979323846/180.0;
     p.sinAz=std::sin(az); p.cosAz=std::cos(az);
     p.sinEl=std::sin(el); p.cosEl=std::cos(el);
     p.origin=target.center();
-    p.scale=qMin(target.width(),target.height())*0.34;
+
+    double halfW=0.0,halfH=0.0;
+    for(int i=0;i<8;++i){
+        const double x=(i&1)?0.5:-0.5;
+        const double y=(i&2)?0.5:-0.5;
+        const double z=(i&4)?0.5:-0.5;
+        halfW=qMax(halfW,std::abs(-x*p.sinAz+y*p.cosAz));
+        halfH=qMax(halfH,std::abs(-(x*p.cosAz+y*p.sinAz)*p.sinEl+z*p.cosEl));
+    }
+    const double availW=qMax(24.0,target.width()-2.0*margin);
+    const double availH=qMax(24.0,target.height()-2.0*margin);
+    p.scale=qMin(availW/(2.0*qMax(1e-6,halfW)),availH/(2.0*qMax(1e-6,halfH)));
+    // Zoom is the person's multiplier on that fitted size. Bounded so a
+    // runaway pinch cannot produce a scale that overflows the painter.
+    p.scale*=qBound(0.05,zoom,40.0);
     return p;
 }
 
@@ -1945,6 +1975,122 @@ void drawBoundingCube(QPainter* p,const Projection& proj,const QColor& gridColor
                     project(proj,c[e[1]][0],c[e[1]][1],c[e[1]][2]));
 }
 
+// How much room the numbers and names outside the cube need, measured rather
+// than assumed - a 6 pt tick font on a thumbnail and a 12 pt one on an exported
+// A4 figure want very different margins, and a fixed number is wrong for one of
+// them. Two lines of text plus a gap on each side.
+double cubeMargin(QPainter* p,const QFont& tickFont,const QFont& nameFont,
+                  bool scaleLabels){
+    const QFontMetricsF tick(tickFont,p->device());
+    const QFontMetricsF name(nameFont,p->device());
+    const double lines=(scaleLabels?tick.height():0.0)+name.height();
+    // Widthwise a number is the wider of the two, and five digits is the most a
+    // round tick value normally takes.
+    return qMax(18.0,lines+10.0+(scaleLabels
+                                     ? tick.horizontalAdvance(QStringLiteral("00000"))*0.5
+                                     : 0.0));
+}
+
+// The three axes of the cube: a tick and a number at each round value, and the
+// column's name beyond them.
+//
+// The 3-D engines had names on their axes and no numbers at all, so a surface
+// could be looked at but not read - you could see that the peak was on the
+// right without being able to say what it was on the right OF. Every other
+// engine in this catalogue has numbered axes; these were the exception because
+// nobody had written this function.
+//
+// Which edge carries which axis is decided from the projection rather than
+// fixed, because the figure can now be turned. The horizontal axes go on
+// whichever bottom edge is nearest the viewer - the one that projects lowest -
+// so the numbers are never written across the middle of the surface, and the
+// vertical axis goes on whichever upright is leftmost.
+void drawCubeAxes(QPainter* p,const Projection& proj,const PlotSpec& spec,
+                  const Bounds& bx,const Bounds& by,const Bounds& bz,
+                  const QString& xLabel,const QString& yLabel,const QString& zLabel,
+                  const QFont& tickFont,const QFont& nameFont){
+    const QPointF centre=project(proj,0,0,0);
+
+    // One axis: a segment in cube space, the data bounds along it, and the
+    // direction to push text away from the cube.
+    struct Edge { double from[3]; double to[3]; int varies; };
+    const auto midOf=[&](const Edge& e){
+        return project(proj,(e.from[0]+e.to[0])/2.0,(e.from[1]+e.to[1])/2.0,
+                            (e.from[2]+e.to[2])/2.0);
+    };
+
+    // X runs along the two bottom edges at z = -0.5 that vary in x; pick the
+    // front one. Same for Y. Z is one of the four uprights; pick the leftmost.
+    Edge ex{{-0.5,-0.5,-0.5},{0.5,-0.5,-0.5},0};
+    { const Edge other{{-0.5,0.5,-0.5},{0.5,0.5,-0.5},0};
+      if(midOf(other).y()>midOf(ex).y()) ex=other; }
+    Edge ey{{0.5,-0.5,-0.5},{0.5,0.5,-0.5},1};
+    { const Edge other{{-0.5,-0.5,-0.5},{-0.5,0.5,-0.5},1};
+      if(midOf(other).y()>midOf(ey).y()) ey=other; }
+    Edge ez{{-0.5,-0.5,-0.5},{-0.5,-0.5,0.5},2};
+    for(const Edge cand:{Edge{{0.5,-0.5,-0.5},{0.5,-0.5,0.5},2},
+                         Edge{{0.5,0.5,-0.5},{0.5,0.5,0.5},2},
+                         Edge{{-0.5,0.5,-0.5},{-0.5,0.5,0.5},2}})
+        if(midOf(cand).x()<midOf(ez).x()) ez=cand;
+
+    const QFontMetricsF tickMetrics(tickFont,p->device());
+    const QFontMetricsF nameMetrics(nameFont,p->device());
+
+    struct Axis { const Edge* edge; const Bounds* bounds; QString name; };
+    const Axis axes[3]={{&ex,&bx,xLabel},{&ey,&by,yLabel},{&ez,&bz,zLabel}};
+
+    for(const Axis& axis:axes){
+        const Edge& e=*axis.edge;
+        const QPointF mid=midOf(e);
+        // Away from the middle of the cube, so numbers sit outside the box
+        // whichever way it has been turned.
+        QPointF away=mid-centre;
+        const double len=std::hypot(away.x(),away.y());
+        away=(len>1e-6)?away/len:QPointF(0,1);
+
+        double outermost=0.0;
+        if(spec.style.scaleLabelsVisible&&axis.bounds->valid){
+            p->setFont(tickFont);
+            QPen tickPen(spec.style.gridColor);
+            tickPen.setWidthF(0.8);
+            for(const AxisTick& t:QtPlotBackend::linearTicks(axis.bounds->lo,
+                                                             axis.bounds->hi,5)){
+                if(t.minor) continue;
+                const double f=axis.bounds->norm(t.value)+0.5;   // 0..1 along the edge
+                if(!(f>=-0.001&&f<=1.001)) continue;
+                double at[3];
+                for(int k=0;k<3;++k) at[k]=e.from[k]+(e.to[k]-e.from[k])*f;
+                const QPointF on=project(proj,at[0],at[1],at[2]);
+                p->setPen(tickPen);
+                p->drawLine(on,on+away*4.0);
+                // A box centred on the text position rather than a baseline, so
+                // a number is pushed clear of the cube by its own size in
+                // whatever direction "away" points - the reason this is not
+                // just a fixed offset is that the direction changes as the
+                // figure turns.
+                const double w=qMax(18.0,tickMetrics.horizontalAdvance(t.label)+4.0);
+                const double h=tickMetrics.height();
+                const QPointF anchor=on+away*(7.0+std::abs(away.x())*w*0.5
+                                                 +std::abs(away.y())*h*0.5);
+                p->setPen(spec.style.foreground);
+                p->drawText(QRectF(anchor-QPointF(w/2.0,h/2.0),QSizeF(w,h)),
+                            Qt::AlignCenter,t.label);
+                outermost=qMax(outermost,7.0+std::abs(away.x())*w+std::abs(away.y())*h);
+            }
+        }
+
+        if(axis.name.isEmpty()) continue;
+        p->setFont(nameFont);
+        p->setPen(spec.style.foreground);
+        const double w=qMax(40.0,nameMetrics.horizontalAdvance(axis.name)+6.0);
+        const double h=nameMetrics.height();
+        const QPointF anchor=mid+away*(outermost+6.0+std::abs(away.x())*w*0.5
+                                                    +std::abs(away.y())*h*0.5);
+        p->drawText(QRectF(anchor-QPointF(w/2.0,h/2.0),QSizeF(w,h)),
+                    Qt::AlignCenter,axis.name);
+    }
+}
+
 void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
     // The field colour map, read once. Viridis unless the style asks for
     // another - see PlotStyle::colourMap.
@@ -1959,20 +2105,21 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
     const Bounds bx=boundsOf(xs), by=boundsOf(ys), bz=boundsOf(zs);
     if(!bx.valid||!by.valid||!bz.valid) return;
 
-    const Projection proj=makeProjection(target,-35.0,24.0);
+    // Room for the tick numbers and the axis names outside the cube, and no
+    // more: the figure is fitted to whatever is left, so a wide canvas gives a
+    // wide figure instead of a small one in the middle of a lot of nothing.
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFont nameFont=font(spec,spec.style.axisLabelSize);
+    const double margin=cubeMargin(p,tickFont,nameFont,spec.style.scaleLabelsVisible);
+    const Projection proj=makeProjection(target,spec.view3d.azimuth,spec.view3d.elevation,
+                                         spec.view3d.zoom,margin);
 
     p->save();
 
     drawBoundingCube(p,proj,spec.style.gridColor);
-
-    p->setFont(font(spec,spec.style.axisLabelSize));
-    p->setPen(spec.style.foreground);
-    p->drawText(QRectF(project(proj,0.0,-0.5,-0.5)+QPointF(-40,6),QSizeF(80,14)),
-                Qt::AlignCenter,spec.series.at(0).label);
-    p->drawText(QRectF(project(proj,0.5,0.0,-0.5)+QPointF(-40,6),QSizeF(80,14)),
-                Qt::AlignCenter,spec.series.at(1).label);
-    p->drawText(QRectF(project(proj,-0.5,-0.5,0.0)+QPointF(-84,-7),QSizeF(80,14)),
-                Qt::AlignRight|Qt::AlignVCenter,spec.series.at(2).label);
+    drawCubeAxes(p,proj,spec,bx,by,bz,
+                 spec.series.at(0).label,spec.series.at(1).label,spec.series.at(2).label,
+                 tickFont,nameFont);
 
     const bool surface=spec.engine==QLatin1String("3D Topography / Surface")
                      ||spec.engine==QLatin1String("3D Mesh");
@@ -3111,10 +3258,17 @@ void QtPlotBackend::draw3DField(QPainter* p,const QRectF& target,const PlotSpec&
     const Bounds bx=boundsOf(xs), by=boundsOf(ys), bz=boundsOf(zs);
     if(!bx.valid||!by.valid||!bz.valid) return;
 
-    const Projection proj=makeProjection(target,-35.0,24.0);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFont nameFont=font(spec,spec.style.axisLabelSize);
+    const double margin=cubeMargin(p,tickFont,nameFont,spec.style.scaleLabelsVisible);
+    const Projection proj=makeProjection(target,spec.view3d.azimuth,spec.view3d.elevation,
+                                         spec.view3d.zoom,margin);
 
     p->save();
     drawBoundingCube(p,proj,spec.style.gridColor);
+    drawCubeAxes(p,proj,spec,bx,by,bz,
+                 spec.series.at(0).label,spec.series.at(1).label,spec.series.at(2).label,
+                 tickFont,nameFont);
 
     const QString& engine=spec.engine;
     const bool tensor=engine==QLatin1String("Tensor Glyph Field");

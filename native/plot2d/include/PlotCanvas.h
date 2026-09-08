@@ -83,6 +83,17 @@ class PlotCanvas : public QQuickPaintedItem {
     // which is what it used to be tied to.
     Q_PROPERTY(bool gridVisible READ gridVisible WRITE setGridVisible NOTIFY styleChanged)
     Q_PROPERTY(int gridDensity READ gridDensity WRITE setGridDensity NOTIFY styleChanged)
+    // Numbers on the axes. On, because an axis with a name and no scale can be
+    // looked at but not read - which is what every 3-D figure was.
+    Q_PROPERTY(bool scaleLabelsVisible READ scaleLabelsVisible WRITE setScaleLabelsVisible NOTIFY styleChanged)
+
+    // The camera, for the engines drawn as a projection. Separate from the 2-D
+    // pan and zoom because turning a cube and sliding an axis range are not the
+    // same operation and must not share a gesture.
+    Q_PROPERTY(bool view3D READ view3D NOTIFY stateChanged)
+    Q_PROPERTY(double azimuth READ azimuth WRITE setAzimuth NOTIFY styleChanged)
+    Q_PROPERTY(double elevation READ elevation WRITE setElevation NOTIFY styleChanged)
+
     // 0 Standard, 1 Protanopia, 2 Deuteranopia, 3 Tritanopia, 4 Monochrome.
     // Owned by AppController and persisted, so it survives theme changes and
     // restarts - see ColourVision.h for why it is separate from the UI theme.
@@ -261,6 +272,21 @@ public:
     int gridDensity() const { return spec_.style.gridDensity; }
     void setGridVisible(bool on);
     void setGridDensity(int ticks);
+    bool scaleLabelsVisible() const { return spec_.style.scaleLabelsVisible; }
+    void setScaleLabelsVisible(bool on);
+    // True for the engines drawn as a projection into a cube: the 3-D family,
+    // the surfaces, and the vector and volume fields. Those rotate rather than
+    // pan, and QML asks so it can say so in the tooltip.
+    bool view3D() const;
+    double azimuth() const { return spec_.view3d.azimuth; }
+    double elevation() const { return spec_.view3d.elevation; }
+    void setAzimuth(double degrees);
+    void setElevation(double degrees);
+    // Drag: horizontal turns, vertical tilts. Pixels, so the caller does not
+    // have to know the gain.
+    Q_INVOKABLE void rotateByPixels(double dx,double dy);
+    Q_INVOKABLE void zoom3DBy(double factor);
+    Q_INVOKABLE void resetCamera();
     bool usesColourMap() const { return usesColourMap_; }
     void setBackgroundColor(const QColor& c);
     void setForegroundColor(const QColor& c);

@@ -13,6 +13,10 @@ Item {
     required property var app
     signal importRequested()
     signal literatureRequested()
+    // The live canvas, so the window's menu bar can act on the figure. The
+    // shell owns the Visualize workspace, which owns the plot; nothing above
+    // this could reach it before.
+    readonly property alias canvas: visualise.canvas
     // Which workspaces are loaded on demand. Visualize is not one of them: it
     // owns the PlotCanvas, and the Publish workspace exists to export that
     // canvas. A Loader that swapped whole workspaces destroyed the canvas on

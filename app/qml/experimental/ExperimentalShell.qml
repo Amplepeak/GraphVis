@@ -17,6 +17,9 @@ Rectangle {
     required property var app
     signal importRequested()
     signal literatureRequested()
+    // The live canvas, so the window's menu bar can act on the figure whichever
+    // shell is loaded.
+    readonly property alias canvas: visualise.canvas
     readonly property bool visualiseMode:
         ["Literature","Home","Data","Analysis","Publish"].indexOf(root.app.workspaceMode) < 0
 

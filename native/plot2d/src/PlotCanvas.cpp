@@ -414,6 +414,103 @@ void PlotCanvas::setGridDensity(int ticks){
     emit styleChanged();
 }
 
+void PlotCanvas::setScaleLabelsVisible(bool on){
+    if(spec_.style.scaleLabelsVisible==on) return;
+    spec_.style.scaleLabelsVisible=on;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+// ======================================================================
+// The camera, for the projected engines
+//
+// A 3-D figure that cannot be turned is a photograph of a 3-D figure. The
+// angles were constants inside the painter, so the one view the person got was
+// whichever pair of numbers had been typed there - and if the interesting face
+// of the surface happened to point away, that was that.
+//
+// These write onto spec_.view3d, which is the same principle the 2-D pan and
+// zoom follow with the axis limits: what is on screen is what is exported, and
+// the full-resolution render is a render of the view being looked at rather
+// than of the default one.
+// ======================================================================
+
+bool PlotCanvas::view3D() const {
+    // Every engine drawn into the projected cube. engineHasAxes is false for
+    // these AND for pie, polar and treemap, so it cannot be the test on its
+    // own: a pie has no camera either.
+    const QString& e=spec_.engine;
+    if(e.startsWith(QLatin1String("3D "))) return true;
+    static const QSet<QString> kProjected{
+        QStringLiteral("Surface + Contours"),QStringLiteral("Comet 3D"),
+        QStringLiteral("Ribbon"),
+        QStringLiteral("Cone Plot"),QStringLiteral("Stream Tube"),
+        QStringLiteral("Stream Ribbon"),QStringLiteral("Tensor Glyph Field"),
+        QStringLiteral("Volume Show"),QStringLiteral("Volume Slice"),
+        QStringLiteral("Isosurface"),QStringLiteral("Isonormals"),
+        QStringLiteral("Isocaps"),QStringLiteral("Contour Slice")};
+    return kProjected.contains(e)&&!spec_.series.isEmpty();
+}
+
+void PlotCanvas::setAzimuth(double degrees){
+    // Wrapped rather than clamped: turning past the back of the cube and
+    // continuing round is what a person expects from a horizontal drag, and a
+    // clamp there feels like the figure has hit something.
+    double wrapped=std::fmod(degrees,360.0);
+    if(wrapped>180.0) wrapped-=360.0;
+    if(wrapped<-180.0) wrapped+=360.0;
+    if(qFuzzyCompare(spec_.view3d.azimuth,wrapped)) return;
+    spec_.view3d.azimuth=wrapped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setElevation(double degrees){
+    // Clamped, and this one has to be: past 90 degrees the cube turns inside
+    // out and the painter's algorithm draws the far faces over the near ones,
+    // which reads as the surface having been turned inside out - because it
+    // has.
+    const double clamped=qBound(-89.0,degrees,89.0);
+    if(qFuzzyCompare(spec_.view3d.elevation,clamped)) return;
+    spec_.view3d.elevation=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::rotateByPixels(double dx,double dy){
+    if(!view3D()) return;
+    // A drag across the width of the item turns the figure most of the way
+    // round, which is the gain that makes a cube feel attached to the finger.
+    const double across=qMax(160.0,width());
+    setAzimuth(spec_.view3d.azimuth+dx*(300.0/across));
+    setElevation(spec_.view3d.elevation+dy*(180.0/qMax(160.0,height())));
+}
+
+void PlotCanvas::zoom3DBy(double factor){
+    if(!view3D()||!(factor>0.0)) return;
+    const double next=qBound(0.05,spec_.view3d.zoom*factor,40.0);
+    if(qFuzzyCompare(next,spec_.view3d.zoom)) return;
+    spec_.view3d.zoom=next;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::resetCamera(){
+    spec_.view3d=PlotView3D{};
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
 void PlotCanvas::setColourMap(const QString& name){
     if(spec_.style.colourMap==name) return;
     spec_.style.colourMap=name;
@@ -979,7 +1076,9 @@ void PlotCanvas::resetView(){
 }
 
 void PlotCanvas::mousePressEvent(QMouseEvent* e){
-    if(!viewInteractive()){ e->ignore(); return; }
+    // A 3-D figure is dragged to turn it rather than to slide an axis range,
+    // so it accepts the press even though viewInteractive is false for it.
+    if(!viewInteractive()&&!view3D()){ e->ignore(); return; }
     // While annotating, a click places a note instead of starting a pan. The
     // coordinates come from updateCursor, which is the same conversion the
     // readout uses - so the note lands exactly where the readout said it would,
@@ -999,7 +1098,8 @@ void PlotCanvas::mouseMoveEvent(QMouseEvent* e){
     if(!dragging_){ e->ignore(); return; }
     const QPointF delta=e->position()-lastPointer_;
     lastPointer_=e->position();
-    panByPixels(delta.x(),delta.y());
+    if(view3D()) rotateByPixels(delta.x(),delta.y());
+    else panByPixels(delta.x(),delta.y());
     e->accept();
 }
 
@@ -1009,25 +1109,39 @@ void PlotCanvas::mouseReleaseEvent(QMouseEvent* e){
 }
 
 void PlotCanvas::mouseDoubleClickEvent(QMouseEvent* e){
-    resetView();
+    if(view3D()) resetCamera();
+    else resetView();
     e->accept();
 }
 
 void PlotCanvas::wheelEvent(QWheelEvent* e){
-    if(!viewInteractive()){ e->ignore(); return; }
+    if(!viewInteractive()&&!view3D()){ e->ignore(); return; }
     // The same gain as the 3-D viewport, so one notch feels the same in both.
     const double factor=std::pow(1.0015,double(e->angleDelta().y()));
-    zoomAt(e->position(),factor);
+    if(view3D()) zoom3DBy(factor);
+    else zoomAt(e->position(),factor);
     e->accept();
 }
 
 void PlotCanvas::touchEvent(QTouchEvent* e){
-    if(!viewInteractive()){ e->ignore(); return; }
+    if(!viewInteractive()&&!view3D()){ e->ignore(); return; }
     if(e->type()==QEvent::TouchEnd||e->type()==QEvent::TouchCancel){
         touch_.reset(); e->accept(); return;
     }
     const TouchGesture::Step step=touch_.update(e->points(),e->type()==QEvent::TouchBegin);
     if(!step.usable){ e->accept(); return; }
+
+    if(view3D()){
+        // One finger turns it, two pinch to zoom. Deliberately NOT panning on
+        // two fingers as the 2-D case does: the cube is fitted to the frame, so
+        // there is nowhere to pan it to, and a figure that slides out of its
+        // own frame under a pinch is a bug rather than a feature.
+        if(step.fingers>=2&&step.scale!=1.0) zoom3DBy(step.scale);
+        else if(step.movement.x()!=0.0||step.movement.y()!=0.0)
+            rotateByPixels(step.movement.x(),step.movement.y());
+        e->accept();
+        return;
+    }
 
     if(step.fingers>=2&&step.scale!=1.0) zoomAt(step.centre,step.scale);
     // Both one finger and two pan, so a pinch that also moves does both -

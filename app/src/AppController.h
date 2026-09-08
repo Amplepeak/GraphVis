@@ -71,6 +71,19 @@ class AppController final : public QObject {
     // The grid, on its own terms. 0 density means the long-standing default.
     Q_PROPERTY(bool plotGridVisible READ plotGridVisible WRITE setPlotGridVisible NOTIFY plotDisplayChanged)
     Q_PROPERTY(int plotGridDensity READ plotGridDensity WRITE setPlotGridDensity NOTIFY plotDisplayChanged)
+    // Numbers on the axes. On by default: an axis with a name and no scale can
+    // be looked at and not read.
+    Q_PROPERTY(bool plotScaleLabels READ plotScaleLabels WRITE setPlotScaleLabels NOTIFY plotDisplayChanged)
+
+    // What was open last time.
+    //
+    // Quitting forgot the dataset entirely, so every session began by finding
+    // the same file in the same folder again - and a renderer that took the
+    // application down with it did the same, which is the moment you least want
+    // to be hunting for a path. Paths and names only; nothing reopens without
+    // being asked for.
+    Q_PROPERTY(QVariantList recentDatasets READ recentDatasets NOTIFY recentsChanged)
+    Q_PROPERTY(QVariantList recentVisualisations READ recentVisualisations NOTIFY recentsChanged)
     Q_PROPERTY(bool dataFormatsInstallerAvailable READ dataFormatsInstallerAvailable CONSTANT)
     Q_PROPERTY(QVariantMap smartRenderPlan READ smartRenderPlan NOTIFY smartRenderChanged)
     // GraphVis 17 graph catalogue: 318 entries in 30 categories, loaded from
@@ -250,6 +263,19 @@ public:
     void setPlotGridVisible(bool on);
     int plotGridDensity() const{return plotGridDensity_;}
     void setPlotGridDensity(int ticks);
+    bool plotScaleLabels() const{return plotScaleLabels_;}
+    void setPlotScaleLabels(bool on);
+    QVariantList recentDatasets() const{return recentDatasets_;}
+    QVariantList recentVisualisations() const{return recentVisualisations_;}
+    // Called by the workspace whenever a catalogue entry is applied, so the
+    // list is what was actually DRAWN rather than what was clicked in the
+    // library and then abandoned.
+    Q_INVOKABLE void noteVisualisation(const QString& engine,const QString& variant);
+    // Re-import a remembered file. Named separately from importDataset because
+    // it must cope with the file having been moved or deleted since, and say so
+    // rather than failing silently.
+    Q_INVOKABLE void openRecentDataset(const QString& path);
+    Q_INVOKABLE void clearRecents();
     void setPlotColourVision(int value);
     QStringList plotColourVisionNames() const;
     QString plotColourVisionSummary() const;
@@ -351,6 +377,7 @@ signals:
     void importLogChanged();
     void plotColourVisionChanged();
     void plotDisplayChanged();
+    void recentsChanged();
     void smartRenderChanged();
     void scanChanged();
     // A loaded figure's canvas state, for QML to hand to PlotCanvas. The
@@ -380,6 +407,14 @@ private:
     int figureTheme_=0;                     // follow the interface theme
     bool plotGridVisible_=true;
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
+    bool plotScaleLabels_=true;
+    // Newest first, capped. Each entry is {path, name}; visualisations are
+    // {engine, variant, label}.
+    QVariantList recentDatasets_;
+    QVariantList recentVisualisations_;
+    void rememberDataset(const QString& path,const QString& name);
+    void loadRecents();
+    void saveRecents();
     QStringList importQueue_;
     // Converted Arrow file -> the file the user actually chose, so the log row
     // stays on their file rather than sprouting a second row for a temporary.

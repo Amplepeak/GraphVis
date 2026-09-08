@@ -184,6 +184,25 @@ ApplicationWindow {
     FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:root.app.importNameFilters();onAccepted:root.app.importDataset(selectedFile)}
     FileDialog{id:literatureDialog;title:"Open literature";nameFilters:root.app.literatureNameFilters();onAccepted:root.app.openLiterature(selectedFile)}
 
+    // The window's menu bar. Settings that used to be spread across the
+    // toolbar, a strip above the graph chooser and a combo box floating over
+    // the corner of the plot now have one home; the toolbar keeps the actions
+    // people reach for constantly.
+    menuBar: MainMenuBar {
+        app: root.app
+        canvas: shellLoader.item ? shellLoader.item.canvas : null
+        onImportRequested: importDialog.open()
+        onLiteratureRequested: literatureDialog.open()
+        onAddOnsRequested: addOnsDialog.open()
+        onExportRequested: {
+            var c = shellLoader.item ? shellLoader.item.canvas : null
+            if (!c) return
+            var target = root.app.exportPath(c.engine, "pdf")
+            if (c.exportPdf(target)) root.app.notify("Exported " + target)
+            else root.app.notify("PDF export failed")
+        }
+    }
+
     header:TopBar{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onAddOnsRequested:addOnsDialog.open()}
 
     // Add-ons gets a window of its own rather than a ninth sidebar tab: it is
@@ -203,6 +222,7 @@ ApplicationWindow {
     }
 
     Loader {
+        id: shellLoader
         anchors{left:parent.left;right:parent.right;top:parent.top;bottom:status.top}
         sourceComponent:root.app.experimentalUi?experimentalShell:classicShell
     }

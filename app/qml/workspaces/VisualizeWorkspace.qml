@@ -72,6 +72,10 @@ SplitView {
             plot.engine = entry.engine
             plot.variant = entry.scale ? entry.scale : ""
             plot.title = entry.engine
+            // Recorded here rather than in the library, so the list under File
+            // is what was actually drawn rather than what was clicked and then
+            // abandoned.
+            app.noteVisualisation(entry.engine, entry.scale ? entry.scale : "")
         }
         // A Smart Suite recommendation carries its own mapping, so it selects
         // the graph and the axes together - the point of the scan.
@@ -84,6 +88,7 @@ SplitView {
             plot.yColumns = (mappings && mappings.y) ? [mappings.y] : []
             plot.zColumn = (mappings && mappings.z) ? mappings.z : ""
             plot.colorColumn = (mappings && mappings.c) ? mappings.c : ""
+            app.noteVisualisation(graph, "")
             app.notify("Applied scan recommendation: " + graph)
         }
         }
@@ -94,12 +99,97 @@ SplitView {
     // something to do silently - the tear-out is offered for the Qt 2-D canvas.
     DockPanel {
         id: canvasDock
-        title: "Canvas"
+        // What is on screen, said in the panel's own title rather than in a bar
+        // across the bottom of the figure. The bar was in the way of the
+        // buttons beneath it and looked bolted on; a panel saying what it
+        // contains is just a panel title.
+        title: root.app.rendererMode !== "Qt 2-D"
+               ? "Canvas"
+               : (plot.pointCount > 0
+                  ? "Canvas · " + plot.message
+                    + (plot.showingFullRender ? " · full resolution"
+                                              : (plot.previewIsExact ? "" : " · preview"))
+                  : "Canvas")
         floatable: root.app.rendererMode === "Qt 2-D"
         floatingWidth: 1040
         floatingHeight: 760
         SplitView.fillWidth: true
         SplitView.minimumWidth: 360
+
+        // The figure's controls, in the panel header.
+        //
+        // These used to float along the bottom edge of the plot, on top of the
+        // figure, growing sideways over one another as more of them appeared -
+        // and the row was wide enough to sit over the buttons underneath it.
+        // A strip that covers the controls you would use to act on it is worse
+        // than no strip. Everything here acts on the whole canvas, which is
+        // exactly what a panel header is for.
+        headerActions: [
+            // What is under the pointer, and only while there is something
+            // under it. First because it changes constantly and the eye should
+            // not have to hunt for it.
+            StatusPill {
+                visible: plot.cursorOnPlot
+                text: plot.cursorText
+                textColor: Theme.text
+            },
+            RenderProgressBadge { canvas: plot },
+            UnitSelector { axis: "X"; canvas: plot },
+            UnitSelector { axis: "Y"; canvas: plot },
+            ColourMapSelector { canvas: plot; app: root.app },
+            Button {
+                id: cameraReset
+                text: "Reset camera"
+                visible: plot.view3D
+                ToolTip.visible: cameraReset.hovered
+                ToolTip.text: "Back to the starting angle. Drag the figure to turn it, "
+                            + "wheel or pinch to zoom, double-click to reset."
+                onClicked: plot.resetCamera()
+            },
+            Button {
+                id: viewReset
+                text: "Reset view"
+                visible: plot.viewZoomed
+                ToolTip.visible: viewReset.hovered
+                ToolTip.text: "Fit the axes back to the data. Double-click or double-tap the figure does the same."
+                onClicked: plot.resetView()
+            },
+            Button {
+                id: annotateButton
+                text: plot.annotating ? "Stop annotating"
+                                      : (plot.annotationCount > 0
+                                         ? "Notes (" + plot.annotationCount + ")"
+                                         : "Annotate")
+                checkable: true
+                checked: plot.annotating
+                visible: plot.viewInteractive && plot.pointCount > 0
+                ToolTip.visible: annotateButton.hovered
+                ToolTip.text: "Add a note to the figure. Notes are anchored to a data "
+                            + "point, so they stay put through a zoom, and they export "
+                            + "into the PDF as real selectable text."
+                onClicked: plot.annotating = annotateButton.checked
+            },
+            Button {
+                id: clearNotes
+                text: "Clear notes"
+                visible: plot.annotationCount > 0
+                onClicked: plot.clearAnnotations()
+            },
+            // Last, hard against the pop-out button, which is where the person
+            // asked for it.
+            Button {
+                id: exportButton
+                text: "Export PDF"
+                enabled: plot.pointCount > 0
+                ToolTip.visible: exportButton.hovered
+                ToolTip.text: "True vector PDF with embedded fonts, drawn by the same backend as the screen"
+                onClicked: {
+                    var target = root.app.exportPath(plot.engine, "pdf")
+                    if (plot.exportPdf(target)) root.app.notify("Exported " + target)
+                    else root.app.notify("PDF export failed")
+                }
+            }
+        ]
 
         Rectangle {
             anchors.fill: parent
@@ -125,10 +215,9 @@ SplitView {
                     }
                 }
                 // A column, so the notice below has somewhere to be that is not
-                // on top of the toolbar. Everything that belongs INSIDE the
-                // figure - the annotation editor, the ready notice, the overlay
-                // row - still anchors to the plot item; only the explanation
-                // moved out.
+                // on top of the figure. What genuinely belongs inside the
+                // figure - the annotation editor, the ready notice - still
+                // anchors to the plot item.
                 ColumnLayout {
                     spacing: 4
                 Item {
@@ -168,6 +257,7 @@ SplitView {
                         }
                         gridVisible: root.app.plotGridVisible
                         gridDensity: root.app.plotGridDensity
+                        scaleLabelsVisible: root.app.plotScaleLabels
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision
@@ -185,117 +275,19 @@ SplitView {
                     // person what a note says: the canvas stores and draws them,
                     // so the PDF export and the self-test need none of this.
                     AnnotationLayer { canvas: plot }
-                    // Ready notice, sitting ABOVE the overlay row rather than in the
-                    // same corner. Both used to anchor to the bottom right with
-                    // near-identical margins - plot is inset only 6 px - so the
-                    // "Full-resolution render ready / Show it" card landed on top
-                    // of the Export PDF button and the status pill and made them
-                    // unclickable for as long as it was up.
+                    // Bottom right of the figure. It used to have to sit above
+                    // the floating control row to avoid landing on the Export
+                    // button; with the controls in the header there is nothing
+                    // below it to clear.
                     PreviewReadyNotice {
                         canvas: plot
                         anchors {
                             right: plot.right
-                            bottom: overlayRow.top
-                            rightMargin: 8; bottomMargin: 8
+                            bottom: plot.bottom
+                            rightMargin: 12; bottomMargin: 12
                         }
                     }
 
-                    RowLayout {
-                        id: overlayRow
-                        anchors{right:parent.right;bottom:parent.bottom;margins:12}
-                        spacing: 8
-                        // Display units. A column labelled "Pressure [kPa]" can be
-                        // drawn in Pa without re-importing anything - the data is
-                        // untouched and only the axis is rescaled. Each selector
-                        // appears only when that axis has a unit to convert from,
-                        // which for most datasets means neither of them does.
-                        UnitSelector { axis: "X"; canvas: plot }
-                        UnitSelector { axis: "Y"; canvas: plot }
-                        // Only on the engines that colour a field. Hidden on
-                        // the other hundred and eighty, where it would do
-                        // nothing - see components/ColourMapSelector.qml.
-                        ColourMapSelector { canvas: plot; app: root.app }
-                        // What happens when the full-resolution render lands.
-                        // Only offered once a figure is large enough for there
-                        // to BE a second render.
-                        FullRenderPolicyBox { app: root.app; canvas: plot }
-                        // What is under the pointer. The figure could be zoomed
-                        // into a transient and still not say what the transient
-                        // measured; the axes gave the range and nothing gave the
-                        // value. Only while the pointer is over a figure with
-                        // real axes - see PlotCanvas::updateCursor.
-                        StatusPill {
-                            visible: plot.cursorOnPlot
-                            width: visible ? implicitWidth : 0
-                            text: plot.cursorText
-                            textColor: Theme.text
-                        }
-                        // Progress, outside the preview. Only appears when the full
-                        // render is long enough to be worth mentioning.
-                        RenderProgressBadge { canvas: plot }
-                        // Only while there is a zoom to undo. The figure pans
-                        // with a drag or a finger and zooms with the wheel or a
-                        // pinch, and nothing on screen would otherwise say how
-                        // to get back to the whole dataset.
-                        Button {
-                            id: annotateButton
-                            text: plot.annotating ? "Stop annotating"
-                                                  : (plot.annotationCount > 0
-                                                     ? "Annotate (" + plot.annotationCount + ")"
-                                                     : "Annotate")
-                            checkable: true
-                            checked: plot.annotating
-                            visible: plot.viewInteractive && plot.pointCount > 0
-                            ToolTip.visible: annotateButton.hovered
-                            ToolTip.text: "Add a note to the figure. Notes are anchored to a data "
-                                        + "point, so they stay put through a zoom, and they export "
-                                        + "into the PDF as real selectable text."
-                            onClicked: plot.annotating = annotateButton.checked
-                        }
-                        Button {
-                            text: "Clear notes"
-                            visible: plot.annotationCount > 0
-                            onClicked: plot.clearAnnotations()
-                        }
-                        Button {
-                            text: "Reset view"
-                            visible: plot.viewZoomed
-                            ToolTip.visible: hovered
-                            ToolTip.text: "Fit the axes back to the data. Double-click or double-tap the figure does the same."
-                            onClicked: plot.resetView()
-                        }
-                        Button {
-                            text: "Export PDF"
-                            enabled: plot.pointCount > 0
-                            ToolTip.visible: hovered
-                            ToolTip.text: "True vector PDF with embedded fonts, drawn by the same backend as the screen"
-                            onClicked: {
-                                var target = root.app.exportPath(plot.engine, "pdf")
-                                if (plot.exportPdf(target)) root.app.notify("Exported " + target)
-                                else root.app.notify("PDF export failed")
-                            }
-                        }
-                        StatusPill {
-                            // Which image is on screen, and nothing longer than
-                            // that. This used to append plot.message, which is
-                            // fine while the message is "Line Chart · 20000
-                            // points" and covers half the window the moment the
-                            // canvas has something to explain. The explanation
-                            // is a separate property now and sits below the
-                            // figure - see PlotNotice.
-                            text: {
-                                var where = plot.showingFullRender
-                                    ? "full resolution"
-                                    : (plot.previewIsExact ? "all points"
-                                                           : "preview, " + plot.previewPointCount
-                                                             + " of " + plot.fullPointCount)
-                                return plot.engineSupported
-                                    ? ("Qt 2-D · " + where + " · " + plot.message)
-                                    : plot.message
-                            }
-                            textColor: plot.engineSupported ? Theme.textSecondary : Theme.warning
-                        }
-                    }
                 }
                 // Underneath, wrapping, dismissible.
                 PlotNotice {
