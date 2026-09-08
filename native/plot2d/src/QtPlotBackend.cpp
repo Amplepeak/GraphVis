@@ -3677,6 +3677,9 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     for(const PlotAxis* a:{&spec.xAxis,&spec.yAxis}){
         fnvString(h,a->label);
         const unsigned char lg=(a->log10?1:0)|(a->inverted?2:0); fnvBytes(h,&lg,1);
+        // The transform rewrites the values, so a prepared spec built under one
+        // is not the prepared spec for another.
+        fnvBytes(h,&a->transform,sizeof(a->transform));
         // Deliberately NOT the limits. No rewrite reads them - the only code
         // that touches them copies them onto the result - and they now change
         // on every frame of a pan or a pinch. Hashing them meant dragging a
@@ -4276,8 +4279,116 @@ void greatCirclePoint(double lon1,double lat1,double lon2,double lat2,
 // those engines would have thrown the user's zoom away on the next repaint and
 // snapped back to the full range. The limits that arrive on the spec are the
 // ones the user is looking at, and they win.
+namespace {
+
+// One axis's worth of values, transformed.
+//
+// Applied AFTER the engine's own rewrite, so it acts on what will actually be
+// drawn rather than on what was mapped: z-scoring a histogram's counts is then
+// z-scoring the counts, which is what the axis says it is doing. Applied before
+// the limits go back on, so a zoom set on transformed values stays where it was
+// put.
+//
+// Log10 is not here. It is drawn as a log AXIS - decade ticks, 10^n labels,
+// original numbers on the page - and rewriting the values as well would put the
+// data through the transform twice.
+void transformValues(QVector<double>& v,int mode){
+    if(mode==AxisLinear||mode==AxisLog10||v.isEmpty()) return;
+
+    if(mode==AxisLog1p){
+        // log10(1 + x). The log axis for a column that legitimately reaches
+        // zero - counts, concentrations, failures per cycle - where a plain log
+        // axis has to drop every one of those rows. Below -1 there is no answer,
+        // so those become gaps rather than a silently shifted value.
+        for(double& d:v) d=(finite(d)&&d>-1.0)?std::log10(1.0+d)
+                                             :std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
+
+    if(mode==AxisZScore){
+        // Two passes rather than the sum-of-squares shortcut: on a column whose
+        // values are large and whose spread is small - a temperature in kelvin,
+        // a timestamp - E[x^2] - E[x]^2 subtracts two nearly equal large numbers
+        // and can come out negative, which is a standard deviation that cannot
+        // exist and a plot full of NaN.
+        double sum=0.0; int n=0;
+        for(double d:v) if(finite(d)){ sum+=d; ++n; }
+        if(n<2) return;
+        const double mean=sum/double(n);
+        double ss=0.0;
+        for(double d:v) if(finite(d)){ const double e=d-mean; ss+=e*e; }
+        const double sd=std::sqrt(ss/double(n-1));
+        if(!(sd>0.0)||!finite(sd)) return;   // a constant column has no z-score
+        for(double& d:v) if(finite(d)) d=(d-mean)/sd;
+        return;
+    }
+
+    if(mode==AxisQuantile){
+        // Each value replaced by its position in the sorted sample, 0 to 1.
+        // Ties share the midpoint of the range they span, so a column that is
+        // 97% zeros - which is exactly the shape that made a real dataset draw
+        // as a flat line on the axis - does not have its zeros spread across
+        // 97% of the axis as if they differed.
+        QVector<QPair<double,int>> order;
+        order.reserve(v.size());
+        for(int i=0;i<v.size();++i) if(finite(v[i])) order.append({v[i],i});
+        const int n=order.size();
+        if(n<2) return;
+        std::sort(order.begin(),order.end(),
+                  [](const QPair<double,int>& a,const QPair<double,int>& b){
+                      return a.first<b.first;
+                  });
+        int i=0;
+        while(i<n){
+            int j=i;
+            while(j+1<n&&order[j+1].first==order[i].first) ++j;
+            const double q=((double(i)+double(j))/2.0)/double(n-1);
+            for(int k=i;k<=j;++k) v[order[k].second]=q;
+            i=j+1;
+        }
+        for(double& d:v) if(!finite(d)) d=std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
+}
+
+// What the axis is now measured in. A z-score axis labelled with the column's
+// original name and unit is a label that contradicts its own numbers.
+QString transformedLabel(const QString& label,int mode){
+    switch(mode){
+    case AxisLog1p:    return QStringLiteral("log10(1 + %1)").arg(label);
+    case AxisZScore:   return label.isEmpty()?QStringLiteral("z-score")
+                                             :QStringLiteral("%1 (z-score)").arg(label);
+    case AxisQuantile: return label.isEmpty()?QStringLiteral("quantile")
+                                             :QStringLiteral("quantile of %1").arg(label);
+    default:           return label;
+    }
+}
+
+} // namespace
+
 PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     PlotSpec out=prepareSpecCore(in);
+
+    // The axis transforms, on the drawn geometry.
+    if(in.xAxis.transform>AxisLog10||in.yAxis.transform>AxisLog10){
+        for(PlotSeries& s:out.series){
+            transformValues(s.x,in.xAxis.transform);
+            transformValues(s.y,in.yAxis.transform);
+        }
+        out.xAxis.label=transformedLabel(out.xAxis.label,in.xAxis.transform);
+        out.yAxis.label=transformedLabel(out.yAxis.label,in.yAxis.transform);
+        // A limit set in the untransformed space means nothing afterwards, and
+        // a zoom kept across a change of transform would clip the new figure to
+        // a range that belongs to the old one. Dropped rather than converted:
+        // the quantile transform is not invertible without the original sample.
+        out.xAxis.min=unsetValue(); out.xAxis.max=unsetValue();
+        out.yAxis.min=unsetValue(); out.yAxis.max=unsetValue();
+        PlotSpec limits=in;
+        if(in.xAxis.transform>AxisLog10){ limits.xAxis.min=unsetValue(); limits.xAxis.max=unsetValue(); }
+        if(in.yAxis.transform>AxisLog10){ limits.yAxis.min=unsetValue(); limits.yAxis.max=unsetValue(); }
+        return applyLimits(out,limits);
+    }
+
     return applyLimits(out,in);
 }
 

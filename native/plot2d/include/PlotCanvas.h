@@ -58,6 +58,16 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY sourceChanged)
     Q_PROPERTY(bool logX READ logX WRITE setLogX NOTIFY sourceChanged)
     Q_PROPERTY(bool logY READ logY WRITE setLogY NOTIFY sourceChanged)
+    // How each axis's values are transformed. 0 Linear, 1 Log10, 2 Log(1+x),
+    // 3 z-score, 4 quantile - see AxisTransform in PlotSpec.h.
+    //
+    // Independent per axis, which is the point: a heavily skewed x against a
+    // z-scored y is a perfectly ordinary thing to want and there was no way to
+    // ask for it. linkAxisTransforms is for when it is not - setting either
+    // then sets both.
+    Q_PROPERTY(int xTransform READ xTransform WRITE setXTransform NOTIFY sourceChanged)
+    Q_PROPERTY(int yTransform READ yTransform WRITE setYTransform NOTIFY sourceChanged)
+    Q_PROPERTY(bool linkAxisTransforms READ linkAxisTransforms WRITE setLinkAxisTransforms NOTIFY sourceChanged)
     Q_PROPERTY(QString message READ message NOTIFY stateChanged)
     // Why the figure looks the way it does, when there is something to say -
     // a missing mapped column, an axis with five levels, one outlier holding
@@ -324,6 +334,21 @@ public:
     void setTitle(const QString& v);
     void setLogX(bool v);
     void setLogY(bool v);
+    int xTransform() const { return spec_.xAxis.transform; }
+    int yTransform() const { return spec_.yAxis.transform; }
+    void setXTransform(int mode);
+    void setYTransform(int mode);
+    bool linkAxisTransforms() const { return linkTransforms_; }
+    void setLinkAxisTransforms(bool on);
+    // The names, in order, so a picker does not have to keep its own copy that
+    // can drift from the enum.
+    Q_INVOKABLE static QStringList axisTransformNames(){
+        return {QStringLiteral("Linear"),
+                QStringLiteral("Log10"),
+                QStringLiteral("Log(1 + x)"),
+                QStringLiteral("Z-score"),
+                QStringLiteral("Quantile")};
+    }
 
     // Numeric columns found in the active dataset, for the mapping UI.
     // True vector PDF with embedded fonts, drawn by the same backend code.
@@ -432,6 +457,7 @@ private:
     // Fingers. The same reader the 3-D viewport uses - see TouchGesture.h for
     // why that is one class rather than two copies of the same arithmetic.
     TouchGesture touch_;
+    bool linkTransforms_=false;
 
     void rebuild();          // reload data and regenerate the spec's series
     void applyVariant();     // catalogue scale variants: Semi-Log X, etc.

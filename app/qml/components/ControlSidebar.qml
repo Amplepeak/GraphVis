@@ -114,7 +114,7 @@ Rectangle {
             }
             ProjectPanel { app:root.app }
             DataWorkspace { app:root.app }
-            MappingPanel { id:mapping; app:root.app; onApplyRequested:root.applyMapping(xValue,yValue,zValue,colorValue,pointSize,pointOpacity,invertOpacity,voxelBins,smartRender,smartProfile) }
+            MappingPanel { id:mapping; app:root.app; canvas:root.canvas; onApplyRequested:root.applyMapping(xValue,yValue,zValue,colorValue,pointSize,pointOpacity,invertOpacity,voxelBins,smartRender,smartProfile) }
             AnalysisPanel { app:root.app }
             SolverPanel { app:root.app }
             LiteraturePanel { app:root.app }

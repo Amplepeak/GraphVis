@@ -14,6 +14,9 @@ PanelScroll {
     id:root
     contentSpacing: 8
     required property var app
+    // The live PlotCanvas, for the axis scales, which act on the figure rather
+    // than on the staged mapping.
+    property var canvas: null
     signal applyRequested()
 
     // The mapping ControlSidebar hands to the renderer and VtkViewport reads.
@@ -161,6 +164,18 @@ PanelScroll {
                     onActivated: root.stage(axis.modelData.key, currentText)
                 }
             }
+        }
+    }
+
+    // How those columns are scaled, immediately below the columns themselves,
+    // because "which column" and "on what scale" are one question asked twice.
+    GvGroupBox {
+        title: "Axis scale"
+        Layout.fillWidth: true
+        Layout.margins: 8
+        ColumnLayout {
+            anchors.fill: parent
+            AxisScaleBar { canvas: root.canvas; Layout.fillWidth: true }
         }
     }
 

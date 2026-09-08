@@ -79,6 +79,10 @@ class AppController final : public QObject {
     // cells that were hit gives coloured confetti rather than a map. See
     // PlotStyle::fieldInterpolation.
     Q_PROPERTY(int plotFieldInterpolation READ plotFieldInterpolation WRITE setPlotFieldInterpolation NOTIFY plotDisplayChanged)
+    // Several figures stacked as a document, rather than one canvas. The
+    // default, because comparing two graphs was previously a matter of drawing
+    // one and remembering it.
+    Q_PROPERTY(bool notebookLayout READ notebookLayout WRITE setNotebookLayout NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList plotFieldInterpolationNames READ plotFieldInterpolationNames CONSTANT)
 
     // What was open last time.
@@ -273,6 +277,8 @@ public:
     void setPlotScaleLabels(bool on);
     int plotFieldInterpolation() const{return plotFieldInterpolation_;}
     void setPlotFieldInterpolation(int mode);
+    bool notebookLayout() const{return notebookLayout_;}
+    void setNotebookLayout(bool on);
     QStringList plotFieldInterpolationNames() const{
         return {QStringLiteral("None - only the cells that were measured"),
                 QStringLiteral("Nearest - each gap takes its closest measurement"),
@@ -434,6 +440,7 @@ private:
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
     bool plotScaleLabels_=true;
     int plotFieldInterpolation_=2;          // Linear
+    bool notebookLayout_=true;
     // Newest first, capped. Each entry is {path, name}; visualisations are
     // {engine, variant, label}.
     QVariantList recentDatasets_;

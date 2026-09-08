@@ -606,16 +606,114 @@ void PlotCanvas::setColourVision(int mode){
     update();
 }
 
-void PlotCanvas::setLogX(bool v){ if(spec_.xAxis.log10==v) return; spec_.xAxis.log10=v; update(); emit sourceChanged(); }
-void PlotCanvas::setLogY(bool v){ if(spec_.yAxis.log10==v) return; spec_.yAxis.log10=v; update(); emit sourceChanged(); }
+void PlotCanvas::setLogX(bool v){ setXTransform(v?AxisLog10:AxisLinear); }
+
+// The transform belongs to the DATA, so unlike the grid or the colour map this
+// has to go all the way back through the rewrite - a quantile axis changes what
+// every point's coordinate is.
+void PlotCanvas::setXTransform(int mode){
+    const int clamped=qBound(0,mode,4);
+    if(spec_.xAxis.transform==clamped&&!linkTransforms_) return;
+    spec_.xAxis.transform=clamped;
+    spec_.xAxis.log10=(clamped==AxisLog10);
+    if(linkTransforms_&&spec_.yAxis.transform!=clamped){
+        spec_.yAxis.transform=clamped;
+        spec_.yAxis.log10=(clamped==AxisLog10);
+    }
+    // A view set on the old values means nothing on the new ones, and keeping
+    // it would open the figure clipped to a range that no longer exists in it.
+    hasView_=false;
+    spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
+    spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit sourceChanged();
+    emit stateChanged();
+}
+
+void PlotCanvas::setYTransform(int mode){
+    const int clamped=qBound(0,mode,4);
+    if(spec_.yAxis.transform==clamped&&!linkTransforms_) return;
+    spec_.yAxis.transform=clamped;
+    spec_.yAxis.log10=(clamped==AxisLog10);
+    if(linkTransforms_&&spec_.xAxis.transform!=clamped){
+        spec_.xAxis.transform=clamped;
+        spec_.xAxis.log10=(clamped==AxisLog10);
+    }
+    hasView_=false;
+    spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
+    spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit sourceChanged();
+    emit stateChanged();
+}
+
+void PlotCanvas::setLinkAxisTransforms(bool on){
+    if(linkTransforms_==on) return;
+    linkTransforms_=on;
+    // Turning the link on adopts what x is doing, rather than resetting both to
+    // linear: the person who ticks it has just set x to what they want.
+    if(on&&spec_.yAxis.transform!=spec_.xAxis.transform) setXTransform(spec_.xAxis.transform);
+    emit sourceChanged();
+}
+void PlotCanvas::setLogY(bool v){ setYTransform(v?AxisLog10:AxisLinear); }
 
 // Catalogue entries carry their axis-scale variant as a separate field, so
 // "Line Chart" + "Semi-Log X" is one entry rather than a distinct engine.
+// A catalogue entry's scale variant, applied to the two axes.
+//
+// This knew three names and wrote spec_.xAxis.log10 straight, which had two
+// faults. It could not express anything but a log axis, so the whole of the
+// catalogue's scale dimension was log or nothing; and it never wrote the linear
+// case, so choosing a plain entry after a Semi-Log X one left the x axis
+// logarithmic with nothing on screen saying why.
+//
+// Both axes are now always set, from one table, in terms of AxisTransform. The
+// names here are the vocabulary the catalogue's `scale` field uses and the two
+// cannot drift, because this is the only thing that reads it.
 void PlotCanvas::applyVariant(){
+    struct Variant { const char* name; int x; int y; };
+    static const Variant kVariants[]={
+        {"Linear Scale",            AxisLinear,   AxisLinear},
+        {"Logarithmic Scale",       AxisLog10,    AxisLog10},
+        {"Semi-Log X",              AxisLog10,    AxisLinear},
+        {"Semi-Log Y",              AxisLinear,   AxisLog10},
+        // log10(1 + x), for the columns a plain log axis cannot take: anything
+        // that legitimately reaches zero.
+        {"Log(1+x) Scale",          AxisLog1p,    AxisLog1p},
+        {"Semi-Log(1+x) X",         AxisLog1p,    AxisLinear},
+        {"Semi-Log(1+x) Y",         AxisLinear,   AxisLog1p},
+        // Standard deviations from the mean, which is how two columns in
+        // different units are compared on one pair of axes.
+        {"Standardised (Z-Score)",  AxisZScore,   AxisZScore},
+        {"Z-Score X",               AxisZScore,   AxisLinear},
+        {"Z-Score Y",               AxisLinear,   AxisZScore},
+        // Position in the sorted sample, which is how a column that is mostly
+        // one value stops being one pixel.
+        {"Quantile Scale",          AxisQuantile, AxisQuantile},
+        {"Quantile X",              AxisQuantile, AxisLinear},
+        {"Quantile Y",              AxisLinear,   AxisQuantile},
+    };
+
     const QString v=spec_.variant;
-    if(v.compare(QLatin1String("Logarithmic Scale"),Qt::CaseInsensitive)==0){ spec_.xAxis.log10=true; spec_.yAxis.log10=true; }
-    else if(v.compare(QLatin1String("Semi-Log X"),Qt::CaseInsensitive)==0){ spec_.xAxis.log10=true; spec_.yAxis.log10=false; }
-    else if(v.compare(QLatin1String("Semi-Log Y"),Qt::CaseInsensitive)==0){ spec_.xAxis.log10=false; spec_.yAxis.log10=true; }
+    int x=AxisLinear, y=AxisLinear;
+    bool matched=v.isEmpty();
+    for(const Variant& k:kVariants){
+        if(v.compare(QLatin1String(k.name),Qt::CaseInsensitive)!=0) continue;
+        x=k.x; y=k.y; matched=true;
+        break;
+    }
+    // An unrecognised variant leaves the axes alone rather than silently
+    // flattening them to linear: a catalogue entry naming a scale this build
+    // does not know is a catalogue that is ahead of the code, and quietly
+    // drawing the wrong scale is worse than drawing the last one.
+    if(!matched) return;
+
+    spec_.xAxis.transform=x; spec_.xAxis.log10=(x==AxisLog10);
+    spec_.yAxis.transform=y; spec_.yAxis.log10=(y==AxisLog10);
     emit stateChanged();
 }
 

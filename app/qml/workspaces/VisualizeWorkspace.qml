@@ -13,7 +13,13 @@ SplitView {
     // The plot itself, so a shell can hand it to the Publish workspace. The
     // canvas lives here and export lives there, and without this the two never
     // met.
-    readonly property alias canvas: plot
+    // The figure the controls act on. In the notebook that is whichever cell is
+    // current; with one canvas it is that canvas. Everything above this - the
+    // sidebar, the menu bar, the Publish workspace - asks for `canvas` and does
+    // not need to know which layout is showing.
+    readonly property var canvas: root.app.notebookLayout
+                                  ? (notebook.item ? notebook.item.currentCanvas : null)
+                                  : plot
     // Raised by the Import button in the dataset bar above the graph chooser.
     //
     // This is the whole reason that button did nothing. ActiveDatasetBar
@@ -227,7 +233,26 @@ SplitView {
                 // on top of the figure. What genuinely belongs inside the
                 // figure - the annotation editor, the ready notice - still
                 // anchors to the plot item.
+                // The Qt 2-D slot holds both layouts. One canvas or a notebook
+                // of them - hidden rather than destroyed, because destroying
+                // the canvas takes its figure, its zoom and its notes with it,
+                // and switching layout is not meant to throw work away.
+                Item {
+                    Loader {
+                        id: notebook
+                        anchors.fill: parent
+                        visible: root.app.notebookLayout
+                        active: root.app.notebookLayout
+                        sourceComponent: notebookComponent
+                    }
+                    Component {
+                        id: notebookComponent
+                        NotebookCanvas { app: root.app }
+                    }
+
                 ColumnLayout {
+                    anchors.fill: parent
+                    visible: !root.app.notebookLayout
                     spacing: 4
                 Item {
                     Layout.fillWidth: true
@@ -307,6 +332,7 @@ SplitView {
                     Layout.bottomMargin: 6
                     text: plot.notice
                     warning: true
+                }
                 }
                 }
             }

@@ -223,6 +223,15 @@ MenuBar {
 
         MenuSeparator {}
 
+        Action {
+            text: "Notebook — several figures at once"
+            checkable: true
+            checked: root.app.notebookLayout
+            onTriggered: root.app.notebookLayout = !root.app.notebookLayout
+        }
+
+        MenuSeparator {}
+
         Menu {
             title: "Window"
             Repeater {

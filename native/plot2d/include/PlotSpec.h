@@ -47,8 +47,35 @@ struct PlotSeries {
     QVector<qreal> dashPattern;
 };
 
+// How an axis's values are transformed before they are drawn.
+//
+// Log10 is the odd one out and stays that way deliberately: it is an AXIS
+// property, drawn with decade ticks and 10^n labels, so the numbers on the page
+// are the original data. The other three rewrite the values, because that is
+// what they are for - a z-score axis is measured in standard deviations and a
+// quantile axis in fractions of the sample, and showing the original units on
+// either would be a label that contradicts the picture.
+//
+//   Linear    as measured
+//   Log10     decade ticks; values must be positive
+//   Log1p     log10(1 + x); the log axis for data that legitimately reaches
+//             zero, where Log10 has to drop those rows entirely
+//   ZScore    (x - mean) / sd; puts two columns of different units side by side
+//   Quantile  each value replaced by its position in the sorted sample, 0 to 1;
+//             makes a heavily skewed column readable by spreading it evenly
+enum AxisTransform {
+    AxisLinear = 0,
+    AxisLog10 = 1,
+    AxisLog1p = 2,
+    AxisZScore = 3,
+    AxisQuantile = 4,
+};
+
 struct PlotAxis {
     QString label;
+    // Kept as its own flag because fifty-odd places in the backend read it to
+    // decide tick placement, mathtext labelling and whether a non-positive
+    // value can be drawn at all. transform == AxisLog10 keeps it in step.
     bool log10 = false;          // decade ticks, mathtext power labels
     double min = unsetValue();   // unset -> fit to data
     double max = unsetValue();
@@ -57,6 +84,12 @@ struct PlotAxis {
     // of those was previously drawn by negating the data, which puts minus
     // signs on the ticks and makes the axis label a lie.
     bool inverted = false;
+    // LAST on purpose. Thirty-odd sites in the backend build an axis with a
+    // positional initialiser - PlotAxis{name, false, unsetValue(), unsetValue()}
+    // - and a field inserted anywhere above this silently changes what each of
+    // those numbers means. It compiled as a narrowing error here; it would not
+    // have on a field of the same type.
+    int transform = AxisLinear;
 };
 
 // Typography and geometry, taken straight from a GraphVis 17 publication
