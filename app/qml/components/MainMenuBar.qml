@@ -92,7 +92,7 @@ MenuBar {
         MenuSeparator {}
 
         Action {
-            text: "Export figure as PDF…"
+            text: "Save figure as…"
             enabled: root.canvas !== null && root.canvas.pointCount > 0
             onTriggered: root.exportRequested()
         }
@@ -200,6 +200,25 @@ MenuBar {
             checkable: true
             checked: root.app.plotScaleLabels
             onTriggered: root.app.plotScaleLabels = !root.app.plotScaleLabels
+        }
+
+        Menu {
+            title: "Filling gaps in a field"
+            // Heat maps, contours and surfaces bin scattered measurements into
+            // a grid, and most of that grid catches nothing. None is honest and
+            // unreadable; the rest estimate, which is a choice the person makes
+            // rather than one the program makes for them.
+            Repeater {
+                model: root.app.plotFieldInterpolationNames
+                delegate: MenuItem {
+                    required property string modelData
+                    required property int index
+                    text: modelData
+                    checkable: true
+                    checked: root.app.plotFieldInterpolation === index
+                    onTriggered: root.app.plotFieldInterpolation = index
+                }
+            }
         }
 
         MenuSeparator {}

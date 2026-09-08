@@ -104,6 +104,29 @@ struct PlotStyle {
     // with a meaningful zero. An unrecognised name falls back to Viridis
     // rather than failing, because a typo in a theme should not blank a plot.
     QString colourMap;
+
+    // What to do with the cells of a gridded field that no sample landed in.
+    //
+    //   0  None     leave them empty - the background shows through
+    //   1  Nearest  each empty cell takes its nearest measured cell's value
+    //   2  Linear   a smooth surface fitted through the measured cells
+    //   3  Cubic    the same, smoothed again, for a continuous-looking map
+    //
+    // Scattered measurements almost never fall one to a cell. A parameter
+    // sweep dense at one end of its range and thin at the other leaves most of
+    // the grid unsampled, and drawing only the cells that were hit produces a
+    // field of coloured confetti on a black ground rather than a map - which
+    // is what this application did, because it only ever had mode 0.
+    //
+    // None is honest and unreadable; the others estimate. That is the trade a
+    // person makes deliberately, which is why it is a control and not a
+    // constant. Density engines ignore this entirely: for a count, an empty
+    // cell is a measured zero rather than an unknown.
+    int fieldInterpolation = 2;
+
+    // Cells across the gridded field. 0 chooses from the sample count. Higher
+    // is smoother once the gaps are filled, and meaningless while they are not.
+    int fieldResolution = 0;
 };
 
 // A note on the figure: a label at a point, optionally with a leader line back

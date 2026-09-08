@@ -22,6 +22,8 @@
 #include <QPdfWriter>
 #include <QPageSize>
 #include <QSvgGenerator>
+#include <QImageWriter>
+#include <QSet>
 #include <QQuickWindow>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -463,10 +465,7 @@ void PlotCanvas::setAzimuth(double degrees){
     if(wrapped<-180.0) wrapped+=360.0;
     if(qFuzzyCompare(spec_.view3d.azimuth,wrapped)) return;
     spec_.view3d.azimuth=wrapped;
-    showingFull_=false;
-    update();
-    scheduleFullRender();
-    emit styleChanged();
+    cameraMoved();
 }
 
 void PlotCanvas::setElevation(double degrees){
@@ -477,10 +476,7 @@ void PlotCanvas::setElevation(double degrees){
     const double clamped=qBound(-89.0,degrees,89.0);
     if(qFuzzyCompare(spec_.view3d.elevation,clamped)) return;
     spec_.view3d.elevation=clamped;
-    showingFull_=false;
-    update();
-    scheduleFullRender();
-    emit styleChanged();
+    cameraMoved();
 }
 
 void PlotCanvas::rotateByPixels(double dx,double dy){
@@ -494,27 +490,74 @@ void PlotCanvas::rotateByPixels(double dx,double dy){
 
 void PlotCanvas::zoom3DBy(double factor){
     if(!view3D()||!(factor>0.0)) return;
-    const double next=qBound(0.05,spec_.view3d.zoom*factor,40.0);
+    // Bounded so the figure cannot be driven out of its own frame. The old
+    // ceiling of 40x did exactly that: a few wheel notches and the cube, the
+    // axes and every number on them were off-screen, leaving a full-bleed
+    // wash of colour that no longer looked like a plot at all - and with
+    // nothing recognisable left in view, turning it did not look like turning.
+    const double next=qBound(0.35,spec_.view3d.zoom*factor,4.0);
     if(qFuzzyCompare(next,spec_.view3d.zoom)) return;
     spec_.view3d.zoom=next;
-    showingFull_=false;
-    update();
-    scheduleFullRender();
-    emit styleChanged();
+    cameraMoved();
 }
 
 void PlotCanvas::resetCamera(){
     spec_.view3d=PlotView3D{};
+    cameraMoved();
+}
+
+// One place for what a camera change costs.
+//
+// Each of these used to call scheduleFullRender() directly, which meant a drag
+// started - and abandoned - a full-resolution render of two hundred thousand
+// points on every mouse-move event, dozens a second, each one bumping the
+// generation counter and throwing away the last. The preview redraw is the only
+// thing a turning figure needs; the expensive render is what you want when the
+// figure has stopped somewhere.
+void PlotCanvas::cameraMoved(){
     showingFull_=false;
     update();
-    scheduleFullRender();
+    if(!dragging_) scheduleFullRender();
     emit styleChanged();
 }
 
 void PlotCanvas::setColourMap(const QString& name){
     if(spec_.style.colourMap==name) return;
     spec_.style.colourMap=name;
-    rebuild();
+    // This called rebuild(), which is guarded by `dirty_` and returns
+    // immediately unless something set it - and nothing here did. So choosing a
+    // colour map changed the spec and then did nothing at all: no repaint, no
+    // invalidation of the accepted full-resolution image, which went on being
+    // drawn in the old map. The control looked broken because it was.
+    //
+    // A colour map is a painting decision, like the grid: the data and the
+    // prepared spec are unchanged, so this is a repaint rather than a rebuild.
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setFieldInterpolation(int mode){
+    const int clamped=qBound(0,mode,3);
+    if(spec_.style.fieldInterpolation==clamped) return;
+    spec_.style.fieldInterpolation=clamped;
+    // Unlike the colour map this DOES change what is drawn rather than how, and
+    // the gridded field is cached on the spec fingerprint - which hashes this,
+    // so the cache rebuilds itself.
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setFieldResolution(int cells){
+    const int clamped=cells<=0?0:qBound(12,cells,360);
+    if(spec_.style.fieldResolution==clamped) return;
+    spec_.style.fieldResolution=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
     emit styleChanged();
 }
 
@@ -1104,7 +1147,11 @@ void PlotCanvas::mouseMoveEvent(QMouseEvent* e){
 }
 
 void PlotCanvas::mouseReleaseEvent(QMouseEvent* e){
+    const bool was=dragging_;
     dragging_=false;
+    // The full-resolution render was held back for the whole drag - see
+    // cameraMoved - so this is where it is asked for.
+    if(was) scheduleFullRender();
     e->accept();
 }
 
@@ -1358,6 +1405,76 @@ bool PlotCanvas::exportPng(const QString& filePath,int width,int height){
     qtBackend_.render(&painter,QRectF(0,0,image.width(),image.height()),full);
     painter.end();
     return image.save(filePath);
+}
+
+QStringList PlotCanvas::exportFormats() const {
+    // Vector first, because that is what a figure should be saved as if it is
+    // going anywhere near a paper.
+    QStringList out{QStringLiteral("pdf"),QStringLiteral("svg")};
+    // Then whatever Qt can actually write here. Asked rather than assumed: the
+    // raster formats come from plugins that may or may not have been deployed,
+    // and a Save dialog that offers TIFF and then writes nothing is worse than
+    // one that never offered it.
+    static const QStringList kWanted{QStringLiteral("png"),QStringLiteral("jpg"),
+                                     QStringLiteral("jpeg"),QStringLiteral("tif"),
+                                     QStringLiteral("tiff"),QStringLiteral("bmp"),
+                                     QStringLiteral("webp")};
+    QSet<QString> have;
+    for(const QByteArray& f:QImageWriter::supportedImageFormats())
+        have.insert(QString::fromLatin1(f).toLower());
+    for(const QString& w:kWanted) if(have.contains(w)) out.append(w);
+    // And the two that are not pictures: the script that redraws the figure and
+    // the numbers it was drawn from.
+    out.append(QStringLiteral("py"));
+    out.append(QStringLiteral("csv"));
+    return out;
+}
+
+bool PlotCanvas::exportData(const QString& filePath) const {
+    if(filePath.isEmpty()||spec_.series.isEmpty()) return false;
+    QFile file(filePath);
+    if(!file.open(QIODevice::WriteOnly|QIODevice::Text)) return false;
+    QTextStream out(&file);
+    // One block per series rather than one wide table: the series of a figure
+    // do not in general share an x column - a box plot's five summary values
+    // and a fitted curve's two hundred are both series here - and forcing them
+    // into aligned columns would either pad with blanks or silently drop rows.
+    for(const PlotSeries& s:spec_.series){
+        out<<"# series: "<<(s.label.isEmpty()?QStringLiteral("(unnamed)"):s.label)<<"\n";
+        out<<(spec_.xAxis.label.isEmpty()?QStringLiteral("x"):spec_.xAxis.label)<<","
+           <<(spec_.yAxis.label.isEmpty()?QStringLiteral("y"):spec_.yAxis.label)<<"\n";
+        const int n=qMin(s.x.size(),s.y.size());
+        for(int i=0;i<n;++i)
+            out<<QString::number(s.x[i],'g',12)<<","<<QString::number(s.y[i],'g',12)<<"\n";
+        out<<"\n";
+    }
+    return true;
+}
+
+bool PlotCanvas::exportFigure(const QString& filePath,int width,int height){
+    if(filePath.isEmpty()) return false;
+    const QString ext=QFileInfo(filePath).suffix().toLower();
+
+    if(ext==QLatin1String("pdf")) return exportPdf(filePath);
+    // EPS through the PDF writer would produce a PDF with the wrong extension,
+    // which opens in nothing that expects EPS. Qt cannot write PostScript - the
+    // print engine that could was removed in Qt 5 - so this says so rather than
+    // writing a file that looks right and is not.
+    if(ext==QLatin1String("eps")) return false;
+    if(ext==QLatin1String("svg")) return exportSvg(filePath);
+    if(ext==QLatin1String("csv")) return exportData(filePath);
+    if(ext==QLatin1String("py")){
+        QFile file(filePath);
+        if(!file.open(QIODevice::WriteOnly|QIODevice::Text)) return false;
+        QTextStream(&file)<<reproducibleScript(QString());
+        return true;
+    }
+    // Everything else goes to the raster path, where Qt picks the encoder from
+    // the extension. Refused up front when this build cannot write it, so the
+    // caller can say which formats are available instead of reporting a failure
+    // after the person has chosen a filename.
+    if(!exportFormats().contains(ext)) return false;
+    return exportPng(filePath,width,height);
 }
 
 // ------------------------------------------------- full-resolution rendering

@@ -1047,7 +1047,13 @@ QtPlotBackend::ValueGrid QtPlotBackend::gridFromSeries(const PlotSpec& spec,int 
     // Grid resolution follows the sample count: enough cells to show structure,
     // few enough that most of them get a sample. sqrt(n)/2 is the usual
     // compromise and behaves for anything from a hundred points to a million.
-    const int side=qBound(12,requested>0?requested:int(std::sqrt(double(n))/2.0),160);
+    // The person's resolution wins, then the caller's, then the sample count.
+    // The ceiling rises with interpolation on: a fine grid of holes is worse
+    // than a coarse one, but a fine grid that has been filled is smoother.
+    const int wanted=spec.style.fieldResolution>0 ? spec.style.fieldResolution
+                                                  : (requested>0?requested:int(std::sqrt(double(n))/2.0));
+    const int ceiling=(how==GridAggregate::Mean&&spec.style.fieldInterpolation>0)?360:160;
+    const int side=qBound(12,wanted,ceiling);
     g.nx=side; g.ny=side;
     g.xLo=xLo; g.xHi=xHi; g.yLo=yLo; g.yHi=yHi;
     g.cells.fill(std::numeric_limits<double>::quiet_NaN(),side*side);
@@ -1071,11 +1077,208 @@ QtPlotBackend::ValueGrid QtPlotBackend::gridFromSeries(const PlotSpec& spec,int 
         g.cells[k]=(how==GridAggregate::Count)?double(counts[k]):sums[k]/double(counts[k]);
         vLo=qMin(vLo,g.cells[k]); vHi=qMax(vHi,g.cells[k]);
     }
+    // Estimate the cells no sample landed in, if asked to. Only for a measured
+    // field: for a count an empty cell is a measured zero and was filled above.
+    if(how==GridAggregate::Mean&&spec.style.fieldInterpolation>0){
+        estimateEmptyCells(g,spec.style.fieldInterpolation);
+        // The range has to be recomputed: an estimate can sit outside the range
+        // of the measured cells, and colouring against the old range would clip
+        // it to the end of the map and read as a plateau that is not there.
+        vLo=std::numeric_limits<double>::infinity(); vHi=-vLo;
+        for(int k=0;k<side*side;++k){
+            if(!finite(g.cells[k])) continue;
+            vLo=qMin(vLo,g.cells[k]); vHi=qMax(vHi,g.cells[k]);
+        }
+    }
+
     if(!finite(vLo)||!finite(vHi)) return g;
     if(qFuzzyCompare(vLo,vHi)) vHi=vLo+1.0;
     g.vLo=vLo; g.vHi=vHi;
     g.valid=true;
     return g;
+}
+
+// Fill the unsampled cells of a gridded field.
+//
+// A heat map of scattered measurements is mostly holes. The sweep behind the
+// figure that prompted this had ten thousand rows over a grid of fifty by
+// fifty, and still left most of it black, because the samples are dense at one
+// end of the range and thin at the other - so the cells at the thin end catch
+// nothing and the map reads as confetti rather than as a field. GraphVis 17
+// offered a choice of estimators here and the port shipped none, which is the
+// whole difference between the two pictures.
+//
+// Two methods, and they are different in kind:
+//
+//   Nearest  an exact nearest-measured-cell assignment, by a two-pass chamfer
+//            distance transform. Every filled cell holds a value that was
+//            really measured somewhere; the map is blocky and tells no lies
+//            about magnitude.
+//
+//   Linear   a pull-push pyramid. The grid is repeatedly halved, summing value
+//            and weight together, until a level is dense; then the levels are
+//            walked back down, each filling its holes by bilinear interpolation
+//            of the level above it. Measured cells always keep their own value
+//            - the estimate only ever reaches cells that had nothing - so the
+//            data is never smoothed away, only surrounded. O(n) and complete
+//            in one pass, where an inverse-distance search would be quadratic
+//            in the number of holes, which is most of the grid.
+//
+//   Cubic    Linear followed by one binomial smoothing applied ONLY to filled
+//            cells, which softens the pyramid's blocky diagonals without
+//            touching a single measurement.
+void QtPlotBackend::estimateEmptyCells(ValueGrid& g,int mode){
+    const int nx=g.nx, ny=g.ny;
+    if(nx<2||ny<2||g.cells.size()<nx*ny) return;
+
+    int holes=0;
+    for(int k=0;k<nx*ny;++k) if(!finite(g.cells[k])) ++holes;
+    if(holes==0||holes==nx*ny) return;   // nothing to do, or nothing to do it from
+
+    if(mode==1){
+        // Chamfer distance transform carrying the nearest source's index.
+        // 1 and sqrt(2) are the standard 3x3 chamfer weights; the error against
+        // true Euclidean distance is under 4%, which cannot move a cell to a
+        // different nearest sample often enough to matter in a picture.
+        constexpr double kOrtho=1.0, kDiag=1.41421356237;
+        const double inf=std::numeric_limits<double>::infinity();
+        QVector<double> dist(nx*ny,inf);
+        QVector<int> src(nx*ny,-1);
+        for(int k=0;k<nx*ny;++k) if(finite(g.cells[k])){ dist[k]=0.0; src[k]=k; }
+
+        const auto relax=[&](int k,int nk,double w){
+            if(src[nk]<0) return;
+            const double d=dist[nk]+w;
+            if(d<dist[k]){ dist[k]=d; src[k]=src[nk]; }
+        };
+        for(int y=0;y<ny;++y)
+            for(int x=0;x<nx;++x){
+                const int k=y*nx+x;
+                if(y>0){
+                    if(x>0)    relax(k,k-nx-1,kDiag);
+                               relax(k,k-nx,  kOrtho);
+                    if(x<nx-1) relax(k,k-nx+1,kDiag);
+                }
+                if(x>0)        relax(k,k-1,   kOrtho);
+            }
+        for(int y=ny-1;y>=0;--y)
+            for(int x=nx-1;x>=0;--x){
+                const int k=y*nx+x;
+                if(y<ny-1){
+                    if(x<nx-1) relax(k,k+nx+1,kDiag);
+                               relax(k,k+nx,  kOrtho);
+                    if(x>0)    relax(k,k+nx-1,kDiag);
+                }
+                if(x<nx-1)     relax(k,k+1,   kOrtho);
+            }
+        for(int k=0;k<nx*ny;++k)
+            if(!finite(g.cells[k])&&src[k]>=0) g.cells[k]=g.cells[src[k]];
+        return;
+    }
+
+    // ---- Linear and Cubic: the pull-push pyramid.
+    struct Level { int nx,ny; QVector<double> v,w; };
+    QVector<Level> pyramid;
+    {
+        Level base;
+        base.nx=nx; base.ny=ny;
+        base.v.resize(nx*ny); base.w.resize(nx*ny);
+        for(int k=0;k<nx*ny;++k){
+            const bool known=finite(g.cells[k]);
+            base.v[k]=known?g.cells[k]:0.0;
+            base.w[k]=known?1.0:0.0;
+        }
+        pyramid.append(base);
+    }
+    // Pull: halve until one cell, so even a grid with a single measured cell
+    // reaches a level where every cell has weight.
+    while(pyramid.last().nx>1||pyramid.last().ny>1){
+        const Level& fine=pyramid.last();
+        Level up;
+        up.nx=qMax(1,(fine.nx+1)/2);
+        up.ny=qMax(1,(fine.ny+1)/2);
+        up.v.fill(0.0,up.nx*up.ny);
+        up.w.fill(0.0,up.nx*up.ny);
+        for(int y=0;y<fine.ny;++y)
+            for(int x=0;x<fine.nx;++x){
+                const int k=y*fine.nx+x;
+                if(fine.w[k]<=0.0) continue;
+                const int uk=(y/2)*up.nx+(x/2);
+                up.v[uk]+=fine.v[k];
+                up.w[uk]+=fine.w[k];
+            }
+        pyramid.append(up);
+    }
+
+    // Push: carry estimates back down, bilinearly.
+    QVector<double> coarse;          // the level above, already estimated
+    int cnx=0,cny=0;
+    for(int L=int(pyramid.size())-1;L>=0;--L){
+        const Level& lv=pyramid.at(L);
+        QVector<double> est(lv.nx*lv.ny,0.0);
+        for(int y=0;y<lv.ny;++y){
+            for(int x=0;x<lv.nx;++x){
+                const int k=y*lv.nx+x;
+                if(lv.w[k]>0.0){ est[k]=lv.v[k]/lv.w[k]; continue; }
+                if(coarse.isEmpty()){ est[k]=0.0; continue; }
+                // This cell's centre in the coarser level's coordinates. The
+                // half-cell offsets are what stop the estimate drifting half a
+                // cell up and left at every level, which over eight levels is a
+                // visible shear of the whole field.
+                const double fx=qBound(0.0,(double(x)+0.5)/2.0-0.5,double(cnx-1));
+                const double fy=qBound(0.0,(double(y)+0.5)/2.0-0.5,double(cny-1));
+                const int x0=int(fx), y0=int(fy);
+                const int x1=qMin(x0+1,cnx-1), y1=qMin(y0+1,cny-1);
+                const double tx=fx-x0, ty=fy-y0;
+                const double a=coarse[y0*cnx+x0], b=coarse[y0*cnx+x1];
+                const double c=coarse[y1*cnx+x0], d=coarse[y1*cnx+x1];
+                est[k]=(a*(1-tx)+b*tx)*(1-ty)+(c*(1-tx)+d*tx)*ty;
+            }
+        }
+        coarse=est; cnx=lv.nx; cny=lv.ny;
+    }
+
+    // The finest level's estimate, written only where nothing was measured.
+    QVector<bool> filled(nx*ny,false);
+    for(int k=0;k<nx*ny;++k)
+        if(!finite(g.cells[k])){ g.cells[k]=coarse[k]; filled[k]=true; }
+
+    // Relax the estimate toward a smooth surface that passes exactly through
+    // the measurements.
+    //
+    // Gauss-Seidel on Laplace's equation, with every measured cell held fixed
+    // as a boundary condition: each estimated cell is repeatedly replaced by
+    // the mean of its four neighbours. That IS linear interpolation in the
+    // sense a person means it - the harmonic surface through the samples - and
+    // it is what makes the field ramp into a measurement instead of arriving
+    // beside it and stepping.
+    //
+    // Without this the pyramid alone leaves every sample as a hard little
+    // square stamped on a smooth field, because the finest estimate is built
+    // from a 2x2-averaged level and never converges to the single cell inside
+    // it. One or two smoothing passes do not close that; solving for the
+    // surface does.
+    //
+    // The pyramid is the initial guess, which is the whole reason this needs
+    // tens of sweeps rather than the thousands plain relaxation would take
+    // from a cold start. A measured cell is never written, so no measurement
+    // moves by so much as a bit.
+    {
+        const int sweeps=(mode>=3) ? qBound(60,nx*3,600) : qBound(20,nx,200);
+        for(int it=0;it<sweeps;++it){
+            for(int y=0;y<ny;++y)
+                for(int x=0;x<nx;++x){
+                    const int k=y*nx+x;
+                    if(!filled[k]) continue;          // a measurement: fixed
+                    double sum=0.0; int used=0;
+                    if(x>0)    { sum+=g.cells[k-1];  ++used; }
+                    if(x<nx-1) { sum+=g.cells[k+1];  ++used; }
+                    if(y>0)    { sum+=g.cells[k-nx]; ++used; }
+                    if(y<ny-1) { sum+=g.cells[k+nx]; ++used; }
+                    if(used>0) g.cells[k]=sum/double(used);
+                }
+        }
+    }
 }
 
 namespace {
@@ -3502,6 +3705,13 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     fnvColour(h,spec.style.danger);
     fnvColour(h,spec.style.foreground);
     fnvColour(h,spec.style.background);
+    // The field grid IS cached on this fingerprint - see cachedGrid - and both
+    // of these change what it contains rather than how it is painted. Left out,
+    // switching from Nearest to Linear would return the grid built under the
+    // previous setting and the control would appear to do nothing until
+    // something else forced a rebuild.
+    fnvBytes(h,&spec.style.fieldInterpolation,sizeof(spec.style.fieldInterpolation));
+    fnvBytes(h,&spec.style.fieldResolution,sizeof(spec.style.fieldResolution));
     return h;
 }
 

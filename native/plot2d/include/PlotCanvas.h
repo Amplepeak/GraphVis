@@ -93,6 +93,8 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(bool view3D READ view3D NOTIFY stateChanged)
     Q_PROPERTY(double azimuth READ azimuth WRITE setAzimuth NOTIFY styleChanged)
     Q_PROPERTY(double elevation READ elevation WRITE setElevation NOTIFY styleChanged)
+    Q_PROPERTY(int fieldInterpolation READ fieldInterpolation WRITE setFieldInterpolation NOTIFY styleChanged)
+    Q_PROPERTY(int fieldResolution READ fieldResolution WRITE setFieldResolution NOTIFY styleChanged)
 
     // 0 Standard, 1 Protanopia, 2 Deuteranopia, 3 Tritanopia, 4 Monochrome.
     // Owned by AppController and persisted, so it survives theme changes and
@@ -285,8 +287,16 @@ public:
     // Drag: horizontal turns, vertical tilts. Pixels, so the caller does not
     // have to know the gain.
     Q_INVOKABLE void rotateByPixels(double dx,double dy);
+    // Repaint now, and schedule the expensive render only once the drag is over.
+    void cameraMoved();
     Q_INVOKABLE void zoom3DBy(double factor);
     Q_INVOKABLE void resetCamera();
+    // How the unsampled cells of a gridded field are estimated, and how fine
+    // that grid is. See PlotStyle::fieldInterpolation.
+    int fieldInterpolation() const { return spec_.style.fieldInterpolation; }
+    void setFieldInterpolation(int mode);
+    int fieldResolution() const { return spec_.style.fieldResolution; }
+    void setFieldResolution(int cells);
     bool usesColourMap() const { return usesColourMap_; }
     void setBackgroundColor(const QColor& c);
     void setForegroundColor(const QColor& c);
@@ -320,6 +330,30 @@ public:
     Q_INVOKABLE bool exportPdf(const QString& filePath,double widthIn=6.0,double heightIn=4.0,int dpi=600);
     Q_INVOKABLE bool exportPng(const QString& filePath,int width=1600,int height=1000);
     Q_INVOKABLE bool exportSvg(const QString& filePath,double widthIn=6.0,double heightIn=4.0);
+
+    // One entry point that picks the right one from the file's extension.
+    //
+    // Three export functions existed and QML called exportPdf from one button,
+    // so PDF was the only format anyone could actually reach - and PNG, which
+    // was already written and working, may as well not have been. This is what
+    // a Save Figure dialog needs: hand it whatever the person typed and let the
+    // format follow the name they gave it.
+    //
+    // .pdf, .svg and .eps are vector and stay editable in Illustrator,
+    // Inkscape or CorelDRAW. .png, .jpg, .jpeg, .tif, .tiff, .bmp and .webp are
+    // raster, drawn at whatever size is asked for rather than scaled up from
+    // the window. .py writes the matplotlib script that redraws the figure,
+    // .csv the numbers behind it - the two that let someone else check the
+    // figure rather than only look at it.
+    Q_INVOKABLE bool exportFigure(const QString& filePath,int width=1600,int height=1000);
+    // The formats this build can actually write, extensions only, in the order
+    // a Save dialog should offer them. Raster support depends on which of Qt's
+    // image plugins were deployed, so this asks rather than assumes: offering
+    // TIFF and then failing silently is worse than not offering it.
+    Q_INVOKABLE QStringList exportFormats() const;
+    // The numbers the figure is drawn from, as CSV. One row per point, one
+    // block per series.
+    Q_INVOKABLE bool exportData(const QString& filePath) const;
 
     // Publication profiles. Exporting through a profile is the point of them:
     // the figure is re-rendered at the journal's column width, text size and

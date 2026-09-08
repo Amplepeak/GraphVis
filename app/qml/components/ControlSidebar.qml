@@ -28,48 +28,88 @@ Rectangle {
     color:Theme.background; border.color:Theme.border
     ColumnLayout {
         anchors.fill:parent; spacing:0
-        TabBar {
-            id: tabs; Layout.fillWidth:true
-            TabButton{text:"Graphs"} TabButton{text:"Project"} TabButton{text:"Data"} TabButton{text:"Map"}
-            TabButton{text:"Analysis"} TabButton{text:"Solver"}
-            TabButton{text:"Literature"} TabButton{text:"Publish"}
+        // The tab bar scrolls rather than clipping its last tabs.
+        //
+        // A plain TabBar distributes its buttons across the width it is given
+        // and elides the labels when there is not enough; at 400 px "Literature"
+        // became "Literat..." and Publish was cut in half. A row of tabs you
+        // cannot read is a row of tabs you have to click to identify.
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.preferredHeight: tabs.implicitHeight
+            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+            clip: true
+            TabBar {
+                id: tabs
+                TabButton{text:"Graphs"; width:implicitWidth} TabButton{text:"Project"; width:implicitWidth}
+                TabButton{text:"Data"; width:implicitWidth} TabButton{text:"Map"; width:implicitWidth}
+                TabButton{text:"Analysis"; width:implicitWidth} TabButton{text:"Solver"; width:implicitWidth}
+                TabButton{text:"Literature"; width:implicitWidth} TabButton{text:"Publish"; width:implicitWidth}
+            }
         }
         // Which dataset the graphs below draw from. Above the chooser because
         // that is the order the questions are asked in - what data, then what
         // picture of it - and because switching used to mean leaving this tab
         // for the Data tab and coming back.
-        ActiveDatasetBar {
-            app: root.app
-            Layout.fillWidth: true
-            Layout.leftMargin: 8; Layout.rightMargin: 8; Layout.topMargin: 8
-            visible: tabs.currentIndex === 0
-            onImportRequested: root.importRequested()
-        }
-        // Colour vision and the field colour map, stated above the graph chooser
-        // rather than buried in settings: both change what every graph below
-        // will look like.
-        ColourVisionBar {
-            app: root.app
-            canvas: root.canvas
-            Layout.fillWidth: true
-            Layout.margins: 8
-            visible: tabs.currentIndex === 0
-        }
         StackLayout {
             Layout.fillWidth:true; Layout.fillHeight:true; currentIndex:tabs.currentIndex
-            // 318 catalogue entries browsed through a 400 px sidebar. Torn out,
-            // the library gets a window of its own and the canvas keeps the
-            // width; the grid, the search text and the staged entry survive the
-            // trip because the item is reparented, not rebuilt.
-            DockPanel {
-                title: "Graph Library"
-                floatingWidth: 560
-                floatingHeight: 780
-                GraphLibrary {
-                    anchors.fill: parent
-                    app: root.app
-                    onApplyRequested: (entry) => root.graphSelected(entry)
-                    onScanApplied: (g, m) => root.scanRecommendation(g, m)
+            // The Graphs tab, split so the person decides how the height is
+            // shared.
+            //
+            // The settings above the chooser have a fixed appetite and the
+            // library has none - it holds 433 entries - so a fixed division
+            // squeezed the list down to three visible rows and clipped the
+            // first of them. A SplitView gives it a handle: drag the settings
+            // shut when picking a graph, drag them open when setting one up.
+            // Both halves scroll, so neither can clip its content whatever the
+            // handle is doing.
+            SplitView {
+                orientation: Qt.Vertical
+
+                ColumnLayout {
+                    SplitView.preferredHeight: 250
+                    SplitView.minimumHeight: 34
+                    spacing: 0
+                    PanelScroll {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentSpacing: 8
+                        // Which dataset the graphs below draw from. Above the
+                        // chooser because that is the order the questions are
+                        // asked in - what data, then what picture of it.
+                        ActiveDatasetBar {
+                            app: root.app
+                            Layout.fillWidth: true
+                            onImportRequested: root.importRequested()
+                        }
+                        // Colour vision, the field colour map and the figure's
+                        // own background: all three change what every graph
+                        // below will look like.
+                        ColourVisionBar {
+                            app: root.app
+                            canvas: root.canvas
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+
+                // 433 catalogue entries browsed through a 400 px sidebar. Torn
+                // out, the library gets a window of its own and the canvas keeps
+                // the width; the grid, the search text and the staged entry
+                // survive the trip because the item is reparented, not rebuilt.
+                DockPanel {
+                    title: "Graph Library"
+                    SplitView.fillHeight: true
+                    SplitView.minimumHeight: 140
+                    floatingWidth: 560
+                    floatingHeight: 780
+                    GraphLibrary {
+                        anchors.fill: parent
+                        app: root.app
+                        onApplyRequested: (entry) => root.graphSelected(entry)
+                        onScanApplied: (g, m) => root.scanRecommendation(g, m)
+                    }
                 }
             }
             ProjectPanel { app:root.app }

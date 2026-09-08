@@ -74,6 +74,12 @@ class AppController final : public QObject {
     // Numbers on the axes. On by default: an axis with a name and no scale can
     // be looked at and not read.
     Q_PROPERTY(bool plotScaleLabels READ plotScaleLabels WRITE setPlotScaleLabels NOTIFY plotDisplayChanged)
+    // How the unsampled cells of a gridded field are estimated. Scattered
+    // measurements almost never fall one to a grid cell, and drawing only the
+    // cells that were hit gives coloured confetti rather than a map. See
+    // PlotStyle::fieldInterpolation.
+    Q_PROPERTY(int plotFieldInterpolation READ plotFieldInterpolation WRITE setPlotFieldInterpolation NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList plotFieldInterpolationNames READ plotFieldInterpolationNames CONSTANT)
 
     // What was open last time.
     //
@@ -265,6 +271,14 @@ public:
     void setPlotGridDensity(int ticks);
     bool plotScaleLabels() const{return plotScaleLabels_;}
     void setPlotScaleLabels(bool on);
+    int plotFieldInterpolation() const{return plotFieldInterpolation_;}
+    void setPlotFieldInterpolation(int mode);
+    QStringList plotFieldInterpolationNames() const{
+        return {QStringLiteral("None - only the cells that were measured"),
+                QStringLiteral("Nearest - each gap takes its closest measurement"),
+                QStringLiteral("Linear - a smooth surface through the measurements"),
+                QStringLiteral("Cubic - smoother still")};
+    }
     QVariantList recentDatasets() const{return recentDatasets_;}
     QVariantList recentVisualisations() const{return recentVisualisations_;}
     // Called by the workspace whenever a catalogue entry is applied, so the
@@ -310,6 +324,17 @@ public:
     // Absolute path for a figure export, creating the directory. Keeps QML
     // from having to know anything about the filesystem layout.
     Q_INVOKABLE QString exportPath(const QString& baseName,const QString& extension) const;
+    // The same suggestion as a file URL, for a Save dialog's currentFile, and
+    // the reverse conversion for what one hands back. QML gets URLs from a
+    // FileDialog and the canvas takes paths; doing this in QML with string
+    // surgery on "file:///" is the kind of thing that works until a path has a
+    // space or a drive letter in it.
+    Q_INVOKABLE QUrl suggestedExportUrl(const QString& baseName,const QString& extension) const{
+        return QUrl::fromLocalFile(exportPath(baseName,extension));
+    }
+    Q_INVOKABLE QString localPathOf(const QUrl& url) const{
+        return url.isLocalFile()?url.toLocalFile():url.toString();
+    }
 
     // Deep scan of the active dataset. budgetSeconds is a soft thinking
     // budget: larger budgets widen column breadth and pair sampling.
@@ -408,6 +433,7 @@ private:
     bool plotGridVisible_=true;
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
     bool plotScaleLabels_=true;
+    int plotFieldInterpolation_=2;          // Linear
     // Newest first, capped. Each entry is {path, name}; visualisations are
     // {engine, variant, label}.
     QVariantList recentDatasets_;

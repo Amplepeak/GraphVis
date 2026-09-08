@@ -61,6 +61,7 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotGridVisible_=settings.value(QStringLiteral("plot/gridVisible"),true).toBool();
     plotGridDensity_=qBound(0,settings.value(QStringLiteral("plot/gridDensity"),0).toInt(),25);
     plotScaleLabels_=settings.value(QStringLiteral("plot/scaleLabels"),true).toBool();
+    plotFieldInterpolation_=qBound(0,settings.value(QStringLiteral("plot/fieldInterpolation"),2).toInt(),3);
     loadRecents();
     // Every signal connection below has to happen whether or not the native
     // core loads. When the DLL is missing this constructor used to return here,
@@ -1765,6 +1766,16 @@ void AppController::setPlotGridVisible(bool on){
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
         .setValue(QStringLiteral("plot/gridVisible"),plotGridVisible_);
     emit plotDisplayChanged();
+}
+
+void AppController::setPlotFieldInterpolation(int mode){
+    const int clamped=qBound(0,mode,3);
+    if(plotFieldInterpolation_==clamped) return;
+    plotFieldInterpolation_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/fieldInterpolation"),plotFieldInterpolation_);
+    emit plotDisplayChanged();
+    setStatus(plotFieldInterpolationNames().value(plotFieldInterpolation_));
 }
 
 void AppController::setPlotScaleLabels(bool on){

@@ -267,6 +267,7 @@ SplitView {
                         gridVisible: root.app.plotGridVisible
                         gridDensity: root.app.plotGridDensity
                         scaleLabelsVisible: root.app.plotScaleLabels
+                        fieldInterpolation: root.app.plotFieldInterpolation
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision

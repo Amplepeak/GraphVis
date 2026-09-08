@@ -166,6 +166,9 @@ private:
     enum class GridAggregate { Mean, Count };
     static ValueGrid gridFromSeries(const PlotSpec& spec, int requested,
                                     GridAggregate how = GridAggregate::Mean);
+    // Fill the cells no sample landed in. See PlotStyle::fieldInterpolation for
+    // the modes and the implementation for why a pyramid rather than a search.
+    static void estimateEmptyCells(ValueGrid& g, int mode);
     static void closeGaps(ValueGrid& g, int passes);
 
     // Gridding is the other half of the per-repaint cost that prepareSpec was.
@@ -264,6 +267,15 @@ public:
     // rewrite fails by producing no series rather than by failing to compile,
     // so the test needs to see what the rewrite actually produced.
     PlotSpec preparedFor(const PlotSpec& spec) const { return prepareSpec(spec); }
+
+    // The gridded field, for the tests. An estimator that alters a measured
+    // cell is not an estimator but a filter, and that can only be checked by
+    // comparing the numbers - the picture looks equally plausible either way.
+    struct FieldGrid { int nx=0,ny=0; QVector<double> cells; bool valid=false; };
+    static FieldGrid fieldFor(const PlotSpec& spec){
+        const ValueGrid g=gridFromSeries(spec,0);
+        return {g.nx,g.ny,g.cells,g.valid};
+    }
 
     // Does this engine colour a FIELD - a heat map, a contour, a surface, a
     // vector field - rather than a set of series? Only those read

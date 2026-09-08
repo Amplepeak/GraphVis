@@ -219,6 +219,35 @@ ApplicationWindow {
     }
     FileDialog{id:literatureDialog;title:"Open literature";nameFilters:root.app.literatureNameFilters();onAccepted:root.app.openLiterature(selectedFile)}
 
+    // Save the figure as whatever the person needs it as.
+    //
+    // There was one Export PDF button and three export functions, so PDF was
+    // the only format anyone could reach - PNG and SVG were written, tested and
+    // unreachable. The filters are built from what this build can actually
+    // write, asked of Qt at run time, because offering TIFF and then silently
+    // writing nothing is worse than never offering it.
+    FileDialog {
+        id: saveFigureDialog
+        title: "Save figure"
+        fileMode: FileDialog.SaveFile
+        nameFilters: [
+            "Vector, stays editable (*.pdf *.svg)",
+            "Picture (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp)",
+            "The script that redraws it (*.py)",
+            "The numbers behind it (*.csv)",
+            "All files (*)"
+        ]
+        onAccepted: {
+            var c = shellLoader.item ? shellLoader.item.canvas : null
+            if (!c) return
+            var path = root.app.localPathOf(selectedFile)
+            if (c.exportFigure(path)) root.app.notify("Saved " + path)
+            else root.app.notify("Could not save " + path
+                                 + " — this build can write: "
+                                 + c.exportFormats().join(", "))
+        }
+    }
+
     // The window's menu bar. Settings that used to be spread across the
     // toolbar, a strip above the graph chooser and a combo box floating over
     // the corner of the plot now have one home; the toolbar keeps the actions
@@ -231,10 +260,8 @@ ApplicationWindow {
         onAddOnsRequested: addOnsDialog.open()
         onExportRequested: {
             var c = shellLoader.item ? shellLoader.item.canvas : null
-            if (!c) return
-            var target = root.app.exportPath(c.engine, "pdf")
-            if (c.exportPdf(target)) root.app.notify("Exported " + target)
-            else root.app.notify("PDF export failed")
+            if (c) saveFigureDialog.currentFile = root.app.suggestedExportUrl(c.engine, "pdf")
+            saveFigureDialog.open()
         }
     }
 
