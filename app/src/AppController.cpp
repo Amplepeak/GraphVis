@@ -720,10 +720,36 @@ void AppController::loadGraphCatalogue(){
         qWarning("GraphVis: graph_catalogue.json is not valid JSON: %s",qPrintable(err.errorString()));
         return;
     }
+    // The packs, and how many entries each holds. A pack is a FILTER over a
+    // catalogue that ships whole - every engine is compiled into this
+    // executable either way - so what a pack decides is whether its categories
+    // appear in the library. Offering to "install" something already installed
+    // would be a lie with a progress bar on it.
+    //
+    // All on by default: the point is to let someone doing bioprocess work
+    // switch off sixty-five aviation entries, not to hide things from them.
+    graphPacks_.clear();
+    for(const QJsonValue pv:doc.object().value(QStringLiteral("packs")).toArray()){
+        QVariantMap pack=pv.toObject().toVariantMap();
+        const QString id=pack.value(QStringLiteral("id")).toString();
+        pack.insert(QStringLiteral("enabled"),packEnabled(id));
+        graphPacks_.append(pack);
+    }
+
+    graphCategories_.clear();
+    graphEntries_.clear();
+    hiddenEntryCount_=0;
+
     const QJsonArray cats=doc.object().value(QStringLiteral("categories")).toArray();
     for(const QJsonValue cv:cats){
         const QJsonObject co=cv.toObject();
         const QString category=co.value(QStringLiteral("name")).toString();
+        const QString pack=co.value(QStringLiteral("pack")).toString();
+        const int entryCount=co.value(QStringLiteral("entries")).toArray().size();
+        // A category filed under a pack that is off is skipped whole. Filtering
+        // entry by entry would leave categories showing a count they no longer
+        // contain, which reads as a miscount rather than a choice.
+        if(!pack.isEmpty()&&!packEnabled(pack)){ hiddenEntryCount_+=entryCount; continue; }
         QVariantList entries;
         for(const QJsonValue ev:co.value(QStringLiteral("entries")).toArray()){
             QVariantMap e=ev.toObject().toVariantMap();
@@ -734,6 +760,7 @@ void AppController::loadGraphCatalogue(){
         QVariantMap cat;
         cat.insert(QStringLiteral("name"),category);
         cat.insert(QStringLiteral("count"),entries.size());
+        cat.insert(QStringLiteral("pack"),pack);
         cat.insert(QStringLiteral("entries"),entries);
         graphCategories_.append(cat);
     }
@@ -752,6 +779,26 @@ void AppController::loadGraphCatalogue(){
             break;
         }
     }
+}
+
+bool AppController::packEnabled(const QString& id) const{
+    if(id.isEmpty()||id==QLatin1String("base")) return true;   // Core is not optional
+    const QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
+    return settings.value(QStringLiteral("catalogue/pack/")+id,true).toBool();
+}
+
+void AppController::setPackEnabled(const QString& id,bool on){
+    if(id.isEmpty()||id==QLatin1String("base")) return;
+    if(packEnabled(id)==on) return;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("catalogue/pack/")+id,on);
+    // Rebuilt rather than patched: the library, the search index and the counts
+    // all come from one pass over the file, and keeping three of them in step
+    // by hand is how they stop agreeing.
+    loadGraphCatalogue();
+    emit graphCatalogueChanged();
+    setStatus(on?QStringLiteral("%1 graphs shown").arg(id)
+                :QStringLiteral("%1 graphs hidden").arg(id));
 }
 
 // Mirrors graph_library.fuzzy_score: exact substring on the name wins, then

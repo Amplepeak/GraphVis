@@ -336,6 +336,26 @@ MenuBar {
             }
         }
 
+        Menu {
+            title: "Graph packs"
+            // A pack is a filter over a catalogue that ships whole - every
+            // engine is in this executable either way - so switching one off
+            // shortens the library and nothing else. All on by default.
+            Repeater {
+                model: root.app.graphPacks
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name + "  (" + modelData.entryCount + ")"
+                    checkable: true
+                    checked: modelData.enabled
+                    enabled: modelData.id !== "base"
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.description
+                    onTriggered: root.app.setPackEnabled(modelData.id, !modelData.enabled)
+                }
+            }
+        }
+
         MenuSeparator {}
 
         Action {

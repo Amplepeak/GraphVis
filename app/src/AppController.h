@@ -150,12 +150,23 @@ class AppController final : public QObject {
     // 3 borderless. Persisted alongside the theme.
     Q_PROPERTY(int displayMode READ displayMode WRITE setDisplayMode NOTIFY displayModeChanged)
     Q_PROPERTY(QStringList displayModeNames READ displayModeNames CONSTANT)
-    Q_PROPERTY(QVariantList graphCategories READ graphCategories CONSTANT)
-    Q_PROPERTY(int graphEntryCount READ graphEntryCount CONSTANT)
+    // NOT constant any more: switching a catalogue pack off rebuilds all three
+    // of these, and a CONSTANT property never tells QML it changed - the
+    // library would go on listing categories it no longer holds.
+    Q_PROPERTY(QVariantList graphCategories READ graphCategories NOTIFY graphCatalogueChanged)
+    Q_PROPERTY(int graphEntryCount READ graphEntryCount NOTIFY graphCatalogueChanged)
     // How many entries the "Include advanced" switch actually reveals. The
     // library used to print `graphEntryCount - 82`, a constant that any
     // catalogue edit makes wrong and a smaller catalogue makes negative.
-    Q_PROPERTY(int advancedEntryCount READ advancedEntryCount CONSTANT)
+    Q_PROPERTY(int advancedEntryCount READ advancedEntryCount NOTIFY graphCatalogueChanged)
+
+    // The catalogue packs, and how many entries each holds.
+    //
+    // A pack is a filter over a catalogue that ships whole - every engine is
+    // compiled in either way - so this is about what the library SHOWS, not
+    // about what is installed. All on by default; Core cannot be switched off.
+    Q_PROPERTY(QVariantList graphPacks READ graphPacks NOTIFY graphCatalogueChanged)
+    Q_PROPERTY(int hiddenEntryCount READ hiddenEntryCount NOTIFY graphCatalogueChanged)
 public:
     explicit AppController(QObject* parent=nullptr);
     ~AppController() override;
@@ -219,6 +230,10 @@ public:
     bool literatureContextAvailable() const;
     void setThemeIndex(int value);
     QVariantList graphCategories() const{return graphCategories_;}
+    QVariantList graphPacks() const{return graphPacks_;}
+    int hiddenEntryCount() const{return hiddenEntryCount_;}
+    Q_INVOKABLE bool packEnabled(const QString& id) const;
+    Q_INVOKABLE void setPackEnabled(const QString& id,bool on);
     int graphEntryCount() const{return graphEntries_.size();}
     int advancedEntryCount() const{
         int n=0;
@@ -442,6 +457,7 @@ signals:
     void plotColourVisionChanged();
     void plotDisplayChanged();
     void recentsChanged();
+    void graphCatalogueChanged();
     void smartRenderChanged();
     void scanChanged();
     // A loaded figure's canvas state, for QML to hand to PlotCanvas. The
@@ -539,6 +555,8 @@ private:
     void loadGraphCatalogue();
     static double fuzzyScore(const QString& query,const QVariantMap& entry);
     QVariantList graphCategories_;
+    QVariantList graphPacks_;
+    int hiddenEntryCount_=0;
     QVariantList graphEntries_;
     QString graphPreviewDir_;
     QString graphPreviewCompactDir_;

@@ -106,6 +106,15 @@ Rectangle {
 
     Component.onCompleted: refresh()
 
+    // Switching a pack off rebuilds app.graphCategories underneath us. `rows`
+    // is a snapshot taken by refresh(), not a live view of the catalogue, so
+    // without this the list would go on showing categories the controller no
+    // longer holds - and clicking one would stage an entry that is not there.
+    Connections {
+        target: root.app
+        function onGraphCatalogueChanged() { root.refresh() }
+    }
+
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 8; spacing: 6
 
@@ -114,6 +123,43 @@ Rectangle {
             Label { text: "GRAPH LIBRARY"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
             Item { Layout.fillWidth: true }
             Label { text: root.app.graphEntryCount + " graphs"; color: Theme.textMuted; font.pixelSize: 11 }
+            // The packs. Every engine is compiled in either way - a pack is a
+            // filter over the library, not a download - so this is a button
+            // that shortens a list, and it says so rather than saying
+            // "Install".
+            ToolButton {
+                id: packButton
+                text: "Packs"
+                font.pixelSize: 11
+                flat: true
+                ToolTip.visible: packButton.hovered
+                ToolTip.text: "Choose which subject areas appear in this list. "
+                              + "Nothing is downloaded or removed; the graphs you "
+                              + "switch off are still there when you switch them "
+                              + "back on."
+                onClicked: packMenu.open()
+
+                Menu {
+                    id: packMenu
+                    y: packButton.height
+                    Repeater {
+                        model: root.app.graphPacks
+                        delegate: MenuItem {
+                            required property var modelData
+                            text: modelData.name + "  (" + modelData.entryCount + ")"
+                            checkable: true
+                            checked: modelData.enabled
+                            // Core carries the ordinary chart types. Switching
+                            // it off would leave a plotting program that cannot
+                            // draw a line, so it is shown and fixed on.
+                            enabled: modelData.id !== "base"
+                            ToolTip.visible: hovered
+                            ToolTip.text: modelData.description
+                            onTriggered: root.app.setPackEnabled(modelData.id, !modelData.enabled)
+                        }
+                    }
+                }
+            }
         }
 
         // Which graphs suit THIS data, above the 433 that might suit anything.
@@ -180,6 +226,33 @@ Rectangle {
                 font.pixelSize: 11
                 verticalAlignment: Text.AlignVCenter
                 leftPadding: advancedToggle.indicator.width + 6
+            }
+        }
+
+        // Why a search came up short. Without this line a switched-off pack is
+        // indistinguishable from a graph that was never written: someone
+        // searches "Wind Rose", gets nothing, and concludes the program cannot
+        // draw one.
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.app.hiddenEntryCount > 0
+            spacing: 6
+            Label {
+                text: root.app.hiddenEntryCount + " graphs hidden by packs"
+                color: Theme.textMuted
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+            ToolButton {
+                text: "Show all"
+                font.pixelSize: 11
+                flat: true
+                onClicked: {
+                    var packs = root.app.graphPacks
+                    for (var p = 0; p < packs.length; ++p)
+                        if (!packs[p].enabled) root.app.setPackEnabled(packs[p].id, true)
+                }
             }
         }
 
