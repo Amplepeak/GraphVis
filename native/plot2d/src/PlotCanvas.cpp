@@ -8,6 +8,7 @@
 #include "QtPlotBackend.h"
 
 #include <cmath>
+#include <limits>
 
 #include <QFileInfo>
 #include <QImage>
@@ -91,6 +92,57 @@ QVector<double> decimate(const QVector<double>& in,int budget){
     return out;
 }
 
+// Is the x column ordered? That is the precondition the envelope decimation
+// above quietly depends on, and nothing was checking it.
+//
+// min/max per bucket is the right summary for a TIME SERIES: x rises steadily,
+// so the two points a bucket emits sit at almost the same x and the pair
+// (x-min, y-min) is a real place on the curve to within a pixel.
+//
+// It is wrong for a set of independent samples. A Latin-hypercube sweep has no
+// meaningful row order at all, so bucket b's smallest x and its smallest y come
+// from DIFFERENT ROWS, and the point drawn from them is one the data does not
+// contain. Every scatter, heat map, contour and 3-D view of such a file was
+// therefore drawn from invented pairs - which is exactly what a sparse, wrong
+// looking heat map of a parameter sweep is.
+bool columnIsOrdered(const QVector<double>& v){
+    double last=-std::numeric_limits<double>::infinity();
+    int seen=0;
+    for(double d:v){
+        if(!std::isfinite(d)) continue;
+        if(d<last) return false;
+        last=d; ++seen;
+    }
+    return seen>0;
+}
+
+// The rows to keep, evenly spaced, when the envelope cannot be used. Plain
+// striding: it keeps x and y paired, which is the whole point, and for
+// unordered samples there is no envelope to preserve anyway - a stride through
+// a scatter is a smaller scatter of the same shape.
+QVector<int> strideRows(int rowCount,int budget){
+    QVector<int> rows;
+    if(budget<=0||rowCount<=budget){
+        rows.reserve(rowCount);
+        for(int i=0;i<rowCount;++i) rows.append(i);
+        return rows;
+    }
+    rows.reserve(budget);
+    const double step=double(rowCount)/double(budget);
+    for(int i=0;i<budget;++i){
+        const int r=int(i*step);
+        if(r<rowCount) rows.append(r);
+    }
+    return rows;
+}
+
+QVector<double> gather(const QVector<double>& in,const QVector<int>& rows){
+    QVector<double> out;
+    out.reserve(rows.size());
+    for(int r:rows) if(r<in.size()) out.append(in[r]);
+    return out;
+}
+
 // Series construction, shared by the on-screen preview and the full-resolution
 // render that runs on a worker thread.
 //
@@ -127,7 +179,11 @@ int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringLi
                     int colourVision,int budget,PlotSpec& spec,
                     const QString& xUnit=QString(),const QString& yUnit=QString()){
     spec.series.clear();
-    QVector<double> xs=decimate(table.column(xName),budget);
+    const QVector<double> rawX=table.column(xName);
+    // Row-preserving unless the x column is ordered. See columnIsOrdered.
+    const bool ordered=columnIsOrdered(rawX);
+    const QVector<int> rows=ordered?QVector<int>():strideRows(int(rawX.size()),budget);
+    QVector<double> xs=ordered?decimate(rawX,budget):gather(rawX,rows);
     Units::Conversion xStore;
     applyConversion(xs,displayConversion(xName,xUnit,xStore));
     const ColourVision vision=colourVisionFromInt(colourVision);
@@ -140,7 +196,11 @@ int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringLi
         PlotSeries s;
         s.label=Units::axisLabel(yName);
         s.x=xs;
-        s.y=decimate(table.column(yName),budget);
+        // The SAME rows as x when the data is unordered, so a point on screen
+        // is a row that exists rather than one column's minimum paired with
+        // another column's.
+        s.y=ordered?decimate(table.column(yName),budget)
+                   :gather(table.column(yName),rows);
         Units::Conversion yStore;
         if(const Units::Conversion* c=displayConversion(yName,yUnit,yStore)){
             applyConversion(s.y,c);
