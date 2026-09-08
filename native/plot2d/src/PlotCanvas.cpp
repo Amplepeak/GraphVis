@@ -214,6 +214,8 @@ PlotCanvas::~PlotCanvas(){
 GV_SETTER(setArrowPath,arrowPath_,QString)
 GV_SETTER(setXColumn,xColumn_,QString)
 GV_SETTER(setYColumns,yColumns_,QStringList)
+GV_SETTER(setZColumn,zColumn_,QString)
+GV_SETTER(setColorColumn,colorColumn_,QString)
 GV_SETTER(setXUnit,xUnit_,QString)
 GV_SETTER(setYUnit,yUnit_,QString)
 
@@ -512,6 +514,8 @@ void PlotCanvas::rebuild(){
     // away by drawAnnotations and returns if the range covers it again, so a
     // stale note is invisible rather than wrong. Clear Notes empties them.
     pointCount_=0;
+    notice_.clear();           // recomputed at the end; a stale explanation of
+                               // the LAST figure is worse than none
     usesColourMap_=false;      // recomputed at the end; cleared so the early
                                // returns below cannot leave the last figure's
                                // answer behind
@@ -563,6 +567,43 @@ void PlotCanvas::rebuild(){
     }
     if(yNames.isEmpty()){ message_=QStringLiteral("Need at least two numeric columns to plot"); emit stateChanged(); return; }
 
+    // A multi-column engine reads its inputs as SERIES: series 0, 1 and 2 are a
+    // heatmap's x, y and value, a network's from, to and weight, a 3-D
+    // scatter's x, y and z. So for those the mapped roles all have to become
+    // series, in the order the person set them, rather than only the Y one.
+    //
+    // This is what was broken. The workspace set yColumns to a single-element
+    // list and dropped Z and Colour, so every engine needing a third column got
+    // one series, returned before drawing anything, and left a frame with an
+    // empty middle - while a Line Chart, which wants exactly one, worked fine.
+    // "The line graph draws and nothing else does" was a precise description of
+    // the bug.
+    //
+    // Ordinary series engines are untouched: they keep x on the x axis and one
+    // series per Y column, which is what makes several Y columns draw several
+    // lines.
+    const int needed=QtPlotBackend::columnsRequired(spec_.engine);
+    if(needed>=3){
+        QStringList roles;
+        roles.append(xName);
+        for(const QString& c:std::as_const(yNames)) if(!c.isEmpty()) roles.append(c);
+        if(!zColumn_.isEmpty()) roles.append(zColumn_);
+        if(!colorColumn_.isEmpty()) roles.append(colorColumn_);
+        roles.removeAll(QString());
+        // Only as many as the engine reads. A fourth column handed to a
+        // three-column engine is a series it will ignore, drawn in the legend
+        // and counted in the point total - which reads as a bug of its own.
+        while(roles.size()>needed) roles.removeLast();
+        // Whatever the person mapped, up to what the engine reads - not only
+        // the exact count. A Mosaic Plot works from two columns and uses a
+        // third for counts if it has one; requiring all three before composing
+        // anything would leave it with a single series and nothing drawn, which
+        // is the bug this whole block exists to fix. Each engine's own guard
+        // decides whether what it got is enough, and explainEmpty says so when
+        // it is not.
+        if(roles.size()>=2) yNames=roles;
+    }
+
     pointCount_=buildPlotSeries(table,xName,yNames,colourVision_,
                                 interactiveBudgetFor(int(yNames.size())),spec_,
                                 xUnit_,yUnit_);
@@ -592,13 +633,15 @@ void PlotCanvas::rebuild(){
     // drawn, and here is why". "2D Heatmap - 20000 points" over an empty plot
     // area is true and useless: the columns ARE mapped and the points ARE
     // there, and the engine wanted a third column it never got.
+    // The status stays short and always says the same kind of thing, so the
+    // pill it goes in never changes size. Anything that needs a sentence goes
+    // to the notice below the figure instead.
     if(spec_.series.isEmpty()){
-        message_=QStringLiteral("Selected columns have no numeric data");
+        message_=QStringLiteral("%1 · no data").arg(spec_.engine);
+        notice_=QStringLiteral("The selected columns have no numeric data in them.");
     }else{
-        const QString why=QtPlotBackend::explainEmpty(spec_,qtBackend_.preparedFor(spec_));
-        message_=why.isEmpty()
-            ? QStringLiteral("%1 · %2 points").arg(spec_.engine).arg(pointCount_)
-            : why;
+        message_=QStringLiteral("%1 · %2 points").arg(spec_.engine).arg(pointCount_);
+        notice_=QtPlotBackend::explainEmpty(spec_,qtBackend_.preparedFor(spec_));
     }
     applyVariant();
     // Which control the interface should offer, decided from the engine that

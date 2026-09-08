@@ -116,6 +116,7 @@ set(GRAPHVIS_QML_FILES
   qml/components/SolverPanel.qml
   qml/components/AddOnsPanel.qml
   qml/components/PanelScroll.qml
+  qml/components/PlotNotice.qml
   qml/components/DockPanel.qml
   qml/components/ScanPanel.qml
   qml/workspaces/ClassicShell.qml

@@ -1284,6 +1284,47 @@ void QtPlotBackend::drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& s
 // The mapped-column requirement each family actually enforces, kept beside the
 // code that enforces it. Every number here is the guard in the corresponding
 // painter or grid builder, not a guess at what the engine "should" need.
+// The tables here are the guards in the painters and grid builders, read out
+// of that code rather than guessed at. Anything not listed takes x plus one y,
+// which is every ordinary series engine.
+int QtPlotBackend::columnsRequired(const QString& engine){
+    static const QSet<QString> kThree{
+        // gridFromSeries: x, y, value.
+        QStringLiteral("2D Heatmap"),QStringLiteral("2D Contour"),
+        QStringLiteral("2D Histogram"),QStringLiteral("Hexbin Density"),
+        // Edge lists: from, to, weight.
+        QStringLiteral("Network Graph"),QStringLiteral("Chord Diagram"),
+        // Contingency and set membership.
+        QStringLiteral("Mosaic Plot"),QStringLiteral("UpSet Plot"),
+        // Three corners.
+        QStringLiteral("Ternary Scatter"),QStringLiteral("Piper Diagram"),
+        // Surfaces and 3-D: x, y, z.
+        QStringLiteral("Surface + Contours"),QStringLiteral("Comet 3D"),
+        QStringLiteral("Ribbon")};
+    // NOT here, and each was tried and removed after reading what the engine
+    // does with its input:
+    //   Spectrogram      takes ONE signal column and PRODUCES three series.
+    //                    Demanding three would have made it read the x column
+    //                    as the signal.
+    //   4D / 5D Scatter  is an ordinary series engine - drawScatter iterates
+    //                    spec.series and takes x from the frame. Its extra
+    //                    dimensions are marker size and colour, not columns.
+    // Both drew correctly before this function existed, and listing them here
+    // would have broken them in the name of fixing something else.
+    static const QSet<QString> kFour{
+        // x, y and the two vector components.
+        QStringLiteral("Quiver Field"),QStringLiteral("Feather"),
+        QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
+        QStringLiteral("Phase Portrait"),QStringLiteral("Flow Texture (LIC)"),
+        QStringLiteral("Divergence Map"),QStringLiteral("Vorticity Map"),
+        // Origin and destination are two coordinate PAIRS.
+        QStringLiteral("Origin-Destination Flow")};
+    if(kFour.contains(engine)) return 4;
+    if(kThree.contains(engine)) return 3;
+    if(engine.startsWith(QLatin1String("3D "))) return 3;
+    return 2;
+}
+
 QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared){
     const QString e=chosen.engine;
     // How many columns the person actually mapped, which is what the
@@ -1291,11 +1332,18 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
     // whether anything came out.
     const int n=int(chosen.series.size());
 
+    // How many it needed comes from columnsRequired(), the one place that
+    // knows; the sets below only choose the WORDING, because "x, y and the
+    // value it colours by" and "x, y and z" are the same requirement described
+    // to different people. Deriving the number here as well is how the message
+    // and the mapping drift apart.
+    const int needed=columnsRequired(e);
+
     // gridFromSeries: series 0 is x, 1 is y, 2 is the value.
     static const QSet<QString> kGridEngines{
         QStringLiteral("2D Heatmap"),QStringLiteral("2D Contour"),
         QStringLiteral("2D Histogram"),QStringLiteral("Hexbin Density")};
-    if(kGridEngines.contains(e)&&n<3){
+    if(kGridEngines.contains(e)&&n<needed){
         return QStringLiteral(
             "%1 needs three mapped columns - x, y and the value it colours by - "
             "and %2 %3 mapped. The axes come from the data, which is why the "
@@ -1309,7 +1357,7 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
         QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
         QStringLiteral("Phase Portrait"),QStringLiteral("Flow Texture (LIC)"),
         QStringLiteral("Divergence Map"),QStringLiteral("Vorticity Map")};
-    if(kVectorEngines.contains(e)&&n<4){
+    if(kVectorEngines.contains(e)&&n<needed){
         return QStringLiteral(
             "%1 needs four mapped columns - x, y and the two vector components - "
             "and %2 mapped.").arg(e).arg(n);
@@ -1318,12 +1366,28 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
     if(e.startsWith(QLatin1String("3D "))
        ||e==QLatin1String("Surface + Contours")
        ||e==QLatin1String("Ribbon")){
-        if(n<3) return QStringLiteral(
+        if(n<needed) return QStringLiteral(
             "%1 needs three mapped columns - x, y and z - and %2 mapped.").arg(e).arg(n);
     }
 
-    if(e==QLatin1String("Ternary Scatter")&&n<3)
+    if(e==QLatin1String("Ternary Scatter")&&n<needed)
         return QStringLiteral("Ternary Scatter needs three mapped columns, one per corner.");
+
+    // Anything else that wants more than it got. Without this an engine added
+    // to columnsRequired but not to a wording set above says nothing at all,
+    // which is the failure this function exists to prevent.
+    //
+    // Only for the multi-column engines, and the reason is that `n` counts
+    // SERIES rather than mapped columns, and the two are the same number only
+    // above three. An ordinary engine takes x from the frame and one series per
+    // y column, so a perfectly mapped Line Chart has n == 1 and needed == 2 -
+    // and the first version of this said "Line Chart needs 2 mapped columns and
+    // 1 is mapped" over a figure drawing two hundred thousand points quite
+    // happily. A warning on a working plot is worse than no warning at all.
+    if(needed>=3&&n<needed&&n>0)
+        return QStringLiteral("%1 needs %2 mapped columns and %3 %4 mapped.")
+            .arg(e).arg(needed).arg(n)
+            .arg(n==1?QStringLiteral("is"):QStringLiteral("are"));
 
     if(n==0)
         return QStringLiteral(

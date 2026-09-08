@@ -33,6 +33,19 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(QString variant READ variant WRITE setVariant NOTIFY sourceChanged)
     Q_PROPERTY(QString xColumn READ xColumn WRITE setXColumn NOTIFY sourceChanged)
     Q_PROPERTY(QStringList yColumns READ yColumns WRITE setYColumns NOTIFY sourceChanged)
+    // The other two mapped roles. A multi-column engine reads its inputs as
+    // series - a heatmap's x, y and value; a 3-D scatter's x, y and z - so it
+    // needs THREE or FOUR columns, and the interface has always offered four
+    // (X, Y, Z, Colour). Only X and Y ever reached this canvas: the workspace
+    // set yColumns to a single-element list and dropped the rest on the floor.
+    // So a Line Chart drew and every engine wanting a third column drew a frame
+    // and nothing in it, which is exactly what a user saw and reported as "all
+    // of the visualisations don't show".
+    Q_PROPERTY(QString zColumn READ zColumn WRITE setZColumn NOTIFY sourceChanged)
+    Q_PROPERTY(QString colorColumn READ colorColumn WRITE setColorColumn NOTIFY sourceChanged)
+    // How many columns the current engine actually wants, so the interface can
+    // say so next to the axis rows rather than leaving it to be discovered.
+    Q_PROPERTY(int columnsRequired READ columnsRequired NOTIFY stateChanged)
     // Display units. The column label carries the source unit - "Pressure
     // [kPa]" - and setting a target unit rescales what is drawn without
     // touching the data or re-importing anything. Empty means "as imported".
@@ -46,6 +59,17 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(bool logX READ logX WRITE setLogX NOTIFY sourceChanged)
     Q_PROPERTY(bool logY READ logY WRITE setLogY NOTIFY sourceChanged)
     Q_PROPERTY(QString message READ message NOTIFY stateChanged)
+    // Why the figure looks the way it does, when there is something to say -
+    // a missing mapped column, an axis with five levels, one outlier holding
+    // the range open. Empty when the picture is fine.
+    //
+    // Deliberately SEPARATE from message. They were one string, and the moment
+    // the canvas learned to explain itself a two-line sentence went into a
+    // status pill that sizes to its content and does not wrap - so it stretched
+    // across the window, covered the Export button and the colour map picker,
+    // and stayed there because the condition was permanent. A short status and
+    // a long explanation are different things and belong in different places.
+    Q_PROPERTY(QString notice READ notice NOTIFY stateChanged)
     Q_PROPERTY(bool engineSupported READ engineSupported NOTIFY stateChanged)
     Q_PROPERTY(int pointCount READ pointCount NOTIFY stateChanged)
     // Figure colours follow the UI theme; without these the canvas
@@ -147,6 +171,11 @@ public:
     QString variant() const { return spec_.variant; }
     QString xColumn() const { return xColumn_; }
     QStringList yColumns() const { return yColumns_; }
+    QString zColumn() const { return zColumn_; }
+    QString colorColumn() const { return colorColumn_; }
+    int columnsRequired() const { return QtPlotBackend::columnsRequired(spec_.engine); }
+    void setZColumn(const QString& v);
+    void setColorColumn(const QString& v);
     QString xUnit() const { return xUnit_; }
     QString yUnit() const { return yUnit_; }
     QString xSourceUnit() const;
@@ -166,6 +195,7 @@ public:
     bool logX() const { return spec_.xAxis.log10; }
     bool logY() const { return spec_.yAxis.log10; }
     QString message() const { return message_; }
+    QString notice() const { return notice_; }
     bool engineSupported() const { return engineSupported_; }
     int pointCount() const { return pointCount_; }
     QColor backgroundColor() const { return spec_.style.background; }
@@ -342,10 +372,13 @@ private:
     QString arrowPath_;
     QString xColumn_;
     QStringList yColumns_;
+    QString zColumn_;
+    QString colorColumn_;
     QString xUnit_;
     QString yUnit_;
     QStringList available_;
     QString message_;
+    QString notice_;
     bool engineSupported_=true;
     int pointCount_=0;
     int fullPointCount_=0;

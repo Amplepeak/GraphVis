@@ -53,8 +53,18 @@ SplitView {
             if(app.rendererMode==="VTK / PBR" && vtkLoader.item && vtkLoader.item.reload)
                 vtkLoader.item.reload()
             // qmllint enable missing-property
+            // ALL four mapped roles, not just two.
+            //
+            // This used to be `plot.yColumns = y ? [y] : []`, which threw Z and
+            // Colour away. A multi-column engine reads its inputs as series -
+            // a heatmap's x, y and value, a 3-D scatter's x, y and z - so every
+            // one of them got a single series, drew a frame with nothing in it,
+            // and only Line Chart worked. The canvas composes them according to
+            // what the engine actually needs; see PlotCanvas::rebuild.
             plot.xColumn = x
             plot.yColumns = y ? [y] : []
+            plot.zColumn = z ? z : ""
+            plot.colorColumn = c ? c : ""
         }
         // Applying a catalogue entry switches to the 2-D renderer and draws it.
         onGraphSelected:(entry)=>{
@@ -71,10 +81,9 @@ SplitView {
             plot.variant = ""
             plot.title = graph
             if (mappings && mappings.x) plot.xColumn = mappings.x
-            var ys = []
-            if (mappings && mappings.y) ys.push(mappings.y)
-            if (mappings && mappings.z) ys.push(mappings.z)
-            plot.yColumns = ys
+            plot.yColumns = (mappings && mappings.y) ? [mappings.y] : []
+            plot.zColumn = (mappings && mappings.z) ? mappings.z : ""
+            plot.colorColumn = (mappings && mappings.c) ? mappings.c : ""
             app.notify("Applied scan recommendation: " + graph)
         }
         }
@@ -115,7 +124,16 @@ SplitView {
                             root.app.notify("VTK/PBR viewport could not load. See the GraphVis startup log for QML/plugin details.")
                     }
                 }
+                // A column, so the notice below has somewhere to be that is not
+                // on top of the toolbar. Everything that belongs INSIDE the
+                // figure - the annotation editor, the ready notice, the overlay
+                // row - still anchors to the plot item; only the explanation
+                // moved out.
+                ColumnLayout {
+                    spacing: 4
                 Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     PlotCanvas {
                         id: plot
                         anchors.fill: parent
@@ -232,12 +250,13 @@ SplitView {
                             }
                         }
                         StatusPill {
-                            // Which image is on screen. showingFullRender was
-                            // exposed to QML and never read by anything, so the
-                            // one question the preview raises - am I looking at
-                            // all of my data or at a tenth of it - had no answer
-                            // anywhere except the notice that appears for a few
-                            // seconds and then goes away.
+                            // Which image is on screen, and nothing longer than
+                            // that. This used to append plot.message, which is
+                            // fine while the message is "Line Chart · 20000
+                            // points" and covers half the window the moment the
+                            // canvas has something to explain. The explanation
+                            // is a separate property now and sits below the
+                            // figure - see PlotNotice.
                             text: {
                                 var where = plot.showingFullRender
                                     ? "full resolution"
@@ -251,6 +270,16 @@ SplitView {
                             textColor: plot.engineSupported ? Theme.textSecondary : Theme.warning
                         }
                     }
+                }
+                // Underneath, wrapping, dismissible.
+                PlotNotice {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 6
+                    Layout.rightMargin: 6
+                    Layout.bottomMargin: 6
+                    text: plot.notice
+                    warning: true
+                }
                 }
             }
         }

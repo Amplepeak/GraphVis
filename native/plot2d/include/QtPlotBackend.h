@@ -70,6 +70,16 @@ public:
     // actually produced has to come from the prepared one.
     static QString explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared);
 
+    // How many mapped columns this engine needs, 1 to 4.
+    //
+    // Every multi-column engine reads its inputs as SERIES - series 0, 1 and 2
+    // are a heatmap's x, y and value; a network's from, to and weight; a 3-D
+    // scatter's x, y and z - so "how many columns" is also "how many series the
+    // canvas must build". One number, used both to compose the mapping and to
+    // explain a plot that came out empty, so the two can never disagree about
+    // what an engine wanted.
+    static int columnsRequired(const QString& engine);
+
 private:
     struct Frame {
         QRectF plotArea;      // where series are drawn

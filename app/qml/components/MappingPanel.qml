@@ -16,10 +16,15 @@ PanelScroll {
     required property var app
     signal applyRequested()
 
-    // The committed mapping - what ControlSidebar hands to the renderer and
-    // what VtkViewport reads. Deliberately NOT bound to the combo boxes: this
-    // panel's contract, stated in its own subtitle, is that a selection is
-    // staged until Apply commits it.
+    // The mapping ControlSidebar hands to the renderer and VtkViewport reads.
+    //
+    // Applied as it is changed, with no Apply button anywhere. There were NINE
+    // of them - one per axis row, one on point size, one on opacity, one on
+    // density, four in the PBR group - and every one committed the whole
+    // mapping, so which one was pressed never mattered. A button that is
+    // mandatory, identical everywhere and has no alternative is not a choice
+    // being offered, it is a step being demanded; the render is fast enough
+    // that there is nothing to defer.
     property string xValue: ""
     property string yValue: ""
     property string zValue: ""
@@ -40,6 +45,7 @@ PanelScroll {
         for(var k in root.staged) next[k] = root.staged[k]
         next[key] = value
         root.staged = next
+        root.apply()
     }
     function commit(){
         root.xValue = root.stagedFor("x")
@@ -75,6 +81,18 @@ PanelScroll {
     property real metallic:metal.value
     property real specular:spec.value
     function apply(){ root.commit(); root.applyRequested() }
+
+    // Sliders and editable spin boxes change continuously - a drag is dozens of
+    // values a second, and each one would re-map the dataset and start a
+    // full-resolution render. Settling for a moment first turns a drag into one
+    // apply at the end of it, which is what the Apply buttons used to do by
+    // accident and is the only thing they were good for.
+    //
+    // Discrete controls do not go through here: a combo box has already
+    // finished changing by the time it emits, so waiting would just make it
+    // feel slow.
+    Timer { id: settle; interval: 140; repeat: false; onTriggered: root.apply() }
+    function applySoon(){ settle.restart() }
     function planText(key,fallback){return app.smartRenderPlan && app.smartRenderPlan[key] !== undefined ? String(app.smartRenderPlan[key]) : fallback}
     function planNumber(key,digits){
         if(!app.smartRenderPlan || app.smartRenderPlan[key] === undefined) return "—"
@@ -87,15 +105,15 @@ PanelScroll {
         return isFinite(v) ? (100*v).toFixed(0)+"%" : "—"
     }
     Label{text:"Variable Mapping";font.pixelSize:17;font.bold:true;color:Theme.text;Layout.margins:12}
-    Label{text:"Selections are staged. Apply commits the mapped variables; Smart Render then chooses clarity/performance parameters automatically.";wrapMode:Text.WordWrap;color:Theme.textSecondary;Layout.fillWidth:true;Layout.leftMargin:12;Layout.rightMargin:12}
+    Label{text:"Changes apply as you make them. Smart Render then chooses clarity and performance parameters automatically.";wrapMode:Text.WordWrap;color:Theme.textSecondary;Layout.fillWidth:true;Layout.leftMargin:12;Layout.rightMargin:12}
 
     GvGroupBox {
         title:"Intelligent Auto-Optimization";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout { anchors.fill:parent;spacing:6
-            Switch{id:smart;text:"Smart Render";checked:true;font.bold:true}
+            Switch{id:smart;text:"Smart Render";checked:true;font.bold:true;onToggled:root.apply()}
             RowLayout {Layout.fillWidth:true
-                ComboBox{id:profile;model:["Balanced","Clarity","Performance"];enabled:smart.checked;Layout.fillWidth:true}
-                Button{text:"Analyze && Apply";enabled:smart.checked;onClicked:root.apply()}
+                ComboBox{id:profile;model:["Balanced","Clarity","Performance"];enabled:smart.checked;Layout.fillWidth:true;onActivated:root.apply()}
+                Button{id:reanalyze;text:"Re-analyze";enabled:smart.checked;onClicked:root.apply();ToolTip.visible:reanalyze.hovered;ToolTip.text:"Run the Smart Render analysis again. The mapping itself is already applied."}
             }
             Label {visible:smart.checked;text:"Automatically controls robust clipping, colour contrast, interpolation policy, point LOD, density alpha and anomaly emphasis. Source data is never deleted.";wrapMode:Text.WordWrap;color:Theme.textSecondary;Layout.fillWidth:true}
             Rectangle {visible:smart.checked && root.app.smartRenderPlan && Object.keys(root.app.smartRenderPlan).length>0;Layout.fillWidth:true;implicitHeight:smartSummary.implicitHeight+18;radius:7;color:Theme.surface;border.color:Theme.border
@@ -142,7 +160,6 @@ PanelScroll {
                     currentIndex: (root.app.activeColumns || []).indexOf(root.stagedFor(axis.modelData.key))
                     onActivated: root.stage(axis.modelData.key, currentText)
                 }
-                Button{ text:"Apply"; onClicked: root.apply() }
             }
         }
     }
@@ -151,15 +168,15 @@ PanelScroll {
         title:smart.checked?"5th axis / point cloud · AUTO":"5th axis / point cloud · MANUAL";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout {anchors.fill:parent
             Label{visible:smart.checked;text:"Smart Render is controlling point size, base opacity and LOD. Turn Smart Render off for strict manual values.";color:Theme.textSecondary;wrapMode:Text.WordWrap;Layout.fillWidth:true}
-            RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Point size";Layout.preferredWidth:96;elide:Text.ElideRight}SpinBox{id:size;from:1;to:30;value:5;editable:true;enabled:!smart.checked;Layout.fillWidth:true}Button{text:"Apply";enabled:!smart.checked;onClicked:root.apply()}}
-            RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Opacity %";Layout.preferredWidth:96;elide:Text.ElideRight}SpinBox{id:alpha;from:2;to:100;value:85;editable:true;enabled:!smart.checked;Layout.fillWidth:true}Button{text:"Apply";enabled:!smart.checked;onClicked:root.apply()}}
+            RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Point size";Layout.preferredWidth:96;elide:Text.ElideRight}SpinBox{id:size;from:1;to:30;value:5;editable:true;enabled:!smart.checked;Layout.fillWidth:true;onValueChanged:root.applySoon()}}
+            RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Opacity %";Layout.preferredWidth:96;elide:Text.ElideRight}SpinBox{id:alpha;from:2;to:100;value:85;editable:true;enabled:!smart.checked;Layout.fillWidth:true;onValueChanged:root.applySoon()}}
             // Was calling app.setPointStyle() directly with the MANUAL spin
             // box values - the ones disabled just above because Smart
             // Render owns them - so ticking this while Smart Render was on
             // silently overwrote the auto-chosen point size and opacity.
             // It goes through Apply like every other control now.
             CheckBox{id:invert;text:"Invert Opacity";onToggled:root.apply()}
-            RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Density mode";Layout.preferredWidth:96;elide:Text.ElideRight}ComboBox{id:densityMode;model:["Raw points","Voxel aggregation"];enabled:!smart.checked;Layout.fillWidth:true}SpinBox{id:bins;from:8;to:96;value:32;editable:true;enabled:!smart.checked&&densityMode.currentIndex===1}Button{text:"Apply";enabled:!smart.checked;onClicked:root.apply()}}
+            RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Density mode";Layout.preferredWidth:96;elide:Text.ElideRight}ComboBox{id:densityMode;model:["Raw points","Voxel aggregation"];enabled:!smart.checked;Layout.fillWidth:true;onActivated:root.apply()}SpinBox{id:bins;from:8;to:96;value:32;editable:true;enabled:!smart.checked&&densityMode.currentIndex===1;onValueChanged:root.applySoon()}}
         }
     }
 
@@ -175,10 +192,10 @@ PanelScroll {
     GvGroupBox {
         title:"VTK C++ / PBR";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout{anchors.fill:parent
-            RowLayout{Label{text:"Mode";Layout.fillWidth:true}ComboBox{id:vtkModeBox;model:["Surface","Points"]}Button{text:"Apply";onClicked:root.apply()}}
-            RowLayout{Label{text:"Roughness";Layout.fillWidth:true}Slider{id:rough;from:0;to:1;value:.35;Layout.preferredWidth:150}Button{text:"Apply";onClicked:root.apply()}}
-            RowLayout{Label{text:"Metallic";Layout.fillWidth:true}Slider{id:metal;from:0;to:1;value:0;Layout.preferredWidth:150}Button{text:"Apply";onClicked:root.apply()}}
-            RowLayout{Label{text:"Specular";Layout.fillWidth:true}Slider{id:spec;from:0;to:1;value:.45;Layout.preferredWidth:150}Button{text:"Apply";onClicked:root.apply()}}
+            RowLayout{Label{text:"Mode";Layout.fillWidth:true}ComboBox{id:vtkModeBox;model:["Surface","Points"];onActivated:root.apply()}}
+            RowLayout{Label{text:"Roughness";Layout.fillWidth:true}Slider{id:rough;from:0;to:1;value:.35;Layout.preferredWidth:150;onMoved:root.applySoon()}}
+            RowLayout{Label{text:"Metallic";Layout.fillWidth:true}Slider{id:metal;from:0;to:1;value:0;Layout.preferredWidth:150;onMoved:root.applySoon()}}
+            RowLayout{Label{text:"Specular";Layout.fillWidth:true}Slider{id:spec;from:0;to:1;value:.45;Layout.preferredWidth:150;onMoved:root.applySoon()}}
         }
     }
 }

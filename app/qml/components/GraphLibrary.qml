@@ -42,6 +42,31 @@ Rectangle {
     // no roles at all, so the problem cannot occur.
     property var rows: []
 
+    // Which categories are open. 433 graphs in 46 categories is a list nobody
+    // scrolls through - the one they want is forty screens down and they do not
+    // know which heading it is under. Collapsed by default, so the first thing
+    // on screen is the 46 headings rather than the first 12 of 433 entries.
+    //
+    // A search is different: typing a query means the person is looking for a
+    // named thing, so every group opens and refresh() below skips headers
+    // entirely on a query.
+    property var openCategories: ({})
+    function isOpen(name){ return root.openCategories[name] === true }
+    function toggleCategory(name){
+        var next = {}
+        for (var k in root.openCategories) next[k] = root.openCategories[k]
+        next[name] = !next[name]
+        root.openCategories = next
+        root.refresh()
+    }
+    function setAllCategories(open){
+        var next = {}
+        for (var c = 0; c < root.app.graphCategories.length; ++c)
+            next[root.app.graphCategories[c].name] = open
+        root.openCategories = next
+        root.refresh()
+    }
+
     function refresh() {
         var out = []
         var q = searchField.text.trim()
@@ -54,9 +79,13 @@ Rectangle {
                 for (var i = 0; i < cat.entries.length; ++i)
                     if (!cat.entries[i].advanced) kept.push(cat.entries[i])
                 if (kept.length === 0) continue
-                out.push({ header: true, label: cat.name, count: kept.length, entry: undefined })
+                var open = root.isOpen(cat.name)
+                out.push({ header: true, label: cat.name, count: kept.length,
+                           open: open, entry: undefined })
+                if (!open) continue
                 for (var k = 0; k < kept.length; ++k)
-                    out.push({ header: false, label: kept[k].engine, count: 0, entry: kept[k] })
+                    out.push({ header: false, label: kept[k].engine, count: 0,
+                               open: false, entry: kept[k] })
             }
             rows = out
             return
@@ -67,10 +96,10 @@ Rectangle {
         for (var r = 0; r < results.length; ++r) {
             var e = results[r]
             if (q.length === 0 && e.category !== lastCat) {
-                out.push({ header: true, label: e.category, count: 0, entry: undefined })
+                out.push({ header: true, label: e.category, count: 0, open: true, entry: undefined })
                 lastCat = e.category
             }
-            out.push({ header: false, label: e.engine, count: 0, entry: e })
+            out.push({ header: false, label: e.engine, count: 0, open: false, entry: e })
         }
         rows = out
     }
@@ -109,6 +138,29 @@ Rectangle {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            visible: searchField.text.trim().length === 0
+            Label {
+                text: "Categories"
+                color: Theme.textMuted
+                font.pixelSize: 11
+            }
+            Item { Layout.fillWidth: true }
+            ToolButton {
+                text: "Expand all"
+                font.pixelSize: 11
+                flat: true
+                onClicked: root.setAllCategories(true)
+            }
+            ToolButton {
+                text: "Collapse all"
+                font.pixelSize: 11
+                flat: true
+                onClicked: root.setAllCategories(false)
+            }
+        }
+
         ListView {
             id: view
             Layout.fillWidth: true; Layout.fillHeight: true
@@ -123,11 +175,46 @@ Rectangle {
                 width: view.width
                 height: entry.modelData.header ? 26 : 34
 
-                Label {
+                // The heading is the control that opens the group, so the
+                // whole row is the target rather than a small triangle.
+                Rectangle {
                     visible: entry.modelData.header
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: entry.modelData.label + (entry.modelData.count > 0 ? "  (" + entry.modelData.count + ")" : "")
-                    color: Theme.textMuted; font.pixelSize: 10; font.bold: true
+                    anchors.fill: parent
+                    anchors.rightMargin: 4
+                    radius: Theme.radius
+                    color: headerHover.hovered ? Theme.surface : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 2
+                        spacing: 6
+                        Label {
+                            // A right-pointing triangle when shut, down when
+                            // open. The same convention as every file tree.
+                            text: entry.modelData.open ? "\u25be" : "\u25b8"
+                            color: Theme.textMuted
+                            font.pixelSize: 10
+                        }
+                        Label {
+                            text: entry.modelData.label
+                            color: Theme.textSecondary
+                            font.pixelSize: 10
+                            font.bold: true
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            visible: entry.modelData.count > 0
+                            text: entry.modelData.count
+                            color: Theme.textMuted
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    HoverHandler { id: headerHover }
+                    TapHandler {
+                        onTapped: root.toggleCategory(entry.modelData.label)
+                    }
                 }
 
                 Rectangle {
