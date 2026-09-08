@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 11.
+"""Catalogue entries for the engine expansion, batches 1 to 12.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -422,6 +422,41 @@ NEW = [
      "Work remaining over time with the straight-line reference and the projected finish"),
     ("Statistical Inference & Effect", "confidenceband", "Regression Confidence Band",
      "A fit with the band for the line and the wider band for the next observation"),
+
+    # ---- batch 12, the last of the rewrites: diffuse reflectance, adsorption,
+    # dielectrics, titration, thermal conductivity, measurement-system
+    # variation, tolerance, rare events, repeated measures, hydrographs, step
+    # response, jitter, well testing and thermal kinetics
+    ("Spectroscopy & Chromatography", "kubelkamunk", "Kubelka-Munk Plot",
+     "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows"),
+    ("Materials & Chemistry", "freundlich", "Freundlich Isotherm",
+     "log qe against log Ce, giving Kf and 1/n - the companion to Langmuir"),
+    ("Materials & Chemistry", "colecole", "Cole-Cole Plot",
+     "Imaginary against real permittivity with a fitted arc, its intercepts and its depression"),
+    ("Materials & Chemistry", "conductometric", "Conductometric Titration",
+     "Conductivity against titrant with both straight branches fitted and their crossing"),
+    ("Materials & Chemistry", "hotwire", "Hot-Wire Conductivity",
+     "Temperature rise against ln time, giving the thermal conductivity from the slope"),
+    ("Quality, Process & Reliability", "multivari", "Multi-Vari Chart",
+     "Readings grouped by part and coloured by operator, with the variation split three ways"),
+    ("Statistical Inference & Effect", "tolerance", "Tolerance Interval Plot",
+     "Limits containing 95% of the population with 95% confidence, beside the interval for the mean"),
+    ("Statistical Process Control", "rareevent", "Rare-Event Interval Chart",
+     "Time between rare events with exponential limits, so a cluster shows as a short gap"),
+    ("Clinical & Meta-analysis", "spaghetti", "Spaghetti Plot",
+     "Every subject's own trajectory with the mean over the top"),
+    ("Earth & Ocean Science", "unithydrograph", "Unit Hydrograph",
+     "A storm hydrograph with baseflow separated, giving the peak, time to peak and runoff volume"),
+    ("Earth & Ocean Science", "recession", "Recession Curve Analysis",
+     "The falling limb on a log ordinate, giving the recession constant and the halving time"),
+    ("Signals & RF", "stepmetrics", "Step Response Metrics",
+     "A step response with the rise time, overshoot and settling time measured from the settled value"),
+    ("Signals & RF", "jitterbathtub", "Jitter Bathtub",
+     "Bit error rate against sampling position, with both walls extrapolated in Q to 1e-12"),
+    ("Fluid & Field Dynamics", "pressurederivative", "Pressure Derivative Plot",
+     "A well test with the Bourdet derivative and the radial-flow plateau located"),
+    ("Materials & Chemistry", "isoconversional", "Isoconversional Plot",
+     "Activation energy against conversion by Ozawa-Flynn-Wall, so a changing mechanism shows"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -461,5 +496,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-11: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-12: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

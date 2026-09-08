@@ -146,6 +146,20 @@ NO_SCALE = {
     "Soil Water Retention Curve", "Detrended Fluctuation Analysis",
     "Poincare Plot", "Kingman Queue Curve", "Little's Law Check",
     "Regression Confidence Band",
+    # Batch 12, on the same two tests. Linearisations: the Freundlich
+    # coefficients, the hot-wire conductivity, the recession constant.
+    # Fixed geometry, a computed reference, or an axis the engine already sets:
+    # a Cole-Cole arc and its axis intercepts, two titration branches whose
+    # crossing IS the answer, tolerance limits at a fixed coverage, exponential
+    # control limits, a straight-line baseflow separation and the AREA under
+    # what it leaves, a 2% settling band, an eye opening extrapolated in Q on
+    # log axes, a Bourdet derivative on log-log axes, and an activation energy
+    # in kJ/mol against a conversion fraction.
+    "Freundlich Isotherm", "Cole-Cole Plot", "Conductometric Titration",
+    "Hot-Wire Conductivity", "Tolerance Interval Plot",
+    "Rare-Event Interval Chart", "Unit Hydrograph", "Recession Curve Analysis",
+    "Step Response Metrics", "Jitter Bathtub", "Pressure Derivative Plot",
+    "Isoconversional Plot",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

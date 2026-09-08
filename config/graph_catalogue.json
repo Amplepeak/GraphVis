@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2057,
- "engine_count": 393,
+ "entry_count": 2090,
+ "engine_count": 408,
  "categories": [
   {
    "name": "Line Plots",
@@ -8123,6 +8123,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk",
+     "engine": "Kubelka-Munk Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk · Semi-Log Y",
+     "engine": "Kubelka-Munk Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk · Logarithmic Scale",
+     "engine": "Kubelka-Munk Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk · Semi-Log X",
+     "engine": "Kubelka-Munk Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk · Semi-Log(1+x) Y",
+     "engine": "Kubelka-Munk Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk · Standardised (Z-Score)",
+     "engine": "Kubelka-Munk Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "kubelkamunk · Quantile X",
+     "engine": "Kubelka-Munk Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Diffuse reflectance turned into an absorption-like function, with the band gap where the axis allows — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -8701,6 +8778,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "tolerance",
+     "engine": "Tolerance Interval Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Limits containing 95% of the population with 95% confidence, beside the interval for the mean",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -9073,6 +9161,83 @@
      "scale": null,
      "advanced": false,
      "description": "The running log-likelihood ratio against Wald's two stopping boundaries",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari",
+     "engine": "Multi-Vari Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari · Semi-Log Y",
+     "engine": "Multi-Vari Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari · Logarithmic Scale",
+     "engine": "Multi-Vari Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari · Semi-Log X",
+     "engine": "Multi-Vari Chart",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari · Semi-Log(1+x) Y",
+     "engine": "Multi-Vari Chart",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari · Standardised (Z-Score)",
+     "engine": "Multi-Vari Chart",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "multivari · Quantile X",
+     "engine": "Multi-Vari Chart",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Readings grouped by part and coloured by operator, with the variation split three ways — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -12101,6 +12266,17 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Pump curve against system curve, with the duty point where they cross — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "pressurederivative",
+     "engine": "Pressure Derivative Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A well test with the Bourdet derivative and the radial-flow plateau located",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -16772,6 +16948,61 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "freundlich",
+     "engine": "Freundlich Isotherm",
+     "scale": null,
+     "advanced": false,
+     "description": "log qe against log Ce, giving Kf and 1/n - the companion to Langmuir",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "colecole",
+     "engine": "Cole-Cole Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Imaginary against real permittivity with a fitted arc, its intercepts and its depression",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "conductometric",
+     "engine": "Conductometric Titration",
+     "scale": null,
+     "advanced": false,
+     "description": "Conductivity against titrant with both straight branches fitted and their crossing",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "hotwire",
+     "engine": "Hot-Wire Conductivity",
+     "scale": null,
+     "advanced": false,
+     "description": "Temperature rise against ln time, giving the thermal conductivity from the slope",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "isoconversional",
+     "engine": "Isoconversional Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Activation energy against conversion by Ozawa-Flynn-Wall, so a changing mechanism shows",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -18384,6 +18615,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti",
+     "engine": "Spaghetti Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Every subject's own trajectory with the mean over the top",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti · Semi-Log Y",
+     "engine": "Spaghetti Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Every subject's own trajectory with the mean over the top — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti · Logarithmic Scale",
+     "engine": "Spaghetti Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Every subject's own trajectory with the mean over the top — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti · Semi-Log X",
+     "engine": "Spaghetti Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Every subject's own trajectory with the mean over the top — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti · Semi-Log(1+x) Y",
+     "engine": "Spaghetti Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Every subject's own trajectory with the mean over the top — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti · Standardised (Z-Score)",
+     "engine": "Spaghetti Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Every subject's own trajectory with the mean over the top — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "spaghetti · Quantile X",
+     "engine": "Spaghetti Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Every subject's own trajectory with the mean over the top — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -18850,6 +19158,17 @@
      "advanced": true,
      "description": "Defects per unit area, limits varying with the area inspected — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "🟣",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Statistical Process Control",
+     "name": "rareevent",
+     "engine": "Rare-Event Interval Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Time between rare events with exponential limits, so a cluster shows as a short gap",
+     "preview": "",
      "thumbnail": "",
      "pack": "engineering"
     }
@@ -19636,6 +19955,28 @@
      "scale": null,
      "advanced": false,
      "description": "Water content against log suction, with field capacity, wilting point and available water",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "unithydrograph",
+     "engine": "Unit Hydrograph",
+     "scale": null,
+     "advanced": false,
+     "description": "A storm hydrograph with baseflow separated, giving the peak, time to peak and runoff volume",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "recession",
+     "engine": "Recession Curve Analysis",
+     "scale": null,
+     "advanced": false,
+     "description": "The falling limb on a log ordinate, giving the recession constant and the halving time",
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
@@ -21318,6 +21659,28 @@
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "stepmetrics",
+     "engine": "Step Response Metrics",
+     "scale": null,
+     "advanced": false,
+     "description": "A step response with the rise time, overshoot and settling time measured from the settled value",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "jitterbathtub",
+     "engine": "Jitter Bathtub",
+     "scale": null,
+     "advanced": false,
+     "description": "Bit error rate against sampling position, with both walls extrapolated in Q to 1e-12",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
     }
    ],
    "pack": "physics"
@@ -22914,31 +23277,31 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 800
+   "entryCount": 801
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 610
+   "entryCount": 624
   },
   {
    "id": "earth",
    "name": "Earth & Environment",
    "description": "Map projections, GIS, terrain, hydrology, geology and oceanography.",
-   "entryCount": 202
+   "entryCount": 204
   },
   {
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 307
+   "entryCount": 321
   },
   {
    "id": "physics",
    "name": "Physics & Signals",
    "description": "Spectral analysis, signal imaging, RF and control, and volume visualisation.",
-   "entryCount": 138
+   "entryCount": 140
   }
  ]
 }

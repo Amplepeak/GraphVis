@@ -1274,6 +1274,155 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 12's inputs. Two of them are built by INVERTING the thing the
+    // engine will compute: the reflectance column comes from an F(R) with a
+    // known 2.40 eV edge, and the isoconversional temperatures come from the
+    // Ozawa-Flynn-Wall relation for exactly 150 kJ/mol. If the engine's
+    // arithmetic is right it has to give those back.
+    QVector<double> reflectEnergy,reflectance;
+    QVector<double> freundlichCe,freundlichQe;
+    QVector<double> coleReal,coleImaginary;
+    QVector<double> titrantVolume,titrantConductivity;
+    QVector<double> wireTime,wireRise,wirePower;
+    QVector<double> variPart,variValue,variOperator;
+    QVector<double> toleranceRun,toleranceValue;
+    QVector<double> rareEvent,rareTime;
+    QVector<double> repeatTime,repeatValue,repeatSubject;
+    QVector<double> stormTime,stormDischarge;
+    QVector<double> recessionTime,recessionDischarge;
+    QVector<double> settleTime,settleResponse;
+    QVector<double> jitterPosition,jitterRate;
+    QVector<double> wellTime,wellPressure;
+    QVector<double> isoRate,isoTemperature,isoConversion;
+    {
+        quint32 grain=1234567891u;
+        const auto wobble=[&grain]{
+            double u=0.0;
+            for(int k=0;k<12;++k){
+                grain^=grain<<13; grain^=grain>>17; grain^=grain<<5;
+                u+=double(grain)/4294967296.0;
+            }
+            return u-6.0;
+        };
+        for(int i=0;i<80;++i){
+            const double energy=1.5+double(i)*(2.0/79.0);
+            const double f=std::sqrt((energy>2.40)?4.0e4*(energy-2.40):0.0)/energy;
+            reflectEnergy.append(energy);
+            reflectance.append((1.0+f)-std::sqrt((1.0+f)*(1.0+f)-1.0));
+        }
+        for(int i=1;i<=12;++i){
+            const double ce=double(i)*4.0;
+            freundlichCe.append(ce); freundlichQe.append(3.0*std::pow(ce,0.4));
+        }
+        // A Cole-Cole arc with alpha 0.3, so the depression must be 27 degrees
+        // and the two axis intercepts 2 and 10.
+        {
+            const double einf=2.0,es=10.0,beta=0.7;
+            for(int i=0;i<60;++i){
+                const double x=std::pow(10.0,-3.0+6.0*double(i)/59.0);
+                const double m=std::pow(x,beta);
+                const double re=1.0+m*std::cos(beta*M_PI/2.0);
+                const double im=m*std::sin(beta*M_PI/2.0);
+                const double d=re*re+im*im;
+                coleReal.append(einf+(es-einf)*re/d);
+                coleImaginary.append((es-einf)*im/d);
+            }
+        }
+        for(int i=0;i<=20;++i){
+            const double v=double(i);
+            titrantVolume.append(v);
+            titrantConductivity.append(v<10.0?100.0-8.0*v:20.0+4.0*(v-10.0));
+        }
+        for(int i=1;i<=40;++i){
+            const double t=double(i)*0.5;
+            wireTime.append(t);
+            wireRise.append(2.0+10.0/(4.0*M_PI*0.5)*std::log(t));
+            wirePower.append(10.0);
+        }
+        for(int part=1;part<=5;++part)
+            for(int op=1;op<=3;++op)
+                for(int rep=0;rep<3;++rep){
+                    variPart.append(double(part));
+                    variOperator.append(double(op));
+                    variValue.append(10.0*double(part)+0.8*double(op)+0.3*wobble());
+                }
+        for(int i=0;i<30;++i){
+            toleranceRun.append(double(i+1));
+            toleranceValue.append(100.0+5.0*wobble());
+        }
+        // Exponential intervals by the inverse transform, and two hundred of
+        // them: with forty the sample mean of an exponential is eight per cent
+        // out by chance, which looks like a defect and is not.
+        {
+            double at=0.0;
+            for(int i=0;i<200;++i){
+                grain^=grain<<13; grain^=grain>>17; grain^=grain<<5;
+                const double u=qBound(1e-9,double(grain)/4294967296.0,1.0-1e-9);
+                at+=-50.0*std::log(u);
+                rareEvent.append(double(i+1)); rareTime.append(at);
+            }
+        }
+        for(int subject=1;subject<=20;++subject)
+            for(int i=0;i<8;++i){
+                repeatTime.append(double(i)); repeatSubject.append(double(subject));
+                repeatValue.append(20.0+2.0*double(i)+0.5*double(subject)+wobble());
+            }
+        // Baseflow 5 with a triangular direct pulse from 2 to 14 peaking 40
+        // above it at 6: peak 45, time to peak 4, runoff volume 0.5*12*40 = 240.
+        for(int i=0;i<=40;++i){
+            const double t=double(i)*0.5;
+            double direct=0.0;
+            if(t>2.0&&t<=6.0) direct=40.0*(t-2.0)/4.0;
+            else if(t>6.0&&t<14.0) direct=40.0*(14.0-t)/8.0;
+            stormTime.append(t); stormDischarge.append(5.0+direct);
+        }
+        for(int i=0;i<=30;++i){
+            const double t=double(i);
+            recessionTime.append(t); recessionDischarge.append(100.0*std::exp(-0.2*t));
+        }
+        // Long enough to have settled. At six time units the ringing is still
+        // four per cent, which biases the final value and every metric measured
+        // against it; at twelve it is below a tenth of a per cent.
+        {
+            const double damping=0.3,natural=2.0;
+            const double ringing=natural*std::sqrt(1.0-damping*damping);
+            const double phase=std::acos(damping);
+            for(int i=0;i<=600;++i){
+                const double t=double(i)*0.02;
+                settleTime.append(t);
+                settleResponse.append(1.0-std::exp(-damping*natural*t)
+                                        /std::sqrt(1.0-damping*damping)
+                                        *std::sin(ringing*t+phase));
+            }
+        }
+        // Transitions at 0.1 and 0.9 with sigma 0.03, so the eye opening
+        // extrapolated to one error in a trillion must be 0.311 to 0.689.
+        for(int i=0;i<=70;++i){
+            const double x=0.15+double(i)*0.01;
+            jitterPosition.append(x);
+            jitterRate.append(0.5*std::erfc(((x-0.1)/0.03)/std::sqrt(2.0))
+                             +0.5*std::erfc(((0.9-x)/0.03)/std::sqrt(2.0)));
+        }
+        // Wellbore storage first, then radial flow with a slope of 20 per
+        // natural log of time - so the derivative plateau must be exactly 20.
+        for(int i=0;i<60;++i){
+            const double t=std::pow(10.0,-2.0+4.0*double(i)/59.0);
+            wellTime.append(t);
+            wellPressure.append(t<0.1?200.0*t:20.0*std::log(t/0.1)+20.0);
+        }
+        {
+            const double factor=18978.0;   // 1.052 * 150000 / 8.3145
+            const double rates[]={2.0,5.0,10.0,20.0,40.0};
+            for(double beta:rates)
+                for(int k=1;k<=19;++k){
+                    const double share=0.05*double(k);
+                    isoRate.append(beta);
+                    isoTemperature.append(factor/(33.24+2.0*share-std::log(beta)));
+                    isoConversion.append(share);
+                }
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1468,7 +1617,7 @@ bool runEngineSweep(){
         {QStringLiteral("Operating Characteristic Curve"),
             {column("n",planSize),column("accept",planAccept)}},
         {QStringLiteral("Cottrell Plot"),
-            {column("time",stepTime),column("current",stepCurrent)}},
+            {column("time",settleTime),column("current",stepCurrent)}},
         {QStringLiteral("Coulombic Efficiency Trend"),
             {column("cycle",cycleIndex),column("efficiency",cycleEfficiency)}},
         {QStringLiteral("Biplot"),
@@ -1677,6 +1826,40 @@ bool runEngineSweep(){
             {column("day",burnDay),column("remaining",burnRemaining)}},
         {QStringLiteral("Regression Confidence Band"),
             {column("x",bandPredictor),column("y",bandResponse)}},
+        // Batch 12.
+        {QStringLiteral("Kubelka-Munk Plot"),
+            {column("eV",reflectEnergy),column("R",reflectance)}},
+        {QStringLiteral("Freundlich Isotherm"),
+            {column("Ce",freundlichCe),column("qe",freundlichQe)}},
+        {QStringLiteral("Cole-Cole Plot"),
+            {column("real",coleReal),column("imaginary",coleImaginary)}},
+        {QStringLiteral("Conductometric Titration"),
+            {column("volume",titrantVolume),column("conductivity",titrantConductivity)}},
+        {QStringLiteral("Hot-Wire Conductivity"),
+            {column("time",wireTime),column("rise",wireRise),column("q",wirePower)}},
+        {QStringLiteral("Multi-Vari Chart"),
+            {column("part",variPart),column("value",variValue),
+             column("operator",variOperator)}},
+        {QStringLiteral("Tolerance Interval Plot"),
+            {column("run",toleranceRun),column("value",toleranceValue)}},
+        {QStringLiteral("Rare-Event Interval Chart"),
+            {column("event",rareEvent),column("time",rareTime)}},
+        {QStringLiteral("Spaghetti Plot"),
+            {column("time",repeatTime),column("value",repeatValue),
+             column("subject",repeatSubject)}},
+        {QStringLiteral("Unit Hydrograph"),
+            {column("time",stormTime),column("discharge",stormDischarge)}},
+        {QStringLiteral("Recession Curve Analysis"),
+            {column("time",recessionTime),column("discharge",recessionDischarge)}},
+        {QStringLiteral("Step Response Metrics"),
+            {column("time",settleTime),column("response",settleResponse)}},
+        {QStringLiteral("Jitter Bathtub"),
+            {column("position",jitterPosition),column("BER",jitterRate)}},
+        {QStringLiteral("Pressure Derivative Plot"),
+            {column("time",wellTime),column("dp",wellPressure)}},
+        {QStringLiteral("Isoconversional Plot"),
+            {column("beta",isoRate),column("T",isoTemperature),
+             column("alpha",isoConversion)}},
     };
 
     for(const QString& engine:engines){
