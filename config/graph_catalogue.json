@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2009,
- "engine_count": 375,
+ "entry_count": 2057,
+ "engine_count": 393,
  "categories": [
   {
    "name": "Line Plots",
@@ -6168,6 +6168,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "dfa",
+     "engine": "Detrended Fluctuation Analysis",
+     "scale": null,
+     "advanced": false,
+     "description": "Fluctuation against window size on log-log axes, giving the scaling exponent",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
     }
    ],
    "pack": "physics"
@@ -8035,6 +8046,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": null,
+     "advanced": false,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks · Semi-Log Y",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks · Logarithmic Scale",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks · Semi-Log X",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks · Semi-Log(1+x) Y",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks · Standardised (Z-Score)",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "chrompeaks · Quantile X",
+     "engine": "Chromatogram Peak Metrics",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A chromatogram with plate count, tailing factor and resolution computed from it — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -8599,6 +8687,17 @@
      "scale": null,
      "advanced": false,
      "description": "Power against sample size per effect size, with the size needed for 80% power",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "confidenceband",
+     "engine": "Regression Confidence Band",
+     "scale": null,
+     "advanced": false,
+     "description": "A fit with the band for the line and the wider band for the next observation",
      "preview": "",
      "thumbnail": "",
      "pack": "base"
@@ -10816,6 +10915,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "growthrate",
+     "engine": "Growth Rate (OD)",
+     "scale": null,
+     "advanced": false,
+     "description": "Optical density on a log ordinate with the growth rate fitted in the exponential window",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -11204,6 +11314,83 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Retention against age rather than calendar date, so cohorts can be compared — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown",
+     "engine": "Burndown Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Work remaining over time with the straight-line reference and the projected finish",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown · Semi-Log Y",
+     "engine": "Burndown Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Work remaining over time with the straight-line reference and the projected finish — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown · Logarithmic Scale",
+     "engine": "Burndown Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Work remaining over time with the straight-line reference and the projected finish — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown · Semi-Log X",
+     "engine": "Burndown Chart",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Work remaining over time with the straight-line reference and the projected finish — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown · Semi-Log(1+x) Y",
+     "engine": "Burndown Chart",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Work remaining over time with the straight-line reference and the projected finish — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown · Standardised (Z-Score)",
+     "engine": "Burndown Chart",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Work remaining over time with the straight-line reference and the projected finish — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "burndown · Quantile X",
+     "engine": "Burndown Chart",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Work remaining over time with the straight-line reference and the projected finish — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": "",
      "pack": "base"
@@ -15061,6 +15248,28 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Logistics & Infrastructure",
+     "name": "kingman",
+     "engine": "Kingman Queue Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Waiting time against utilisation, over the rho/(1-rho) reference",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Logistics & Infrastructure",
+     "name": "littleslaw",
+     "engine": "Little's Law Check",
+     "scale": null,
+     "advanced": false,
+     "description": "Work in progress against arrival rate times lead time, tested against the identity",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -16519,6 +16728,50 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "langmuir",
+     "engine": "Langmuir Isotherm",
+     "scale": null,
+     "advanced": false,
+     "description": "Ce/qe against Ce, giving the saturation capacity, the affinity and the separation factor",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "zeta",
+     "engine": "Zeta Potential Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Surface charge against pH with the isoelectric point and the stability bands",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "distillation",
+     "engine": "Distillation Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Boiling temperature against volume recovered, with T10, T50 and T90",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "hysteresis",
+     "engine": "Hysteresis Loop (B-H)",
+     "scale": null,
+     "advanced": false,
+     "description": "Flux density against field, with remanence, coercivity and the loss per cycle",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -17955,6 +18208,182 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "qpcr",
+     "engine": "qPCR Standard Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Threshold cycle against log quantity, reported as amplification efficiency",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting",
+     "engine": "Melting Curve (Tm)",
+     "scale": null,
+     "advanced": false,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile",
+     "engine": "Growth Percentile Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "A measurement against age with percentile bands taken from this population",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "poincare",
+     "engine": "Poincare Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Each interval against the next, with the SD1 and SD2 ellipse",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile · Semi-Log Y",
+     "engine": "Growth Percentile Chart",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A measurement against age with percentile bands taken from this population — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile · Logarithmic Scale",
+     "engine": "Growth Percentile Chart",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A measurement against age with percentile bands taken from this population — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile · Semi-Log X",
+     "engine": "Growth Percentile Chart",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A measurement against age with percentile bands taken from this population — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile · Semi-Log(1+x) Y",
+     "engine": "Growth Percentile Chart",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A measurement against age with percentile bands taken from this population — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile · Standardised (Z-Score)",
+     "engine": "Growth Percentile Chart",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A measurement against age with percentile bands taken from this population — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "percentile · Quantile X",
+     "engine": "Growth Percentile Chart",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A measurement against age with percentile bands taken from this population — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting · Semi-Log Y",
+     "engine": "Melting Curve (Tm)",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting · Logarithmic Scale",
+     "engine": "Melting Curve (Tm)",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting · Semi-Log X",
+     "engine": "Melting Curve (Tm)",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting · Semi-Log(1+x) Y",
+     "engine": "Melting Curve (Tm)",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting · Standardised (Z-Score)",
+     "engine": "Melting Curve (Tm)",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "melting · Quantile X",
+     "engine": "Melting Curve (Tm)",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Fluorescence with its negative derivative over it, so Tm is the derivative peak — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -19199,6 +19628,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "retention",
+     "engine": "Soil Water Retention Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Water content against log suction, with field capacity, wilting point and available water",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
     }
    ],
    "pack": "earth"
@@ -19730,6 +20170,83 @@
      "scale": null,
      "advanced": false,
      "description": "Time-current curves per device on log-log axes, with the tightest coordination interval",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed",
+     "engine": "Torque-Speed Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed · Semi-Log Y",
+     "engine": "Torque-Speed Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed · Logarithmic Scale",
+     "engine": "Torque-Speed Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed · Semi-Log X",
+     "engine": "Torque-Speed Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed · Semi-Log(1+x) Y",
+     "engine": "Torque-Speed Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed · Standardised (Z-Score)",
+     "engine": "Torque-Speed Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "torquespeed · Quantile X",
+     "engine": "Torque-Speed Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Motor torque against load torque, with the starting, breakdown and operating points — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -20787,6 +21304,17 @@
      "scale": null,
      "advanced": false,
      "description": "A resonance with its half-power points, giving the quality factor and the damping ratio",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "pattern",
+     "engine": "Radiation Pattern",
+     "scale": null,
+     "advanced": false,
+     "description": "Gain against bearing with the beamwidth, the front-to-back ratio and the sidelobe level",
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
@@ -22386,31 +22914,31 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 792
+   "entryCount": 800
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 597
+   "entryCount": 610
   },
   {
    "id": "earth",
    "name": "Earth & Environment",
    "description": "Map projections, GIS, terrain, hydrology, geology and oceanography.",
-   "entryCount": 201
+   "entryCount": 202
   },
   {
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 283
+   "entryCount": 307
   },
   {
    "id": "physics",
    "name": "Physics & Signals",
    "description": "Spectral analysis, signal imaging, RF and control, and volume visualisation.",
-   "entryCount": 136
+   "entryCount": 138
   }
  ]
 }

@@ -1155,6 +1155,125 @@ bool runEngineSweep(){
         for(int i=0;i<60;++i){ trialIndex.append(double(i)); trialOutcome.append(0.0); }
     }
 
+    // Batch 11's inputs. The chromatogram is two gaussians whose plate counts
+    // and resolution are known in closed form; the hysteresis loop is an
+    // ellipse whose area is pi*Hm*Bm*sin(phase); the DFA record is white noise,
+    // which is the one input that can show whether the exponent is biased.
+    QVector<double> chromTime,chromSignal;
+    QVector<double> langmuirCe,langmuirQe;
+    QVector<double> zetaPh,zetaPotential;
+    QVector<double> distilRecovered,distilTemperature;
+    QVector<double> pcrQuantity,pcrThreshold;
+    QVector<double> meltTemperature,meltFluorescence;
+    QVector<double> cultureTime,cultureDensity;
+    QVector<double> childAge,childHeight;
+    QVector<double> fieldStrength,fluxDensity;
+    QVector<double> motorSpeed,motorTorque,loadTorque;
+    QVector<double> patternBearing,patternGain;
+    QVector<double> suctionHead,waterContent;
+    QVector<double> dfaIndex,dfaValue;
+    QVector<double> beatIndex,beatInterval;
+    QVector<double> queueUtilisation,queueWait;
+    QVector<double> arrivalRate,workInProgress,leadTime;
+    QVector<double> burnDay,burnRemaining;
+    QVector<double> bandPredictor,bandResponse;
+    {
+        quint32 state=1234567891u;
+        const auto deviate=[&state]{
+            double u=0.0;
+            for(int k=0;k<12;++k){
+                state^=state<<13; state^=state>>17; state^=state<<5;
+                u+=double(state)/4294967296.0;
+            }
+            return u-6.0;
+        };
+        for(int i=0;i<=1200;++i){
+            const double t=double(i)*0.01;
+            chromTime.append(t);
+            chromSignal.append(std::exp(-0.5*std::pow((t-5.0)/0.2,2.0))
+                              +0.8*std::exp(-0.5*std::pow((t-7.0)/0.25,2.0)));
+        }
+        for(int i=1;i<=12;++i){
+            const double ce=double(i)*5.0;
+            langmuirCe.append(ce); langmuirQe.append(50.0*0.2*ce/(1.0+0.2*ce));
+        }
+        for(int i=0;i<=10;++i){ zetaPh.append(double(i)); zetaPotential.append(40.0-10.0*double(i)); }
+        for(int i=0;i<=20;++i){
+            const double pct=double(i)*5.0;
+            distilRecovered.append(pct); distilTemperature.append(50.0+2.0*pct);
+        }
+        // A slope of -3.32193 is exactly a doubling every cycle, so the
+        // efficiency must come back at 100.0%.
+        for(int i=0;i<6;++i){
+            pcrQuantity.append(std::pow(10.0,double(i)));
+            pcrThreshold.append(40.0-3.32193*double(i));
+        }
+        for(int i=0;i<=200;++i){
+            const double t=50.0+double(i)*0.15;
+            meltTemperature.append(t);
+            meltFluorescence.append(1.0/(1.0+std::exp((t-62.0)/1.2)));
+        }
+        for(int i=0;i<=40;++i){
+            const double t=double(i)*0.25;
+            double density;
+            if(t<2.0) density=0.02;
+            else if(t<8.0) density=0.02*std::exp(0.5*(t-2.0));
+            else density=0.02*std::exp(3.0);
+            cultureTime.append(t); cultureDensity.append(density);
+        }
+        for(int i=0;i<400;++i){
+            const double age=double(i%40)*0.5;
+            childAge.append(age); childHeight.append(50.0+4.0*age+3.0*deviate());
+        }
+        for(int i=0;i<=360;++i){
+            const double theta=2.0*M_PI*double(i)/360.0;
+            fieldStrength.append(100.0*std::cos(theta));
+            fluxDensity.append(1.5*std::cos(theta-30.0*M_PI/180.0));
+        }
+        for(int i=0;i<=150;++i){
+            const double n=double(i)*10.0;
+            motorSpeed.append(n);
+            motorTorque.append(50.0+250.0*std::sin(M_PI*n/1500.0));
+            loadTorque.append(30.0+0.00008*n*n);
+        }
+        // A beam with a real sidelobe 20 dB down, so the sidelobe level can be
+        // told apart from the main lobe's own skirt.
+        for(int i=0;i<180;++i){
+            const double theta=-180.0+double(i)*2.0;
+            double main=-3.0*(theta/30.0)*(theta/30.0);
+            if(main<-40.0) main=-40.0;
+            const double side=-20.0-0.05*(std::abs(theta)-120.0)*(std::abs(theta)-120.0);
+            patternBearing.append(theta);
+            patternGain.append(qMax(main,side));
+        }
+        {
+            const double saturated=0.45,residual=0.08,alpha=0.02,shape=1.5;
+            for(int i=0;i<=60;++i){
+                const double head=std::pow(10.0,double(i)/12.0);
+                suctionHead.append(head);
+                waterContent.append(residual+(saturated-residual)
+                    /std::pow(1.0+std::pow(alpha*head,shape),1.0-1.0/shape));
+            }
+        }
+        for(int i=0;i<4096;++i){ dfaIndex.append(double(i)); dfaValue.append(deviate()); }
+        for(int i=0;i<1000;++i){ beatIndex.append(double(i)); beatInterval.append(800.0+20.0*deviate()); }
+        for(int i=1;i<=18;++i){
+            const double rho=0.05*double(i);
+            queueUtilisation.append(rho); queueWait.append(2.0*rho/(1.0-rho));
+        }
+        // Little's law made to hold exactly, so any departure the engine
+        // reports is the engine's own arithmetic.
+        for(int i=1;i<=20;++i){
+            const double rate=double(i)*0.5,lead=3.0+0.1*double(i);
+            arrivalRate.append(rate); workInProgress.append(rate*lead); leadTime.append(lead);
+        }
+        for(int i=0;i<=10;++i){ burnDay.append(double(i)); burnRemaining.append(100.0-9.0*double(i)); }
+        for(int i=0;i<40;++i){
+            const double x=double(i)*0.5;
+            bandPredictor.append(x); bandResponse.append(3.0+2.0*x+1.5*deviate());
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1519,6 +1638,45 @@ bool runEngineSweep(){
             {column("n",designSize),column("d",designEffect)}},
         {QStringLiteral("Sequential Test Boundaries"),
             {column("trial",trialIndex),column("outcome",trialOutcome)}},
+        // Batch 11.
+        {QStringLiteral("Chromatogram Peak Metrics"),
+            {column("time",chromTime),column("signal",chromSignal)}},
+        {QStringLiteral("Langmuir Isotherm"),
+            {column("Ce",langmuirCe),column("qe",langmuirQe)}},
+        {QStringLiteral("Zeta Potential Curve"),
+            {column("pH",zetaPh),column("zeta",zetaPotential)}},
+        {QStringLiteral("Distillation Curve"),
+            {column("recovered",distilRecovered),column("T",distilTemperature)}},
+        {QStringLiteral("qPCR Standard Curve"),
+            {column("quantity",pcrQuantity),column("Ct",pcrThreshold)}},
+        {QStringLiteral("Melting Curve (Tm)"),
+            {column("temperature",meltTemperature),column("fluorescence",meltFluorescence)}},
+        {QStringLiteral("Growth Rate (OD)"),
+            {column("time",cultureTime),column("OD",cultureDensity)}},
+        {QStringLiteral("Growth Percentile Chart"),
+            {column("age",childAge),column("height",childHeight)}},
+        {QStringLiteral("Hysteresis Loop (B-H)"),
+            {column("H",fieldStrength),column("B",fluxDensity)}},
+        {QStringLiteral("Torque-Speed Curve"),
+            {column("speed",motorSpeed),column("motor",motorTorque),
+             column("load",loadTorque)}},
+        {QStringLiteral("Radiation Pattern"),
+            {column("bearing",patternBearing),column("gain",patternGain)}},
+        {QStringLiteral("Soil Water Retention Curve"),
+            {column("suction",suctionHead),column("theta",waterContent)}},
+        {QStringLiteral("Detrended Fluctuation Analysis"),
+            {column("i",dfaIndex),column("value",dfaValue)}},
+        {QStringLiteral("Poincare Plot"),
+            {column("beat",beatIndex),column("RR",beatInterval)}},
+        {QStringLiteral("Kingman Queue Curve"),
+            {column("rho",queueUtilisation),column("wait",queueWait)}},
+        {QStringLiteral("Little's Law Check"),
+            {column("arrival",arrivalRate),column("WIP",workInProgress),
+             column("lead",leadTime)}},
+        {QStringLiteral("Burndown Chart"),
+            {column("day",burnDay),column("remaining",burnRemaining)}},
+        {QStringLiteral("Regression Confidence Band"),
+            {column("x",bandPredictor),column("y",bandResponse)}},
     };
 
     for(const QString& engine:engines){

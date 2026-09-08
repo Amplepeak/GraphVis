@@ -132,6 +132,20 @@ NO_SCALE = {
     "Lactate Threshold Curve", "Half-Power Bandwidth", "Cumulative Vehicle Count",
     "Bass Diffusion Curve", "Pareto Chart", "Statistical Power Curve",
     "Sequential Test Boundaries",
+    # Batch 11, on the same two tests. Linearisations: the Langmuir capacity and
+    # affinity, the qPCR efficiency, the growth rate, the DFA exponent, the
+    # regression bands. Fixed geometry or an axis the engine already sets: the
+    # plus and minus thirty millivolt lines, T10/T50/T90 at fixed recoveries,
+    # the field capacity and wilting point at fixed suctions on an axis that is
+    # already logarithmic, a hysteresis loop whose AREA is the loss, a
+    # Poincare ellipse and its identity line, the rho/(1-rho) reference, and
+    # Little's law's identity line. A radiation pattern has no rectangular axes
+    # at all.
+    "Langmuir Isotherm", "Zeta Potential Curve", "Distillation Curve",
+    "qPCR Standard Curve", "Growth Rate (OD)", "Hysteresis Loop (B-H)",
+    "Soil Water Retention Curve", "Detrended Fluctuation Analysis",
+    "Poincare Plot", "Kingman Queue Curve", "Little's Law Check",
+    "Regression Confidence Band",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 10.
+"""Catalogue entries for the engine expansion, batches 1 to 11.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -383,6 +383,45 @@ NEW = [
      "Power against sample size per effect size, with the size needed for 80% power"),
     ("Quality, Process & Reliability", "sprt", "Sequential Test Boundaries",
      "The running log-likelihood ratio against Wald's two stopping boundaries"),
+
+    # ---- batch 11: separation science, adsorption, molecular biology,
+    # magnetics, drives, antennas, soil physics, long-memory statistics
+    ("Spectroscopy & Chromatography", "chrompeaks", "Chromatogram Peak Metrics",
+     "A chromatogram with plate count, tailing factor and resolution computed from it"),
+    ("Materials & Chemistry", "langmuir", "Langmuir Isotherm",
+     "Ce/qe against Ce, giving the saturation capacity, the affinity and the separation factor"),
+    ("Materials & Chemistry", "zeta", "Zeta Potential Curve",
+     "Surface charge against pH with the isoelectric point and the stability bands"),
+    ("Materials & Chemistry", "distillation", "Distillation Curve",
+     "Boiling temperature against volume recovered, with T10, T50 and T90"),
+    ("Clinical & Meta-analysis", "qpcr", "qPCR Standard Curve",
+     "Threshold cycle against log quantity, reported as amplification efficiency"),
+    ("Clinical & Meta-analysis", "melting", "Melting Curve (Tm)",
+     "Fluorescence with its negative derivative over it, so Tm is the derivative peak"),
+    ("Electrochemical & Bioprocess", "growthrate", "Growth Rate (OD)",
+     "Optical density on a log ordinate with the growth rate fitted in the exponential window"),
+    ("Clinical & Meta-analysis", "percentile", "Growth Percentile Chart",
+     "A measurement against age with percentile bands taken from this population"),
+    ("Materials & Chemistry", "hysteresis", "Hysteresis Loop (B-H)",
+     "Flux density against field, with remanence, coercivity and the loss per cycle"),
+    ("Energy & Building Services", "torquespeed", "Torque-Speed Curve",
+     "Motor torque against load torque, with the starting, breakdown and operating points"),
+    ("Signals & RF", "pattern", "Radiation Pattern",
+     "Gain against bearing with the beamwidth, the front-to-back ratio and the sidelobe level"),
+    ("Earth & Ocean Science", "retention", "Soil Water Retention Curve",
+     "Water content against log suction, with field capacity, wilting point and available water"),
+    ("Signal Processing Plots", "dfa", "Detrended Fluctuation Analysis",
+     "Fluctuation against window size on log-log axes, giving the scaling exponent"),
+    ("Clinical & Meta-analysis", "poincare", "Poincare Plot",
+     "Each interval against the next, with the SD1 and SD2 ellipse"),
+    ("Logistics & Infrastructure", "kingman", "Kingman Queue Curve",
+     "Waiting time against utilisation, over the rho/(1-rho) reference"),
+    ("Logistics & Infrastructure", "littleslaw", "Little's Law Check",
+     "Work in progress against arrival rate times lead time, tested against the identity"),
+    ("Presentation & Comparison", "burndown", "Burndown Chart",
+     "Work remaining over time with the straight-line reference and the projected finish"),
+    ("Statistical Inference & Effect", "confidenceband", "Regression Confidence Band",
+     "A fit with the band for the line and the wider band for the next observation"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -422,5 +461,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-10: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-11: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))
