@@ -95,9 +95,12 @@ ToolBar {
             text: "Layout"; color: Theme.textSecondary
             visible: root.app.workspaceMode === "Visualize" && !root.compact
         }
+        // A button that opens a grouped menu now, not a combo box: twenty-one
+        // layouts in one flat list would be a list nobody reads, and the family
+        // is the question a person can actually answer first.
         LayoutPicker {
             app: root.app
-            Layout.preferredWidth: root.compact ? 130 : 168
+            Layout.preferredWidth: root.compact ? 140 : 190
             visible: root.app.workspaceMode === "Visualize"
         }
 

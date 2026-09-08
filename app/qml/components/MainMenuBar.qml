@@ -225,20 +225,38 @@ MenuBar {
 
         Menu {
             title: "Layout"
-            // The six window shapes. Notebook is the default; the rest are here
-            // rather than discarded, because which one suits a person is not
-            // something the application can decide for them.
+            // Twenty-one window shapes in five families, each taken from an
+            // application known to work rather than invented here. Grouped,
+            // because twenty-one names in one flat menu is a list nobody reads
+            // - and the family is the question you can actually answer first
+            // ("do I want a rail or a fixed frame?").
             Repeater {
-                model: root.app.uiLayoutNames
-                delegate: MenuItem {
-                    required property string modelData
-                    required property int index
-                    text: modelData
-                    checkable: true
-                    checked: root.app.uiLayout === index
-                    ToolTip.visible: hovered
-                    ToolTip.text: root.app.uiLayoutDescriptions[index]
-                    onTriggered: root.app.uiLayout = index
+                model: root.app.uiLayoutGroupList
+                delegate: Menu {
+                    id: layoutGroup
+                    required property var modelData
+                    title: layoutGroup.modelData.name
+                    Repeater {
+                        model: {
+                            var out = []
+                            var all = root.app.uiLayoutList
+                            for (var i = 0; i < all.length; ++i)
+                                if (all[i].group === layoutGroup.modelData.index)
+                                    out.push(all[i])
+                            return out
+                        }
+                        delegate: MenuItem {
+                            id: layoutEntry
+                            required property var modelData
+                            text: layoutEntry.modelData.icon + "   " + layoutEntry.modelData.name
+                            checkable: true
+                            checked: root.app.uiLayout === layoutEntry.modelData.index
+                            ToolTip.visible: layoutEntry.hovered
+                            ToolTip.text: layoutEntry.modelData.description
+                                          + "\n(after " + layoutEntry.modelData.from + ")"
+                            onTriggered: root.app.uiLayout = layoutEntry.modelData.index
+                        }
+                    }
                 }
             }
         }

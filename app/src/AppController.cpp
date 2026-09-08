@@ -1,7 +1,9 @@
 #include "AppController.h"
+#include "UiLayouts.h"
 #include "NativeApi.h"
 #include "ColourVision.h"
 #include <QDateTime>
+#include <QTime>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -233,7 +235,19 @@ AppController::~AppController(){
     runtime_=nullptr;
 }
 
-void AppController::setStatus(const QString&s){if(status_==s)return;status_=s;emit statusChanged();}
+void AppController::setStatus(const QString&s){
+    if(status_==s)return;
+    status_=s;
+    // Kept as well as shown. Capped, and the OLDEST lines go: a log that stops
+    // recording once it is full stops being a log the moment it matters.
+    if(!s.isEmpty()){
+        messageLog_.append(QStringLiteral("%1  %2")
+                           .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")),s));
+        while(messageLog_.size()>500) messageLog_.removeFirst();
+        emit messageLogChanged();
+    }
+    emit statusChanged();
+}
 void AppController::setBusy(bool value,const QString& label){busy_=value;busyLabel_=value?label:QString();emit busyChanged();}
 void AppController::setActiveDatasetId(const QString&id){if(activeDatasetId_==id)return;activeDatasetId_=id;emit activeDatasetChanged();}
 void AppController::setRendererMode(const QString& value){
@@ -1816,8 +1830,50 @@ void AppController::setPlotGridVisible(bool on){
     emit plotDisplayChanged();
 }
 
+bool AppController::notebookLayout() const{
+    return graphvis::uiLayouts().value(uiLayout_).canvas==graphvis::CanvasMode::Notebook;
+}
+
+QStringList AppController::uiLayoutNames() const{
+    QStringList out;
+    for(const graphvis::UiLayout& l:graphvis::uiLayouts()) out.append(l.name);
+    return out;
+}
+
+QStringList AppController::uiLayoutDescriptions() const{
+    QStringList out;
+    for(const graphvis::UiLayout& l:graphvis::uiLayouts()) out.append(l.description);
+    return out;
+}
+
+QVariantList AppController::uiLayoutList() const{
+    QVariantList out;
+    for(int i=0;i<graphvis::uiLayouts().size();++i){
+        QVariantMap m=graphvis::uiLayoutAsMap(graphvis::uiLayouts().at(i));
+        m.insert(QStringLiteral("index"),i);
+        out.append(m);
+    }
+    return out;
+}
+
+QVariantList AppController::uiLayoutGroupList() const{
+    QVariantList out;
+    for(int i=0;i<graphvis::uiLayoutGroups().size();++i){
+        QVariantMap m;
+        m.insert(QStringLiteral("index"),i);
+        m.insert(QStringLiteral("name"),graphvis::uiLayoutGroups().at(i).name);
+        m.insert(QStringLiteral("description"),graphvis::uiLayoutGroups().at(i).description);
+        out.append(m);
+    }
+    return out;
+}
+
+QVariantMap AppController::uiLayoutSpec() const{
+    return graphvis::uiLayoutAsMap(graphvis::uiLayouts().value(uiLayout_));
+}
+
 void AppController::setUiLayout(int layout){
-    const int clamped=qBound(0,layout,5);
+    const int clamped=qBound(0,layout,int(graphvis::uiLayouts().size())-1);
     if(uiLayout_==clamped) return;
     uiLayout_=clamped;
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))

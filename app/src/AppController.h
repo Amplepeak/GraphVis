@@ -25,6 +25,14 @@ class AppController final : public QObject {
     Q_PROPERTY(QString activeTableName READ activeTableName NOTIFY activeDatasetChanged)
     Q_PROPERTY(QStringList activeColumns READ activeColumns NOTIFY activeDatasetChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
+    // Everything that has been said in the status strip, kept.
+    //
+    // The strip shows one line and replaces it, so an import that reported
+    // "dropped 412 rows with no timestamp" was on screen for as long as it took
+    // the next message to arrive. Origin, MATLAB and every solver-carrying
+    // application keep a messages log for exactly this, and the Project and log
+    // layout gives it a place to be.
+    Q_PROPERTY(QString messageLog READ messageLog NOTIFY messageLogChanged)
     Q_PROPERTY(QString workspaceName READ workspaceName NOTIFY stateChanged)
     Q_PROPERTY(QString rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
@@ -92,6 +100,13 @@ class AppController final : public QObject {
     Q_PROPERTY(int uiLayout READ uiLayout WRITE setUiLayout NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList uiLayoutNames READ uiLayoutNames CONSTANT)
     Q_PROPERTY(QStringList uiLayoutDescriptions READ uiLayoutDescriptions CONSTANT)
+    // The layouts as records rather than as two parallel string lists. See
+    // UiLayouts.h for why: a layout that is a branch in a QML file can only
+    // differ by what someone remembered to branch on.
+    Q_PROPERTY(QVariantList uiLayoutList READ uiLayoutList CONSTANT)
+    Q_PROPERTY(QVariantList uiLayoutGroupList READ uiLayoutGroupList CONSTANT)
+    // The one currently chosen, which is what the workspace actually reads.
+    Q_PROPERTY(QVariantMap uiLayoutSpec READ uiLayoutSpec NOTIFY plotDisplayChanged)
     // True when the current layout draws several figures at once. Read by the
     // workspace; kept as its own name because that is the question it asks.
     Q_PROPERTY(bool notebookLayout READ notebookLayout NOTIFY plotDisplayChanged)
@@ -306,27 +321,13 @@ public:
     void setPlotFieldInterpolation(int mode);
     int uiLayout() const{return uiLayout_;}
     void setUiLayout(int layout);
-    bool notebookLayout() const{return uiLayout_==0;}
-    QStringList uiLayoutNames() const{
-        return {QStringLiteral("Notebook"),QStringLiteral("Inspector"),
-                QStringLiteral("Command bar"),QStringLiteral("Workflow rail"),
-                QStringLiteral("Ribbon"),QStringLiteral("Studio")};
-    }
-    QStringList uiLayoutDescriptions() const{
-        return {
-            QStringLiteral("Several figures stacked as a document, so two graphs can be "
-                           "compared side by side rather than one at a time."),
-            QStringLiteral("One scrolling column of settings on the right, no tabs. "
-                           "Nothing is ever hidden behind another tab."),
-            QStringLiteral("Almost no permanent chrome. The figure gets the whole window "
-                           "and the controls appear only while they are being used."),
-            QStringLiteral("Data, then graph, then figure, left to right — the order the "
-                           "work actually happens in."),
-            QStringLiteral("A band across the top that changes with the task, as Excel and "
-                           "Origin do."),
-            QStringLiteral("Full-bleed canvas with the controls floating over it, movable "
-                           "and closable.")};
-    }
+    bool notebookLayout() const;
+    QString messageLog() const{return messageLog_.join(QLatin1Char('\n'));}
+    QStringList uiLayoutNames() const;
+    QVariantList uiLayoutList() const;
+    QVariantList uiLayoutGroupList() const;
+    QVariantMap uiLayoutSpec() const;
+    QStringList uiLayoutDescriptions() const;
     QStringList plotFieldInterpolationNames() const{
         return {QStringLiteral("None - only the cells that were measured"),
                 QStringLiteral("Nearest - each gap takes its closest measurement"),
@@ -458,6 +459,7 @@ signals:
     void plotDisplayChanged();
     void recentsChanged();
     void graphCatalogueChanged();
+    void messageLogChanged();
     void smartRenderChanged();
     void scanChanged();
     // A loaded figure's canvas state, for QML to hand to PlotCanvas. The
@@ -489,6 +491,7 @@ private:
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
     bool plotScaleLabels_=true;
     int plotFieldInterpolation_=2;          // Linear
+    QStringList messageLog_;
     int uiLayout_=0;                        // Notebook
     // Newest first, capped. Each entry is {path, name}; visualisations are
     // {engine, variant, label}.

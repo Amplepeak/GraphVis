@@ -4,6 +4,8 @@ qt_add_executable(graphvis
   src/NativeApi.h
   src/AppController.cpp
   src/AppController.h
+  src/UiLayouts.cpp
+  src/UiLayouts.h
   src/NativeViewportWindow.cpp
   src/NativeViewportWindow.h
   src/ProjectWorkspace.cpp
@@ -124,6 +126,9 @@ set(GRAPHVIS_QML_FILES
   qml/components/CommandPalette.qml
   qml/components/RibbonBar.qml
   qml/components/AxisScaleBar.qml
+  qml/components/IconRail.qml
+  qml/components/ShelfBar.qml
+  qml/components/PageBar.qml
   qml/components/FigureCell.qml
   qml/workspaces/NotebookCanvas.qml
   qml/components/ScanPanel.qml

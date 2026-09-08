@@ -7,7 +7,7 @@ import QtQuick.Layouts
 import GraphVis
 import "../components"
 
-SplitView {
+Item {
     id:root
     required property var app
     // The plot itself, so a shell can hand it to the Publish workspace. The
@@ -31,19 +31,71 @@ SplitView {
     // The Ribbon's Find-a-graph button and the Command bar's hint both open the
     // window's palette, which the shell owns.
     signal commandRequested()
-    orientation:Qt.Horizontal
 
-    // The six window shapes.
-    //
-    // They differ in where the controls live, not in what they are: the same
-    // sidebar, the same canvas, the same menu bar. Mirroring the SplitView is
-    // what puts the controls on the right for Inspector - reordering a
-    // SplitView's children at run time is not something QML does, and two
-    // copies of the sidebar would be two things to keep in step.
+    // The window shape, read as a RECORD rather than decided by a chain of
+    // `layout === n` tests. See app/src/UiLayouts.h: the six shapes this file
+    // used to switch on all ran through the same three conditionals, so the
+    // catalogue stayed on the left and Publish stayed on top whichever one was
+    // picked. Everything structural below asks `spec` a question.
+    readonly property var spec: root.app.uiLayoutSpec
     readonly property int layout: root.app.uiLayout
-    readonly property bool sidebarDocked: root.layout !== 2 && root.layout !== 5
-    LayoutMirroring.enabled: root.layout === 1
-    LayoutMirroring.childrenInherit: false
+
+    // The enumerations, spelled out. QML has no access to the C++ enums and a
+    // bare 2 in a binding is unreadable in either language.
+    readonly property int sidebarNone: 0
+    readonly property int sidebarLeft: 1
+    readonly property int sidebarRight: 2
+    readonly property int modeTabs: 0
+    readonly property int modeInspector: 1
+    readonly property int modeRail: 2
+    readonly property int modeStack: 3
+    readonly property int bandNone: 0
+    readonly property int bandRibbon: 1
+    readonly property int bandShelves: 2
+    readonly property int bandWorkspaceTabs: 3
+    readonly property int bandAddToolbar: 4
+    readonly property int stripNone: 0
+    readonly property int stripDataTable: 1
+    readonly property int stripLog: 2
+    readonly property int stripPageBar: 3
+    readonly property int stripSections: 4
+    readonly property int canvasSingle: 0
+    readonly property int canvasNotebook: 1
+    readonly property int canvasQuadrants: 2
+    readonly property int canvasCentred: 3
+    readonly property int canvasZen: 4
+
+    readonly property bool sidebarDocked: root.spec.sidebar !== root.sidebarNone
+                                          && !root.spec.floatingTools
+    // Mirroring is still how the panel gets to the right-hand edge: reordering
+    // a SplitView's children at run time is not something QML does, and a
+    // second copy of the sidebar would be a second thing to keep in step.
+    LayoutMirroring.enabled: root.spec.sidebar === root.sidebarRight
+    LayoutMirroring.childrenInherit: true
+
+    // The panel the rail or the page bar last asked for.
+    property int chosenPanel: 0
+    // Whether the tool panel is showing at all. Only a rail that persists can
+    // shut it - on every other layout it is open, because there would be no way
+    // to get it back.
+    property bool sidebarOpen: true
+    // The second panel's title and, on the layouts that summon it, whether
+    // anything has asked for it yet.
+    readonly property string secondaryTitle: root.spec.secondaryPanel === "data"
+                                             ? "Columns" : "Axes"
+    property bool secondarySummoned: false
+    // How tall the bottom strip opens. A table wants room; a log does not.
+    readonly property int bottomHeight: root.spec.bottomStrip === root.stripDataTable ? 230
+                                      : (root.spec.bottomStrip === root.stripLog ? 150 : 40)
+
+    // The summoning layouts open their inspector when the figure is touched.
+    // Figma's asymmetry: the browse side stays shut and the edit side calls
+    // itself, so a click on the figure is enough to start editing it.
+    Connections {
+        target: root.canvas
+        enabled: root.spec.inspectorSummons && root.canvas !== null
+        function onSourceChanged() { root.secondarySummoned = true }
+    }
 
     // Opening a .gvfig restores the canvas. The controller imports the figure's
     // datasets first and only then emits this, so the columns the state names
@@ -55,18 +107,50 @@ SplitView {
             root.app.rendererMode = "Qt 2-D"
         }
     }
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        spacing: 0
+
+        // The icon rail, OUTSIDE the split.
+        //
+        // A rail is not a pane - it has one width and no reason to be dragged -
+        // so putting it in the SplitView would give it a handle that does
+        // nothing useful and let it be dragged to nothing.
+        IconRail {
+            id: leftRail
+            Layout.fillHeight: true
+            visible: root.spec.rail
+            currentIndex: root.chosenPanel
+            allowCollapse: root.spec.railPersists
+            collapsed: !root.sidebarOpen
+            onPanelChosen: (i) => { root.chosenPanel = i; root.sidebarOpen = true }
+            onCollapseToggled: root.sidebarOpen = !root.sidebarOpen
+            onCommandRequested: root.commandRequested()
+        }
+
+        SplitView {
+            id: mainSplit
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: Qt.Horizontal
+
     // The controls dock can be torn out into its own window, restoring the
     // flexibility GraphVis 17 had. The sidebar keeps its state either way.
     DockPanel {
         id: sidebarDock
         title: "GraphVis Controls"
-        visible: root.sidebarDocked || sidebarDock.floating
-        // Studio floats the controls over the figure; Command bar has none on
-        // screen at all until Ctrl+K asks for them.
-        floating: root.layout === 5
-        // The rail is narrower, because its job is to be a list of datasets and
-        // graphs rather than a full settings panel.
-        SplitView.preferredWidth: root.layout === 3 ? 330 : 400
+        visible: (root.sidebarDocked && root.sidebarOpen) || sidebarDock.floating
+        // Free docks floats the controls over the figure; Zen and Command bar
+        // have none on screen at all until Ctrl+K asks for them.
+        floating: root.spec.floatingTools
+        // Each layout says how wide its panel wants to be. A rail layout is
+        // narrower because the rail beside it is carrying the navigation.
+        SplitView.preferredWidth: root.spec.sidebarWidth
         // Explicit travel limits on both panes. Without a maximum here and a
         // minimum on the canvas, the handle could not be dragged to the right
         // and panel content was clipped instead of the panel growing.
@@ -77,7 +161,14 @@ SplitView {
         id:sidebar
         anchors.fill: parent
         app:root.app
-        inspectorMode: root.layout === 1
+        inspectorMode: root.spec.sidebarMode === root.modeInspector
+        // The tab bar disappears when something else is doing the choosing.
+        // Two controls that both claim to say which panel is open is how they
+        // end up disagreeing.
+        tabsVisible: root.spec.sidebarMode === root.modeTabs
+                     || root.spec.sidebarMode === root.modeStack
+        currentTab: root.chosenPanel
+        onCurrentTabChanged: root.chosenPanel = sidebar.currentTab
         canvas: plot
         onImportRequested: root.importRequested()
         onApplyMapping:(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)=>{
@@ -157,6 +248,7 @@ SplitView {
                                               : (plot.previewIsExact ? "" : " · preview"))
                   : "Canvas")
         floatable: root.app.rendererMode === "Qt 2-D"
+        headerVisible: root.spec.canvas !== root.canvasZen
         floatingWidth: 1040
         floatingHeight: 760
         SplitView.fillWidth: true
@@ -248,12 +340,105 @@ SplitView {
             // The Ribbon layout's band. Only in that layout: in the other five
             // the same controls are already somewhere the person can see them,
             // and a second copy is a second thing to keep in step.
+            // The band above the figure. Directly above it rather than across
+            // the whole window, because every one of these is ABOUT the figure:
+            // a ribbon of commands for it, the columns on its axes, the named
+            // arrangement it is drawn in.
             RibbonBar {
                 Layout.fillWidth: true
-                visible: root.layout === 4
+                visible: root.spec.topBand === root.bandRibbon
                 app: root.app
                 canvas: root.canvas
                 onGraphSearchRequested: root.commandRequested()
+            }
+
+            // Tableau's shelves: the mapping as permanent chrome, so "what is
+            // this figure plotting" is answered by looking rather than by
+            // opening a tab.
+            ShelfBar {
+                Layout.fillWidth: true
+                visible: root.spec.topBand === root.bandShelves
+                app: root.app
+                canvas: root.canvas
+            }
+
+            // Blender's workspace tabs: named arrangements, not documents.
+            Rectangle {
+                Layout.fillWidth: true
+                visible: root.spec.topBand === root.bandWorkspaceTabs
+                implicitHeight: 32
+                color: Theme.surfaceAlt
+                border.color: Theme.border
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    spacing: 2
+                    Repeater {
+                        model: [
+                            { name: "Explore", panel: 2 },
+                            { name: "Plot",    panel: 0 },
+                            { name: "Fit",     panel: 4 },
+                            { name: "Model",   panel: 5 },
+                            { name: "Write",   panel: 6 },
+                            { name: "Publish", panel: 7 }
+                        ]
+                        delegate: ToolButton {
+                            required property var modelData
+                            text: modelData.name
+                            font.pixelSize: 11
+                            checkable: true
+                            checked: root.chosenPanel === modelData.panel
+                            onClicked: { root.chosenPanel = modelData.panel
+                                         root.sidebarOpen = true }
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+
+            // Veusz's add-a-thing toolbar: the verbs, where the verbs are the
+            // main thing you do.
+            Rectangle {
+                Layout.fillWidth: true
+                visible: root.spec.topBand === root.bandAddToolbar
+                implicitHeight: 32
+                color: Theme.surfaceAlt
+                border.color: Theme.border
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    spacing: 4
+                    Label {
+                        text: "Add"
+                        color: Theme.textMuted
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+                    Repeater {
+                        model: [
+                            { name: "Graph",      panel: 0 },
+                            { name: "Axes",       panel: 3 },
+                            { name: "Fit",        panel: 4 },
+                            { name: "Note",       panel: -1 },
+                            { name: "Dataset",    panel: 2 }
+                        ]
+                        delegate: Button {
+                            required property var modelData
+                            text: modelData.name
+                            flat: true
+                            font.pixelSize: 11
+                            onClicked: {
+                                if (modelData.panel < 0) {
+                                    if (root.canvas) root.canvas.annotating = true
+                                    return
+                                }
+                                root.chosenPanel = modelData.panel
+                                root.sidebarOpen = true
+                            }
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
             }
 
             // Command bar and Studio hide the sidebar, so something has to say
@@ -261,7 +446,7 @@ SplitView {
             // and a shortcut nobody was told about.
             Rectangle {
                 Layout.fillWidth: true
-                visible: root.layout === 2
+                visible: root.spec.sidebar === root.sidebarNone
                 implicitHeight: 30
                 color: Theme.surfaceAlt
                 border.color: Theme.border
@@ -338,6 +523,22 @@ SplitView {
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    // The figure's own box.
+                    //
+                    // Filling, except in the Centred layout, where it is held to
+                    // a column in the middle at roughly the proportions it will
+                    // have on the page - so what you are looking at while you
+                    // work is the shape of the thing you are going to publish,
+                    // not a figure stretched to whatever the window happens to
+                    // be.
+                    Item {
+                        id: figureBox
+                        anchors.centerIn: parent
+                        readonly property bool centred: root.spec.canvas === root.canvasCentred
+                        width: figureBox.centred
+                               ? Math.min(parent.width - 48, (parent.height - 48) * 1.4)
+                               : parent.width
+                        height: figureBox.centred ? parent.height - 48 : parent.height
                     PlotCanvas {
                         id: plot
                         anchors.fill: parent
@@ -403,6 +604,7 @@ SplitView {
                             rightMargin: 12; bottomMargin: 12
                         }
                     }
+                    }
 
                 }
                 // Underneath, wrapping, dismissible.
@@ -419,5 +621,140 @@ SplitView {
             }
             }
         }
+    }
+
+    // A second panel on the OPPOSITE edge, for the layouts that keep browsing
+    // and editing visible at once rather than making them take turns. Figma's
+    // asymmetry and JupyterLab's two sidebars are both this.
+    DockPanel {
+        id: secondaryDock
+        title: root.secondaryTitle
+        visible: root.spec.secondaryPanel !== ""
+                 && (!root.spec.inspectorSummons || root.secondarySummoned)
+        SplitView.preferredWidth: root.spec.secondaryWidth
+        SplitView.minimumWidth: 220
+        SplitView.maximumWidth: Math.max(220, root.width - 420)
+        floatingWidth: 380
+        floatingHeight: 560
+
+        Loader {
+            anchors.fill: parent
+            active: secondaryDock.visible
+            sourceComponent: root.spec.secondaryPanel === "data" ? dataPanel : mapPanel
+        }
+        Component {
+            id: mapPanel
+            MappingPanel {
+                app: root.app
+                canvas: root.canvas
+                onApplyRequested: {
+                    var t = root.canvas
+                    if (!t) return
+                    t.xColumn = xValue
+                    t.yColumns = yValue ? [yValue] : []
+                    t.zColumn = zValue ? zValue : ""
+                    t.colorColumn = colorValue ? colorValue : ""
+                }
+            }
+        }
+        Component {
+            id: dataPanel
+            DataWorkspace { app: root.app }
+        }
+    }
+        }
+
+        // The right-hand rail, for the layouts that put a strip on both edges.
+        IconRail {
+            Layout.fillHeight: true
+            visible: root.spec.railRightToo
+            currentIndex: root.chosenPanel
+            onPanelChosen: (i) => { root.chosenPanel = i; root.sidebarOpen = true }
+            onCommandRequested: root.commandRequested()
+        }
+    }
+
+    // The strip along the bottom. A data table wants width and gets none in a
+    // sidebar; solver and import messages are output and belong under the thing
+    // that produced them; and the page bar is the layout's whole navigation.
+    Loader {
+        Layout.fillWidth: true
+        Layout.preferredHeight: active
+            ? (root.spec.bottomStrip === root.stripPageBar ? 44 : root.bottomHeight)
+            : 0
+        active: root.spec.bottomStrip !== root.stripNone
+        visible: active
+        sourceComponent: {
+            switch (root.spec.bottomStrip) {
+            case root.stripDataTable: return bottomData
+            case root.stripLog:       return bottomLog
+            case root.stripPageBar:   return bottomPages
+            case root.stripSections:  return bottomSections
+            default:                  return null
+            }
+        }
+    }
+    Component {
+        id: bottomData
+        DataWorkspace { app: root.app }
+    }
+    Component {
+        id: bottomLog
+        Rectangle {
+            color: Theme.surfaceAlt
+            border.color: Theme.border
+            ScrollView {
+                anchors.fill: parent
+                anchors.margins: 8
+                clip: true
+                TextArea {
+                    readOnly: true
+                    color: Theme.textSecondary
+                    font.family: "Consolas, monospace"
+                    font.pixelSize: 11
+                    text: root.app.logText
+                    wrapMode: TextArea.NoWrap
+                }
+            }
+        }
+    }
+    Component {
+        id: bottomPages
+        PageBar {
+            onPageChosen: (panel) => { root.chosenPanel = panel; root.sidebarOpen = true }
+        }
+    }
+    Component {
+        id: bottomSections
+        Rectangle {
+            color: Theme.surfaceAlt
+            border.color: Theme.border
+            // Prism's typed sections. Data, Results, Graphs and Layouts are the
+            // four kinds of sheet a project is made of there, and the tabs say
+            // which kind you are looking at rather than which document.
+            RowLayout {
+                anchors.left: parent.left
+                anchors.leftMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+                Repeater {
+                    model: [
+                        { name: "Data",    panel: 2 },
+                        { name: "Results", panel: 4 },
+                        { name: "Graphs",  panel: 0 },
+                        { name: "Layouts", panel: 7 }
+                    ]
+                    delegate: ToolButton {
+                        required property var modelData
+                        text: modelData.name
+                        font.pixelSize: 11
+                        checkable: true
+                        checked: root.chosenPanel === modelData.panel
+                        onClicked: { root.chosenPanel = modelData.panel; root.sidebarOpen = true }
+                    }
+                }
+            }
+        }
+    }
     }
 }

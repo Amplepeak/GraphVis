@@ -20,6 +20,11 @@ Item {
     // do behind the user's back. Such a panel keeps its header and loses only
     // the pop-out control.
     property bool floatable: true
+    // Zen hides the chrome. The header is the panel's title, its grip and its
+    // pop-out button, and in a layout whose whole point is that there is
+    // nothing but the figure, a 26 px strip saying "Canvas" is the one thing
+    // spoiling it.
+    property bool headerVisible: true
     property bool floating: false
     onFloatableChanged: if (!root.floatable) root.floating = false
     // Smaller than the window it came out of, and small enough to sit beside
@@ -63,7 +68,9 @@ Item {
             Layout.fillWidth: true
             // Tall enough for a combo box when the header carries controls, and
             // back to GraphVis 17's 26 px strip when it does not.
-            implicitHeight: headerActionRow.children.length > 0 ? 34 : 26
+            visible: root.headerVisible
+            implicitHeight: !root.headerVisible ? 0
+                          : (headerActionRow.children.length > 0 ? 34 : 26)
             color: Theme.surfaceAlt
             border.color: Theme.border
 
