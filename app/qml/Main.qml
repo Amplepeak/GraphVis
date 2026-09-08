@@ -182,6 +182,41 @@ ApplicationWindow {
     }
 
     FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:root.app.importNameFilters();onAccepted:root.app.importDataset(selectedFile)}
+
+    // Drop a file on the window to import it.
+    //
+    // The shortest path from "my data is in that folder" to "it is on screen"
+    // is dragging it here, and it costs one item. A DropArea handles only drag
+    // events, so it can sit over everything without taking a single click away
+    // from the controls underneath.
+    DropArea {
+        anchors.fill: parent
+        z: 9000
+        onDropped: (drop) => {
+            if (!drop.hasUrls) return
+            // Every file dropped, in the order given. The importer already
+            // queues them, which is what makes dragging a folder's worth of
+            // runs onto the window do the obvious thing.
+            for (var i = 0; i < drop.urls.length; ++i)
+                root.app.importDataset(drop.urls[i])
+            drop.accept()
+        }
+        Rectangle {
+            anchors.fill: parent
+            visible: parent.containsDrag
+            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.10)
+            border.color: Theme.accent
+            border.width: 2
+            radius: Theme.radius
+            Label {
+                anchors.centerIn: parent
+                text: "Drop to import"
+                color: Theme.text
+                font.pixelSize: 20
+                font.bold: true
+            }
+        }
+    }
     FileDialog{id:literatureDialog;title:"Open literature";nameFilters:root.app.literatureNameFilters();onAccepted:root.app.openLiterature(selectedFile)}
 
     // The window's menu bar. Settings that used to be spread across the

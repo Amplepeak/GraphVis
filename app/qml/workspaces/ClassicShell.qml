@@ -32,6 +32,7 @@ Item {
         anchors.fill: parent
         app: root.app
         visible: root.visualiseMode
+        onImportRequested: root.importRequested()
     }
     Loader {
         anchors.fill:parent

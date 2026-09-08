@@ -14,6 +14,14 @@ SplitView {
     // canvas lives here and export lives there, and without this the two never
     // met.
     readonly property alias canvas: plot
+    // Raised by the Import button in the dataset bar above the graph chooser.
+    //
+    // This is the whole reason that button did nothing. ActiveDatasetBar
+    // emitted it, ControlSidebar forwarded it - and here the chain stopped:
+    // nothing in this file listened, so the signal went nowhere and the only
+    // way to open a file was the Data tab. A signal with no receiver is
+    // indistinguishable, from the outside, from a button that is broken.
+    signal importRequested()
     orientation:Qt.Horizontal
 
     // Opening a .gvfig restores the canvas. The controller imports the figure's
@@ -43,6 +51,7 @@ SplitView {
         anchors.fill: parent
         app:root.app
         canvas: plot
+        onImportRequested: root.importRequested()
         onApplyMapping:(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)=>{
             app.applyMapping(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)
             // vtkLoader.item is a QObject as far as any static check can tell:

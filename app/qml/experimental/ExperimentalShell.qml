@@ -93,6 +93,7 @@ Rectangle {
                 anchors.fill:parent; anchors.margins:4
                 app: root.app
                 visible: root.visualiseMode
+                onImportRequested: root.importRequested()
             }
             Loader {
                 anchors.fill:parent; anchors.margins:root.app.workspaceMode==="Literature"?0:4
