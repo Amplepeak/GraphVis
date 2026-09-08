@@ -262,6 +262,44 @@ if(WIN32)
     FILES_MATCHING PATTERN "*.dll"
   )
 
+  # --------------------------------------------------------------------------
+  # Qt's own QML modules.
+  #
+  # The application's GraphVis module is compiled into the resource system and
+  # needs nothing here. Every module it IMPORTS - QtQuick, QtQuick.Controls,
+  # QtQuick.Layouts, QtQuick.Window, QtQuick.Dialogs and what those pull in -
+  # is loaded from disk at runtime and has to be beside the executable.
+  #
+  # Nothing installed them. The staged tree had exactly one folder under qml/,
+  # the application's own, and the app died at startup with:
+  #
+  #     The GraphVis QML interface failed to load. This is commonly caused by
+  #     a missing Qt/QML runtime module or an incomplete deployed plugin
+  #     directory.
+  #
+  # It was both, in fact: the same build also shipped no platform plugin. Both
+  # were left to vcpkg's applocal deploy step, which did not run, and both were
+  # then collected by globbing the directory that step was supposed to fill.
+  #
+  # vcpkg_installed is populated at configure time and cannot be empty, so a
+  # plain install(DIRECTORY) is correct and is not a deferred glob.
+  #
+  # QtTest, QmlTime and the tooling/designer trees are development aids the
+  # application never imports; .pdb files are debug symbols for someone else's
+  # libraries. Everything else is kept, including the Controls styles the app
+  # does not currently select, because a style is chosen at RUN time and a
+  # missing one fails the same way this bug did.
+  # --------------------------------------------------------------------------
+  install(DIRECTORY
+    "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/qml/"
+    DESTINATION qml
+    PATTERN "*.pdb"    EXCLUDE
+    PATTERN "QtTest"   EXCLUDE
+    PATTERN "QmlTime"  EXCLUDE
+    PATTERN "tooling"  EXCLUDE
+    PATTERN "designer" EXCLUDE
+  )
+
   install(CODE "
     # Runtime DLLs copied beside the executable by the applocal deploy step.
     file(GLOB _gv_root_dlls \"${CMAKE_BINARY_DIR}/*.dll\")
@@ -322,6 +360,20 @@ if(WIN32)
         \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/plugins/platforms \"
         \"and ${CMAKE_BINARY_DIR}/platforms.\")
     endif()
+
+    # And every QML module the interface imports. Checked one by one rather
+    # than by testing that qml/ merely exists: it DID exist, holding only the
+    # application's own module, and that is exactly the state that shipped.
+    foreach(_gv_qml_module QtQuick QtQuick/Controls QtQuick/Layouts QtQuick/Window QtQuick/Dialogs QtQml)
+      if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/qml/\${_gv_qml_module}/qmldir\")
+        message(FATAL_ERROR
+          \"QML module \${_gv_qml_module} was not installed: \"
+          \"qml/\${_gv_qml_module}/qmldir is missing from \${CMAKE_INSTALL_PREFIX}. \"
+          \"The application would start and immediately fail with 'The GraphVis \"
+          \"QML interface failed to load'. Source: \"
+          \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/qml.\")
+      endif()
+    endforeach()
   ")
 endif()
 
