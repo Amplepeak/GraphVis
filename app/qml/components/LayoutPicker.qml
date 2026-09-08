@@ -17,6 +17,18 @@ ToolButton {
     id: root
     required property var app
 
+    function layoutsIn(group) {
+        var out = []
+        var all = root.app.uiLayoutList
+        for (var i = 0; i < all.length; ++i)
+            if (all[i].group === group) out.push(all[i])
+        return out
+    }
+    function groupName(group) {
+        var groups = root.app.uiLayoutGroupList
+        return (group >= 0 && group < groups.length) ? groups[group].name : ""
+    }
+
     readonly property var current: {
         var all = root.app.uiLayoutList
         for (var i = 0; i < all.length; ++i)
@@ -33,39 +45,91 @@ ToolButton {
                   : "Choose the window's shape"
     onClicked: menu.open()
 
+    // The five families are written out rather than repeated over, because a
+    // Repeater CANNOT create a Menu: its delegate has to be an Item and Menu is
+    // not one. Doing it the other way produced five submenus that were built
+    // and never added to anything, so the picker opened onto an empty panel.
     Menu {
         id: menu
         y: root.height
 
-        Repeater {
-            model: root.app.uiLayoutGroupList
-            delegate: Menu {
-                id: groupMenu
-                required property var modelData
-                title: groupMenu.modelData.name
-
-                Repeater {
-                    // Only this family's layouts. The list is small enough that
-                    // filtering it here beats a second property per group on
-                    // the controller.
-                    model: {
-                        var out = []
-                        var all = root.app.uiLayoutList
-                        for (var i = 0; i < all.length; ++i)
-                            if (all[i].group === groupMenu.modelData.index) out.push(all[i])
-                        return out
-                    }
-                    delegate: MenuItem {
-                        id: entry
-                        required property var modelData
-                        text: entry.modelData.icon + "   " + entry.modelData.name
-                        checkable: true
-                        checked: root.app.uiLayout === entry.modelData.index
-                        ToolTip.visible: entry.hovered
-                        ToolTip.text: entry.modelData.description
-                                      + "\n(after " + entry.modelData.from + ")"
-                        onTriggered: root.app.uiLayout = entry.modelData.index
-                    }
+        Menu {
+            title: root.groupName(0)
+            Repeater {
+                model: root.layoutsIn(0)
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.icon + "   " + modelData.name
+                    checkable: true
+                    checked: root.app.uiLayout === modelData.index
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.description
+                                  + "\n(after " + modelData.from + ")"
+                    onTriggered: root.app.uiLayout = modelData.index
+                }
+            }
+        }
+        Menu {
+            title: root.groupName(1)
+            Repeater {
+                model: root.layoutsIn(1)
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.icon + "   " + modelData.name
+                    checkable: true
+                    checked: root.app.uiLayout === modelData.index
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.description
+                                  + "\n(after " + modelData.from + ")"
+                    onTriggered: root.app.uiLayout = modelData.index
+                }
+            }
+        }
+        Menu {
+            title: root.groupName(2)
+            Repeater {
+                model: root.layoutsIn(2)
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.icon + "   " + modelData.name
+                    checkable: true
+                    checked: root.app.uiLayout === modelData.index
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.description
+                                  + "\n(after " + modelData.from + ")"
+                    onTriggered: root.app.uiLayout = modelData.index
+                }
+            }
+        }
+        Menu {
+            title: root.groupName(3)
+            Repeater {
+                model: root.layoutsIn(3)
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.icon + "   " + modelData.name
+                    checkable: true
+                    checked: root.app.uiLayout === modelData.index
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.description
+                                  + "\n(after " + modelData.from + ")"
+                    onTriggered: root.app.uiLayout = modelData.index
+                }
+            }
+        }
+        Menu {
+            title: root.groupName(4)
+            Repeater {
+                model: root.layoutsIn(4)
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.icon + "   " + modelData.name
+                    checkable: true
+                    checked: root.app.uiLayout === modelData.index
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.description
+                                  + "\n(after " + modelData.from + ")"
+                    onTriggered: root.app.uiLayout = modelData.index
                 }
             }
         }

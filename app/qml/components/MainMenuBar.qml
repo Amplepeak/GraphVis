@@ -19,6 +19,21 @@ import GraphVis
 MenuBar {
     id: root
     required property var app
+
+    // The layouts of one family, and that family's name. Filtering here beats
+    // a second property per group on the controller, and both are needed
+    // because the five submenus below are written out by hand.
+    function layoutsIn(group) {
+        var out = []
+        var all = root.app.uiLayoutList
+        for (var i = 0; i < all.length; ++i)
+            if (all[i].group === group) out.push(all[i])
+        return out
+    }
+    function groupName(group) {
+        var groups = root.app.uiLayoutGroupList
+        return (group >= 0 && group < groups.length) ? groups[group].name : ""
+    }
     // The live canvas, for the items that act on the figure rather than on a
     // persisted setting. Null while a non-Qt renderer is showing.
     property var canvas: null
@@ -487,35 +502,91 @@ MenuBar {
             title: "Layout"
             // Twenty-one window shapes in five families, each taken from an
             // application known to work rather than invented here. Grouped,
-            // because twenty-one names in one flat menu is a list nobody reads
-            // - and the family is the question you can actually answer first
-            // ("do I want a rail or a fixed frame?").
-            Repeater {
-                model: root.app.uiLayoutGroupList
-                delegate: Menu {
-                    id: layoutGroup
-                    required property var modelData
-                    title: layoutGroup.modelData.name
-                    Repeater {
-                        model: {
-                            var out = []
-                            var all = root.app.uiLayoutList
-                            for (var i = 0; i < all.length; ++i)
-                                if (all[i].group === layoutGroup.modelData.index)
-                                    out.push(all[i])
-                            return out
-                        }
-                        delegate: MenuItem {
-                            id: layoutEntry
-                            required property var modelData
-                            text: layoutEntry.modelData.icon + "   " + layoutEntry.modelData.name
-                            checkable: true
-                            checked: root.app.uiLayout === layoutEntry.modelData.index
-                            ToolTip.visible: layoutEntry.hovered
-                            ToolTip.text: layoutEntry.modelData.description
-                                          + "\n(after " + layoutEntry.modelData.from + ")"
-                            onTriggered: root.app.uiLayout = layoutEntry.modelData.index
-                        }
+            // because twenty-one names in one flat menu is a list nobody reads.
+            //
+            // The five families are written out rather than repeated over,
+            // because a Repeater CANNOT create a Menu. Its delegate has to be
+            // an Item and Menu is not one, so the submenus were created and
+            // never added to anything: the Layout menu opened onto an empty
+            // panel. MenuItem is an Item, which is why every other Repeater in
+            // this file works.
+            Menu {
+                title: root.groupName(0)
+                Repeater {
+                    model: root.layoutsIn(0)
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.icon + "   " + modelData.name
+                        checkable: true
+                        checked: root.app.uiLayout === modelData.index
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.description
+                                      + "\n(after " + modelData.from + ")"
+                        onTriggered: root.app.uiLayout = modelData.index
+                    }
+                }
+            }
+            Menu {
+                title: root.groupName(1)
+                Repeater {
+                    model: root.layoutsIn(1)
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.icon + "   " + modelData.name
+                        checkable: true
+                        checked: root.app.uiLayout === modelData.index
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.description
+                                      + "\n(after " + modelData.from + ")"
+                        onTriggered: root.app.uiLayout = modelData.index
+                    }
+                }
+            }
+            Menu {
+                title: root.groupName(2)
+                Repeater {
+                    model: root.layoutsIn(2)
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.icon + "   " + modelData.name
+                        checkable: true
+                        checked: root.app.uiLayout === modelData.index
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.description
+                                      + "\n(after " + modelData.from + ")"
+                        onTriggered: root.app.uiLayout = modelData.index
+                    }
+                }
+            }
+            Menu {
+                title: root.groupName(3)
+                Repeater {
+                    model: root.layoutsIn(3)
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.icon + "   " + modelData.name
+                        checkable: true
+                        checked: root.app.uiLayout === modelData.index
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.description
+                                      + "\n(after " + modelData.from + ")"
+                        onTriggered: root.app.uiLayout = modelData.index
+                    }
+                }
+            }
+            Menu {
+                title: root.groupName(4)
+                Repeater {
+                    model: root.layoutsIn(4)
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.icon + "   " + modelData.name
+                        checkable: true
+                        checked: root.app.uiLayout === modelData.index
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.description
+                                      + "\n(after " + modelData.from + ")"
+                        onTriggered: root.app.uiLayout = modelData.index
                     }
                 }
             }
