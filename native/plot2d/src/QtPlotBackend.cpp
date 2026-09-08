@@ -4556,13 +4556,57 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     PlotSpec out=prepareSpecCore(in);
 
     // The axis transforms, on the drawn geometry.
-    if(in.xAxis.transform>AxisLog10||in.yAxis.transform>AxisLog10){
-        for(PlotSeries& s:out.series){
-            transformValues(s.x,in.xAxis.transform);
-            transformValues(s.y,in.yAxis.transform);
+    if(in.xAxis.transform>AxisLog10||in.yAxis.transform>AxisLog10
+       ||in.zAxis.transform>AxisLog10){
+        // Column-shaped engines carry one MAPPED COLUMN per series, so the
+        // transform for an axis belongs to that series' values - not to the
+        // .x/.y of every series.
+        //
+        // Doing it the other way round was quietly wrong for every 3-D engine
+        // in the catalogue: series 0, 1 and 2 are the x, y and z columns and
+        // all three keep their values in .y, so a y-axis z-score standardised
+        // the x column and the z column as well and drew a figure of three
+        // columns that had each been divided by a different column's standard
+        // deviation. It still looked like a plot.
+        const ColumnPlan plan=columnPlan(in.engine);
+        if(plan.asSeries&&plan.maximum>=3){
+            // A fixed third column: x, y and z, or x, y and the value a colour
+            // map runs over. One transform each.
+            const int transforms[3]={in.xAxis.transform,in.yAxis.transform,
+                                     in.zAxis.transform};
+            for(int i=0;i<out.series.size()&&i<3;++i)
+                transformValues(out.series[i].y,transforms[i]);
+            // Columns beyond the third are the companions of one of the first
+            // three - the two components of a vector at (x,y), the three of one
+            // at (x,y,z) - and standardising a component on its own turns a
+            // direction into a different direction. Left alone deliberately.
+        }else if(plan.asSeries){
+            // maximum 0: as many columns as are mapped, and they are PEERS -
+            // one spoke of a radar chart, one axis of parallel coordinates, one
+            // damping curve of a response spectrum. There is no third axis to
+            // give its own scale to; standardising column two and not column
+            // three would put two of the peers in different units.
+            if(!out.series.isEmpty()) transformValues(out.series[0].y,in.xAxis.transform);
+            for(int i=1;i<out.series.size();++i)
+                transformValues(out.series[i].y,in.yAxis.transform);
+        }else{
+            for(PlotSeries& s:out.series){
+                transformValues(s.x,in.xAxis.transform);
+                transformValues(s.y,in.yAxis.transform);
+            }
         }
         out.xAxis.label=transformedLabel(out.xAxis.label,in.xAxis.transform);
         out.yAxis.label=transformedLabel(out.yAxis.label,in.yAxis.transform);
+        out.zAxis.label=transformedLabel(out.zAxis.label,in.zAxis.transform);
+        // The 3-D painters take their axis names from the series labels rather
+        // than from the axes, so a transformed z column has to say so there or
+        // the cube is labelled with the units it no longer has.
+        if(plan.asSeries&&plan.maximum>=3&&out.series.size()>=3&&in.zAxis.transform>AxisLog10)
+            out.series[2].label=transformedLabel(out.series.at(2).label,in.zAxis.transform);
+        if(plan.asSeries&&out.series.size()>=1&&in.xAxis.transform>AxisLog10)
+            out.series[0].label=transformedLabel(out.series.at(0).label,in.xAxis.transform);
+        if(plan.asSeries&&out.series.size()>=2&&in.yAxis.transform>AxisLog10)
+            out.series[1].label=transformedLabel(out.series.at(1).label,in.yAxis.transform);
         // A limit set in the untransformed space means nothing afterwards, and
         // a zoom kept across a change of transform would clip the new figure to
         // a range that belongs to the old one. Dropped rather than converted:

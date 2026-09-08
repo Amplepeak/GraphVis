@@ -22,8 +22,24 @@ Item {
     property bool floatable: true
     property bool floating: false
     onFloatableChanged: if (!root.floatable) root.floating = false
-    property int floatingWidth: 820
-    property int floatingHeight: 620
+    // Smaller than the window it came out of, and small enough to sit beside
+    // it rather than over it. 820x620 was most of a laptop screen for a panel
+    // holding six controls, so a torn-out dock buried the figure it was there
+    // to change.
+    property int floatingWidth: 420
+    property int floatingHeight: 480
+    // Where the floating window opens. Set by a tear-off drag so the window
+    // appears under the pointer instead of wherever the compositor puts it;
+    // -1 means "let the window manager decide".
+    property int floatingX: -1
+    property int floatingY: -1
+
+    function tearOutAtPointer() {
+        var here = root.mapToGlobal(0, 0)
+        root.floatingX = Math.round(here.x)
+        root.floatingY = Math.round(here.y)
+        root.floating = true
+    }
     default property alias content: contentHost.data
     // Controls that belong to the panel rather than to what is inside it, laid
     // out in the header to the left of the pop-out button.
@@ -57,7 +73,46 @@ Item {
                 anchors.rightMargin: 4
                 spacing: 6
 
-                Label { text: "⠿"; color: Theme.textMuted; font.pixelSize: Theme.fontSizeSmall }
+                // A grip that grips. This was a label of the braille-dots
+                // character and nothing else - the one thing in the header that
+                // LOOKS draggable was the only thing that could not be dragged,
+                // so people pulled at it, nothing moved, and the conclusion was
+                // that the panel is fixed. Dragging it now tears the panel out
+                // and puts the new window under the pointer.
+                Item {
+                    implicitWidth: 14
+                    implicitHeight: 18
+                    Label {
+                        anchors.centerIn: parent
+                        text: "⠿"
+                        color: gripHover.hovered ? Theme.text : Theme.textMuted
+                        font.pixelSize: Theme.fontSizeSmall
+                    }
+                    HoverHandler {
+                        id: gripHover
+                        cursorShape: Qt.OpenHandCursor
+                    }
+                    ToolTip.visible: gripHover.hovered
+                    ToolTip.text: root.floating
+                                  ? "Drag the window by its own title bar"
+                                  : "Drag out into a window of its own"
+                    DragHandler {
+                        id: tearOff
+                        target: null
+                        enabled: root.floatable && !root.floating
+                        // Far enough that a wobble while clicking the header
+                        // does not throw the panel into a window.
+                        onActiveChanged: if (!active) tearOff.armed = false
+                        property bool armed: false
+                        onTranslationChanged: {
+                            if (tearOff.armed || !tearOff.active) return
+                            if (Math.abs(tearOff.translation.x) + Math.abs(tearOff.translation.y) < 24)
+                                return
+                            tearOff.armed = true
+                            root.tearOutAtPointer()
+                        }
+                    }
+                }
                 Label {
                     text: root.title
                     color: Theme.textSecondary
@@ -114,12 +169,21 @@ Item {
         id: floater
         width: root.floatingWidth
         height: root.floatingHeight
-        minimumWidth: 320
-        minimumHeight: 240
+        // Small enough to be useful. The old floor of 320x240 is fine for the
+        // library; a colour picker torn out should be allowed to be a strip.
+        minimumWidth: 240
+        minimumHeight: 140
         visible: root.floating
         title: "GraphVis · " + root.title
         color: Theme.background
         onClosing: root.floating = false
+        // Only on the way out: binding x and y to the properties would fight
+        // the person the moment they moved the window.
+        onVisibleChanged: {
+            if (!visible || root.floatingX < 0) return
+            floater.x = root.floatingX
+            floater.y = root.floatingY
+        }
 
         Item { id: floatSlot; anchors.fill: parent }
     }

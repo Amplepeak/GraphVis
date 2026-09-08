@@ -211,6 +211,17 @@ struct PlotSpec {
     QString title;
     PlotAxis xAxis;
     PlotAxis yAxis;
+    // The THIRD mapped column, for the engines that take one - which is most of
+    // the interesting ones. It is the height on a 3-D engine and the quantity
+    // the colour map runs over on a heat map, contour or surface, so what it is
+    // CALLED depends on the engine; what it is remains "the third column", and
+    // that is why there is one axis here rather than a zAxis and a colourAxis
+    // that could never both be true at once.
+    //
+    // Only the transform and the label are read from it. The 3-D painters fit
+    // their own bounds to the projected cube and a colour map runs 0..1 over
+    // the field, so min and max here would be settings with nothing to set.
+    PlotAxis zAxis;
     QVector<PlotSeries> series;
     // The formula, for the Function and Implicit engines. Those catalogue
     // entries plot an expression rather than a dataset, so the text has to

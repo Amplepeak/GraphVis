@@ -666,6 +666,46 @@ void PlotCanvas::setYTransform(int mode){
     emit stateChanged();
 }
 
+// The third mapped column, which is a height on one engine and a measured
+// quantity running under a colour map on another.
+//
+// The link tick is deliberately NOT honoured here. "Both axes the same" is
+// about x and y, which are the pair a reader compares; a heat map's colour
+// scale and its two position axes are not that pair, and standardising the
+// value column because someone logged the x axis would be a surprise.
+void PlotCanvas::setZTransform(int mode){
+    const int clamped=qBound(0,mode,4);
+    if(spec_.zAxis.transform==clamped) return;
+    spec_.zAxis.transform=clamped;
+    spec_.zAxis.log10=(clamped==AxisLog10);
+    hasView_=false;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit sourceChanged();
+    emit stateChanged();
+}
+
+QString PlotCanvas::thirdAxisRole() const {
+    const QtPlotBackend::ColumnPlan plan=QtPlotBackend::columnPlan(spec_.engine);
+    // maximum 0 means "every mapped column", which is at least three for the
+    // engines that reach here at all.
+    // A FIXED third column only. maximum 0 means "as many as are mapped", and
+    // those columns are peers - a radar's spokes, parallel coordinates' axes -
+    // so there is no third axis there to scale on its own.
+    if(!plan.asSeries||plan.maximum<3) return QString();
+    // Height, or the quantity the colour runs over. usesColourMap answers for
+    // the PREPARED engine, so a Spectrogram - a heat map by the time anything
+    // is drawn - gets the right word.
+    if(spec_.engine.startsWith(QLatin1String("3D "))
+       ||spec_.engine==QLatin1String("Surface + Contours")
+       ||spec_.engine==QLatin1String("Ribbon")
+       ||spec_.engine==QLatin1String("Comet 3D"))
+        return QStringLiteral("Z scale");
+    if(QtPlotBackend::usesColourMap(spec_.engine)) return QStringLiteral("Colour scale");
+    return QStringLiteral("3rd column");
+}
+
 void PlotCanvas::setLinkAxisTransforms(bool on){
     if(linkTransforms_==on) return;
     linkTransforms_=on;

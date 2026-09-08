@@ -31,6 +31,35 @@ Rectangle {
     property alias metallic: mapping.metallic
     property alias specular: mapping.specular
     color:Theme.background; border.color:Theme.border
+
+    // A handle you can see and hit.
+    //
+    // SplitView's default handle is one pixel of nothing. The library WAS
+    // resizable and nobody could tell: the only clue that the divider could be
+    // dragged was that the cursor changed, over a target one pixel tall. Six
+    // pixels with a grip drawn on it, and a wider hover strip behind it.
+    Component {
+        id: splitHandle
+        Rectangle {
+            id: handleBody
+            implicitWidth: 6
+            implicitHeight: 6
+            color: SplitHandle.pressed ? Theme.accent
+                 : (SplitHandle.hovered ? Theme.borderStrong : Theme.surfaceAlt)
+            Row {
+                anchors.centerIn: parent
+                spacing: 3
+                Repeater {
+                    model: 3
+                    delegate: Rectangle {
+                        width: 2; height: 2; radius: 1
+                        color: SplitHandle.pressed ? Theme.onAccent : Theme.textMuted
+                    }
+                }
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.fill:parent; spacing:0
         // The tab bar scrolls rather than clipping its last tabs.
@@ -59,29 +88,48 @@ Rectangle {
         // picture of it - and because switching used to mean leaving this tab
         // for the Data tab and coming back.
         // Inspector: one column, sections in the order the work happens.
-        PanelScroll {
+        // Inspector: the settings scroll, the library does NOT scroll inside
+        // them.
+        //
+        // A ListView inside a ScrollView is the classic Qt Quick trap and this
+        // was an instance of it: the library sat in the scrolling column, so
+        // the wheel went to the column and the list itself could not be
+        // scrolled at all. Searching worked perfectly and you could only ever
+        // see the first four matches of it, which from the outside is a search
+        // box that does not work. It is a SplitView pane of its own now, beside
+        // the scrolling settings rather than inside them.
+        SplitView {
             visible: root.inspectorMode
+            orientation: Qt.Vertical
             Layout.fillWidth: true
             Layout.fillHeight: true
-            contentSpacing: 10
-            ActiveDatasetBar {
-                app: root.app
-                Layout.fillWidth: true
-                onImportRequested: root.importRequested()
-            }
-            ColourVisionBar { app: root.app; canvas: root.canvas; Layout.fillWidth: true }
-            GvGroupBox {
-                title: "Axes"
-                Layout.fillWidth: true
-                ColumnLayout {
-                    anchors.fill: parent
-                    AxisScaleBar { canvas: root.canvas; Layout.fillWidth: true }
+            handle: splitHandle
+
+            PanelScroll {
+                SplitView.preferredHeight: 260
+                SplitView.minimumHeight: 40
+                contentSpacing: 10
+                ActiveDatasetBar {
+                    app: root.app
+                    Layout.fillWidth: true
+                    onImportRequested: root.importRequested()
+                }
+                ColourVisionBar { app: root.app; canvas: root.canvas; Layout.fillWidth: true }
+                GvGroupBox {
+                    title: "Axes"
+                    Layout.fillWidth: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        AxisScaleBar { canvas: root.canvas; Layout.fillWidth: true }
+                    }
                 }
             }
-            GvGroupBox {
-                title: "Graph"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 460
+            DockPanel {
+                title: "Graph Library"
+                SplitView.fillHeight: true
+                SplitView.minimumHeight: 160
+                floatingWidth: 520
+                floatingHeight: 760
                 GraphLibrary {
                     anchors.fill: parent
                     app: root.app
@@ -106,14 +154,25 @@ Rectangle {
             // handle is doing.
             SplitView {
                 orientation: Qt.Vertical
+                handle: splitHandle
 
-                ColumnLayout {
-                    SplitView.preferredHeight: 250
-                    SplitView.minimumHeight: 34
-                    spacing: 0
+                // The settings are a dock too now, not a bare column.
+                //
+                // Only the library had a header, a grip and a pop-out button,
+                // so only the library could be moved - and the panels ABOVE it
+                // are the ones in the way when you are picking a graph. Same
+                // chrome, same tear-off, and the header doubles as the thing
+                // you grab to shut them.
+                DockPanel {
+                    title: "Dataset and colours"
+                    // Smaller than it was: 250 px left four rows of a
+                    // seventeen-hundred-entry library visible underneath.
+                    SplitView.preferredHeight: 190
+                    SplitView.minimumHeight: 26
+                    floatingWidth: 420
+                    floatingHeight: 340
                     PanelScroll {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        anchors.fill: parent
                         contentSpacing: 8
                         // Which dataset the graphs below draw from. Above the
                         // chooser because that is the order the questions are
@@ -141,7 +200,7 @@ Rectangle {
                 DockPanel {
                     title: "Graph Library"
                     SplitView.fillHeight: true
-                    SplitView.minimumHeight: 140
+                    SplitView.minimumHeight: 160
                     floatingWidth: 560
                     floatingHeight: 780
                     GraphLibrary {

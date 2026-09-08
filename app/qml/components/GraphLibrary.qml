@@ -91,7 +91,11 @@ Rectangle {
             return
         }
 
-        var results = app.searchGraphs(q, advancedToggle.checked, 400)
+        // 400 was set when the catalogue held 433 entries and meant "all of
+        // them". It now holds 1,769, so a cap of 400 silently truncated the
+        // answer - and the entries it dropped were the ones the fuzzy score
+        // ranked last, which is exactly where a half-remembered name lands.
+        var results = app.searchGraphs(q, advancedToggle.checked, 2000)
         var lastCat = ""
         for (var r = 0; r < results.length; ++r) {
             var e = results[r]
@@ -207,27 +211,41 @@ Rectangle {
             color: Theme.border
         }
 
-        TextField {
-            id: searchField
+        // Search and the advanced switch on ONE row. Every row of chrome above
+        // the list is a row of the list you cannot see, and in a 400 px sidebar
+        // holding a seventeen-hundred-entry catalogue that arithmetic decides
+        // whether the panel is usable: four visible entries is a list you
+        // cannot browse.
+        RowLayout {
             Layout.fillWidth: true
-            placeholderText: "Search graphs…"
-            onTextChanged: root.refresh()
-        }
-
-        CheckBox {
-            id: advancedToggle
-            checked: false
-            onToggled: root.refresh()
-            // The Basic style draws its label in a dark colour that is
-            // unreadable on this panel, so the label is styled explicitly.
-            contentItem: Text {
-                text: "Include advanced (" + root.app.advancedEntryCount + " more)"
-                color: Theme.textSecondary
+            spacing: 6
+            TextField {
+                id: searchField
+                Layout.fillWidth: true
+                placeholderText: "Search graphs…"
+                onTextChanged: root.refresh()
+            }
+            ToolButton {
+                id: advancedButton
+                text: "adv"
                 font.pixelSize: 11
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: advancedToggle.indicator.width + 6
+                flat: true
+                checkable: true
+                checked: advancedToggle.checked
+                onToggled: { advancedToggle.checked = advancedButton.checked; root.refresh() }
+                ToolTip.visible: advancedButton.hovered
+                // Says what they ARE. "Advanced" told nobody that the 1,406
+                // entries behind it are the same engines again with a
+                // transformed axis - which is a thing the Axis scale controls
+                // already do to whatever is on screen.
+                ToolTip.text: "Also list the " + root.app.advancedEntryCount
+                              + " axis-scale variants: the same engines with a "
+                              + "log, log(x+1), z-score or quantile axis."
             }
         }
+        // Not shown; the state the button above carries, kept as a CheckBox so
+        // refresh() did not have to change.
+        CheckBox { id: advancedToggle; visible: false; checked: false }
 
         // Why a search came up short. Without this line a switched-off pack is
         // indistinguishable from a graph that was never written: someone
@@ -282,6 +300,10 @@ Rectangle {
         ListView {
             id: view
             Layout.fillWidth: true; Layout.fillHeight: true
+            // A floor, so the chrome above cannot squeeze the list out of
+            // existence in a short panel - four rows is the point at which
+            // browsing stops and guessing starts.
+            Layout.minimumHeight: 120
             clip: true
             model: root.rows
             currentIndex: -1
@@ -378,23 +400,25 @@ Rectangle {
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
+        // One line, not two. The category was on its own row under the engine
+        // name, which cost a row of the list to repeat something the list above
+        // was already showing.
         RowLayout {
             Layout.fillWidth: true
-            ColumnLayout {
-                Layout.fillWidth: true; spacing: 0
-                Label {
-                    text: root.staged ? root.staged.engine : "No graph staged"
-                    color: Theme.text; font.pixelSize: 12; font.bold: true
-                    elide: Text.ElideRight; Layout.fillWidth: true
-                }
-                Label {
-                    text: root.staged ? root.staged.category : "Pick a graph, then Apply"
-                    color: Theme.textMuted; font.pixelSize: 10
-                    elide: Text.ElideRight; Layout.fillWidth: true
-                }
+            spacing: 6
+            Label {
+                text: root.staged
+                      ? root.staged.engine + "  ·  " + root.staged.category
+                      : "Pick a graph, then Apply"
+                color: root.staged ? Theme.text : Theme.textMuted
+                font.pixelSize: 11
+                font.bold: root.staged !== null
+                elide: Text.ElideRight
+                Layout.fillWidth: true
             }
             Button {
                 text: "▶"
+                implicitHeight: 26
                 ToolTip.visible: hovered
                 ToolTip.text: "Apply the staged graph"
                 enabled: root.staged !== null

@@ -67,6 +67,13 @@ class PlotCanvas : public QQuickPaintedItem {
     // then sets both.
     Q_PROPERTY(int xTransform READ xTransform WRITE setXTransform NOTIFY sourceChanged)
     Q_PROPERTY(int yTransform READ yTransform WRITE setYTransform NOTIFY sourceChanged)
+    Q_PROPERTY(int zTransform READ zTransform WRITE setZTransform NOTIFY sourceChanged)
+    // What the third mapped column IS on the engine currently chosen, so the
+    // control can be labelled "Z scale" on a 3-D figure and "Colour scale" on a
+    // heat map. Empty when the engine takes only two columns, which is how the
+    // interface knows to leave the control out rather than offer a scale for an
+    // axis that is not there.
+    Q_PROPERTY(QString thirdAxisRole READ thirdAxisRole NOTIFY sourceChanged)
     Q_PROPERTY(bool linkAxisTransforms READ linkAxisTransforms WRITE setLinkAxisTransforms NOTIFY sourceChanged)
     Q_PROPERTY(QString message READ message NOTIFY stateChanged)
     // Why the figure looks the way it does, when there is something to say -
@@ -336,8 +343,11 @@ public:
     void setLogY(bool v);
     int xTransform() const { return spec_.xAxis.transform; }
     int yTransform() const { return spec_.yAxis.transform; }
+    int zTransform() const { return spec_.zAxis.transform; }
     void setXTransform(int mode);
     void setYTransform(int mode);
+    void setZTransform(int mode);
+    QString thirdAxisRole() const;
     bool linkAxisTransforms() const { return linkTransforms_; }
     void setLinkAxisTransforms(bool on);
     // The names, in order, so a picker does not have to keep its own copy that

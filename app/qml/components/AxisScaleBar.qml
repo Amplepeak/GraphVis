@@ -8,6 +8,13 @@
 //
 // Independent per axis, because a skewed x against a standardised y is an
 // ordinary thing to want. Linked when it is not.
+//
+// THREE axes, not two. Every 3-D engine has a height and every heat map,
+// contour and surface has a quantity the colour runs over, and neither had a
+// scale of its own - so a 3-D figure whose z column spans four decades could
+// not be logged, and the y control silently transformed the z column as well.
+// The third row appears only when the chosen engine actually has a third
+// mapped column, and it is named after what that column IS on that engine.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -34,13 +41,23 @@ ColumnLayout {
       + "heavily skewed column out evenly, so a cluster near zero stops being one pixel."
     ]
 
+    // The explanation, once, under all three rows.
+    //
+    // It used to be a hover tooltip on each combo box, and a tooltip opens
+    // BELOW its control - so the X one opened directly over the Y row and the Y
+    // one over the "Both axes the same" tick, which is why that tick could not
+    // be read or reliably clicked. One label in a place of its own cannot
+    // cover anything, and it is readable without hovering at all.
+    property int explaining: 0
+    function explain(i) { root.explaining = Math.max(0, Math.min(i, root.why.length - 1)) }
+
     RowLayout {
         Layout.fillWidth: true
         spacing: 8
         Label {
             text: "X scale"
             color: Theme.textSecondary
-            Layout.preferredWidth: 58
+            Layout.preferredWidth: 74
             elide: Text.ElideRight
         }
         ComboBox {
@@ -50,8 +67,7 @@ ColumnLayout {
             model: root.names
             currentIndex: root.canvas ? root.canvas.xTransform : 0
             onActivated: if (root.canvas) root.canvas.xTransform = xBox.currentIndex
-            ToolTip.visible: xBox.hovered
-            ToolTip.text: root.why[Math.max(0, Math.min(xBox.currentIndex, root.why.length - 1))]
+            onHoveredChanged: if (xBox.hovered) root.explain(xBox.currentIndex)
         }
     }
 
@@ -61,7 +77,7 @@ ColumnLayout {
         Label {
             text: "Y scale"
             color: Theme.textSecondary
-            Layout.preferredWidth: 58
+            Layout.preferredWidth: 74
             elide: Text.ElideRight
         }
         ComboBox {
@@ -74,8 +90,31 @@ ColumnLayout {
             model: root.names
             currentIndex: root.canvas ? root.canvas.yTransform : 0
             onActivated: if (root.canvas) root.canvas.yTransform = yBox.currentIndex
-            ToolTip.visible: yBox.hovered
-            ToolTip.text: root.why[Math.max(0, Math.min(yBox.currentIndex, root.why.length - 1))]
+            onHoveredChanged: if (yBox.hovered) root.explain(yBox.currentIndex)
+        }
+    }
+
+    // Z on a 3-D engine, Colour on a field engine, absent on the engines that
+    // take two columns. The name comes from the canvas rather than from a list
+    // here, so it cannot disagree with what the backend does with that column.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 8
+        visible: root.canvas !== null && root.canvas.thirdAxisRole !== ""
+        Label {
+            text: root.canvas ? root.canvas.thirdAxisRole : ""
+            color: Theme.textSecondary
+            Layout.preferredWidth: 74
+            elide: Text.ElideRight
+        }
+        ComboBox {
+            id: zBox
+            Layout.fillWidth: true
+            enabled: root.canvas !== null
+            model: root.names
+            currentIndex: root.canvas ? root.canvas.zTransform : 0
+            onActivated: if (root.canvas) root.canvas.zTransform = zBox.currentIndex
+            onHoveredChanged: if (zBox.hovered) root.explain(zBox.currentIndex)
         }
     }
 
@@ -83,15 +122,25 @@ ColumnLayout {
         id: linkBox
         enabled: root.canvas !== null
         checked: root.canvas ? root.canvas.linkAxisTransforms : false
-        onToggled: if (root.canvas) root.canvas.linkAxisTransforms = checked
+        onToggled: if (root.canvas) root.canvas.linkAxisTransforms = linkBox.checked
         // The Basic style draws its label in a colour that is unreadable on
         // this panel, so the label is styled explicitly.
         contentItem: Text {
-            text: "Both axes the same"
+            // Says which two. With a third row above it, "both axes" had
+            // stopped being unambiguous.
+            text: "X and Y the same"
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeSmall
             verticalAlignment: Text.AlignVCenter
             leftPadding: linkBox.indicator.width + 6
         }
+    }
+
+    Label {
+        Layout.fillWidth: true
+        text: root.why[root.explaining]
+        color: Theme.textMuted
+        font.pixelSize: Theme.fontSizeSmall
+        wrapMode: Text.WordWrap
     }
 }
