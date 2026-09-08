@@ -742,7 +742,7 @@ Item {
                     color: Theme.textSecondary
                     font.family: "Consolas, monospace"
                     font.pixelSize: 11
-                    text: root.app.logText
+                    text: root.app.messageLog
                     wrapMode: TextArea.NoWrap
                 }
             }

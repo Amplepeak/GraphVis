@@ -61,6 +61,14 @@ NO_SCALE = {
     # peak separation in millivolts read off the potential axis; and the
     # waffle's axes are grid positions rather than a quantity at all.
     "Mohr's Circle", "I-V Curve", "Cyclic Voltammogram", "Waffle Chart",
+    # Batch 6. Same test: the axes are positions or indices rather than
+    # measured quantities, so a transform on them means nothing. A star glyph's
+    # axes are grid slots, a recurrence plot's are sample numbers, a biplot's
+    # are principal-component scores that go negative, a sunflower's petals are
+    # drawn in data units and a transformed axis bends them, and the operating
+    # characteristic curve computes its own axes from a sampling plan.
+    "Star Glyph Plot", "Recurrence Plot", "Biplot", "Sunflower Plot",
+    "Wavelet Scalogram", "Operating Characteristic Curve",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

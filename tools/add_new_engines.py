@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 5.
+"""Catalogue entries for the engine expansion, batches 1 to 6.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -189,6 +189,44 @@ NEW = [
      "Power against frequency for unevenly sampled data, which an FFT cannot take"),
     ("Categorical & Set Views", "waffle", "Waffle Chart",
      "A hundred squares apportioned by largest remainder, so the counts read exactly"),
+
+    # ---- batch 6: regression diagnostics, signal structure, multivariate
+    ("Statistical & Diagnostic Plots", "cooksdistance", "Cook's Distance Plot",
+     "Influence by observation, with the 4/n screening threshold"),
+    ("Statistical & Diagnostic Plots", "scalelocation", "Scale-Location Plot",
+     "Root standardised residual against fitted value — flat means constant variance"),
+    ("Statistical & Diagnostic Plots", "partialresidual", "Partial Residual Plot",
+     "The residual with one predictor's contribution added back; curvature means the linear term is wrong"),
+    ("Data Reduction & Interpolation", "savgol", "Savitzky-Golay Smoothing",
+     "Polynomial smoothing over a fixed window, which keeps peak height and width"),
+    ("Data Reduction & Interpolation", "lowesstrend", "LOWESS Trend",
+     "A locally weighted trend through a scatter, adapting to uneven sampling"),
+    ("Signal Processing Plots", "pacf", "Partial Autocorrelation",
+     "Correlation at each lag with the shorter lags removed, by Durbin-Levinson"),
+    ("Time Series & Trend", "stl", "Seasonal Decomposition",
+     "Observed, trend, repeating cycle and remainder, with the period found or given"),
+    ("Time Series & Trend", "subseries", "Seasonal Subseries Plot",
+     "One line per position in the cycle, so drift within a season is visible"),
+    ("Advanced Line & Signal Plots", "recurrence", "Recurrence Plot",
+     "A mark wherever the record revisits an earlier state — diagonals mean deterministic structure"),
+    ("Spectral & Signal Imaging", "scalogram", "Wavelet Scalogram",
+     "Where the frequency content sits in time, by Morlet wavelet"),
+    ("Spectral", "coherence", "Coherence Spectrum",
+     "How much of one signal each frequency of another explains, averaged over Welch segments"),
+    ("Signals & RF", "bode", "Bode Plot",
+     "Loop gain and phase against frequency, with the 0 dB crossover"),
+    ("Quality, Process & Reliability", "occurve", "Operating Characteristic Curve",
+     "Probability a sampling plan accepts a lot, against how defective the lot is"),
+    ("Electrochemical & Bioprocess", "cottrell", "Cottrell Plot",
+     "Current against 1/sqrt(time); a straight line through the origin means diffusion control"),
+    ("Electrochemical & Bioprocess", "coulombic", "Coulombic Efficiency Trend",
+     "Efficiency by cycle with the cumulative mean and the trend across cycles"),
+    ("Multivariate Plots", "biplot", "Biplot",
+     "Observations and variables on one pair of principal components"),
+    ("Multivariate Plots", "starglyph", "Star Glyph Plot",
+     "One small radar per observation on a grid, so shapes can be matched by eye"),
+    ("Scatter & Bubble Charts", "sunflower", "Sunflower Plot",
+     "A petal per observation where points coincide, so density shows without hiding points"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -228,5 +266,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-5: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-6: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

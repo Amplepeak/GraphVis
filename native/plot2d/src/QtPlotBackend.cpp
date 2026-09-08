@@ -413,6 +413,26 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Consolidation Curve"),
         QStringLiteral("Lomb-Scargle Periodogram"),
         QStringLiteral("Waffle Chart"),
+        // Batch 6: regression diagnostics, signal structure, multivariate
+        // views, and two electrochemistry plots.
+        QStringLiteral("Cook's Distance Plot"),
+        QStringLiteral("Scale-Location Plot"),
+        QStringLiteral("Partial Residual Plot"),
+        QStringLiteral("Savitzky-Golay Smoothing"),
+        QStringLiteral("LOWESS Trend"),
+        QStringLiteral("Partial Autocorrelation"),
+        QStringLiteral("Seasonal Decomposition"),
+        QStringLiteral("Seasonal Subseries Plot"),
+        QStringLiteral("Recurrence Plot"),
+        QStringLiteral("Wavelet Scalogram"),
+        QStringLiteral("Coherence Spectrum"),
+        QStringLiteral("Bode Plot"),
+        QStringLiteral("Operating Characteristic Curve"),
+        QStringLiteral("Cottrell Plot"),
+        QStringLiteral("Coulombic Efficiency Trend"),
+        QStringLiteral("Biplot"),
+        QStringLiteral("Star Glyph Plot"),
+        QStringLiteral("Sunflower Plot"),
     };
     return kEngines;
 }
@@ -1302,21 +1322,21 @@ void QtPlotBackend::estimateEmptyCells(ValueGrid& g,int mode){
             for(int x=0;x<nx;++x){
                 const int k=y*nx+x;
                 if(y>0){
-                    if(x>0)    relax(k,k-nx-1,kDiag);
-                               relax(k,k-nx,  kOrtho);
+                    if(x>0) relax(k,k-nx-1,kDiag);
+                    relax(k,k-nx,kOrtho);          // always, inside the y>0 guard
                     if(x<nx-1) relax(k,k-nx+1,kDiag);
                 }
-                if(x>0)        relax(k,k-1,   kOrtho);
+                if(x>0) relax(k,k-1,kOrtho);
             }
         for(int y=ny-1;y>=0;--y)
             for(int x=nx-1;x>=0;--x){
                 const int k=y*nx+x;
                 if(y<ny-1){
                     if(x<nx-1) relax(k,k+nx+1,kDiag);
-                               relax(k,k+nx,  kOrtho);
-                    if(x>0)    relax(k,k+nx-1,kDiag);
+                    relax(k,k+nx,kOrtho);          // always, inside the y<ny-1 guard
+                    if(x>0) relax(k,k+nx-1,kDiag);
                 }
-                if(x<nx-1)     relax(k,k+1,   kOrtho);
+                if(x<nx-1) relax(k,k+1,kOrtho);
             }
         for(int k=0;k<nx*ny;++k)
             if(!finite(g.cells[k])&&src[k]>=0) g.cells[k]=g.cells[src[k]];
@@ -1742,7 +1762,17 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("P-M Interaction Diagram"),
         QStringLiteral("Pushover Capacity Curve"),
         QStringLiteral("Consolidation Curve"),
-        QStringLiteral("Lomb-Scargle Periodogram")};
+        QStringLiteral("Lomb-Scargle Periodogram"),
+        // Batch 6.
+        QStringLiteral("Cook's Distance Plot"),
+        QStringLiteral("Scale-Location Plot"),
+        QStringLiteral("Partial Residual Plot"),
+        QStringLiteral("Savitzky-Golay Smoothing"),
+        QStringLiteral("LOWESS Trend"),
+        QStringLiteral("Coherence Spectrum"),
+        QStringLiteral("Operating Characteristic Curve"),
+        QStringLiteral("Cottrell Plot"),
+        QStringLiteral("Coulombic Efficiency Trend")};
     if(kPairs.contains(engine)) return {2,2,true};
 
     // ---- Every column mapped, read as one series each. These get WIDER with
@@ -1765,6 +1795,19 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // block per category, so both widen with the columns mapped.
     if(engine==QLatin1String("Response Spectrum")) return {2,0,true};
     if(engine==QLatin1String("Waffle Chart")) return {1,0,true};
+    // One signal, and these read it from the y column alone.
+    if(engine==QLatin1String("Partial Autocorrelation")
+       ||engine==QLatin1String("Recurrence Plot")
+       ||engine==QLatin1String("Wavelet Scalogram")) return {1,2,true};
+    // Time, value, and the period if a column carries one.
+    if(engine==QLatin1String("Seasonal Decomposition")) return {2,3,true};
+    if(engine==QLatin1String("Seasonal Subseries Plot")) return {2,2,true};
+    // Frequency, gain, and phase if it is mapped.
+    if(engine==QLatin1String("Bode Plot")) return {2,3,true};
+    // Every column is a variable: a biplot's arrows and a glyph's spokes are
+    // one per column, so both get wider rather than dropping the extras.
+    if(engine==QLatin1String("Biplot")
+       ||engine==QLatin1String("Star Glyph Plot")) return {2,0,true};
     // Power and energy density, and a column that names the device family.
     if(engine==QLatin1String("Ragone Plot")) return {2,3,true};
     // A plane stress state: sigma-x, sigma-y and tau-xy.
@@ -13604,6 +13647,1031 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         out.yAxis=PlotAxis{QString(),false,-1.0,10.0};
         out.style.gridVisible=false;
         out.style.scaleLabelsVisible=false;
+        return out;
+    }
+
+    // =====================================================================
+    // Batch 6: regression diagnostics, signal structure, multivariate views,
+    // and the two electrochemistry plots the catalogue still lacked.
+    // =====================================================================
+
+    // ----------------------------------------- Regression diagnostic family
+    // Cook's distance, scale-location and the partial residual plot are three
+    // of the four panels R prints when you plot() a linear model, and the
+    // catalogue had the fourth (Residual Plot) and none of these. Each reads a
+    // fitted value and a residual and asks a different question of them:
+    // which points are moving the fit, whether the spread grows with the fit,
+    // and whether one predictor's relationship is really linear.
+    if(in.engine==QLatin1String("Cook's Distance Plot")
+       ||in.engine==QLatin1String("Scale-Location Plot")){
+        const bool cooks=(in.engine==QLatin1String("Cook's Distance Plot"));
+        PlotSpec out=derivedAs(in,cooks?QStringLiteral("Stem")
+                                       :QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& fitted=in.series.at(0).y;
+            const QVector<double>& residual=in.series.at(1).y;
+            const int n=qMin(fitted.size(),residual.size());
+            // The residual standard error, which both panels are scaled by. Two
+            // parameters are spent on an intercept and a slope, so n-2.
+            double sse=0.0; int used=0;
+            for(int i=0;i<n;++i){
+                if(!finite(residual[i])) continue;
+                sse+=residual[i]*residual[i]; ++used;
+            }
+            const double sigma=(used>2)?std::sqrt(sse/double(used-2)):0.0;
+            PlotSeries pts;
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+            if(cooks){ pts.drawLine=true; pts.drawMarkers=true; }
+            for(int i=0;i<n;++i){
+                if(!finite(fitted[i])||!finite(residual[i])||!(sigma>0.0)) continue;
+                const double standardised=residual[i]/sigma;
+                if(cooks){
+                    // Cook's distance with the leverage unavailable is the
+                    // squared standardised residual over the parameter count -
+                    // the part of it that a residual alone can honestly carry.
+                    // Named on the axis so it is not mistaken for the full
+                    // statistic, which needs the hat matrix.
+                    pts.x.append(double(i));
+                    pts.y.append(standardised*standardised/2.0);
+                }else{
+                    pts.x.append(fitted[i]);
+                    pts.y.append(std::sqrt(std::abs(standardised)));
+                }
+            }
+            if(!pts.x.isEmpty()){
+                pts.label=cooks?QStringLiteral("influence")
+                               :QStringLiteral("sqrt |standardised residual|");
+                out.series.append(pts);
+                if(cooks){
+                    // 4/n is the usual screening threshold. A rule of thumb
+                    // drawn as a rule of thumb, in the legend.
+                    const double cut=(used>0)?4.0/double(used):0.0;
+                    out.series.append(horizontalRule(cut,0.0,double(qMax(1,n-1)),
+                                                     in.style.warning,
+                                                     QStringLiteral("4/n = %1").arg(cut,0,'g',3),
+                                                     true));
+                }else{
+                    // The trend in the spread. Flat means constant variance,
+                    // which is the assumption this panel exists to check.
+                    const LineFit f=fitLine(pts.x,pts.y);
+                    const Bounds b=boundsOf(pts.x);
+                    if(f.ok&&b.valid){
+                        PlotSeries trend;
+                        trend.label=QStringLiteral("spread trend, slope %1").arg(f.slope,0,'g',3);
+                        trend.color=in.style.warning;
+                        trend.lineWidth=qMax(1.3,in.style.lineWidth);
+                        trend.x={b.lo,b.hi};
+                        trend.y={f.intercept+f.slope*b.lo,f.intercept+f.slope*b.hi};
+                        out.series.append(trend);
+                    }
+                }
+            }
+        }
+        if(cooks){
+            out.xAxis=PlotAxis{QStringLiteral("observation"),false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{QStringLiteral("influence (residual component)"),false,
+                               unsetValue(),unsetValue()};
+        }else{
+            out.xAxis=PlotAxis{QStringLiteral("fitted value"),false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{QStringLiteral("sqrt |standardised residual|"),false,
+                               unsetValue(),unsetValue()};
+        }
+        return out;
+    }
+
+    // ------------------------------------------------ Partial Residual Plot
+    // The residual with one predictor's fitted contribution ADDED BACK, drawn
+    // against that predictor. A straight line means the linear term is right;
+    // a curve is the plot telling you the model needs a quadratic or a log,
+    // which an ordinary residual plot smears across every predictor at once.
+    if(in.engine==QLatin1String("Partial Residual Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& predictor=in.series.at(0).y;
+            const QVector<double>& response=in.series.at(1).y;
+            const int n=qMin(predictor.size(),response.size());
+            const LineFit f=fitLine(predictor,response);
+            if(f.ok){
+                PlotSeries pts;
+                pts.label=QStringLiteral("partial residual");
+                pts.color=in.series.at(1).color;
+                pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+                for(int i=0;i<n;++i){
+                    if(!finite(predictor[i])||!finite(response[i])) continue;
+                    const double residual=response[i]-(f.intercept+f.slope*predictor[i]);
+                    pts.x.append(predictor[i]);
+                    pts.y.append(residual+f.slope*predictor[i]);
+                }
+                if(!pts.x.isEmpty()){
+                    out.series.append(pts);
+                    const Bounds b=boundsOf(pts.x);
+                    if(b.valid){
+                        PlotSeries line;
+                        line.label=QStringLiteral("linear term, slope %1").arg(f.slope,0,'g',4);
+                        line.color=in.style.warning;
+                        line.lineWidth=qMax(1.3,in.style.lineWidth);
+                        line.x={b.lo,b.hi};
+                        line.y={f.slope*b.lo,f.slope*b.hi};
+                        out.series.append(line);
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("predictor"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("partial residual"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------- Savitzky-Golay / LOWESS Trend
+    // Two ways to draw a smooth line through noisy measurements, and they fail
+    // differently, which is why both are here.
+    //
+    // Savitzky-Golay fits a polynomial over a sliding window of FIXED WIDTH, so
+    // it preserves the height and width of a peak where a moving average
+    // flattens it - the reason it is the standard smoother in spectroscopy and
+    // chromatography. LOWESS fits over a fixed FRACTION of the sample with
+    // distance weights, so it adapts to uneven sampling and follows a trend
+    // that changes character along the record.
+    if(in.engine==QLatin1String("Savitzky-Golay Smoothing")
+       ||in.engine==QLatin1String("LOWESS Trend")){
+        const bool golay=(in.engine==QLatin1String("Savitzky-Golay Smoothing"));
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            QVector<QPair<double,double>> rows;
+            const QVector<double>& xs=in.series.at(0).y;
+            const QVector<double>& ys=in.series.at(1).y;
+            const int n=qMin(xs.size(),ys.size());
+            for(int i=0;i<n;++i)
+                if(finite(xs[i])&&finite(ys[i])) rows.append({xs[i],ys[i]});
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first;
+                      });
+            if(rows.size()>=5){
+                PlotSeries raw;
+                raw.label=QStringLiteral("measured");
+                raw.color=in.style.gridColor;
+                raw.drawLine=false; raw.drawMarkers=true; raw.markerSize=3.0;
+                for(const auto& r:rows){ raw.x.append(r.first); raw.y.append(r.second); }
+                out.series.append(raw);
+
+                PlotSeries smooth;
+                smooth.color=in.series.at(1).color;
+                smooth.lineWidth=qMax(1.5,in.style.lineWidth*1.3);
+                const int m=rows.size();
+                if(golay){
+                    // Quadratic over a window of about a twentieth of the
+                    // record, at least 5 points and always odd - a window with
+                    // no centre point has no value to write back to.
+                    int half=qBound(2,m/40,50);
+                    smooth.label=QStringLiteral("Savitzky-Golay, window %1").arg(2*half+1);
+                    for(int i=0;i<m;++i){
+                        const int lo=qMax(0,i-half), hi=qMin(m-1,i+half);
+                        double A[9]={0,0,0,0,0,0,0,0,0}, b[3]={0,0,0};
+                        for(int j=lo;j<=hi;++j){
+                            const double u=rows[j].first-rows[i].first;
+                            const double basis[3]={1.0,u,u*u};
+                            for(int r=0;r<3;++r){
+                                for(int c=0;c<3;++c) A[r*3+c]+=basis[r]*basis[c];
+                                b[r]+=basis[r]*rows[j].second;
+                            }
+                        }
+                        // Cramer's rule on the 3x3. The basis is centred on
+                        // the point being smoothed, so the answer is simply
+                        // the constant term and no evaluation step can get
+                        // the centring wrong.
+                        const auto det3=[](const double m[9]){
+                            return m[0]*(m[4]*m[8]-m[5]*m[7])
+                                  -m[1]*(m[3]*m[8]-m[5]*m[6])
+                                  +m[2]*(m[3]*m[7]-m[4]*m[6]);
+                        };
+                        double value=rows[i].second;
+                        const double det=det3(A);
+                        if(std::abs(det)>1e-300){
+                            double M0[9];
+                            for(int r=0;r<3;++r)
+                                for(int c=0;c<3;++c) M0[r*3+c]=(c==0)?b[r]:A[r*3+c];
+                            value=det3(M0)/det;
+                        }
+                        smooth.x.append(rows[i].first);
+                        smooth.y.append(value);
+                    }
+                }else{
+                    const int span=qBound(3,int(m*0.25),m);
+                    smooth.label=QStringLiteral("LOWESS, %1% span").arg(int(100.0*span/m));
+                    for(int i=0;i<m;++i){
+                        // The span nearest points, and Cleveland's tricube
+                        // weight over the distance to the furthest of them.
+                        const int lo=qBound(0,i-span/2,qMax(0,m-span));
+                        const int hi=qMin(m-1,lo+span-1);
+                        const double h=qMax(1e-300,
+                            qMax(std::abs(rows[i].first-rows[lo].first),
+                                 std::abs(rows[hi].first-rows[i].first)));
+                        double sw=0,swx=0,swy=0,swxx=0,swxy=0;
+                        for(int j=lo;j<=hi;++j){
+                            const double d=std::abs(rows[j].first-rows[i].first)/h;
+                            const double t=qMax(0.0,1.0-d*d*d);
+                            const double w=t*t*t;
+                            if(!(w>0.0)) continue;
+                            const double x=rows[j].first, y=rows[j].second;
+                            sw+=w; swx+=w*x; swy+=w*y; swxx+=w*x*x; swxy+=w*x*y;
+                        }
+                        double value=rows[i].second;
+                        const double den=sw*swxx-swx*swx;
+                        if(std::abs(den)>1e-300){
+                            const double slope=(sw*swxy-swx*swy)/den;
+                            const double intercept=(swy-slope*swx)/sw;
+                            value=intercept+slope*rows[i].first;
+                        }
+                        smooth.x.append(rows[i].first);
+                        smooth.y.append(value);
+                    }
+                }
+                out.series.append(smooth);
+            }
+        }
+        return out;
+    }
+
+    // ---------------------------------------- Partial Autocorrelation (PACF)
+    // The correlation at each lag with the shorter lags' effect REMOVED. An
+    // ordinary autocorrelation of a trending series is large at every lag
+    // because lag 1 is large and every later lag inherits it; the partial
+    // version is what actually tells you the order of an autoregressive
+    // process, by Durbin-Levinson on the autocorrelations.
+    if(in.engine==QLatin1String("Partial Autocorrelation")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Stem"));
+        const QVector<double>& raw=in.series.size()>=2?in.series.at(1).y
+                                                      :(in.series.isEmpty()?QVector<double>()
+                                                                           :in.series.at(0).y);
+        QVector<double> v;
+        for(double q:raw) if(finite(q)) v.append(q);
+        const int n=v.size();
+        if(n>=8){
+            double mean=0.0;
+            for(double q:v) mean+=q;
+            mean/=double(n);
+            const int maxLag=qBound(4,n/4,60);
+            QVector<double> r(maxLag+1,0.0);
+            double c0=0.0;
+            for(int i=0;i<n;++i) c0+=(v[i]-mean)*(v[i]-mean);
+            c0/=double(n);
+            for(int k=0;k<=maxLag;++k){
+                double c=0.0;
+                for(int i=0;i+k<n;++i) c+=(v[i]-mean)*(v[i+k]-mean);
+                r[k]=(c0>1e-300)?(c/double(n))/c0:0.0;
+            }
+            // Durbin-Levinson: phi_kk is the partial autocorrelation at lag k.
+            QVector<double> phi(maxLag+1,0.0), prev(maxLag+1,0.0);
+            PlotSeries pacf;
+            pacf.label=QStringLiteral("partial autocorrelation");
+            pacf.color=in.series.at(in.series.size()>=2?1:0).color;
+            for(int k=1;k<=maxLag;++k){
+                double num=r[k], den=1.0;
+                for(int j=1;j<k;++j){ num-=prev[j]*r[k-j]; den-=prev[j]*r[j]; }
+                const double kk=(std::abs(den)>1e-300)?num/den:0.0;
+                phi[k]=kk;
+                for(int j=1;j<k;++j) phi[j]=prev[j]-kk*prev[k-j];
+                prev=phi;
+                pacf.x.append(double(k));
+                pacf.y.append(kk);
+            }
+            out.series.append(pacf);
+            // The white-noise band. Outside it the lag is worth a term.
+            const double band=1.96/std::sqrt(double(n));
+            out.series.append(horizontalRule(band,1.0,double(maxLag),in.style.warning,
+                                             QStringLiteral("95%% band"),true));
+            out.series.append(horizontalRule(-band,1.0,double(maxLag),in.style.warning,
+                                             QString(),false));
+        }
+        out.xAxis=PlotAxis{QStringLiteral("lag"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("partial autocorrelation"),false,-1.05,1.05};
+        return out;
+    }
+
+    // ------------------------- Seasonal Decomposition / Subseries Plot
+    // A series pulled apart into trend, repeating cycle and what is left. The
+    // remainder is the interesting part: a pattern still visible in it is a
+    // pattern the period does not explain.
+    if(in.engine==QLatin1String("Seasonal Decomposition")
+       ||in.engine==QLatin1String("Seasonal Subseries Plot")){
+        const bool subseries=(in.engine==QLatin1String("Seasonal Subseries Plot"));
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& xs=in.series.at(0).y;
+            const QVector<double>& ys=in.series.at(1).y;
+            const int n=qMin(xs.size(),ys.size());
+            // The period, from a third column if one is mapped, otherwise the
+            // lag of the strongest autocorrelation - which is the honest guess
+            // and is reported rather than assumed silently.
+            int period=0;
+            if(in.series.size()>=3&&!in.series.at(2).y.isEmpty()
+               &&finite(in.series.at(2).y.first()))
+                period=int(std::lround(in.series.at(2).y.first()));
+            if(period<2&&n>=16){
+                double mean=0.0; int m=0;
+                for(int i=0;i<n;++i) if(finite(ys[i])){ mean+=ys[i]; ++m; }
+                if(m>0) mean/=double(m);
+                double best=0.0;
+                for(int lag=2;lag<=n/3;++lag){
+                    double c=0.0; int used=0;
+                    for(int i=0;i+lag<n;++i){
+                        if(!finite(ys[i])||!finite(ys[i+lag])) continue;
+                        c+=(ys[i]-mean)*(ys[i+lag]-mean); ++used;
+                    }
+                    if(used<4) continue;
+                    c/=double(used);
+                    if(c>best){ best=c; period=lag; }
+                }
+            }
+            period=qBound(2,period,qMax(2,n/2));
+
+            // The trend, by a centred moving average one period wide - the
+            // classical decomposition, and the reason the ends are short.
+            QVector<double> trend(n,std::numeric_limits<double>::quiet_NaN());
+            const int half=period/2;
+            for(int i=half;i+half<n;++i){
+                double sum=0.0; int used=0;
+                for(int j=i-half;j<=i+half;++j){
+                    if(!finite(ys[j])) continue;
+                    sum+=ys[j]; ++used;
+                }
+                if(used>0) trend[i]=sum/double(used);
+            }
+            // The cycle: the mean of what the trend does not explain, by
+            // position within the period.
+            QVector<double> cycleSum(period,0.0); QVector<int> cycleCount(period,0);
+            for(int i=0;i<n;++i){
+                if(!finite(ys[i])||!finite(trend[i])) continue;
+                const int slot=i%period;
+                cycleSum[slot]+=ys[i]-trend[i];
+                cycleCount[slot]+=1;
+            }
+            QVector<double> cycle(period,0.0);
+            // NOT called `slots`: Qt defines that as a macro, and a local
+            // named it does not compile. `emit` below was the same trap.
+            double cycleMean=0.0; int filledSlots=0;
+            for(int s=0;s<period;++s)
+                if(cycleCount[s]>0){ cycle[s]=cycleSum[s]/cycleCount[s];
+                                     cycleMean+=cycle[s]; ++filledSlots; }
+            if(filledSlots>0){
+                cycleMean/=double(filledSlots);
+                for(double& c:cycle) c-=cycleMean;
+            }
+
+            if(subseries){
+                // One line per position in the cycle, drawn across the periods
+                // it occurs in - so a January that is drifting upward year on
+                // year is a rising line rather than a wiggle inside a sawtooth.
+                for(int s=0;s<period&&s<24;++s){
+                    PlotSeries lane;
+                    lane.label=QStringLiteral("position %1").arg(s+1);
+                    lane.color=QColor::fromHsvF(std::fmod(double(s)/qMax(1,period),1.0),0.6,0.92);
+                    lane.lineWidth=qMax(1.0,in.style.lineWidth);
+                    for(int i=s;i<n;i+=period){
+                        if(!finite(xs[i])||!finite(ys[i])) continue;
+                        lane.x.append(xs[i]); lane.y.append(ys[i]);
+                    }
+                    if(lane.x.size()>=2) out.series.append(lane);
+                }
+                out.xAxis=PlotAxis{QStringLiteral("time"),false,unsetValue(),unsetValue()};
+                out.yAxis=PlotAxis{QStringLiteral("value"),false,unsetValue(),unsetValue()};
+                return out;
+            }
+
+            const auto addPanel=[&](const QString& name,const QVector<double>& v,const QColor& colour){
+                PlotSeries s;
+                s.label=name;
+                s.color=colour;
+                s.lineWidth=qMax(1.2,in.style.lineWidth);
+                for(int i=0;i<n;++i){
+                    if(!finite(xs[i])||!finite(v[i])) continue;
+                    s.x.append(xs[i]); s.y.append(v[i]);
+                }
+                if(s.x.size()>=2) out.series.append(s);
+            };
+            QVector<double> seasonal(n,0.0), remainder(n,std::numeric_limits<double>::quiet_NaN());
+            for(int i=0;i<n;++i){
+                seasonal[i]=cycle[i%period];
+                if(finite(ys[i])&&finite(trend[i])) remainder[i]=ys[i]-trend[i]-seasonal[i];
+            }
+            QVector<double> observed(n,std::numeric_limits<double>::quiet_NaN());
+            for(int i=0;i<n;++i) observed[i]=ys[i];
+            addPanel(QStringLiteral("observed"),observed,in.style.gridColor);
+            addPanel(QStringLiteral("trend, period %1").arg(period),trend,in.series.at(1).color);
+            addPanel(QStringLiteral("seasonal"),seasonal,in.style.warning);
+            addPanel(QStringLiteral("remainder"),remainder,in.style.danger);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("value"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ Recurrence Plot
+    // A black square at (i, j) wherever the record revisits, within a
+    // tolerance, the state it was in earlier. Diagonal lines mean the system
+    // repeats a trajectory; a checkerboard means it is periodic; a scatter of
+    // isolated dots means it is not returning at all. It is the standard first
+    // look at whether a nonlinear system is deterministic, and no amount of
+    // staring at the time series shows it.
+    if(in.engine==QLatin1String("Recurrence Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("2D Heatmap"));
+        const QVector<double>& raw=in.series.size()>=2?in.series.at(1).y
+                                                      :(in.series.isEmpty()?QVector<double>()
+                                                                           :in.series.at(0).y);
+        QVector<double> v;
+        for(double q:raw) if(finite(q)) v.append(q);
+        // Capped: the plot is n by n, so ten thousand samples is a hundred
+        // million cells. Thinned by stride, which keeps the shape of the
+        // trajectory rather than its first corner.
+        const int cap=220;
+        if(v.size()>cap){
+            const int stride=(v.size()+cap-1)/cap;
+            QVector<double> thin;
+            for(int i=0;i<v.size();i+=stride) thin.append(v[i]);
+            v=thin;
+        }
+        const int n=v.size();
+        if(n>=8){
+            // The tolerance: a tenth of the spread, which is the usual choice
+            // and is reported on the axis so it is not a hidden constant.
+            const Bounds b=boundsOf(v);
+            const double eps=(b.valid?(b.hi-b.lo):1.0)*0.1;
+            PlotSeries ix,iy,value;
+            ix.label=QStringLiteral("i"); iy.label=QStringLiteral("j");
+            value.label=QStringLiteral("recurrence (eps = %1)").arg(eps,0,'g',3);
+            for(int i=0;i<n;++i)
+                for(int j=0;j<n;++j){
+                    ix.x.append(0); iy.x.append(0); value.x.append(0);
+                    ix.y.append(double(i));
+                    iy.y.append(double(j));
+                    value.y.append(std::abs(v[i]-v[j])<=eps?1.0:0.0);
+                }
+            out.series={ix,iy,value};
+            out.style.fieldResolution=n;
+        }
+        out.xAxis=PlotAxis{QStringLiteral("sample i"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("sample j"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------------- Wavelet Scalogram
+    // Where the frequency content sits IN TIME. A power spectrum says a record
+    // contains a 3 Hz component; a scalogram says it contained it for the first
+    // ten seconds and not afterwards, which for a transient - a startup, a
+    // fault, a dosing event - is the entire question.
+    //
+    // A Morlet wavelet, correlated with the record at a range of scales. Done
+    // directly rather than through the FFT because the transform here is over a
+    // few dozen scales on a capped record, and the direct form is forty lines
+    // that are obviously right.
+    if(in.engine==QLatin1String("Wavelet Scalogram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("2D Heatmap"));
+        const QVector<double>& raw=in.series.size()>=2?in.series.at(1).y
+                                                      :(in.series.isEmpty()?QVector<double>()
+                                                                           :in.series.at(0).y);
+        QVector<double> v;
+        for(double q:raw) if(finite(q)) v.append(q);
+        const int cap=1024;
+        if(v.size()>cap){
+            const int stride=(v.size()+cap-1)/cap;
+            QVector<double> thin;
+            for(int i=0;i<v.size();i+=stride) thin.append(v[i]);
+            v=thin;
+        }
+        const int n=v.size();
+        if(n>=32){
+            double mean=0.0;
+            for(double q:v) mean+=q;
+            mean/=double(n);
+            constexpr int kScales=48;
+            const int cols=qMin(n,256);
+            const int stride=qMax(1,n/cols);
+            PlotSeries ix,iy,value;
+            ix.label=QStringLiteral("time"); iy.label=QStringLiteral("scale");
+            value.label=QStringLiteral("wavelet power");
+            constexpr double kOmega=6.0;   // Morlet, the conventional choice
+            for(int s=0;s<kScales;++s){
+                // Scales spaced logarithmically from a few samples to a quarter
+                // of the record - below that there is nothing to resolve, above
+                // it there are not enough cycles to be a measurement.
+                const double scale=2.0*std::pow(double(n)/8.0,double(s)/(kScales-1));
+                const int support=qMin(n,int(scale*4.0)+1);
+                for(int c=0;c<cols;++c){
+                    const int centre=qMin(n-1,c*stride);
+                    double re=0.0,im=0.0;
+                    for(int k=-support;k<=support;++k){
+                        const int i=centre+k;
+                        if(i<0||i>=n) continue;
+                        const double t=double(k)/scale;
+                        const double envelope=std::exp(-0.5*t*t);
+                        const double d=v[i]-mean;
+                        re+=d*envelope*std::cos(kOmega*t);
+                        im+=d*envelope*std::sin(kOmega*t);
+                    }
+                    const double norm=1.0/std::sqrt(scale);
+                    ix.x.append(0); iy.x.append(0); value.x.append(0);
+                    ix.y.append(double(centre));
+                    iy.y.append(scale);
+                    value.y.append((re*re+im*im)*norm*norm);
+                }
+            }
+            out.series={ix,iy,value};
+            out.style.fieldResolution=qMin(cols,kScales*2);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time (sample)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("scale"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------- Coherence Spectrum
+    // How much of one signal's variation at each frequency is linearly
+    // explained by another's. Unlike a cross-correlation it separates the
+    // frequencies, so a pair that tracks each other at the drive frequency and
+    // not at the noise floor reads as one number near 1 and the rest near 0.
+    //
+    // Welch's method: overlapping segments, averaged. Averaging is not optional
+    // here - the coherence of two signals estimated from a SINGLE segment is
+    // exactly 1 at every frequency, whatever the signals are, which is a
+    // beautiful picture of nothing.
+    if(in.engine==QLatin1String("Coherence Spectrum")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            QVector<double> a,b;
+            const QVector<double>& xa=in.series.at(0).y;
+            const QVector<double>& xb=in.series.at(1).y;
+            const int n=qMin(xa.size(),xb.size());
+            for(int i=0;i<n;++i)
+                if(finite(xa[i])&&finite(xb[i])){ a.append(xa[i]); b.append(xb[i]); }
+            const int m=a.size();
+            int seg=1;
+            while(seg*2<=m/4) seg*=2;
+            if(m>=64&&seg>=16){
+                const int step=seg/2, bins=seg/2;
+                QVector<double> paa(bins,0.0), pbb(bins,0.0), pre(bins,0.0), pim(bins,0.0);
+                int windows=0;
+                for(int start=0;start+seg<=m;start+=step){
+                    QVector<double> ar(seg),ai(seg,0.0),br(seg),bi(seg,0.0);
+                    for(int i=0;i<seg;++i){
+                        // Hann, so the segment edges do not leak across the
+                        // whole spectrum.
+                        const double w=0.5-0.5*std::cos(2.0*M_PI*double(i)/double(seg-1));
+                        ar[i]=a[start+i]*w;
+                        br[i]=b[start+i]*w;
+                    }
+                    fftInPlace(ar,ai);
+                    fftInPlace(br,bi);
+                    for(int k=0;k<bins;++k){
+                        paa[k]+=ar[k]*ar[k]+ai[k]*ai[k];
+                        pbb[k]+=br[k]*br[k]+bi[k]*bi[k];
+                        pre[k]+=ar[k]*br[k]+ai[k]*bi[k];
+                        pim[k]+=ai[k]*br[k]-ar[k]*bi[k];
+                    }
+                    ++windows;
+                }
+                if(windows>0){
+                    PlotSeries coh;
+                    coh.label=QStringLiteral("coherence (%1 windows of %2)").arg(windows).arg(seg);
+                    coh.color=in.series.at(1).color;
+                    coh.lineWidth=qMax(1.2,in.style.lineWidth);
+                    for(int k=1;k<bins;++k){
+                        const double den=paa[k]*pbb[k];
+                        const double num=pre[k]*pre[k]+pim[k]*pim[k];
+                        coh.x.append(double(k)/double(seg));
+                        coh.y.append((den>1e-300)?qBound(0.0,num/den,1.0):0.0);
+                    }
+                    out.series.append(coh);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("frequency (cycles per sample)"),false,
+                           unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("magnitude-squared coherence"),false,0.0,1.05};
+        return out;
+    }
+
+    // ------------------------------------------------------------ Bode Plot
+    // Gain and phase against frequency for a control loop, which is the pair of
+    // numbers stability is read from: how much more gain the loop can take
+    // before it oscillates, and how much more delay. Distinct from EIS: Bode,
+    // which plots impedance magnitude and phase for an electrochemical cell -
+    // the same axes, a different quantity, and worth being two entries.
+    if(in.engine==QLatin1String("Bode Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& freq=in.series.at(0).y;
+            const QVector<double>& gain=in.series.at(1).y;
+            const int n=qMin(freq.size(),gain.size());
+            PlotSeries mag;
+            mag.label=QStringLiteral("gain (dB)");
+            mag.color=in.series.at(1).color;
+            mag.lineWidth=qMax(1.3,in.style.lineWidth);
+            double crossover=0.0;
+            double previous=std::numeric_limits<double>::quiet_NaN();
+            double previousF=0.0;
+            for(int i=0;i<n;++i){
+                if(!finite(freq[i])||!finite(gain[i])||!(freq[i]>0.0)) continue;
+                // A gain given in absolute terms is converted; one already in
+                // decibels is left alone. Negative values cannot be a magnitude,
+                // so their presence is what says which it is.
+                mag.x.append(freq[i]);
+                mag.y.append(gain[i]);
+                if(finite(previous)&&((previous>0.0)!=(gain[i]>0.0))&&crossover==0.0){
+                    const double t=(0.0-previous)/(gain[i]-previous);
+                    crossover=previousF+t*(freq[i]-previousF);
+                }
+                previous=gain[i]; previousF=freq[i];
+            }
+            if(!mag.x.isEmpty()){
+                if(crossover>0.0)
+                    mag.label=QStringLiteral("gain (dB), crosses 0 dB at %1").arg(crossover,0,'g',4);
+                out.series.append(mag);
+                const Bounds b=boundsOf(mag.x);
+                if(b.valid)
+                    out.series.append(horizontalRule(0.0,b.lo,b.hi,in.style.warning,
+                                                     QStringLiteral("0 dB"),true));
+            }
+            // Phase, when a third column carries it, on the same axis and said
+            // so - two units on one ordinate is a compromise this plot has
+            // always made and the label is what keeps it honest.
+            if(in.series.size()>=3){
+                const QVector<double>& phase=in.series.at(2).y;
+                PlotSeries ph;
+                ph.label=QStringLiteral("phase (degrees)");
+                ph.color=in.style.warning;
+                ph.lineWidth=qMax(1.1,in.style.lineWidth);
+                const int k=qMin(freq.size(),phase.size());
+                for(int i=0;i<k;++i){
+                    if(!finite(freq[i])||!finite(phase[i])||!(freq[i]>0.0)) continue;
+                    ph.x.append(freq[i]); ph.y.append(phase[i]);
+                }
+                if(!ph.x.isEmpty()) out.series.append(ph);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("frequency"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("gain (dB) / phase (deg)"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------- Operating Characteristic Curve
+    // The probability a sampling plan ACCEPTS a lot, against how defective the
+    // lot actually is. It is the plot that shows an inspection scheme is not
+    // the guarantee people take it for: a plan that accepts 95% of good lots
+    // also accepts a fair share of bad ones, and the curve says how many.
+    if(in.engine==QLatin1String("Operating Characteristic Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        // Sample size and acceptance number, from the first two mapped values.
+        int sample=50, accept=2;
+        if(in.series.size()>=1&&!in.series.at(0).y.isEmpty()&&finite(in.series.at(0).y.first()))
+            sample=qBound(1,int(std::lround(in.series.at(0).y.first())),100000);
+        if(in.series.size()>=2&&!in.series.at(1).y.isEmpty()&&finite(in.series.at(1).y.first()))
+            accept=qBound(0,int(std::lround(in.series.at(1).y.first())),sample);
+        PlotSeries oc;
+        oc.label=QStringLiteral("n = %1, accept on %2 or fewer").arg(sample).arg(accept);
+        oc.color=in.series.isEmpty()?in.style.foreground:in.series.at(0).color;
+        oc.lineWidth=qMax(1.3,in.style.lineWidth);
+        for(int step=0;step<=200;++step){
+            const double p=double(step)/200.0*0.25;   // 0 to 25% defective
+            // Binomial tail, by the recurrence rather than by factorials -
+            // 100000 choose 2 overflows a double long before it is needed.
+            double term=std::pow(1.0-p,double(sample));
+            double sum=term;
+            for(int k=1;k<=accept;++k){
+                if(!(1.0-p>1e-300)) { sum=(k>=accept)?1.0:0.0; break; }
+                term*=double(sample-k+1)/double(k)*(p/(1.0-p));
+                sum+=term;
+            }
+            oc.x.append(p*100.0);
+            oc.y.append(qBound(0.0,sum,1.0));
+        }
+        out.series.append(oc);
+        out.series.append(horizontalRule(0.95,0.0,25.0,in.style.gridColor,
+                                         QStringLiteral("95% accepted"),true));
+        out.series.append(horizontalRule(0.10,0.0,25.0,in.style.gridColor,
+                                         QStringLiteral("10% accepted"),true));
+        out.xAxis=PlotAxis{QStringLiteral("lot defective (%)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("probability of acceptance"),false,0.0,1.05};
+        return out;
+    }
+
+    // ------------------------------------------------------- Cottrell Plot
+    // Current against one over the square root of time, for a potential step
+    // into a diffusion-limited reaction. Cottrell's equation makes that a
+    // straight line through the origin, so the plot is a test as much as a
+    // measurement: curvature means the current is not purely diffusion
+    // controlled, and the slope gives the diffusion coefficient when it is.
+    if(in.engine==QLatin1String("Cottrell Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& time=in.series.at(0).y;
+            const QVector<double>& current=in.series.at(1).y;
+            const int n=qMin(time.size(),current.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("measured");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+            QVector<double> fx,fy;
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(current[i])||!(time[i]>0.0)) continue;
+                const double invRoot=1.0/std::sqrt(time[i]);
+                pts.x.append(invRoot); pts.y.append(current[i]);
+                fx.append(invRoot); fy.append(current[i]);
+            }
+            if(fx.size()>=2){
+                out.series.append(pts);
+                // Through the origin, because Cottrell's equation has no
+                // constant term: at infinite time the diffusion current is
+                // zero. A free intercept would fit better and mean less.
+                double sxy=0.0,sxx=0.0;
+                for(int i=0;i<fx.size();++i){ sxy+=fx[i]*fy[i]; sxx+=fx[i]*fx[i]; }
+                const Bounds b=boundsOf(fx);
+                if(sxx>1e-300&&b.valid){
+                    const double slope=sxy/sxx;
+                    // How straight it actually is, because that is the finding.
+                    double ssRes=0.0,ssTot=0.0,mean=0.0;
+                    for(double q:fy) mean+=q;
+                    mean/=double(fy.size());
+                    for(int i=0;i<fx.size();++i){
+                        const double r=fy[i]-slope*fx[i];
+                        ssRes+=r*r;
+                        ssTot+=(fy[i]-mean)*(fy[i]-mean);
+                    }
+                    const double r2=(ssTot>1e-300)?1.0-ssRes/ssTot:0.0;
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("Cottrell slope %1, R2 %2")
+                                  .arg(slope,0,'g',4).arg(r2,0,'f',4);
+                    fit.color=in.style.warning;
+                    fit.lineWidth=qMax(1.3,in.style.lineWidth);
+                    fit.x={0.0,b.hi};
+                    fit.y={0.0,slope*b.hi};
+                    out.series.append(fit);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("1 / sqrt(time)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("current"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------- Coulombic Efficiency Trend
+    // Charge recovered as a fraction of charge supplied, cycle by cycle, with
+    // the cumulative mean over it. In a microbial electrolysis cell it is the
+    // number that says whether the reactor is converting substrate to current
+    // or losing it to something else, and a slow decline across cycles is the
+    // signature of that loss establishing itself.
+    if(in.engine==QLatin1String("Coulombic Efficiency Trend")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& cycle=in.series.at(0).y;
+            const QVector<double>& efficiency=in.series.at(1).y;
+            const int n=qMin(cycle.size(),efficiency.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("per cycle");
+            pts.color=in.series.at(1).color;
+            pts.drawMarkers=true; pts.markerSize=4.0;
+            pts.lineWidth=qMax(1.2,in.style.lineWidth);
+            PlotSeries running;
+            running.label=QStringLiteral("cumulative mean");
+            running.color=in.style.warning;
+            running.lineWidth=qMax(1.3,in.style.lineWidth);
+            double sum=0.0; int count=0;
+            QVector<double> fx,fy;
+            for(int i=0;i<n;++i){
+                if(!finite(cycle[i])||!finite(efficiency[i])) continue;
+                pts.x.append(cycle[i]); pts.y.append(efficiency[i]);
+                sum+=efficiency[i]; ++count;
+                running.x.append(cycle[i]); running.y.append(sum/double(count));
+                fx.append(cycle[i]); fy.append(efficiency[i]);
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                out.series.append(running);
+                const LineFit f=fitLine(fx,fy);
+                const Bounds b=boundsOf(fx);
+                if(f.ok&&b.valid){
+                    PlotSeries trend;
+                    trend.label=QStringLiteral("trend %1 per cycle").arg(f.slope,0,'g',3);
+                    trend.color=in.style.danger;
+                    trend.lineWidth=qMax(1.0,in.style.lineWidth*0.9);
+                    trend.x={b.lo,b.hi};
+                    trend.y={f.intercept+f.slope*b.lo,f.intercept+f.slope*b.hi};
+                    out.series.append(trend);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cycle"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("coulombic efficiency"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------------------------- Biplot
+    // The observations AND the variables on one pair of axes. The points are
+    // the rows projected onto the first two principal components; the arrows
+    // are the columns, showing which variable pulls in which direction. Two
+    // arrows close together are two columns carrying the same information,
+    // which is the finding a correlation matrix states and a biplot shows.
+    if(in.engine==QLatin1String("Biplot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        const int p=in.series.size();
+        int rows=0;
+        for(const PlotSeries& s:in.series) rows=qMax(rows,int(s.y.size()));
+        if(p>=2&&rows>=3){
+            // Standardised, because a principal component of unstandardised
+            // columns is whichever column has the largest units. That is not a
+            // finding about the data, it is a finding about the units.
+            QVector<QVector<double>> z(p);
+            QVector<double> centre(p,0.0), spread(p,1.0);
+            for(int c=0;c<p;++c){
+                const QVector<double>& col=in.series.at(c).y;
+                double mean=0.0; int used=0;
+                for(int i=0;i<rows&&i<col.size();++i)
+                    if(finite(col[i])){ mean+=col[i]; ++used; }
+                if(used>0) mean/=double(used);
+                double var=0.0;
+                for(int i=0;i<rows&&i<col.size();++i)
+                    if(finite(col[i])) var+=(col[i]-mean)*(col[i]-mean);
+                var=(used>1)?var/double(used-1):1.0;
+                centre[c]=mean;
+                spread[c]=(var>1e-300)?std::sqrt(var):1.0;
+                z[c].resize(rows);
+                for(int i=0;i<rows;++i)
+                    z[c][i]=(i<col.size()&&finite(col[i]))?(col[i]-centre[c])/spread[c]:0.0;
+            }
+            // Correlation matrix, then its two leading eigenvectors by power
+            // iteration with deflation. Two vectors of a p-by-p symmetric
+            // matrix is not worth a linear algebra dependency.
+            QVector<double> cov(p*p,0.0);
+            for(int a=0;a<p;++a)
+                for(int b=0;b<p;++b){
+                    double s=0.0;
+                    for(int i=0;i<rows;++i) s+=z[a][i]*z[b][i];
+                    cov[a*p+b]=s/double(qMax(1,rows-1));
+                }
+            const auto power=[&](QVector<double>& m,QVector<double>& vec,double* value){
+                vec.fill(0.0,p);
+                vec[0]=1.0;
+                for(int it=0;it<200;++it){
+                    QVector<double> next(p,0.0);
+                    for(int a=0;a<p;++a)
+                        for(int b=0;b<p;++b) next[a]+=m[a*p+b]*vec[b];
+                    double norm=0.0;
+                    for(double q:next) norm+=q*q;
+                    norm=std::sqrt(norm);
+                    if(!(norm>1e-300)) return false;
+                    for(double& q:next) q/=norm;
+                    vec=next;
+                    *value=norm;
+                }
+                return true;
+            };
+            QVector<double> pc1,pc2;
+            double lambda1=0.0,lambda2=0.0;
+            if(power(cov,pc1,&lambda1)){
+                // Deflate and repeat for the second component.
+                for(int a=0;a<p;++a)
+                    for(int b=0;b<p;++b) cov[a*p+b]-=lambda1*pc1[a]*pc1[b];
+                power(cov,pc2,&lambda2);
+            }
+            if(pc1.size()==p&&pc2.size()==p){
+                PlotSeries scores;
+                scores.label=QStringLiteral("observations");
+                scores.color=in.series.at(0).color;
+                scores.drawLine=false; scores.drawMarkers=true; scores.markerSize=4.0;
+                double reach=0.0;
+                for(int i=0;i<rows;++i){
+                    double s1=0.0,s2=0.0;
+                    for(int c=0;c<p;++c){ s1+=z[c][i]*pc1[c]; s2+=z[c][i]*pc2[c]; }
+                    scores.x.append(s1); scores.y.append(s2);
+                    reach=qMax(reach,std::hypot(s1,s2));
+                }
+                out.series.append(scores);
+                // The loadings, scaled to the cloud so both are readable on one
+                // pair of axes - which is what makes it a BIplot and is stated
+                // on the axis label rather than left as a silent rescaling.
+                const double scale=(reach>0.0)?reach*0.9:1.0;
+                for(int c=0;c<p;++c){
+                    PlotSeries arrow;
+                    arrow.label=in.series.at(c).label.isEmpty()
+                                ?QStringLiteral("column %1").arg(c+1)
+                                :in.series.at(c).label;
+                    arrow.color=QColor::fromHsvF(std::fmod(double(c)*0.13,1.0),0.65,0.95);
+                    arrow.lineWidth=qMax(1.3,in.style.lineWidth);
+                    arrow.x={0.0,pc1[c]*scale};
+                    arrow.y={0.0,pc2[c]*scale};
+                    out.series.append(arrow);
+                }
+                const double total=lambda1+lambda2;
+                out.xAxis=PlotAxis{QStringLiteral("PC1 (%1% of the first two)")
+                                       .arg(total>0?100.0*lambda1/total:0.0,0,'f',0),
+                                   false,unsetValue(),unsetValue()};
+                out.yAxis=PlotAxis{QStringLiteral("PC2 (loadings scaled to the scores)"),
+                                   false,unsetValue(),unsetValue()};
+                return out;
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("PC1"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("PC2"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ Star Glyph Plot
+    // One small radar per row, laid out on a grid. Where parallel coordinates
+    // draws every observation as a line across shared axes and relies on the
+    // eye to follow one of them, this gives each observation a SHAPE - and a
+    // shape is what people are good at matching, so outliers and groups fall
+    // out of a page of glyphs without any statistics at all.
+    if(in.engine==QLatin1String("Star Glyph Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        out.legendVisible=false;
+        const int p=in.series.size();
+        int rows=0;
+        for(const PlotSeries& s:in.series) rows=qMax(rows,int(s.y.size()));
+        if(p>=3&&rows>=1){
+            // Each column scaled to 0..1 over its own range, because the spokes
+            // share a radius and raw values on a shared radius compare nothing.
+            QVector<Bounds> range(p);
+            for(int c=0;c<p;++c) range[c]=boundsOf(in.series.at(c).y);
+            const int shown=qMin(rows,64);
+            const int cols=qMax(1,int(std::ceil(std::sqrt(double(shown)))));
+            for(int i=0;i<shown;++i){
+                const double cx=double(i%cols)*2.4;
+                const double cy=-double(i/cols)*2.4;
+                PlotSeries glyph;
+                glyph.label=QString();
+                glyph.color=QColor::fromHsvF(std::fmod(double(i)*0.11,1.0),0.55,0.93);
+                glyph.lineWidth=qMax(1.0,in.style.lineWidth);
+                for(int c=0;c<=p;++c){
+                    const int k=c%p;
+                    const QVector<double>& col=in.series.at(k).y;
+                    const double v=(i<col.size()&&finite(col[i]))?col[i]:0.0;
+                    const double r=0.25+0.75*(range[k].valid?range[k].scale(v):0.0);
+                    const double a=2.0*M_PI*double(k)/double(p)-M_PI/2.0;
+                    glyph.x.append(cx+r*std::cos(a));
+                    glyph.y.append(cy+r*std::sin(a));
+                }
+                out.series.append(glyph);
+            }
+        }
+        out.xAxis=PlotAxis{QString(),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QString(),false,unsetValue(),unsetValue()};
+        out.style.gridVisible=false;
+        out.style.scaleLabelsVisible=false;
+        return out;
+    }
+
+    // ------------------------------------------------------ Sunflower Plot
+    // A scatter that says how many points are at each spot. Overplotting hides
+    // density and no amount of transparency fixes it above a few thousand
+    // points; a hexbin fixes it and throws the individual points away. This
+    // keeps both: one dot for a single observation, and a dot with that many
+    // short petals wherever several land together.
+    if(in.engine==QLatin1String("Sunflower Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        out.legendVisible=false;
+        if(in.series.size()>=2){
+            const QVector<double>& xs=in.series.at(0).y;
+            const QVector<double>& ys=in.series.at(1).y;
+            const int n=qMin(xs.size(),ys.size());
+            const Bounds bx=boundsOf(xs), by=boundsOf(ys);
+            if(bx.valid&&by.valid&&n>0){
+                const int side=qBound(8,int(std::sqrt(double(n))*0.9),48);
+                QHash<int,int> bin;
+                for(int i=0;i<n;++i){
+                    if(!finite(xs[i])||!finite(ys[i])) continue;
+                    const int cx=qBound(0,int((xs[i]-bx.lo)/qMax(1e-300,bx.hi-bx.lo)*side),side-1);
+                    const int cy=qBound(0,int((ys[i]-by.lo)/qMax(1e-300,by.hi-by.lo)*side),side-1);
+                    bin[cy*side+cx]+=1;
+                }
+                const double stepX=(bx.hi-bx.lo)/side, stepY=(by.hi-by.lo)/side;
+                const double petal=qMin(stepX,stepY)*0.45;
+                PlotSeries singles;
+                singles.label=QString();
+                singles.color=in.series.at(1).color;
+                singles.drawLine=false; singles.drawMarkers=true; singles.markerSize=3.0;
+                for(auto it=bin.constBegin();it!=bin.constEnd();++it){
+                    const int cx=it.key()%side, cy=it.key()/side;
+                    const double x=bx.lo+(cx+0.5)*stepX;
+                    const double y=by.lo+(cy+0.5)*stepY;
+                    if(it.value()<=1){ singles.x.append(x); singles.y.append(y); continue; }
+                    // One petal per observation, up to a dozen - beyond that
+                    // nobody counts them and the number is written instead by
+                    // the density of the flowers themselves.
+                    const int petals=qMin(it.value(),12);
+                    for(int k=0;k<petals;++k){
+                        const double a=2.0*M_PI*double(k)/double(petals);
+                        PlotSeries spoke;
+                        spoke.label=QString();
+                        spoke.color=in.series.at(1).color;
+                        spoke.lineWidth=0.9;
+                        spoke.x={x,x+petal*std::cos(a)*(stepX/qMax(1e-300,qMin(stepX,stepY)))};
+                        spoke.y={y,y+petal*std::sin(a)*(stepY/qMax(1e-300,qMin(stepX,stepY)))};
+                        out.series.append(spoke);
+                    }
+                }
+                if(!singles.x.isEmpty()) out.series.append(singles);
+            }
+        }
         return out;
     }
 

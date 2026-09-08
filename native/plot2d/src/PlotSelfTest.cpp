@@ -457,6 +457,114 @@ bool runEngineSweep(){
         waffleShare={37.0,29.0,21.0,13.0};
     }
 
+    // Batch 6's inputs. Each is shaped so the engine has something real to
+    // find - a series with a known period, a residual whose spread genuinely
+    // grows, two signals coherent at one frequency and not elsewhere - because
+    // an engine fed noise draws something and proves nothing.
+    QVector<double> fittedValue,plainResidual,growingResidual;
+    QVector<double> predictorX,responseY,noisyX,noisyY;
+    QVector<double> arSeries,seasonTime,seasonValue,seasonPeriod;
+    QVector<double> chaos,driveA,driveB;
+    QVector<double> bodeFreq,bodeGain,bodePhase;
+    QVector<double> planSize,planAccept;
+    QVector<double> stepTime,stepCurrent,cycleIndex,cycleEfficiency;
+    QVector<double> mvA,mvB,mvC,mvD;
+    {
+        for(int i=0;i<120;++i){
+            const double u=double(i)/119.0;
+            fittedValue.append(2.0+8.0*u);
+            const double wobble=std::sin(double(i)*12.9898)*std::cos(double(i)*4.1414);
+            plainResidual.append(0.4*wobble);
+            // Spread that grows with the fit, which is what the scale-location
+            // panel exists to reveal and a flat one would not test.
+            growingResidual.append(0.15*wobble*(1.0+3.0*u));
+            predictorX.append(u*10.0);
+            // A quadratic hiding under a linear fit: the partial residual plot
+            // should show the curve.
+            responseY.append(1.0+2.0*(u*10.0)+0.08*(u*10.0)*(u*10.0));
+            noisyX.append(u*10.0);
+            noisyY.append(std::sin(u*6.0)*5.0+0.6*wobble);
+        }
+        // Pseudo-random, and it has to be.
+        //
+        // sin(i*78.233)*cos(i*12.9898) was used as "noise" here first, and it
+        // is a deterministic periodic signal. An AR process driven by it comes
+        // out periodic, so its partial autocorrelation does not cut off; and
+        // two signals with no INDEPENDENT noise in them are perfectly coherent
+        // at every frequency by construction, so a coherence spectrum of them
+        // is 1.0 everywhere whatever the code does. Both engines looked broken
+        // until the generator was checked. Xorshift, summed twelve at a time
+        // for an approximately normal deviate.
+        quint32 seed=2463534242u;
+        const auto noise=[&seed]{
+            double u=0.0;
+            for(int k=0;k<12;++k){
+                seed^=seed<<13; seed^=seed>>17; seed^=seed<<5;
+                u+=double(seed)/4294967296.0;
+            }
+            return u-6.0;
+        };
+        // An AR(2) with phi1 = 0.6 and phi2 = -0.3: the partial autocorrelation
+        // must come back near +0.46 at lag 1, -0.30 at lag 2, and cut off.
+        {
+            double a=0.0,b=0.0;
+            for(int i=0;i<600;++i){
+                const double v=0.6*a-0.3*b+noise();
+                arSeries.append(v);
+                b=a; a=v;
+            }
+        }
+        // Trend plus a 12-long cycle plus noise.
+        for(int i=0;i<180;++i){
+            seasonTime.append(double(i));
+            seasonValue.append(0.05*i
+                               +3.0*std::sin(2.0*M_PI*double(i%12)/12.0)
+                               +0.3*std::cos(double(i)*9.7));
+        }
+        seasonPeriod.append(12.0);
+        // A record that revisits: two incommensurate tones, so the recurrence
+        // plot has diagonals rather than a solid block or a scatter.
+        for(int i=0;i<300;++i)
+            chaos.append(std::sin(double(i)*0.21)+0.7*std::sin(double(i)*0.083));
+        // Two signals sharing one tone under INDEPENDENT noise, which is the
+        // only arrangement in which a coherence is not trivially 1.
+        for(int i=0;i<2048;++i){
+            const double shared=std::sin(2.0*M_PI*double(i)*0.05);
+            driveA.append(shared+2.0*noise());
+            driveB.append(0.9*shared+2.0*noise());
+        }
+        // A first-order loop: -20 dB per decade through 0 dB.
+        for(int i=0;i<80;++i){
+            const double f=std::pow(10.0,-1.0+3.0*double(i)/79.0);
+            bodeFreq.append(f);
+            bodeGain.append(20.0*std::log10(10.0/std::sqrt(1.0+f*f)));
+            bodePhase.append(-std::atan(f)*180.0/M_PI);
+        }
+        planSize.append(80.0);
+        planAccept.append(3.0);
+        // Cottrell: i proportional to 1/sqrt(t), so the plot is a straight line
+        // through the origin and its R2 should come back at 1.
+        for(int i=1;i<=60;++i){
+            const double t=double(i)*0.5;
+            stepTime.append(t);
+            stepCurrent.append(2.5/std::sqrt(t));
+        }
+        for(int i=0;i<40;++i){
+            cycleIndex.append(double(i+1));
+            cycleEfficiency.append(0.72-0.004*i+0.02*std::sin(double(i)*2.3));
+        }
+        // Four columns where A and B carry the same information and C is
+        // independent - so a biplot's arrows should pair A with B.
+        for(int i=0;i<90;++i){
+            const double u=std::fmod(double(i)*0.6180339887,1.0);
+            const double w=std::fmod(double(i)*0.4142135624,1.0);
+            mvA.append(u*4.0);
+            mvB.append(u*4.0+0.15*w);
+            mvC.append(w*7.0);
+            mvD.append(u*2.0-w*3.0);
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -621,6 +729,45 @@ bool runEngineSweep(){
         {QStringLiteral("Lomb-Scargle Periodogram"),
             {column("time",lombTime),column("value",lombValue)}},
         {QStringLiteral("Waffle Chart"),{column("share",waffleShare)}},
+        // Batch 6.
+        {QStringLiteral("Cook's Distance Plot"),
+            {column("fitted",fittedValue),column("residual",plainResidual)}},
+        {QStringLiteral("Scale-Location Plot"),
+            {column("fitted",fittedValue),column("residual",growingResidual)}},
+        {QStringLiteral("Partial Residual Plot"),
+            {column("predictor",predictorX),column("response",responseY)}},
+        {QStringLiteral("Savitzky-Golay Smoothing"),
+            {column("x",noisyX),column("y",noisyY)}},
+        {QStringLiteral("LOWESS Trend"),
+            {column("x",noisyX),column("y",noisyY)}},
+        {QStringLiteral("Partial Autocorrelation"),
+            {column("t",arSeries),column("value",arSeries)}},
+        {QStringLiteral("Seasonal Decomposition"),
+            {column("time",seasonTime),column("value",seasonValue),
+             column("period",seasonPeriod)}},
+        {QStringLiteral("Seasonal Subseries Plot"),
+            {column("time",seasonTime),column("value",seasonValue)}},
+        {QStringLiteral("Recurrence Plot"),
+            {column("t",chaos),column("value",chaos)}},
+        {QStringLiteral("Wavelet Scalogram"),
+            {column("t",chaos),column("value",chaos)}},
+        {QStringLiteral("Coherence Spectrum"),
+            {column("a",driveA),column("b",driveB)}},
+        {QStringLiteral("Bode Plot"),
+            {column("frequency",bodeFreq),column("gain",bodeGain),
+             column("phase",bodePhase)}},
+        {QStringLiteral("Operating Characteristic Curve"),
+            {column("n",planSize),column("accept",planAccept)}},
+        {QStringLiteral("Cottrell Plot"),
+            {column("time",stepTime),column("current",stepCurrent)}},
+        {QStringLiteral("Coulombic Efficiency Trend"),
+            {column("cycle",cycleIndex),column("efficiency",cycleEfficiency)}},
+        {QStringLiteral("Biplot"),
+            {column("A",mvA),column("B",mvB),column("C",mvC),column("D",mvD)}},
+        {QStringLiteral("Star Glyph Plot"),
+            {column("A",mvA),column("B",mvB),column("C",mvC),column("D",mvD)}},
+        {QStringLiteral("Sunflower Plot"),
+            {column("x",noisyX),column("y",noisyY)}},
     };
 
     for(const QString& engine:engines){

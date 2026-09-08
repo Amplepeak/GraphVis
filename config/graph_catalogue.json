@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 1769,
- "engine_count": 285,
+ "entry_count": 1859,
+ "engine_count": 303,
  "categories": [
   {
    "name": "Line Plots",
@@ -969,6 +969,17 @@
      "description": "Jittered distribution scatter — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "••••",
      "thumbnail": "swarmchart_ee46d84488.png",
+     "pack": "base"
+    },
+    {
+     "category": "Scatter & Bubble Charts",
+     "name": "sunflower",
+     "engine": "Sunflower Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A petal per observation where points coincide, so density shows without hiding points",
+     "preview": "",
+     "thumbnail": "",
      "pack": "base"
     }
    ],
@@ -4396,6 +4407,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Advanced Line & Signal Plots",
+     "name": "recurrence",
+     "engine": "Recurrence Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A mark wherever the record revisits an earlier state — diagonals mean deterministic structure",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -5579,6 +5601,237 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance",
+     "engine": "Cook's Distance Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Influence by observation, with the 4/n screening threshold",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation",
+     "engine": "Scale-Location Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Root standardised residual against fitted value — flat means constant variance",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual",
+     "engine": "Partial Residual Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance · Semi-Log Y",
+     "engine": "Cook's Distance Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Influence by observation, with the 4/n screening threshold — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance · Logarithmic Scale",
+     "engine": "Cook's Distance Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Influence by observation, with the 4/n screening threshold — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance · Semi-Log X",
+     "engine": "Cook's Distance Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Influence by observation, with the 4/n screening threshold — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance · Semi-Log(1+x) Y",
+     "engine": "Cook's Distance Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Influence by observation, with the 4/n screening threshold — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance · Standardised (Z-Score)",
+     "engine": "Cook's Distance Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Influence by observation, with the 4/n screening threshold — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "cooksdistance · Quantile X",
+     "engine": "Cook's Distance Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Influence by observation, with the 4/n screening threshold — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual · Semi-Log Y",
+     "engine": "Partial Residual Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual · Logarithmic Scale",
+     "engine": "Partial Residual Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual · Semi-Log X",
+     "engine": "Partial Residual Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual · Semi-Log(1+x) Y",
+     "engine": "Partial Residual Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual · Standardised (Z-Score)",
+     "engine": "Partial Residual Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "partialresidual · Quantile X",
+     "engine": "Partial Residual Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "The residual with one predictor's contribution added back; curvature means the linear term is wrong — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation · Semi-Log Y",
+     "engine": "Scale-Location Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Root standardised residual against fitted value — flat means constant variance — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation · Logarithmic Scale",
+     "engine": "Scale-Location Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Root standardised residual against fitted value — flat means constant variance — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation · Semi-Log X",
+     "engine": "Scale-Location Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Root standardised residual against fitted value — flat means constant variance — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation · Semi-Log(1+x) Y",
+     "engine": "Scale-Location Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Root standardised residual against fitted value — flat means constant variance — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation · Standardised (Z-Score)",
+     "engine": "Scale-Location Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Root standardised residual against fitted value — flat means constant variance — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Statistical & Diagnostic Plots",
+     "name": "scalelocation · Quantile X",
+     "engine": "Scale-Location Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Root standardised residual against fitted value — flat means constant variance — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -5838,6 +6091,83 @@
      "preview": "t↔t-1",
      "thumbnail": "lagplot_865ec775d5.png",
      "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf",
+     "engine": "Partial Autocorrelation",
+     "scale": null,
+     "advanced": false,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf · Semi-Log Y",
+     "engine": "Partial Autocorrelation",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf · Logarithmic Scale",
+     "engine": "Partial Autocorrelation",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf · Semi-Log X",
+     "engine": "Partial Autocorrelation",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf · Semi-Log(1+x) Y",
+     "engine": "Partial Autocorrelation",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf · Standardised (Z-Score)",
+     "engine": "Partial Autocorrelation",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signal Processing Plots",
+     "name": "pacf · Quantile X",
+     "engine": "Partial Autocorrelation",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Correlation at each lag with the shorter lags removed, by Durbin-Levinson — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
     }
    ],
    "pack": "physics"
@@ -5942,6 +6272,28 @@
      "description": "Three-component simplex scatter — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "△•",
      "thumbnail": "ternary_02f7bf1629.png",
+     "pack": "base"
+    },
+    {
+     "category": "Multivariate Plots",
+     "name": "biplot",
+     "engine": "Biplot",
+     "scale": null,
+     "advanced": false,
+     "description": "Observations and variables on one pair of principal components",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Multivariate Plots",
+     "name": "starglyph",
+     "engine": "Star Glyph Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "One small radar per observation on a grid, so shapes can be matched by eye",
+     "preview": "",
+     "thumbnail": "",
      "pack": "base"
     }
    ],
@@ -7193,6 +7545,160 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl",
+     "engine": "Seasonal Decomposition",
+     "scale": null,
+     "advanced": false,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries",
+     "engine": "Seasonal Subseries Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "One line per position in the cycle, so drift within a season is visible",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl · Semi-Log Y",
+     "engine": "Seasonal Decomposition",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl · Logarithmic Scale",
+     "engine": "Seasonal Decomposition",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl · Semi-Log X",
+     "engine": "Seasonal Decomposition",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl · Semi-Log(1+x) Y",
+     "engine": "Seasonal Decomposition",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl · Standardised (Z-Score)",
+     "engine": "Seasonal Decomposition",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "stl · Quantile X",
+     "engine": "Seasonal Decomposition",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Observed, trend, repeating cycle and remainder, with the period found or given — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries · Semi-Log Y",
+     "engine": "Seasonal Subseries Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "One line per position in the cycle, so drift within a season is visible — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries · Logarithmic Scale",
+     "engine": "Seasonal Subseries Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "One line per position in the cycle, so drift within a season is visible — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries · Semi-Log X",
+     "engine": "Seasonal Subseries Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "One line per position in the cycle, so drift within a season is visible — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries · Semi-Log(1+x) Y",
+     "engine": "Seasonal Subseries Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "One line per position in the cycle, so drift within a season is visible — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries · Standardised (Z-Score)",
+     "engine": "Seasonal Subseries Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "One line per position in the cycle, so drift within a season is visible — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "subseries · Quantile X",
+     "engine": "Seasonal Subseries Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "One line per position in the cycle, so drift within a season is visible — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -8228,6 +8734,17 @@
      "description": "Connected relationship in process order",
      "preview": "•─•",
      "thumbnail": "process_correlation_6a86dbc2a7.png",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "occurve",
+     "engine": "Operating Characteristic Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Probability a sampling plan accepts a lot, against how defective the lot is",
+     "preview": "",
+     "thumbnail": "",
      "pack": "engineering"
     }
    ],
@@ -9826,6 +10343,160 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell",
+     "engine": "Cottrell Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": null,
+     "advanced": false,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell · Semi-Log Y",
+     "engine": "Cottrell Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell · Logarithmic Scale",
+     "engine": "Cottrell Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell · Semi-Log X",
+     "engine": "Cottrell Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell · Semi-Log(1+x) Y",
+     "engine": "Cottrell Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell · Standardised (Z-Score)",
+     "engine": "Cottrell Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "cottrell · Quantile X",
+     "engine": "Cottrell Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Current against 1/sqrt(time); a straight line through the origin means diffusion control — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic · Semi-Log Y",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic · Logarithmic Scale",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic · Semi-Log X",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic · Semi-Log(1+x) Y",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic · Standardised (Z-Score)",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Electrochemical & Bioprocess",
+     "name": "coulombic · Quantile X",
+     "engine": "Coulombic Efficiency Trend",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Efficiency by cycle with the cumulative mean and the trend across cycles — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -10839,6 +11510,17 @@
      "description": "Nyquist complex-impedance arc with Rs/Rct",
      "preview": "⌒Ω",
      "thumbnail": "complex-plane_impedance_6782670914.png",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "scalogram",
+     "engine": "Wavelet Scalogram",
+     "scale": null,
+     "advanced": false,
+     "description": "Where the frequency content sits in time, by Morlet wavelet",
+     "preview": "",
+     "thumbnail": "",
      "pack": "physics"
     }
    ],
@@ -18392,6 +19074,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode",
+     "engine": "Bode Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode · Semi-Log Y",
+     "engine": "Bode Plot",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode · Logarithmic Scale",
+     "engine": "Bode Plot",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode · Semi-Log X",
+     "engine": "Bode Plot",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode · Semi-Log(1+x) Y",
+     "engine": "Bode Plot",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode · Standardised (Z-Score)",
+     "engine": "Bode Plot",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "bode · Quantile X",
+     "engine": "Bode Plot",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Loop gain and phase against frequency, with the 0 dB crossover — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
     }
    ],
    "pack": "physics"
@@ -19477,6 +20236,160 @@
      "preview": "📈",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": null,
+     "advanced": false,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend",
+     "engine": "LOWESS Trend",
+     "scale": null,
+     "advanced": false,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend · Semi-Log Y",
+     "engine": "LOWESS Trend",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend · Logarithmic Scale",
+     "engine": "LOWESS Trend",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend · Semi-Log X",
+     "engine": "LOWESS Trend",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend · Semi-Log(1+x) Y",
+     "engine": "LOWESS Trend",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend · Standardised (Z-Score)",
+     "engine": "LOWESS Trend",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "lowesstrend · Quantile X",
+     "engine": "LOWESS Trend",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "A locally weighted trend through a scatter, adapting to uneven sampling — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol · Semi-Log Y",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol · Logarithmic Scale",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol · Semi-Log X",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol · Semi-Log(1+x) Y",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol · Standardised (Z-Score)",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Data Reduction & Interpolation",
+     "name": "savgol · Quantile X",
+     "engine": "Savitzky-Golay Smoothing",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Polynomial smoothing over a fixed window, which keeps peak height and width — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -19736,6 +20649,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence",
+     "engine": "Coherence Spectrum",
+     "scale": null,
+     "advanced": false,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence · Semi-Log Y",
+     "engine": "Coherence Spectrum",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence · Logarithmic Scale",
+     "engine": "Coherence Spectrum",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence · Semi-Log X",
+     "engine": "Coherence Spectrum",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence · Semi-Log(1+x) Y",
+     "engine": "Coherence Spectrum",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence · Standardised (Z-Score)",
+     "engine": "Coherence Spectrum",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral",
+     "name": "coherence · Quantile X",
+     "engine": "Coherence Spectrum",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "How much of one signal each frequency of another explains, averaged over Welch segments — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
     }
    ],
    "pack": "physics"
@@ -19746,13 +20736,13 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 714
+   "entryCount": 767
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 540
+   "entryCount": 541
   },
   {
    "id": "earth",
@@ -19764,13 +20754,13 @@
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 231
+   "entryCount": 245
   },
   {
    "id": "physics",
    "name": "Physics & Signals",
    "description": "Spectral analysis, signal imaging, RF and control, and volume visualisation.",
-   "entryCount": 100
+   "entryCount": 122
   }
  ]
 }

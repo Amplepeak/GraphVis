@@ -23,6 +23,21 @@ MenuBar {
     // The layouts of one family, and that family's name. Filtering here beats
     // a second property per group on the controller, and both are needed
     // because the five submenus below are written out by hand.
+    // Which estimator a name sits at, asked of the backend rather than written
+    // as a number here.
+    //
+    // The kriging and LOESS submenus were gated on `=== 14` and `=== 16`, which
+    // are correct today and silently point at the wrong estimator the moment
+    // one is inserted above them - and the whole reason nine of these were
+    // gated off at one point is that a control naming one thing and acting on
+    // another is worse than no control.
+    function estimatorIndex(name) {
+        var names = root.canvas ? root.canvas.fieldEstimatorNames() : []
+        for (var i = 0; i < names.length; ++i)
+            if (names[i] === name) return i
+        return -1
+    }
+
     function layoutsIn(group) {
         var out = []
         var all = root.app.uiLayoutList
@@ -332,7 +347,7 @@ MenuBar {
             // that does nothing is worse than no control.
             Menu {
                 title: "Kriging variogram"
-                enabled: root.app.plotFieldEstimator === 14
+                enabled: root.app.plotFieldEstimator === root.estimatorIndex("Ordinary Kriging")
                 Repeater {
                     model: root.canvas ? root.canvas.fieldKrigingVariogramNames() : []
                     delegate: MenuItem {
@@ -352,7 +367,7 @@ MenuBar {
             }
             Menu {
                 title: "LOESS span"
-                enabled: root.app.plotFieldEstimator === 16
+                enabled: root.app.plotFieldEstimator === root.estimatorIndex("LOESS / LOWESS")
                 Repeater {
                     model: [0.10, 0.25, 0.40, 0.60, 1.00]
                     delegate: MenuItem {
