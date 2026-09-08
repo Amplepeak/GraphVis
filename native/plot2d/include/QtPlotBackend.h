@@ -250,6 +250,10 @@ private:
     // with its impedance grid, a contingency table drawn to scale, and set
     // intersections as bars over a membership matrix.
     void drawSmith(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Draws its own skewed logarithmic frame, its own chrome and four
+    // families of background curve, so it takes the target rectangle
+    // rather than a Frame.
+    void drawSkewT(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     void drawMosaic(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     void drawUpSet(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Quiver, cones, stream tubes and ribbons, tensor glyphs and the volume

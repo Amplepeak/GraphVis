@@ -1423,6 +1423,30 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 13's input: a sounding with a capping inversion, so that both CAPE
+    // and CIN are non-zero. The constructed sounding the engine was verified
+    // against had CIN of exactly zero by design, which exercises only half of
+    // the area integration.
+    QVector<double> soundingPressure,soundingTemperature,soundingDewpoint;
+    {
+        // Surface 28 C with a 21 C dewpoint, a warm dry layer capping it near
+        // 850 hPa, and a conditionally unstable troposphere above.
+        const double levels[][3]={
+            {1000.0,28.0,21.0},{ 975.0,26.2,20.6},{ 950.0,24.4,20.2},
+            { 925.0,22.6,19.8},{ 900.0,21.5,19.0},{ 875.0,21.0,15.0},
+            { 850.0,20.4,11.0},{ 800.0,17.0,10.0},{ 750.0,13.6, 9.0},
+            { 700.0,10.0, 7.0},{ 650.0, 6.0, 4.0},{ 600.0, 1.8, 0.0},
+            { 550.0,-2.6,-5.0},{ 500.0,-7.5,-11.0},{ 450.0,-13.0,-18.0},
+            { 400.0,-19.5,-26.0},{ 350.0,-27.0,-35.0},{ 300.0,-36.0,-45.0},
+            { 250.0,-46.5,-56.0},{ 200.0,-56.0,-66.0},{ 150.0,-60.0,-72.0},
+            { 100.0,-62.0,-76.0}};
+        for(const auto& level:levels){
+            soundingPressure.append(level[0]);
+            soundingTemperature.append(level[1]);
+            soundingDewpoint.append(level[2]);
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1860,6 +1884,11 @@ bool runEngineSweep(){
         {QStringLiteral("Isoconversional Plot"),
             {column("beta",isoRate),column("T",isoTemperature),
              column("alpha",isoConversion)}},
+        // Batch 13.
+        {QStringLiteral("Skew-T Log-P"),
+            {column("pressure",soundingPressure),
+             column("temperature",soundingTemperature),
+             column("dewpoint",soundingDewpoint)}},
     };
 
     for(const QString& engine:engines){

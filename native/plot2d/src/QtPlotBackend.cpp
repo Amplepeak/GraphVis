@@ -556,6 +556,8 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Jitter Bathtub"),
         QStringLiteral("Pressure Derivative Plot"),
         QStringLiteral("Isoconversional Plot"),
+        // Batch 13: the first engine that needed a painter of its own.
+        QStringLiteral("Skew-T Log-P"),
     };
     return kEngines;
 }
@@ -2113,7 +2115,11 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Hot-Wire Conductivity"),
         QStringLiteral("Multi-Vari Chart"),
         QStringLiteral("Spaghetti Plot"),
-        QStringLiteral("Isoconversional Plot")};
+        QStringLiteral("Isoconversional Plot"),
+        // A sounding: pressure, temperature, dewpoint. Pressure first even
+        // though it is drawn vertically, because it is the independent
+        // variable and the two temperatures share it.
+        QStringLiteral("Skew-T Log-P")};
     if(kThree.contains(engine)) return {3,3,true};
 
     // Contingency: the two categories, and a count column if there is one.
@@ -3612,6 +3618,484 @@ void QtPlotBackend::drawSmith(QPainter* p,const QRectF& target,const PlotSpec& s
     p->restore();
 }
 
+// ======================================================================
+// Skew-T log-P
+//
+// The first engine in this port that could not be a rewrite. Everything in
+// batches 1 to 12 transformed its data and handed the result to geometry that
+// already existed; this one cannot, because its COORDINATE SYSTEM is the
+// content. Temperature runs diagonally, pressure runs logarithmically and
+// downward, and the whole point of the arrangement is that four families of
+// thermodynamic curve - isotherms, dry adiabats, saturated adiabats and lines
+// of constant mixing ratio - all become readable at once on a single sheet.
+// Nothing in a Cartesian frame can express that, so the frame, the chrome, the
+// labels and the data are all drawn here.
+//
+// The skew is chosen so the isotherms come out at 45 degrees WHATEVER SHAPE
+// the plot box is. A fixed skew constant is what most implementations use, and
+// it makes the isotherms lie down when the window is wide and stand up when it
+// is tall - at which point the diagram stops being a Skew-T, because the
+// separation between a dry adiabat and an isotherm is the thing a forecaster
+// reads slope differences against.
+namespace {
+
+// Saturation vapour pressure over water, in hPa, for a temperature in Celsius.
+// Bolton (1980) equation 10: better than a tenth of a per cent from -35 to
+// +35 C, which is the whole range a sounding spends its time in.
+inline double saturationPressure(double celsius){
+    return 6.112*std::exp(17.67*celsius/(celsius+243.5));
+}
+
+// The inverse, used to place a line of constant mixing ratio: given a vapour
+// pressure, the temperature at which the air would be saturated.
+inline double dewpointFrom(double vapourPressure){
+    if(!(vapourPressure>0.0)) return -273.15;
+    const double logged=std::log(vapourPressure/6.112);
+    const double denom=17.67-logged;
+    if(!(std::abs(denom)>1e-12)) return -273.15;
+    return 243.5*logged/denom;
+}
+
+// Mass of water vapour per unit mass of dry air, saturated, in g/kg.
+inline double saturationMixingRatio(double celsius,double hPa){
+    const double e=saturationPressure(celsius);
+    // A pressure at or below the saturation vapour pressure is not a state the
+    // atmosphere is in; guarding it stops a negative mixing ratio propagating
+    // into the moist adiabat's denominator.
+    if(!(hPa>e+1e-6)) return 1000.0;
+    return 1000.0*0.622*e/(hPa-e);
+}
+
+// Temperature on a dry adiabat: potential temperature is conserved, so
+// T = theta (p/1000)^(R/cp). Kelvin in, Kelvin out.
+inline double dryAdiabatAt(double theta,double hPa){
+    return theta*std::pow(hPa/1000.0,0.2854);
+}
+
+// Equivalent potential temperature of a SATURATED parcel, Bolton (1980)
+// equation 39. This is what a saturated adiabat conserves, and it is the
+// definition the curves below are built from.
+inline double equivalentPotential(double celsius,double hPa){
+    const double kelvin=celsius+273.15;
+    const double ratio=saturationMixingRatio(celsius,hPa)/1000.0;   // kg/kg
+    const double theta=kelvin*std::pow(1000.0/qMax(1e-6,hPa),0.2854*(1.0-0.28*ratio));
+    return theta*std::exp((3036.0/kelvin-1.78)*ratio*(1.0+0.448*ratio));
+}
+
+// The temperature at which a saturated parcel of the given equivalent
+// potential temperature sits at this pressure. Found by bisection, because
+// theta-e rises monotonically with temperature at fixed pressure.
+//
+// This INVERTS the usual approach and it is worth saying why. The first version
+// integrated the pseudoadiabatic lapse rate downward in pressure with a
+// constant latent heat, and checking the result against this same theta-e
+// formula showed the curves drifting off theta-e conservation by up to six
+// kelvin on the warmest adiabat over eight hundred hectopascals - around two
+// and a half degrees of temperature error at 200 hPa, which is half the spacing
+// between adjacent adiabats on the chart. A temperature-dependent latent heat
+// improved the warm curves and made the cold ones worse. Solving for theta-e
+// instead makes the residual 1e-13 K, which is to say exact: a saturated
+// adiabat IS a curve of constant theta-e, so it should be drawn as one rather
+// than approached by integration.
+inline double saturatedTemperatureAt(double target,double hPa){
+    double lo=-120.0,hi=60.0;
+    for(int i=0;i<60;++i){
+        const double mid=0.5*(lo+hi);
+        if(equivalentPotential(mid,hPa)<target) lo=mid; else hi=mid;
+    }
+    return 0.5*(lo+hi);
+}
+
+// The lifting condensation level, Bolton (1980) equation 22 for the
+// temperature and Poisson's equation for the pressure. Kelvin in.
+struct Condensation { double kelvin=0.0; double hPa=0.0; bool ok=false; };
+inline Condensation liftingCondensation(double kelvin,double dewKelvin,double hPa){
+    Condensation out;
+    if(!(kelvin>0.0)||!(dewKelvin>0.0)||!(hPa>0.0)) return out;
+    // The dewpoint cannot exceed the temperature. Saturated air condenses at
+    // the surface, and the formula's 1/(Td - 56) is not the thing that should
+    // decide that.
+    const double dew=qMin(dewKelvin,kelvin);
+    const double denom=1.0/(dew-56.0)+std::log(kelvin/dew)/800.0;
+    if(!(std::abs(denom)>1e-12)) return out;
+    out.kelvin=1.0/denom+56.0;
+    out.hPa=hPa*std::pow(out.kelvin/kelvin,3.504);
+    out.ok=finite(out.kelvin)&&finite(out.hPa)&&out.hPa>0.0;
+    return out;
+}
+
+} // namespace
+
+// Three mapped columns: pressure, temperature and dewpoint. Pressure first
+// because it is the independent variable of a sounding even though it is drawn
+// on the vertical axis - the profile is a function of height, not of
+// temperature, and two temperatures share the one pressure.
+void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    // Room for the pressure labels on the left, the temperature labels below,
+    // and the mixing-ratio labels that run up the right-hand side.
+    const double left=target.left()+fm.horizontalAdvance(QStringLiteral("1000"))+14.0;
+    const double bottom=target.bottom()-fm.height()-14.0;
+    const double right=target.right()-fm.horizontalAdvance(QStringLiteral("00"))-10.0;
+    // Two rows above the frame: the title (in its own larger font) and then the
+    // readout strip. Reserving two tick-heights for both was not enough and the
+    // readout was painted over the title.
+    const double top=target.top()+(spec.title.isEmpty()?fm.height()*1.4
+                                                       :fm.height()*3.2);
+    const QRectF box(left,top,qMax(40.0,right-left),qMax(40.0,bottom-top));
+
+    // The pressure range is fixed to the atmosphere rather than fitted to the
+    // data. A sounding that stops at 400 hPa is a sounding that stopped, and
+    // stretching the axis to it would make two soundings from the same station
+    // uncomparable - which is the one thing this diagram exists to allow.
+    double lowest=1050.0,highest=100.0;
+    double coolest=0.0,warmest=0.0;
+    bool haveTemperature=false;
+    if(spec.series.size()>=2){
+        const QVector<double>& pressure=spec.series.at(0).y;
+        for(int c=1;c<qMin(3,int(spec.series.size()));++c){
+            const QVector<double>& values=spec.series.at(c).y;
+            for(int i=0;i<qMin(pressure.size(),values.size());++i){
+                if(!finite(pressure[i])||!finite(values[i])) continue;
+                if(!(pressure[i]>0.0)) continue;
+                if(!haveTemperature){ coolest=warmest=values[i]; haveTemperature=true; }
+                coolest=qMin(coolest,values[i]); warmest=qMax(warmest,values[i]);
+            }
+        }
+    }
+    if(!haveTemperature){ coolest=-40.0; warmest=40.0; }
+    // Widened and rounded outward to a multiple of ten, so the isotherm labels
+    // land on round numbers and the profile is never against the edge.
+    coolest=std::floor((coolest-12.0)/10.0)*10.0;
+    warmest=std::ceil((warmest+12.0)/10.0)*10.0;
+    if(warmest-coolest<50.0) warmest=coolest+50.0;
+
+    const double heightInLogs=std::log(lowest/highest);
+    // The skew, in degrees of temperature across the full height. Set from the
+    // box's own aspect so an isotherm is at 45 degrees on the page.
+    const double skew=(warmest-coolest)*box.height()/qMax(1.0,box.width());
+
+    const auto heightOf=[&](double hPa){
+        return std::log(lowest/qMax(1e-6,hPa))/heightInLogs;    // 0 bottom, 1 top
+    };
+    const auto at=[&](double celsius,double hPa){
+        const double up=heightOf(hPa);
+        const double across=(celsius+skew*up-coolest)/(warmest-coolest);
+        return QPointF(box.left()+across*box.width(),box.bottom()-up*box.height());
+    };
+
+    p->save();
+    p->setClipRect(box.adjusted(-0.5,-0.5,0.5,0.5));
+
+    // ---- The four families of background curve, drawn faintest first so the
+    // ones a forecaster reads against are on top of the ones they do not.
+    // Blended toward the foreground rather than set to fixed colours, so the
+    // families stay distinguishable in a dark theme as well as a light one.
+    const auto blend=[&](const QColor& toward,double amount){
+        const QColor base=spec.style.gridColor;
+        return QColor::fromRgbF(base.redF()+(toward.redF()-base.redF())*amount,
+                                base.greenF()+(toward.greenF()-base.greenF())*amount,
+                                base.blueF()+(toward.blueF()-base.blueF())*amount);
+    };
+    const QColor faint=spec.style.gridColor;                 // dry adiabats
+    const QColor moist=blend(spec.style.positive,0.75);      // saturated adiabats
+    const QColor humid=blend(spec.style.warning,0.65);       // mixing ratio
+
+    // Lines of constant saturation mixing ratio: where air of this humidity
+    // would become saturated. Dashed, because they are the only family that is
+    // not a path any parcel takes - they are a labelling of moisture content.
+    {
+        QPen pen(humid); pen.setWidthF(0.7);
+        pen.setDashPattern({4,4}); pen.setCapStyle(Qt::FlatCap);
+        p->setPen(pen);
+        p->setFont(font(spec,qMax(6.0,spec.style.tickSize-1.5)));
+        for(const double gramsPerKilo:{0.4,1.0,2.0,4.0,7.0,10.0,16.0,24.0,32.0}){
+            QPolygonF path;
+            for(double hPa=lowest;hPa>=highest;hPa*=0.97){
+                const double w=gramsPerKilo/1000.0;
+                const double vapour=w*hPa/(0.622+w);
+                path.append(at(dewpointFrom(vapour),hPa));
+            }
+            p->drawPolyline(path);
+            // Labelled, because an unlabelled family of curves is decoration.
+            // At 600 hPa, which is high enough to be clear of the profile in
+            // most soundings and low enough to still be on the page.
+            const double w=gramsPerKilo/1000.0;
+            const QPointF where=at(dewpointFrom(w*600.0/(0.622+w)),600.0);
+            if(box.contains(where)){
+                const QRectF chip(where.x()-13.0,where.y()-12.0,26.0,11.0);
+                p->fillRect(chip,spec.style.background);
+                p->setPen(humid);
+                p->drawText(chip,Qt::AlignCenter,QString::number(gramsPerKilo,'g',2));
+                p->setPen(pen);
+            }
+        }
+    }
+
+    // Dry adiabats: the path of an unsaturated parcel. Curved on this diagram,
+    // which is the point - the angle between one of these and an isotherm is
+    // what stability is read from.
+    {
+        QPen pen(faint); pen.setWidthF(0.7);
+        p->setPen(pen);
+        for(double theta=233.15;theta<=473.15;theta+=10.0){
+            QPolygonF path;
+            for(double hPa=lowest;hPa>=highest;hPa*=0.97)
+                path.append(at(dryAdiabatAt(theta,hPa)-273.15,hPa));
+            p->drawPolyline(path);
+        }
+    }
+
+    // Saturated adiabats, integrated downward in pressure from the top of each
+    // curve. Solid and slightly stronger, because a parcel that has condensed
+    // follows one of these and the difference between it and the environment
+    // is the energy available.
+    {
+        QPen pen(moist); pen.setWidthF(0.8);
+        p->setPen(pen);
+        // Tabulated once. The adiabats depend only on the fixed pressure range
+        // and not on the data, so building them on every repaint would be
+        // sixty bisections a point for a picture that never changes.
+        struct Adiabat { double thetaE; QVector<QPair<double,double>> path; };
+        static const QVector<Adiabat> kAdiabats=[]{
+            QVector<Adiabat> out;
+            for(double surface=-20.0;surface<=40.0;surface+=5.0){
+                Adiabat curve;
+                curve.thetaE=equivalentPotential(surface,1050.0);
+                for(double hPa=1050.0;hPa>=100.0;hPa*=0.97)
+                    curve.path.append(qMakePair(hPa,
+                        saturatedTemperatureAt(curve.thetaE,hPa)));
+                out.append(curve);
+            }
+            return out;
+        }();
+        for(const Adiabat& curve:kAdiabats){
+            QPolygonF path;
+            for(const QPair<double,double>& point:curve.path){
+                if(point.first>lowest||point.first<highest) continue;
+                path.append(at(point.second,point.first));
+            }
+            if(path.size()>=2) p->drawPolyline(path);
+        }
+    }
+
+    // Isotherms last of the background, and in the foreground colour at low
+    // weight, because every other family is read as an angle AGAINST these.
+    {
+        QColor isotherm=spec.style.foreground; isotherm.setAlphaF(0.35);
+        QPen pen(isotherm); pen.setWidthF(0.7);
+        p->setPen(pen);
+        const double first=std::ceil(coolest/10.0)*10.0;
+        for(double celsius=first-skew;celsius<=warmest;celsius+=10.0){
+            const QPointF a=at(celsius,lowest),b=at(celsius,highest);
+            p->drawLine(a,b);
+        }
+        // Zero is where ice matters, so it is drawn again in a way that can be
+        // picked out at a glance.
+        QPen freezing(spec.style.foreground); freezing.setWidthF(1.1);
+        freezing.setDashPattern({6,4});
+        p->setPen(freezing);
+        p->drawLine(at(0.0,lowest),at(0.0,highest));
+    }
+    p->restore();
+
+    // ---- Chrome. Pressure up the left in hectopascals, temperature along the
+    // bottom, and the frame.
+    p->save();
+    p->setFont(tickFont);
+    QPen axis(spec.style.foreground); axis.setWidthF(0.9);
+    p->setPen(axis);
+    p->setBrush(Qt::NoBrush);
+    p->drawRect(box);
+    for(const double hPa:{1000.0,925.0,850.0,700.0,500.0,400.0,300.0,250.0,200.0,150.0,100.0}){
+        if(hPa>lowest||hPa<highest) continue;
+        const double y=box.bottom()-heightOf(hPa)*box.height();
+        p->drawLine(QPointF(box.left()-4.0,y),QPointF(box.left(),y));
+        p->drawText(QRectF(target.left(),y-fm.height()*0.5,
+                           box.left()-target.left()-6.0,fm.height()),
+                    Qt::AlignRight|Qt::AlignVCenter,QString::number(int(hPa)));
+    }
+    for(double celsius=std::ceil(coolest/10.0)*10.0;celsius<=warmest;celsius+=10.0){
+        const QPointF foot=at(celsius,lowest);
+        if(foot.x()<box.left()-1.0||foot.x()>box.right()+1.0) continue;
+        p->drawLine(foot,foot+QPointF(0,4.0));
+        p->drawText(QRectF(foot.x()-24.0,box.bottom()+5.0,48.0,fm.height()),
+                    Qt::AlignHCenter|Qt::AlignTop,QString::number(int(celsius)));
+    }
+    p->drawText(QRectF(box.left(),box.bottom()+fm.height()+4.0,box.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignTop,
+                QStringLiteral("temperature (C), isotherms skewed 45 degrees"));
+    p->restore();
+
+    if(spec.series.size()<2) return;
+
+    // ---- The sounding itself.
+    const QVector<double>& pressure=spec.series.at(0).y;
+    const QVector<double>& temperature=spec.series.at(1).y;
+    const bool haveDew=spec.series.size()>=3;
+    const QVector<double>& dewpoint=haveDew?spec.series.at(2).y:temperature;
+
+    struct Level { double hPa,celsius,dew; };
+    QVector<Level> sounding;
+    for(int i=0;i<qMin(pressure.size(),temperature.size());++i){
+        if(!finite(pressure[i])||!finite(temperature[i])||!(pressure[i]>0.0)) continue;
+        const double dew=(haveDew&&i<dewpoint.size()&&finite(dewpoint[i]))
+                         ?qMin(dewpoint[i],temperature[i]):temperature[i];
+        sounding.append({pressure[i],temperature[i],dew});
+    }
+    // Sorted by DECREASING pressure, which is upward. A sounding file that
+    // happens to be stored the other way round would otherwise draw a profile
+    // that runs the wrong way and a parcel lifted downward.
+    std::sort(sounding.begin(),sounding.end(),
+              [](const Level& a,const Level& b){ return a.hPa>b.hPa; });
+    if(sounding.isEmpty()) return;
+
+    p->save();
+    p->setClipRect(box.adjusted(-0.5,-0.5,0.5,0.5));
+    const auto trace=[&](bool useDew,const QColor& colour){
+        QPen pen(colour); pen.setWidthF(qMax(1.8,spec.style.lineWidth*1.4));
+        pen.setJoinStyle(Qt::RoundJoin);
+        p->setPen(pen);
+        QPolygonF path;
+        for(const Level& level:sounding)
+            path.append(at(useDew?level.dew:level.celsius,level.hPa));
+        p->drawPolyline(path);
+    };
+    if(haveDew) trace(true,spec.series.at(2).color);
+    trace(false,spec.series.at(1).color);
+
+    // ---- The parcel. Lifted from the lowest level in the sounding, dry to the
+    // condensation level and saturated above it.
+    const Level& surface=sounding.first();
+    const Condensation lcl=liftingCondensation(surface.celsius+273.15,
+                                               surface.dew+273.15,surface.hPa);
+    double available=0.0,inhibition=0.0;
+    double freeConvection=std::numeric_limits<double>::quiet_NaN();
+    double equilibrium=std::numeric_limits<double>::quiet_NaN();
+    if(lcl.ok){
+        // Integrated on the SOUNDING's own levels rather than on a fixed
+        // pressure step, so the areas are bounded by the reported environment
+        // instead of by an interpolation of it.
+        QPolygonF path;
+        const double theta=(surface.celsius+273.15)
+                          *std::pow(1000.0/surface.hPa,0.2854);
+        const double parcelThetaE=equivalentPotential(lcl.kelvin-273.15,lcl.hPa);
+        double parcelC=surface.celsius;
+        double lastP=surface.hPa,lastDiff=0.0;
+        bool started=false;
+        const double gasConstant=287.058;
+        for(const Level& level:sounding){
+            if(level.hPa>=lcl.hPa){
+                parcelC=dryAdiabatAt(theta,level.hPa)-273.15;
+            }else{
+                // Above the condensation level the parcel is on the saturated
+                // adiabat through the LCL, so its temperature at any pressure
+                // is one bisection rather than an integration from the level
+                // below. That also means the drawn path and the computed energy
+                // cannot disagree with the background adiabats they are read
+                // against, because all three are the same curve.
+                parcelC=saturatedTemperatureAt(parcelThetaE,level.hPa);
+            }
+            if(!finite(parcelC)) break;
+            path.append(at(parcelC,level.hPa));
+            const double diff=parcelC-level.celsius;
+            if(started&&level.hPa<lastP){
+                // Rd times the mean buoyancy across the layer, times the
+                // thickness in log pressure. Positive area is CAPE and
+                // negative is CIN; splitting them is the whole point, since
+                // their sum is a number nobody uses.
+                const double area=gasConstant*0.5*(diff+lastDiff)
+                                 *std::log(lastP/level.hPa);
+                if(area>0.0) available+=area; else inhibition+=area;
+                if(lastDiff<0.0&&diff>=0.0&&!finite(freeConvection))
+                    freeConvection=level.hPa;
+                if(lastDiff>0.0&&diff<=0.0&&finite(freeConvection)&&!finite(equilibrium))
+                    equilibrium=level.hPa;
+            }
+            lastP=level.hPa; lastDiff=diff; started=true;
+        }
+        QPen parcel(spec.style.warning);
+        parcel.setWidthF(qMax(1.2,spec.style.lineWidth));
+        parcel.setDashPattern({7,4});
+        p->setPen(parcel);
+        p->drawPolyline(path);
+
+        const QPointF mark=at(lcl.kelvin-273.15,lcl.hPa);
+        p->setPen(QPen(spec.style.danger,1.4));
+        p->setBrush(Qt::NoBrush);
+        p->drawEllipse(mark,4.5,4.5);
+    }
+    p->restore();
+
+    // ---- What the diagram is read for, stated rather than left to be
+    // measured off the page.
+    p->save();
+    p->setFont(tickFont);
+    p->setPen(spec.style.foreground);
+    QStringList found;
+    if(lcl.ok)
+        found.append(QStringLiteral("LCL %1 hPa at %2 C")
+                         .arg(lcl.hPa,0,'f',0).arg(lcl.kelvin-273.15,0,'f',1));
+    found.append(QStringLiteral("CAPE %1 J/kg").arg(available,0,'f',0));
+    found.append(QStringLiteral("CIN %1 J/kg").arg(inhibition,0,'f',0));
+    if(finite(freeConvection))
+        found.append(QStringLiteral("LFC %1 hPa").arg(freeConvection,0,'f',0));
+    if(finite(equilibrium))
+        found.append(QStringLiteral("EL %1 hPa").arg(equilibrium,0,'f',0));
+    // Temperature, not virtual temperature. The difference is a few per cent of
+    // CAPE in a moist boundary layer and it is named here rather than implied,
+    // because a CAPE quoted without saying which is not comparable with one
+    // from anywhere else.
+    found.append(QStringLiteral("from the surface parcel, temperature not virtual"));
+    const QString readout=found.join(QStringLiteral("   "));
+    // On its own strip below the frame rather than inside it. Sitting inside,
+    // it landed on whichever background curves happened to pass through the top
+    // left corner, and on a cold sounding that is where the profile is.
+    const QRectF strip(box.left(),box.top()-fm.height()*1.15,
+                       box.width(),fm.height()*1.05);
+    p->fillRect(strip,spec.style.background);
+    p->drawText(strip,Qt::AlignLeft|Qt::AlignVCenter,readout);
+
+    // Which colour is which. Two unlabelled lines on a Skew-T is the one
+    // ambiguity a forecaster cannot resolve from the picture, because a dry
+    // sounding and a saturated one differ only in which line is where.
+    const double swatch=fm.height()*0.6;
+    const int last=qMin(2,int(spec.series.size()-1));
+    double widest=0.0;
+    for(int c=1;c<=last;++c){
+        const QString name=spec.series.at(c).label.isEmpty()
+            ?(c==1?QStringLiteral("temperature"):QStringLiteral("dewpoint"))
+            :spec.series.at(c).label;
+        widest=qMax(widest,fm.horizontalAdvance(name));
+    }
+    if(last>=1&&widest>0.0){
+        const QRectF panel(box.right()-widest-swatch-16.0,box.top()+6.0,
+                           widest+swatch+12.0,fm.height()*double(last)+6.0);
+        p->fillRect(panel,spec.style.background);
+        p->setPen(QPen(spec.style.gridColor,0.7));
+        p->drawRect(panel);
+        for(int c=1;c<=last;++c){
+            const QString name=spec.series.at(c).label.isEmpty()
+                ?(c==1?QStringLiteral("temperature"):QStringLiteral("dewpoint"))
+                :spec.series.at(c).label;
+            const QRectF row(panel.left()+4.0,panel.top()+3.0+fm.height()*double(c-1),
+                             panel.width()-8.0,fm.height());
+            QPen pen(spec.series.at(c).color); pen.setWidthF(2.0);
+            p->setPen(pen);
+            p->drawLine(QPointF(row.left(),row.center().y()),
+                        QPointF(row.left()+swatch,row.center().y()));
+            p->setPen(spec.style.foreground);
+            p->drawText(QRectF(row.left()+swatch+4.0,row.top(),
+                               row.width()-swatch-4.0,row.height()),
+                        Qt::AlignLeft|Qt::AlignVCenter,name);
+        }
+    }
+    p->restore();
+}
+
 // A mosaic plot: a contingency table drawn to scale. Column widths are the
 // column totals and each column is divided by its own proportions, so an
 // association shows as tiles that fail to line up across columns - which is
@@ -4157,6 +4641,10 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Polar Line")
         && engine!=QLatin1String("Polar Scatter")
         && engine!=QLatin1String("Radiation Pattern")
+        // A skewed, logarithmic frame with four families of thermodynamic
+        // curve in it. A rectangular one drawn around that would be a
+        // second set of axes disagreeing with the first.
+        && engine!=QLatin1String("Skew-T Log-P")
         // 3-D draws its own projected cube; a 2-D frame around it would be
         // chrome that means nothing.
         && engine!=QLatin1String("3D Line")
@@ -22890,6 +23378,11 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Chord Diagram")){
             drawChord(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Skew-T Log-P")){
+            drawSkewT(painter,target,spec);
             painter->restore();
             return;
         }
