@@ -70,14 +70,31 @@ public:
     // actually produced has to come from the prepared one.
     static QString explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared);
 
-    // How many mapped columns this engine needs, 1 to 4.
+    // What one engine wants from the mapping, in the only terms the canvas
+    // needs: how many columns, and how they arrive.
     //
-    // Every multi-column engine reads its inputs as SERIES - series 0, 1 and 2
-    // are a heatmap's x, y and value; a network's from, to and weight; a 3-D
-    // scatter's x, y and z - so "how many columns" is also "how many series the
-    // canvas must build". One number, used both to compose the mapping and to
-    // explain a plot that came out empty, so the two can never disagree about
-    // what an engine wanted.
+    // There are two conventions in this backend and the difference is not
+    // cosmetic. An ORDINARY engine takes x from the frame and draws one series
+    // per y column, which is what makes three mapped y columns draw three
+    // lines. A COLUMN engine reads series i as column i - a heat map's x, y and
+    // value; a network's from, to and weight; a Bland-Altman's two methods -
+    // and returns without drawing if it has fewer series than it reads.
+    //
+    // Getting a number here wrong is invisible except as a blank figure,
+    // because the mapping composes exactly as many roles as this asks for: an
+    // engine whose requirement is under-stated can never be given enough
+    // columns by any action the person takes. That was the state of 53 of the
+    // 203 engines - every one of them a two-column comparison or a field whose
+    // requirement lives in its data rewrite rather than in its painter, which
+    // is the half of the code the first version of this function did not read.
+    struct ColumnPlan {
+        int minimum = 2;        // fewest mapped columns that draw anything
+        int maximum = 2;        // most it reads; 0 means every column mapped
+        bool asSeries = false;  // series i is column i, rather than x + one y each
+    };
+    static ColumnPlan columnPlan(const QString& engine);
+
+    // The minimum on its own, for the callers that only need the number.
     static int columnsRequired(const QString& engine);
 
 private:

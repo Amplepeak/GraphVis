@@ -664,18 +664,42 @@ void PlotCanvas::rebuild(){
     // Ordinary series engines are untouched: they keep x on the x axis and one
     // series per Y column, which is what makes several Y columns draw several
     // lines.
-    const int needed=QtPlotBackend::columnsRequired(spec_.engine);
-    if(needed>=3){
+    const QtPlotBackend::ColumnPlan plan=QtPlotBackend::columnPlan(spec_.engine);
+    if(plan.asSeries){
         QStringList roles;
         roles.append(xName);
         for(const QString& c:std::as_const(yNames)) if(!c.isEmpty()) roles.append(c);
         if(!zColumn_.isEmpty()) roles.append(zColumn_);
         if(!colorColumn_.isEmpty()) roles.append(colorColumn_);
         roles.removeAll(QString());
+        roles.removeDuplicates();
+
+        // Top up from the file when the engine reads more columns than are
+        // mapped. Without this, choosing a Cone Plot on a fresh dataset shows a
+        // correct, empty, unexplained frame until the person has guessed that
+        // it wants six columns and found the two extra slots - and a person who
+        // has just clicked an entry in the graph library is entitled to see the
+        // graph. The columns are the same ones chooseAxisColumn ranks, best
+        // first, so the automatic choice is the useful one rather than whatever
+        // happens to be leftmost in the file. Anything mapped by hand is kept
+        // and stays in its slot; this only fills the empty ones.
+        for(const QString& c:std::as_const(available_)){
+            if(roles.size()>=plan.minimum) break;
+            if(roles.contains(c)) continue;
+            if(distinctValueCount(table.column(c),3)<2) continue;
+            roles.append(c);
+        }
+
         // Only as many as the engine reads. A fourth column handed to a
         // three-column engine is a series it will ignore, drawn in the legend
         // and counted in the point total - which reads as a bug of its own.
-        while(roles.size()>needed) roles.removeLast();
+        // maximum == 0 is the exception and it means the opposite: a
+        // correlation matrix, parallel coordinates and a radar chart get WIDER
+        // with every column, so trimming those to a fixed count would throw
+        // away the figure the person asked for.
+        if(plan.maximum>0)
+            while(roles.size()>plan.maximum) roles.removeLast();
+
         // Whatever the person mapped, up to what the engine reads - not only
         // the exact count. A Mosaic Plot works from two columns and uses a
         // third for counts if it has one; requiring all three before composing

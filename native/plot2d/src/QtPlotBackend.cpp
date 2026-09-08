@@ -1286,28 +1286,118 @@ void QtPlotBackend::drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& s
     p->restore();
 }
 
-// The mapped-column requirement each family actually enforces, kept beside the
-// code that enforces it. Every number here is the guard in the corresponding
-// painter or grid builder, not a guess at what the engine "should" need.
-// The tables here are the guards in the painters and grid builders, read out
-// of that code rather than guessed at. Anything not listed takes x plus one y,
-// which is every ordinary series engine.
-int QtPlotBackend::columnsRequired(const QString& engine){
+// What each engine wants from the mapping, read out of the guard that enforces
+// it rather than guessed at from the engine's name.
+//
+// The first version of this read only the PAINTERS, and that was the mistake:
+// most of this catalogue is expressed as a data rewrite in prepareSpec, and a
+// rewrite's requirement is an `in.series.size()>=N` at the top of its block,
+// not a check in a draw function. Twenty-nine engines guard on two series -
+// Bland-Altman's two methods, an ROC score and its labels, a residual's fit and
+// observation - and were being handed one, for ever, with no mapping the person
+// could choose that would change it. Another twenty-two wanted three, four or
+// six and were handed two or three. Every one of them drew a correct empty
+// frame and said nothing.
+//
+// Anything not listed takes x plus one y, which is every ordinary series
+// engine, and several y columns draw several lines.
+QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
+    // ---- Two columns, read as two series: a comparison between two columns.
+    // Every one of these guards on in.series.size()>=2 in prepareSpec.
+    static const QSet<QString> kPairs{
+        QStringLiteral("Bland-Altman"),QStringLiteral("ROC Curve"),
+        QStringLiteral("Precision-Recall Curve"),QStringLiteral("Volcano Plot"),
+        QStringLiteral("MA Plot"),QStringLiteral("Pareto Front"),
+        QStringLiteral("EIS: Nyquist"),QStringLiteral("EIS: Bode"),
+        QStringLiteral("Event Plot"),QStringLiteral("Residual Plot"),
+        QStringLiteral("Calibration Plot"),QStringLiteral("Confusion Matrix"),
+        QStringLiteral("Kaplan-Meier Survival"),QStringLiteral("Funnel Plot"),
+        QStringLiteral("X-bar and R Chart"),QStringLiteral("T-S Diagram"),
+        QStringLiteral("CTD Profile"),QStringLiteral("Eye Diagram"),
+        QStringLiteral("Stereonet"),QStringLiteral("Psychrometric Chart"),
+        QStringLiteral("Smith Chart"),QStringLiteral("Cross Correlation"),
+        QStringLiteral("Slope Graph"),QStringLiteral("Confidence Ellipse"),
+        QStringLiteral("Population Pyramid"),
+        QStringLiteral("Scatter + Marginals"),QStringLiteral("Plot Matrix")};
+    if(kPairs.contains(engine)) return {2,2,true};
+
+    // ---- Every column mapped, read as one series each. These get WIDER with
+    // more columns rather than ignoring the extras: a correlation matrix of six
+    // variables is a 6x6 matrix, and parallel coordinates has one axis per
+    // column. Capping them at a fixed count would throw away the whole point.
+    static const QSet<QString> kAllColumns{
+        QStringLiteral("Correlation Matrix"),QStringLiteral("Covariance Matrix"),
+        QStringLiteral("Spy Matrix"),QStringLiteral("Parallel Coordinates"),
+        QStringLiteral("Andrews Curves")};
+    if(kAllColumns.contains(engine)) return {2,0,true};
+    // One spoke per column, and fewer than three spokes is not a radar chart.
+    if(engine==QLatin1String("Radar Chart")) return {3,0,true};
+
     static const QSet<QString> kThree{
         // gridFromSeries: x, y, value.
         QStringLiteral("2D Heatmap"),QStringLiteral("2D Contour"),
         QStringLiteral("2D Histogram"),QStringLiteral("Hexbin Density"),
         // Edge lists: from, to, weight.
         QStringLiteral("Network Graph"),QStringLiteral("Chord Diagram"),
-        // Contingency and set membership.
-        QStringLiteral("Mosaic Plot"),QStringLiteral("UpSet Plot"),
+        // Set membership.
+        QStringLiteral("UpSet Plot"),
         // Three corners.
         QStringLiteral("Ternary Scatter"),QStringLiteral("Piper Diagram"),
         // Surfaces and 3-D: x, y, z.
         QStringLiteral("Surface + Contours"),QStringLiteral("Comet 3D"),
-        QStringLiteral("Ribbon")};
-    // NOT here, and each was tried and removed after reading what the engine
-    // does with its input:
+        QStringLiteral("Ribbon"),
+        // Estimate and its two confidence bounds.
+        QStringLiteral("Forest Plot"),
+        // A surface sampled on a grid: x, y and elevation. The whole terrain
+        // family reads the same three and then differs in what it computes.
+        QStringLiteral("Terrain Profile"),QStringLiteral("Slope Map"),
+        QStringLiteral("Aspect Map"),QStringLiteral("Hillshade"),
+        // Runway heading, wind direction, wind speed.
+        QStringLiteral("Runway Crosswind")};
+    if(kThree.contains(engine)) return {3,3,true};
+
+    // Contingency: the two categories, and a count column if there is one.
+    if(engine==QLatin1String("Mosaic Plot")) return {2,3,true};
+    // Row, start, end - and a fourth column colours the bars if it is mapped.
+    if(engine==QLatin1String("Gantt Schedule")
+       ||engine==QLatin1String("Availability Timeline")
+       ||engine==QLatin1String("Borehole Log")) return {3,4,true};
+    // Open, high, low, close. The period comes from the x mapping.
+    if(engine==QLatin1String("OHLC Candlestick")) return {4,4,true};
+
+    static const QSet<QString> kFour{
+        // x, y and the two vector components.
+        QStringLiteral("Quiver Field"),QStringLiteral("Feather"),
+        QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
+        QStringLiteral("Phase Portrait"),QStringLiteral("Flow Texture (LIC)"),
+        QStringLiteral("Divergence Map"),QStringLiteral("Vorticity Map"),
+        // x, y, z and the scalar the volume is made of.
+        QStringLiteral("Volume Show"),QStringLiteral("Volume Slice"),
+        QStringLiteral("Isosurface"),QStringLiteral("Isonormals"),
+        QStringLiteral("Isocaps"),QStringLiteral("Contour Slice")};
+    if(kFour.contains(engine)) return {4,4,true};
+    // Origin and destination are two coordinate PAIRS, and a fifth column
+    // weights the flow.
+    if(engine==QLatin1String("Origin-Destination Flow")) return {4,5,true};
+
+    // 3-D vector fields: x, y, z and the three components.
+    //
+    // Six rather than the four draw3DField will tolerate, and the difference
+    // matters: with four it has a magnitude and no direction, so it draws cones
+    // that all point the same way and stream tubes that do not flow. That is a
+    // picture of the wrong thing, which is worse than a blank one. Asking for
+    // six means the automatic mapping fills six; a hand-mapped four still draws
+    // and is told what is missing.
+    static const QSet<QString> kVector3D{
+        QStringLiteral("3D Quiver"),QStringLiteral("Cone Plot"),
+        QStringLiteral("Stream Tube"),QStringLiteral("Stream Ribbon"),
+        QStringLiteral("Tensor Glyph Field")};
+    if(kVector3D.contains(engine)) return {6,6,true};
+
+    if(engine.startsWith(QLatin1String("3D "))) return {3,3,true};
+
+    // NOT column engines, and each was tried and removed after reading what the
+    // engine does with its input:
     //   Spectrogram      takes ONE signal column and PRODUCES three series.
     //                    Demanding three would have made it read the x column
     //                    as the signal.
@@ -1316,18 +1406,11 @@ int QtPlotBackend::columnsRequired(const QString& engine){
     //                    dimensions are marker size and colour, not columns.
     // Both drew correctly before this function existed, and listing them here
     // would have broken them in the name of fixing something else.
-    static const QSet<QString> kFour{
-        // x, y and the two vector components.
-        QStringLiteral("Quiver Field"),QStringLiteral("Feather"),
-        QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
-        QStringLiteral("Phase Portrait"),QStringLiteral("Flow Texture (LIC)"),
-        QStringLiteral("Divergence Map"),QStringLiteral("Vorticity Map"),
-        // Origin and destination are two coordinate PAIRS.
-        QStringLiteral("Origin-Destination Flow")};
-    if(kFour.contains(engine)) return 4;
-    if(kThree.contains(engine)) return 3;
-    if(engine.startsWith(QLatin1String("3D "))) return 3;
-    return 2;
+    return {2,2,false};
+}
+
+int QtPlotBackend::columnsRequired(const QString& engine){
+    return columnPlan(engine).minimum;
 }
 
 QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared){
@@ -1342,7 +1425,8 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
     // value it colours by" and "x, y and z" are the same requirement described
     // to different people. Deriving the number here as well is how the message
     // and the mapping drift apart.
-    const int needed=columnsRequired(e);
+    const ColumnPlan plan=columnPlan(e);
+    const int needed=plan.minimum;
 
     // gridFromSeries: series 0 is x, 1 is y, 2 is the value.
     static const QSet<QString> kGridEngines{
@@ -1382,14 +1466,18 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
     // to columnsRequired but not to a wording set above says nothing at all,
     // which is the failure this function exists to prevent.
     //
-    // Only for the multi-column engines, and the reason is that `n` counts
-    // SERIES rather than mapped columns, and the two are the same number only
-    // above three. An ordinary engine takes x from the frame and one series per
-    // y column, so a perfectly mapped Line Chart has n == 1 and needed == 2 -
-    // and the first version of this said "Line Chart needs 2 mapped columns and
-    // 1 is mapped" over a figure drawing two hundred thousand points quite
+    // Only for the COLUMN engines, and the reason is that `n` counts SERIES
+    // rather than mapped columns, and the two are the same number only for
+    // those. An ordinary engine takes x from the frame and one series per y
+    // column, so a perfectly mapped Line Chart has n == 1 and needed == 2 - and
+    // the first version of this said "Line Chart needs 2 mapped columns and 1
+    // is mapped" over a figure drawing two hundred thousand points quite
     // happily. A warning on a working plot is worse than no warning at all.
-    if(needed>=3&&n<needed&&n>0)
+    //
+    // This was `needed>=3` while the plan was only a number, which was the same
+    // test by accident and stopped being so the moment two-column comparison
+    // engines were described honestly.
+    if(plan.asSeries&&n<needed&&n>0)
         return QStringLiteral("%1 needs %2 mapped columns and %3 %4 mapped.")
             .arg(e).arg(needed).arg(n)
             .arg(n==1?QStringLiteral("is"):QStringLiteral("are"));
@@ -1398,6 +1486,53 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
         return QStringLiteral(
             "No column produced any drawable values. Check that the mapped "
             "columns are numeric and are not entirely blank.");
+
+    // CATEGORIES, given a continuous column.
+    //
+    // A chord diagram of ten thousand distinct node ids is not a chord diagram,
+    // and a confusion matrix of ten thousand classes is not a confusion matrix.
+    // Each of these counts its categories and returns before drawing when there
+    // are too many, which is the right thing to do and looks exactly like a
+    // broken program: a title, a blank rectangle, and no explanation.
+    //
+    // The number tested here is the number the engine's own guard tests, so the
+    // sentence appears when the figure is blank and never when it is not.
+    {
+        int limit=0; bool perAxis=false;
+        if(e==QLatin1String("Chord Diagram")) limit=60;
+        else if(e==QLatin1String("Mosaic Plot")){ limit=40; perAxis=true; }
+        else if(e==QLatin1String("Confusion Matrix")) limit=20;
+        if(limit>0&&n>=2){
+            const auto levels=[&](int which,int upTo){
+                QSet<double> seen;
+                for(double d:chosen.series.at(which).y){
+                    if(!std::isfinite(d)) continue;
+                    seen.insert(d);
+                    if(seen.size()>upTo) return upTo+1;
+                }
+                return int(seen.size());
+            };
+            int found;
+            if(perAxis) found=qMax(levels(0,limit),levels(1,limit));
+            else {
+                QSet<double> both;
+                for(int i=0;i<2;++i)
+                    for(double d:chosen.series.at(i).y){
+                        if(!std::isfinite(d)) continue;
+                        both.insert(d);
+                        if(both.size()>limit) break;
+                    }
+                found=int(both.size());
+            }
+            if(found>limit)
+                return QStringLiteral(
+                    "%1 groups rows into categories, and the mapped columns hold "
+                    "more than %2 distinct values - so there is nothing to group. "
+                    "Map columns that take a small number of values, such as a "
+                    "label, a class or a bin, rather than a measured quantity.")
+                    .arg(e).arg(limit);
+        }
+    }
 
     // Columns were mapped, and the rewrite still produced nothing.
     bool anyPoints=false;
