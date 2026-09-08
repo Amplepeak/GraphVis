@@ -2028,6 +2028,10 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // A temperature and then one free-energy line per metal. Two would
     // draw one metal, which is not an Ellingham diagram.
     if(engine==QLatin1String("Ellingham Diagram")) return {2,0,true};
+    // Ca, Mg, Na+K, HCO3, SO4, Cl - in milliequivalents, because the
+    // diagram is about charge balance. Three of them is a ternary, which
+    // is what this engine used to be and is not a Piper diagram.
+    if(engine==QLatin1String("Piper Diagram")) return {6,6,true};
     if(engine==QLatin1String("Waffle Chart")) return {1,0,true};
     // One signal, and these read it from the y column alone.
     if(engine==QLatin1String("Partial Autocorrelation")
@@ -2068,7 +2072,7 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         // Set membership.
         QStringLiteral("UpSet Plot"),
         // Three corners.
-        QStringLiteral("Ternary Scatter"),QStringLiteral("Piper Diagram"),
+        QStringLiteral("Ternary Scatter"),
         // Surfaces and 3-D: x, y, z.
         QStringLiteral("Surface + Contours"),QStringLiteral("Comet 3D"),
         QStringLiteral("Ribbon"),
@@ -4096,6 +4100,237 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
     p->restore();
 }
 
+// ======================================================================
+// Piper diagram
+//
+// Two ternary triangles and a diamond, and the diamond is the whole point. The
+// left triangle is the cations, the right is the anions, and every sample is
+// projected UP from both into the rhombus between them - so a single mark in
+// the diamond carries the full major-ion chemistry of that water, and samples
+// that plot together there are waters of the same type whatever their total
+// dissolved solids.
+//
+// This replaces an alias. "Piper Diagram" was routed to Ternary Scatter and
+// drew one triangle from three columns, which is not a Piper diagram: it is a
+// third of one, under a name that promises the rest. A wrong picture under a
+// right name is the failure this port has spent its whole length removing, and
+// it had been in the catalogue since the original two hundred and three.
+//
+// Six mapped columns, in milliequivalents: calcium, magnesium, sodium plus
+// potassium, bicarbonate plus carbonate, sulphate, chloride. Milliequivalents
+// rather than milligrams because the diagram is about CHARGE balance - a
+// milligram of sodium and a milligram of calcium are not comparable quantities
+// here, and normalising milligrams would silently plot the wrong point.
+void QtPlotBackend::drawPiper(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    // The construction, in its own units: two unit triangles with a half-unit
+    // gap, and the diamond that falls out of the projection above them.
+    const double height=std::sqrt(3.0)/2.0;
+    const double gap=0.5;
+    const double leftBase=0.0,rightBase=1.0+gap;
+    // The construction's real extent, not a guess at it. The top of the diamond
+    // is the projection of the two apexes, and that lands at two and a half
+    // triangle-heights: the apex contributes one, and the projection parameter
+    // for two apexes a distance (1 + gap) apart contributes another one and a
+    // half. Reserving three heights left a visible band of empty page above the
+    // diamond and shrank everything to fit under it.
+    const double spanX=2.0+gap,spanY=2.5*height;
+
+    // Fitted to the target with one scale for both axes; a Piper diagram drawn
+    // with different horizontal and vertical scales is not made of equilateral
+    // triangles any more, and every angle in it stops meaning what it means.
+    //
+    // The area is worked out by SUBTRACTING what else has to fit rather than by
+    // one margin all round. The first version anchored the construction to the
+    // bottom of the target and left a band of empty page above it, and its
+    // summary line landed on the vertex labels of the two lower triangles.
+    const double titleSpace=spec.title.isEmpty()?fm.height()*0.4:fm.height()*2.0;
+    const double summarySpace=fm.height()*1.4;
+    const double sideSpace=fm.height()*3.4;      // room for the corner labels
+    const double vertexSpace=fm.height()*1.3;    // above the apexes, below the bases
+    const QRectF area(target.left()+sideSpace,target.top()+titleSpace+vertexSpace,
+                      qMax(20.0,target.width()-2.0*sideSpace),
+                      qMax(20.0,target.height()-titleSpace-summarySpace
+                                -2.0*vertexSpace));
+    const double scale=qMin(area.width()/spanX,area.height()/spanY);
+    const double originX=area.center().x()-scale*spanX*0.5;
+    const double originY=area.center().y()+scale*spanY*0.5;
+    const auto at=[&](double x,double y){
+        return QPointF(originX+x*scale,originY-y*scale);
+    };
+
+    // A point in a triangle whose left vertex is at `base`. The three fractions
+    // are of the left vertex, the right vertex and the apex.
+    const auto inTriangle=[&](double base,double leftShare,double rightShare,
+                              double apexShare){
+        Q_UNUSED(leftShare);
+        return QPointF(base+rightShare+apexShare*0.5,apexShare*height);
+    };
+
+    // ---- The frame: two triangles, the diamond, and the ten per cent grid.
+    p->save();
+    QPen grid(spec.style.gridColor); grid.setWidthF(0.6);
+    QPen edge(spec.style.foreground); edge.setWidthF(1.0);
+
+    const auto triangleAt=[&](double base){
+        p->setPen(grid);
+        // Grid lines parallel to each of the three sides, every ten per cent.
+        for(int step=1;step<10;++step){
+            const double f=double(step)/10.0;
+            // Parallel to the base.
+            p->drawLine(at(base+f*0.5,f*height),at(base+1.0-f*0.5,f*height));
+            // Parallel to the left side.
+            p->drawLine(at(base+f,0.0),at(base+f+(1.0-f)*0.5,(1.0-f)*height));
+            // Parallel to the right side.
+            p->drawLine(at(base+f*0.5,f*height),at(base+f,0.0));
+        }
+        p->setPen(edge);
+        QPolygonF outline;
+        outline<<at(base,0.0)<<at(base+1.0,0.0)<<at(base+0.5,height)<<at(base,0.0);
+        p->drawPolyline(outline);
+    };
+    triangleAt(leftBase);
+    triangleAt(rightBase);
+
+    // The diamond, from the same projection the data uses rather than from
+    // typed-in corner coordinates - so if the projection is wrong the frame is
+    // wrong in the same way and the error cannot hide.
+    const auto project=[&](const QPointF& cation,const QPointF& anion){
+        const double t=(anion.x()-cation.x())+(anion.y()-cation.y())/std::sqrt(3.0);
+        return QPointF(cation.x()+0.5*t,cation.y()+height*t);
+    };
+    const QPointF calcium=inTriangle(leftBase,1,0,0);
+    const QPointF sodium=inTriangle(leftBase,0,1,0);
+    const QPointF magnesium=inTriangle(leftBase,0,0,1);
+    const QPointF bicarbonate=inTriangle(rightBase,1,0,0);
+    const QPointF chloride=inTriangle(rightBase,0,1,0);
+    const QPointF sulphate=inTriangle(rightBase,0,0,1);
+    const QPointF westCorner=project(calcium,bicarbonate);
+    const QPointF northCorner=project(magnesium,sulphate);
+    const QPointF eastCorner=project(sodium,chloride);
+    const QPointF southCorner=project(sodium,bicarbonate);
+    {
+        p->setPen(grid);
+        for(int step=1;step<10;++step){
+            const double f=double(step)/10.0;
+            p->drawLine(at(westCorner.x()+f*(northCorner.x()-westCorner.x()),
+                           westCorner.y()+f*(northCorner.y()-westCorner.y())),
+                        at(southCorner.x()+f*(eastCorner.x()-southCorner.x()),
+                           southCorner.y()+f*(eastCorner.y()-southCorner.y())));
+            p->drawLine(at(westCorner.x()+f*(southCorner.x()-westCorner.x()),
+                           westCorner.y()+f*(southCorner.y()-westCorner.y())),
+                        at(northCorner.x()+f*(eastCorner.x()-northCorner.x()),
+                           northCorner.y()+f*(eastCorner.y()-northCorner.y())));
+        }
+        p->setPen(edge);
+        QPolygonF diamond;
+        diamond<<at(westCorner.x(),westCorner.y())<<at(northCorner.x(),northCorner.y())
+               <<at(eastCorner.x(),eastCorner.y())<<at(southCorner.x(),southCorner.y())
+               <<at(westCorner.x(),westCorner.y());
+        p->drawPolyline(diamond);
+    }
+
+    // ---- Vertex labels. Without them the two triangles are interchangeable
+    // and the diagram cannot be read at all.
+    const auto tag=[&](const QPointF& where,const QString& text,int flags,
+                       double dx,double dy){
+        const QPointF screen=at(where.x(),where.y());
+        p->drawText(QRectF(screen.x()-50.0+dx,screen.y()-fm.height()*0.5+dy,
+                           100.0,fm.height()),flags,text);
+    };
+    p->setPen(spec.style.foreground);
+    const double pad=fm.height()*0.7;
+    tag(calcium,QStringLiteral("Ca"),Qt::AlignRight|Qt::AlignVCenter,-6.0,pad*0.6);
+    tag(sodium,QStringLiteral("Na+K"),Qt::AlignLeft|Qt::AlignVCenter,6.0,pad*0.6);
+    tag(magnesium,QStringLiteral("Mg"),Qt::AlignHCenter|Qt::AlignVCenter,0.0,-pad);
+    tag(bicarbonate,QStringLiteral("HCO3"),Qt::AlignRight|Qt::AlignVCenter,-6.0,pad*0.6);
+    tag(chloride,QStringLiteral("Cl"),Qt::AlignLeft|Qt::AlignVCenter,6.0,pad*0.6);
+    tag(sulphate,QStringLiteral("SO4"),Qt::AlignHCenter|Qt::AlignVCenter,0.0,-pad);
+    // The diamond's corners carry SUMS, not individual ions. Calcium with
+    // chloride and magnesium with sulphate land on the same corner, because
+    // both are a hundred per cent alkaline earths with a hundred per cent
+    // strong acids - which is exactly why the two triangles are drawn as well,
+    // and why labelling this corner "Ca + Cl" would be wrong.
+    tag(westCorner,QStringLiteral("Ca+Mg / HCO3"),Qt::AlignRight|Qt::AlignVCenter,-8.0,0.0);
+    tag(eastCorner,QStringLiteral("Na+K / SO4+Cl"),Qt::AlignLeft|Qt::AlignVCenter,8.0,0.0);
+    p->restore();
+
+    if(spec.series.size()<6){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                           target.width(),fm.height()),
+                    Qt::AlignHCenter|Qt::AlignVCenter,
+                    QStringLiteral("needs six columns in meq: Ca, Mg, Na+K, HCO3, SO4, Cl"));
+        p->restore();
+        return;
+    }
+
+    // ---- The samples.
+    const QVector<double>& ca=spec.series.at(0).y;
+    const QVector<double>& mg=spec.series.at(1).y;
+    const QVector<double>& na=spec.series.at(2).y;
+    const QVector<double>& hco3=spec.series.at(3).y;
+    const QVector<double>& so4=spec.series.at(4).y;
+    const QVector<double>& cl=spec.series.at(5).y;
+    int rows=ca.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    p->save();
+    int drawn=0,earthWeak=0,alkaliStrong=0,earthStrong=0,alkaliWeak=0;
+    for(int i=0;i<rows;++i){
+        if(!finite(ca[i])||!finite(mg[i])||!finite(na[i])) continue;
+        if(!finite(hco3[i])||!finite(so4[i])||!finite(cl[i])) continue;
+        const double cations=std::abs(ca[i])+std::abs(mg[i])+std::abs(na[i]);
+        const double anions=std::abs(hco3[i])+std::abs(so4[i])+std::abs(cl[i]);
+        if(!(cations>0.0)||!(anions>0.0)) continue;
+        const double fCa=std::abs(ca[i])/cations,fMg=std::abs(mg[i])/cations;
+        const double fNa=std::abs(na[i])/cations;
+        const double fHco3=std::abs(hco3[i])/anions,fSo4=std::abs(so4[i])/anions;
+        const double fCl=std::abs(cl[i])/anions;
+        const QPointF cationPoint=inTriangle(leftBase,fCa,fNa,fMg);
+        const QPointF anionPoint=inTriangle(rightBase,fHco3,fCl,fSo4);
+        const QPointF diamondPoint=project(cationPoint,anionPoint);
+
+        // Which quadrant of the diamond, which is the one reading of it that
+        // every author agrees on. The named sub-fields inside each quadrant are
+        // not: several incompatible schemes are in circulation, so the quadrant
+        // is reported and the sub-field is not invented.
+        const bool earths=(fCa+fMg)>0.5;
+        const bool strong=(fSo4+fCl)>0.5;
+        if(earths&&!strong) ++earthWeak;
+        else if(!earths&&strong) ++alkaliStrong;
+        else if(earths&&strong) ++earthStrong;
+        else ++alkaliWeak;
+
+        const QColor colour=spec.series.at(0).color;
+        QPen pen(colour); pen.setWidthF(1.0);
+        p->setPen(pen);
+        p->setBrush(QColor(colour.red(),colour.green(),colour.blue(),150));
+        const double size=qMax(2.2,spec.style.lineWidth*2.0);
+        p->drawEllipse(at(cationPoint.x(),cationPoint.y()),size,size);
+        p->drawEllipse(at(anionPoint.x(),anionPoint.y()),size,size);
+        p->drawEllipse(at(diamondPoint.x(),diamondPoint.y()),size*1.25,size*1.25);
+        ++drawn;
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    const QString summary=QStringLiteral(
+        "%1 samples   Ca-HCO3 %2   Na-Cl %3   Ca-SO4/Cl %4   Na-HCO3 %5")
+        .arg(drawn).arg(earthWeak).arg(alkaliStrong).arg(earthStrong).arg(alkaliWeak);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,summary);
+    p->restore();
+}
+
 // A mosaic plot: a contingency table drawn to scale. Column widths are the
 // column totals and each column is divided by its own proportions, so an
 // association shows as tiles that fail to line up across columns - which is
@@ -4645,6 +4880,10 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // curve in it. A rectangular one drawn around that would be a
         // second set of axes disagreeing with the first.
         && engine!=QLatin1String("Skew-T Log-P")
+        // Two triangles and a diamond, all in one construction. A
+        // rectangular frame around them would put numbers on axes that
+        // nothing in the diagram is measured against.
+        && engine!=QLatin1String("Piper Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
         // chrome that means nothing.
         && engine!=QLatin1String("3D Line")
@@ -10203,7 +10442,7 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
     // Three components summing to a whole, projected onto the triangle. Each
     // row is normalised first: compositions that do not sum to one are the
     // normal case, not an error.
-    if(in.engine==QLatin1String("Ternary Scatter")||in.engine==QLatin1String("Piper Diagram")){
+    if(in.engine==QLatin1String("Ternary Scatter")){
         PlotSpec out=in;
         // Line Chart, not Scatter: the scatter draw only marks points, and the
         // triangle that makes the projection legible is a line. The line chart
@@ -23378,6 +23617,11 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Chord Diagram")){
             drawChord(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Piper Diagram")){
+            drawPiper(painter,target,spec);
             painter->restore();
             return;
         }

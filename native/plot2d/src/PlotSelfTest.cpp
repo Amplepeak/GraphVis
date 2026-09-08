@@ -1447,6 +1447,22 @@ bool runEngineSweep(){
         }
     }
 
+    // The Piper diagram's six columns, in milliequivalents, with waters in all
+    // four quadrants of the diamond so the classification is exercised rather
+    // than merely reached.
+    QVector<double> waterCa,waterMg,waterNa,waterHco3,waterSo4,waterCl;
+    {
+        const double table[8][6]={
+            {3.8,1.6,0.6,5.2,0.5,0.3},{0.4,0.3,4.6,0.5,0.6,4.2},
+            {2.6,1.1,0.8,0.7,2.9,0.9},{0.5,0.4,4.2,4.6,0.3,0.2},
+            {2.9,1.2,1.9,3.0,1.1,1.9},{1.1,0.7,3.0,1.4,1.5,1.9},
+            {3.2,1.4,1.5,3.6,1.2,1.3},{0.9,0.5,3.3,2.9,0.8,1.0}};
+        for(const auto& row:table){
+            waterCa.append(row[0]); waterMg.append(row[1]); waterNa.append(row[2]);
+            waterHco3.append(row[3]); waterSo4.append(row[4]); waterCl.append(row[5]);
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1889,6 +1905,9 @@ bool runEngineSweep(){
             {column("pressure",soundingPressure),
              column("temperature",soundingTemperature),
              column("dewpoint",soundingDewpoint)}},
+        {QStringLiteral("Piper Diagram"),
+            {column("Ca",waterCa),column("Mg",waterMg),column("Na+K",waterNa),
+             column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},
     };
 
     for(const QString& engine:engines){

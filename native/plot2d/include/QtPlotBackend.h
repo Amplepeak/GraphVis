@@ -254,6 +254,8 @@ private:
     // families of background curve, so it takes the target rectangle
     // rather than a Frame.
     void drawSkewT(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Two ternary triangles and the diamond both project into.
+    void drawPiper(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     void drawMosaic(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     void drawUpSet(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Quiver, cones, stream tubes and ribbons, tensor glyphs and the volume
