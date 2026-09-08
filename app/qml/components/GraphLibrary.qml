@@ -96,14 +96,62 @@ Rectangle {
         // answer - and the entries it dropped were the ones the fuzzy score
         // ranked last, which is exactly where a half-remembered name lands.
         var results = app.searchGraphs(q, advancedToggle.checked, 2000)
-        var lastCat = ""
+
+        // Results GROUPED BY ENGINE, base entry first.
+        //
+        // 1,406 of the catalogue's 1,769 entries are axis-scale variants - the
+        // same engine again with a log, log(x+1), z-score or quantile axis - so
+        // an ungrouped search for "line" returned Line Chart's five variants
+        // interleaved with five other engines' variants by fuzzy score, and the
+        // list read as forty near-identical rows rather than eight engines. The
+        // variants are worth having and worth searching; they are not worth
+        // ranking against their own parent.
+        //
+        // Within an engine the base entry comes first and the variants follow
+        // it, and the engine keeps the best rank any of its entries earned - so
+        // an exact match on a variant still brings its engine to the top.
+        var order = []
+        var groups = {}
         for (var r = 0; r < results.length; ++r) {
             var e = results[r]
-            if (q.length === 0 && e.category !== lastCat) {
-                out.push({ header: true, label: e.category, count: 0, open: true, entry: undefined })
-                lastCat = e.category
+            var key = e.category + "\u0000" + e.engine
+            if (groups[key] === undefined) {
+                // BASES is a list, not one entry. 33 engines have more than one
+                // catalogue entry in the same category - different names and
+                // descriptions for the same drawing code, which is how the
+                // catalogue has always been - and keeping a single `base` per
+                // group silently dropped all but the last of them: a search for
+                // "line" returned 372 entries and drew 361 rows.
+                groups[key] = { bases: [], variants: [] }
+                order.push(key)
             }
-            out.push({ header: false, label: e.engine, count: 0, open: false, entry: e })
+            if (e.scale) groups[key].variants.push(e)
+            else groups[key].bases.push(e)
+        }
+
+        var lastCat = ""
+        for (var g = 0; g < order.length; ++g) {
+            var group = groups[order[g]]
+            var leaders = group.bases
+            // A group whose base entries are all filtered out - the query
+            // matched only a variant - is led by that variant rather than by
+            // nothing.
+            if (leaders.length === 0) leaders = [group.variants.shift()]
+            if (!leaders[0]) continue
+            if (q.length === 0 && leaders[0].category !== lastCat) {
+                out.push({ header: true, label: leaders[0].category, count: 0,
+                           open: true, entry: undefined })
+                lastCat = leaders[0].category
+            }
+            for (var L = 0; L < leaders.length; ++L)
+                out.push({ header: false, label: leaders[L].engine,
+                           // The variant count sits on the LAST leader, which
+                           // is the row the variants actually follow.
+                           count: (L === leaders.length - 1) ? group.variants.length : 0,
+                           open: false, entry: leaders[L] })
+            for (var v = 0; v < group.variants.length; ++v)
+                out.push({ header: false, label: group.variants[v].engine, count: 0,
+                           open: false, entry: group.variants[v] })
         }
         rows = out
     }
@@ -234,13 +282,18 @@ Rectangle {
                 checked: advancedToggle.checked
                 onToggled: { advancedToggle.checked = advancedButton.checked; root.refresh() }
                 ToolTip.visible: advancedButton.hovered
-                // Says what they ARE. "Advanced" told nobody that the 1,406
-                // entries behind it are the same engines again with a
-                // transformed axis - which is a thing the Axis scale controls
-                // already do to whatever is on screen.
+                // Says what they ARE. "Advanced" told nobody that the entries
+                // behind it are mostly the same engines again on a transformed
+                // axis - which is a thing the Axis scale controls already do to
+                // whatever is on screen. Not ONLY axis scales, though: the
+                // scale field carries the variant dimension an engine has, so
+                // on the map family it is the projection and on the spectral
+                // family it is the FFT window.
                 ToolTip.text: "Also list the " + root.app.advancedEntryCount
-                              + " axis-scale variants: the same engines with a "
-                              + "log, log(x+1), z-score or quantile axis."
+                              + " variants: the same engines again on a log, "
+                              + "log(x+1), z-score or quantile axis — and, where "
+                              + "an engine has one of its own, its projection or "
+                              + "window."
             }
         }
         // Not shown; the state the button above carries, kept as a CheckBox so
@@ -368,6 +421,13 @@ Rectangle {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6; spacing: 8
 
+                        // A variant sits under its engine rather than beside
+                        // it, so a group reads as one thing with options.
+                        Item {
+                            Layout.preferredWidth: (entry.modelData.entry
+                                                    && entry.modelData.entry.scale) ? 14 : 0
+                            Layout.preferredHeight: 1
+                        }
                         Image {
                             Layout.preferredWidth: 46; Layout.preferredHeight: 28
                             fillMode: Image.PreserveAspectFit
@@ -387,7 +447,14 @@ Rectangle {
                             }
                         }
                         Label {
-                            text: entry.modelData.entry && entry.modelData.entry.advanced ? "adv" : ""
+                            // How many axis-scale variants follow this row, on
+                            // the engine's own line. "adv" on a variant said
+                            // only that it was hidden by default, which is the
+                            // least interesting thing about it.
+                            text: entry.modelData.count > 0
+                                  ? "+" + entry.modelData.count + " more"
+                                  : (entry.modelData.entry && entry.modelData.entry.scale
+                                     ? "\u21b3" : "")
                             color: Theme.textMuted; font.pixelSize: 9
                         }
                     }
