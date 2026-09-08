@@ -391,6 +391,26 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Acceptability Curve"),
         QStringLiteral("Lasagna Plot"),
         QStringLiteral("Swimmer Plot"),
+        // Batch 5: electrochemistry, bioprocess kinetics, energy and
+        // structures.
+        QStringLiteral("Tafel Plot"),
+        QStringLiteral("Cyclic Voltammogram"),
+        QStringLiteral("Levich Plot"),
+        QStringLiteral("Koutecky-Levich Plot"),
+        QStringLiteral("Randles-Sevcik Plot"),
+        QStringLiteral("Monod Growth Curve"),
+        QStringLiteral("Substrate Inhibition Curve"),
+        QStringLiteral("Ragone Plot"),
+        QStringLiteral("I-V Curve"),
+        QStringLiteral("Degree-Day Signature"),
+        QStringLiteral("Abatement Cost Curve"),
+        QStringLiteral("Mohr's Circle"),
+        QStringLiteral("P-M Interaction Diagram"),
+        QStringLiteral("Pushover Capacity Curve"),
+        QStringLiteral("Response Spectrum"),
+        QStringLiteral("Consolidation Curve"),
+        QStringLiteral("Lomb-Scargle Periodogram"),
+        QStringLiteral("Waffle Chart"),
     };
     return kEngines;
 }
@@ -1642,7 +1662,24 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Efficient Frontier"),
         QStringLiteral("Snail Trail"),
         QStringLiteral("Cost-Effectiveness Plane"),
-        QStringLiteral("Acceptability Curve")};
+        QStringLiteral("Acceptability Curve"),
+        // Batch 5. Each is a measured quantity against the one it is swept
+        // over: overpotential against current, current against potential,
+        // growth rate against substrate, energy against outside temperature.
+        QStringLiteral("Tafel Plot"),
+        QStringLiteral("Cyclic Voltammogram"),
+        QStringLiteral("Levich Plot"),
+        QStringLiteral("Koutecky-Levich Plot"),
+        QStringLiteral("Randles-Sevcik Plot"),
+        QStringLiteral("Monod Growth Curve"),
+        QStringLiteral("Substrate Inhibition Curve"),
+        QStringLiteral("I-V Curve"),
+        QStringLiteral("Degree-Day Signature"),
+        QStringLiteral("Abatement Cost Curve"),
+        QStringLiteral("P-M Interaction Diagram"),
+        QStringLiteral("Pushover Capacity Curve"),
+        QStringLiteral("Consolidation Curve"),
+        QStringLiteral("Lomb-Scargle Periodogram")};
     if(kPairs.contains(engine)) return {2,2,true};
 
     // ---- Every column mapped, read as one series each. These get WIDER with
@@ -1661,6 +1698,14 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // columns as are mapped. Capping them would silently drop a mode.
     if(engine==QLatin1String("Campbell Diagram")
        ||engine==QLatin1String("Airfoil Cp Distribution")) return {2,0,true};
+    // A response spectrum has one curve per damping ratio and a waffle has one
+    // block per category, so both widen with the columns mapped.
+    if(engine==QLatin1String("Response Spectrum")) return {2,0,true};
+    if(engine==QLatin1String("Waffle Chart")) return {1,0,true};
+    // Power and energy density, and a column that names the device family.
+    if(engine==QLatin1String("Ragone Plot")) return {2,3,true};
+    // A plane stress state: sigma-x, sigma-y and tau-xy.
+    if(engine==QLatin1String("Mohr's Circle")) return {3,3,true};
     // Time, flux, and the trial period if there is a column for it.
     if(engine==QLatin1String("Phase-Folded Light Curve")) return {2,3,true};
     // Feature and prediction, plus an id column that splits the cloud into one
@@ -12375,6 +12420,1070 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         out.yAxis=PlotAxis{QStringLiteral("subject, by duration"),false,unsetValue(),unsetValue()};
         return out;
     }
+    // =====================================================================
+    // Batch 5: electrochemistry, bioprocess kinetics, energy, and structures.
+    //
+    // The first seven are the plots an electrochemist actually draws, and they
+    // exist for the same reason the enzyme-kinetics linearisations do: each
+    // rearrangement reads a different constant off a straight line, and which
+    // one is trustworthy depends on where the measurement error sits. Levich
+    // and Koutecky-Levich are the clearest case - the first is a line through
+    // the origin whose slope is the diffusion-limited transport, the second is
+    // its reciprocal, drawn precisely so the INTERCEPT can be read, because
+    // that intercept is the kinetic current the first plot cannot show at all.
+    // =====================================================================
+
+    // ------------------------------------------------------------ Tafel Plot
+    // Overpotential against log current density. The straight part of each
+    // branch has slope b (volts per decade of current) and extrapolates back to
+    // the exchange current density at zero overpotential.
+    //
+    // The two branches are fitted SEPARATELY. An anodic and a cathodic Tafel
+    // slope are different numbers - they are the two transfer coefficients -
+    // and a single fit through both would report the average of two quantities
+    // that were never meant to be averaged.
+    if(in.engine==QLatin1String("Tafel Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& eta=in.series.at(0).y;
+            const QVector<double>& current=in.series.at(1).y;
+            const int n=qMin(eta.size(),current.size());
+
+            // The measured points, both branches, on |j| so a cathodic current
+            // recorded as negative still lands on a log axis.
+            PlotSeries pts;
+            pts.label=QStringLiteral("measured");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+
+            // Fitted in log space on each side of the origin, and only outside
+            // the linear-polarisation region: within about 50 mV of the
+            // equilibrium potential both reactions run and the plot curves, so
+            // fitting there measures the curvature rather than the slope.
+            QVector<double> anLog,anEta,caLog,caEta;
+            for(int i=0;i<n;++i){
+                const double e=eta[i], j=current[i];
+                if(!finite(e)||!finite(j)) continue;
+                const double mag=std::abs(j);
+                if(!(mag>0.0)) continue;          // log of zero is not a point
+                pts.x.append(mag); pts.y.append(e);
+                if(std::abs(e)<0.05) continue;
+                if(e>0.0){ anLog.append(std::log10(mag)); anEta.append(e); }
+                else     { caLog.append(std::log10(mag)); caEta.append(e); }
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                const auto branch=[&out,&in](const QVector<double>& lg,
+                                             const QVector<double>& e,
+                                             const QString& name){
+                    if(lg.size()<3) return;
+                    const LineFit f=fitLine(lg,e);
+                    if(!f.ok||std::abs(f.slope)<1e-12) return;
+                    // eta = intercept + slope*log10|j|, so log10 j0 is where
+                    // eta crosses zero.
+                    const double j0=std::pow(10.0,-f.intercept/f.slope);
+                    const Bounds b=boundsOf(lg);
+                    if(!b.valid) return;
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("%1: %2 mV/dec, j0 %3")
+                                  .arg(name)
+                                  .arg(f.slope*1000.0,0,'f',1)
+                                  .arg(j0,0,'g',3);
+                    // Drawn back to the exchange current so the extrapolation
+                    // that produced j0 is visible rather than asserted.
+                    const double lo=qMin(b.lo,std::log10(qMax(j0,1e-300)));
+                    fit.x={std::pow(10.0,lo),std::pow(10.0,b.hi)};
+                    fit.y={f.intercept+f.slope*lo,f.intercept+f.slope*b.hi};
+                    fit.color=in.style.warning;
+                    fit.lineWidth=qMax(1.3,in.style.lineWidth);
+                    out.series.append(fit);
+                };
+                branch(anLog,anEta,QStringLiteral("anodic"));
+                branch(caLog,caEta,QStringLiteral("cathodic"));
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("|current density|"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("overpotential (V)"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------------- Cyclic Voltammogram
+    // Current against potential, traced in ACQUISITION ORDER. Sorting by
+    // potential would be fatal here: the forward and reverse sweeps pass
+    // through the same potentials at different currents, and that separation is
+    // the entire measurement. Sorted, the loop collapses into a single line and
+    // the peaks it exists to show disappear.
+    if(in.engine==QLatin1String("Cyclic Voltammogram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& potential=in.series.at(0).y;
+            const QVector<double>& current=in.series.at(1).y;
+            const int n=qMin(potential.size(),current.size());
+            PlotSeries loop;
+            loop.label=QStringLiteral("voltammogram");
+            loop.color=in.series.at(1).color;
+            loop.lineWidth=qMax(1.2,in.style.lineWidth);
+            int peakA=-1,peakC=-1;
+            for(int i=0;i<n;++i){
+                if(!finite(potential[i])||!finite(current[i])) continue;
+                loop.x.append(potential[i]); loop.y.append(current[i]);
+                if(peakA<0||current[i]>current[peakA]) peakA=i;
+                if(peakC<0||current[i]<current[peakC]) peakC=i;
+            }
+            if(!loop.x.isEmpty()){
+                out.series.append(loop);
+                if(peakA>=0&&peakC>=0){
+                    PlotSeries marks;
+                    // The two peaks and what they say about reversibility. A
+                    // 59 mV separation at 25 C is a one-electron reversible
+                    // couple; the number is reported rather than judged,
+                    // because whether it is reversible depends on the scan
+                    // rate and the couple, which this plot does not know.
+                    const double dE=std::abs(potential[peakA]-potential[peakC]);
+                    const double ratio=std::abs(current[peakC])>1e-300
+                                       ?std::abs(current[peakA]/current[peakC]):0.0;
+                    marks.label=QStringLiteral("dEp %1 mV, ipa/ipc %2")
+                                    .arg(dE*1000.0,0,'f',0).arg(ratio,0,'f',2);
+                    marks.drawLine=false; marks.drawMarkers=true; marks.markerSize=6.5;
+                    marks.color=in.style.warning;
+                    marks.x={potential[peakA],potential[peakC]};
+                    marks.y={current[peakA],current[peakC]};
+                    out.series.append(marks);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("potential (V)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("current"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------- Levich / Koutecky-Levich / Randles-Sevcik Plots
+    // Three straight lines from rotating-disc and sweep voltammetry, sharing
+    // one code path because they share one shape: a transformed abscissa, a
+    // least-squares line, and a constant read off it.
+    //
+    // Levich and Randles-Sevcik are lines THROUGH THE ORIGIN - at zero rotation
+    // or zero scan rate there is no current - so they are fitted with the
+    // intercept fixed at zero. Fitting a free intercept would produce a
+    // slightly better residual and a slope that no longer means what the
+    // Levich equation says it means.
+    if(in.engine==QLatin1String("Levich Plot")
+       ||in.engine==QLatin1String("Koutecky-Levich Plot")
+       ||in.engine==QLatin1String("Randles-Sevcik Plot")){
+        const bool koutecky=(in.engine==QLatin1String("Koutecky-Levich Plot"));
+        const bool randles=(in.engine==QLatin1String("Randles-Sevcik Plot"));
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& rate=in.series.at(0).y;     // omega, or scan rate
+            const QVector<double>& current=in.series.at(1).y;
+            const int n=qMin(rate.size(),current.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("measured");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.4;
+            QVector<double> fx,fy;
+            for(int i=0;i<n;++i){
+                const double w=rate[i], j=current[i];
+                if(!finite(w)||!finite(j)||!(w>0.0)) continue;
+                const double root=std::sqrt(w);
+                double x,y;
+                if(koutecky){ if(!(std::abs(j)>0.0)) continue; x=1.0/root; y=1.0/j; }
+                else        { x=root; y=j; }
+                pts.x.append(x); pts.y.append(y);
+                fx.append(x); fy.append(y);
+            }
+            if(fx.size()>=2){
+                out.series.append(pts);
+                const Bounds b=boundsOf(fx);
+                PlotSeries fit;
+                fit.color=in.style.warning;
+                fit.lineWidth=qMax(1.3,in.style.lineWidth);
+                if(koutecky){
+                    // Free intercept, and the intercept is the point: 1/i_k,
+                    // the current the reaction would pass if transport were
+                    // infinitely fast.
+                    const LineFit f=fitLine(fx,fy);
+                    if(f.ok&&b.valid){
+                        const double ik=std::abs(f.intercept)>1e-15?1.0/f.intercept:0.0;
+                        fit.label=QStringLiteral("kinetic current %1, slope %2")
+                                      .arg(ik,0,'g',3).arg(f.slope,0,'g',3);
+                        // Drawn back to the axis, because reading an intercept
+                        // off a line that stops short of it is guesswork.
+                        const double lo=qMin(0.0,b.lo);
+                        fit.x={lo,b.hi};
+                        fit.y={f.intercept+f.slope*lo,f.intercept+f.slope*b.hi};
+                        out.series.append(fit);
+                    }
+                }else{
+                    double sxy=0.0,sxx=0.0;
+                    for(int i=0;i<fx.size();++i){ sxy+=fx[i]*fy[i]; sxx+=fx[i]*fx[i]; }
+                    if(sxx>1e-300&&b.valid){
+                        const double slope=sxy/sxx;
+                        fit.label=randles
+                            ?QStringLiteral("ip / sqrt(v) = %1").arg(slope,0,'g',4)
+                            :QStringLiteral("Levich slope %1").arg(slope,0,'g',4);
+                        fit.x={0.0,b.hi};
+                        fit.y={0.0,slope*b.hi};
+                        out.series.append(fit);
+                    }
+                }
+            }
+        }
+        if(koutecky){
+            out.xAxis=PlotAxis{QStringLiteral("1 / sqrt(rotation rate)"),false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{QStringLiteral("1 / current"),false,unsetValue(),unsetValue()};
+        }else if(randles){
+            out.xAxis=PlotAxis{QStringLiteral("sqrt(scan rate)"),false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{QStringLiteral("peak current"),false,unsetValue(),unsetValue()};
+        }else{
+            out.xAxis=PlotAxis{QStringLiteral("sqrt(rotation rate)"),false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{QStringLiteral("limiting current"),false,unsetValue(),unsetValue()};
+        }
+        return out;
+    }
+
+    // ------------------------- Monod Growth / Substrate Inhibition Curves
+    // Specific growth rate against substrate concentration. Monod saturates;
+    // Haldane rises, peaks and falls again because the substrate that feeds the
+    // culture also poisons it above some concentration.
+    //
+    // Both are fitted through the Hanes-Woolf rearrangement S/mu, which is
+    // linear in (1, S) for Monod and in (1, S, S^2) for Haldane - so the same
+    // three-column normal equations solve either, and the well-conditioned
+    // rearrangement is used rather than the double-reciprocal one.
+    if(in.engine==QLatin1String("Monod Growth Curve")
+       ||in.engine==QLatin1String("Substrate Inhibition Curve")){
+        const bool haldane=(in.engine==QLatin1String("Substrate Inhibition Curve"));
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& substrate=in.series.at(0).y;
+            const QVector<double>& growth=in.series.at(1).y;
+            const int n=qMin(substrate.size(),growth.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("measured");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.4;
+            QVector<double> ss,ww;
+            for(int i=0;i<n;++i){
+                const double s=substrate[i], u=growth[i];
+                if(!finite(s)||!finite(u)||!(s>0.0)||!(u>0.0)) continue;
+                pts.x.append(s); pts.y.append(u);
+                ss.append(s); ww.append(s/u);        // Hanes-Woolf ordinate
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                // Normal equations for w = c0 + c1*S (+ c2*S^2), by Cramer's
+                // rule on the 2x2 or 3x3. Small and explicit beats pulling in a
+                // solver for a system this size.
+                const int terms=haldane?3:2;
+                double A[3][3]={{0,0,0},{0,0,0},{0,0,0}}, rhs[3]={0,0,0};
+                for(int i=0;i<ss.size();++i){
+                    double basis[3]={1.0,ss[i],ss[i]*ss[i]};
+                    for(int r=0;r<terms;++r){
+                        for(int c=0;c<terms;++c) A[r][c]+=basis[r]*basis[c];
+                        rhs[r]+=basis[r]*ww[i];
+                    }
+                }
+                double c[3]={0,0,0};
+                bool solved=false;
+                if(ss.size()>=terms){
+                    if(terms==2){
+                        const double det=A[0][0]*A[1][1]-A[0][1]*A[1][0];
+                        if(std::abs(det)>1e-300){
+                            c[0]=(rhs[0]*A[1][1]-A[0][1]*rhs[1])/det;
+                            c[1]=(A[0][0]*rhs[1]-rhs[0]*A[1][0])/det;
+                            solved=true;
+                        }
+                    }else{
+                        const auto det3=[](const double m[3][3]){
+                            return m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])
+                                  -m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])
+                                  +m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+                        };
+                        const double det=det3(A);
+                        if(std::abs(det)>1e-300){
+                            for(int k=0;k<3;++k){
+                                double M[3][3];
+                                for(int r=0;r<3;++r)
+                                    for(int cc=0;cc<3;++cc) M[r][cc]=(cc==k)?rhs[r]:A[r][cc];
+                                c[k]=det3(M)/det;
+                            }
+                            solved=true;
+                        }
+                    }
+                }
+                // S/mu = Ks/mumax + S/mumax + S^2/(mumax*Ki)
+                if(solved&&c[1]>1e-300){
+                    const double umax=1.0/c[1];
+                    const double ks=c[0]*umax;
+                    // Ki = 1/(umax*c2), NOT umax/c2. The Hanes-Woolf
+                    // coefficient on S^2 is 1/(umax*Ki), so the wrong
+                    // rearrangement is out by umax squared - and it fails
+                    // quietly, because it still returns a plausible
+                    // positive number and still draws a curve through the
+                    // points. Noiseless Haldane data with Ki 300 reported
+                    // 60.8 until this was checked against the constants it
+                    // was generated from.
+                    const double ki=(haldane&&c[2]>1e-300)?1.0/(umax*c[2]):0.0;
+                    const Bounds b=boundsOf(ss);
+                    if(b.valid&&ks>=0.0){
+                        PlotSeries curve;
+                        curve.label=haldane
+                            ?QStringLiteral("umax %1, Ks %2, Ki %3")
+                                 .arg(umax,0,'g',3).arg(ks,0,'g',3).arg(ki,0,'g',3)
+                            :QStringLiteral("umax %1, Ks %2")
+                                 .arg(umax,0,'g',3).arg(ks,0,'g',3);
+                        curve.color=in.style.warning;
+                        curve.lineWidth=qMax(1.3,in.style.lineWidth);
+                        for(int k=0;k<=120;++k){
+                            const double s=b.lo+(b.hi-b.lo)*double(k)/120.0;
+                            double denom=ks+s;
+                            if(haldane&&ki>0.0) denom+=s*s/ki;
+                            if(!(denom>1e-300)) continue;
+                            curve.x.append(s); curve.y.append(umax*s/denom);
+                        }
+                        if(curve.x.size()>=2) out.series.append(curve);
+                        // Where an inhibited culture grows fastest. This is the
+                        // number the plot is drawn to find - a feed above it
+                        // makes the culture slower, not faster - and it is
+                        // nowhere on a Monod curve, which has no maximum.
+                        if(haldane&&ki>0.0&&ks>0.0){
+                            const double sOpt=std::sqrt(ks*ki);
+                            const double uOpt=umax*sOpt/(ks+sOpt+sOpt*sOpt/ki);
+                            PlotSeries mark;
+                            mark.label=QStringLiteral("optimum S %1").arg(sOpt,0,'g',3);
+                            mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.5;
+                            mark.color=in.style.warning;
+                            mark.x={sOpt}; mark.y={uOpt};
+                            out.series.append(mark);
+                        }
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("substrate concentration"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("specific growth rate"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ----------------------------------------------------------- Ragone Plot
+    // Energy density against power density, both logarithmic, because the
+    // devices being compared differ by four orders of magnitude in one and
+    // three in the other. The diagonals are lines of constant discharge time:
+    // energy over power IS a time, so a device's position between two diagonals
+    // says how long it can sustain its rated power, which is the comparison the
+    // plot exists to make.
+    if(in.engine==QLatin1String("Ragone Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& power=in.series.at(0).y;
+            const QVector<double>& energy=in.series.at(1).y;
+            const QVector<double> group=in.series.size()>=3?in.series.at(2).y:QVector<double>();
+            const int n=qMin(power.size(),energy.size());
+
+            QHash<double,PlotSeries> families;
+            QList<double> order;
+            double pLo=0,pHi=0,eLo=0,eHi=0; bool any=false;
+            for(int i=0;i<n;++i){
+                const double p=power[i], e=energy[i];
+                if(!finite(p)||!finite(e)||!(p>0.0)||!(e>0.0)) continue;
+                const double key=(i<group.size()&&finite(group[i]))?group[i]:0.0;
+                if(!families.contains(key)){
+                    PlotSeries s;
+                    s.label=group.isEmpty()?QStringLiteral("devices")
+                                           :QStringLiteral("group %1").arg(key,0,'g',4);
+                    s.color=group.isEmpty()?in.series.at(1).color
+                                          :QColor::fromHsvF(std::fmod(std::abs(key)*0.17,1.0),0.62,0.92);
+                    s.drawLine=false; s.drawMarkers=true; s.markerSize=5.0;
+                    families.insert(key,s);
+                    order.append(key);
+                }
+                families[key].x.append(p);
+                families[key].y.append(e);
+                if(!any){ pLo=pHi=p; eLo=eHi=e; any=true; }
+                else { pLo=qMin(pLo,p); pHi=qMax(pHi,p); eLo=qMin(eLo,e); eHi=qMax(eHi,e); }
+            }
+            if(any){
+                // The diagonals first, so the devices are drawn over them.
+                const double tLo=std::floor(std::log10(eLo/pHi));
+                const double tHi=std::ceil(std::log10(eHi/pLo));
+                for(double t=tLo;t<=tHi&&t-tLo<8.0;t+=1.0){
+                    const double hours=std::pow(10.0,t);
+                    PlotSeries iso;
+                    iso.label=QString();
+                    iso.color=in.style.gridColor;
+                    iso.lineWidth=0.8;
+                    iso.opacity=0.7;
+                    iso.x={pLo,pHi};
+                    iso.y={pLo*hours,pHi*hours};
+                    out.series.append(iso);
+                }
+                std::sort(order.begin(),order.end());
+                for(double k:order) out.series.append(families.value(k));
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("specific power"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("specific energy"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------------- I-V Curve
+    // Current against voltage for a photovoltaic device, with the
+    // maximum-power rectangle drawn on it.
+    //
+    // The power curve is deliberately NOT drawn on this axis. Power and current
+    // are different units, and putting both on one unlabelled ordinate - which
+    // is how the chart usually appears - means one of the two curves is being
+    // read against a scale that is not its own. The rectangle carries the same
+    // information honestly: its corner is the maximum power point, its area is
+    // Pmax, and the fill factor is that area over the Voc-Isc rectangle.
+    if(in.engine==QLatin1String("I-V Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& voltage=in.series.at(0).y;
+            const QVector<double>& current=in.series.at(1).y;
+            const int n=qMin(voltage.size(),current.size());
+            QVector<QPair<double,double>> iv;
+            for(int i=0;i<n;++i)
+                if(finite(voltage[i])&&finite(current[i]))
+                    iv.append({voltage[i],current[i]});
+            std::sort(iv.begin(),iv.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first;
+                      });
+            if(iv.size()>=2){
+                PlotSeries curve;
+                curve.label=QStringLiteral("I-V");
+                curve.color=in.series.at(1).color;
+                curve.lineWidth=qMax(1.3,in.style.lineWidth);
+                double pmax=0.0,vmp=0.0,imp=0.0,isc=0.0,voc=0.0;
+                for(const auto& pt:iv){
+                    curve.x.append(pt.first); curve.y.append(pt.second);
+                    const double p=pt.first*pt.second;
+                    if(p>pmax){ pmax=p; vmp=pt.first; imp=pt.second; }
+                }
+                out.series.append(curve);
+                // Isc is the current at the smallest voltage measured and Voc
+                // the voltage at the smallest current - taken from the data
+                // rather than extrapolated, because an extrapolated Voc on a
+                // sweep that stopped early is a number nobody measured.
+                isc=iv.first().second;
+                voc=iv.last().first;
+                for(const auto& pt:iv) if(std::abs(pt.second)<std::abs(isc)*1e-3){ voc=pt.first; break; }
+                if(pmax>0.0&&voc>0.0&&isc>0.0){
+                    const double ff=pmax/(voc*isc);
+                    PlotSeries box;
+                    box.label=QStringLiteral("Pmax %1, FF %2, Voc %3, Isc %4")
+                                  .arg(pmax,0,'g',3).arg(ff,0,'f',3)
+                                  .arg(voc,0,'g',3).arg(isc,0,'g',3);
+                    box.color=in.style.warning;
+                    box.lineWidth=1.0;
+                    box.x={0.0,vmp,vmp,0.0,0.0};
+                    box.y={imp,imp,0.0,0.0,imp};
+                    out.series.append(box);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("voltage (V)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("current (A)"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------- Degree-Day Signature
+    // Metered energy against outside temperature, with the change-point model
+    // fitted: flat above the balance point, sloping below it. The balance-point
+    // temperature is where the building stops needing heat, and it is a
+    // property of the building rather than of the weather - which is why this
+    // plot, and not a time series of consumption, is what shows whether an
+    // energy-conservation measure worked.
+    if(in.engine==QLatin1String("Degree-Day Signature")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& temperature=in.series.at(0).y;
+            const QVector<double>& energy=in.series.at(1).y;
+            const int n=qMin(temperature.size(),energy.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("metered");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+            QVector<double> tx,ty;
+            for(int i=0;i<n;++i){
+                if(!finite(temperature[i])||!finite(energy[i])) continue;
+                pts.x.append(temperature[i]); pts.y.append(energy[i]);
+                tx.append(temperature[i]); ty.append(energy[i]);
+            }
+            if(tx.size()>=4){
+                out.series.append(pts);
+                // The breakpoint is found by search rather than by algebra: for
+                // each candidate balance point the model is linear in its two
+                // free parameters, so the search is over ONE dimension and each
+                // step is a closed-form least squares. Trying to solve for all
+                // three at once is a non-convex problem that lands in a
+                // different local minimum depending on where it starts.
+                const Bounds b=boundsOf(tx);
+                double bestSse=std::numeric_limits<double>::infinity();
+                double bestTau=0.0,bestBase=0.0,bestSlope=0.0;
+                const int steps=60;
+                for(int k=1;k<steps;++k){
+                    const double tau=b.lo+(b.hi-b.lo)*double(k)/double(steps);
+                    QVector<double> hx,hy;
+                    for(int i=0;i<tx.size();++i){ hx.append(qMax(0.0,tau-tx[i])); hy.append(ty[i]); }
+                    const LineFit f=fitLine(hx,hy);
+                    if(!f.ok) continue;
+                    double sse=0.0;
+                    for(int i=0;i<hx.size();++i){
+                        const double r=hy[i]-(f.intercept+f.slope*hx[i]);
+                        sse+=r*r;
+                    }
+                    if(sse<bestSse){ bestSse=sse; bestTau=tau; bestBase=f.intercept; bestSlope=f.slope; }
+                }
+                if(std::isfinite(bestSse)&&b.valid){
+                    PlotSeries model;
+                    model.label=QStringLiteral("balance point %1, slope %2 per degree")
+                                    .arg(bestTau,0,'f',1).arg(bestSlope,0,'g',3);
+                    model.color=in.style.warning;
+                    model.lineWidth=qMax(1.3,in.style.lineWidth);
+                    model.x={b.lo,bestTau,b.hi};
+                    model.y={bestBase+bestSlope*qMax(0.0,bestTau-b.lo),bestBase,bestBase};
+                    out.series.append(model);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("outside temperature"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("energy use"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------- Abatement Cost Curve
+    // Measures ranked cheapest first, each drawn as a block whose WIDTH is how
+    // much it saves and whose HEIGHT is what it costs per unit saved. The width
+    // is the whole point: a cheap measure that abates almost nothing is a
+    // narrow block, and a bar chart of cost per tonne makes it look identical
+    // to one that abates a third of the total.
+    //
+    // Blocks below the axis pay for themselves.
+    if(in.engine==QLatin1String("Abatement Cost Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        out.legendVisible=false;
+        if(in.series.size()>=2){
+            const QVector<double>& quantity=in.series.at(0).y;
+            const QVector<double>& cost=in.series.at(1).y;
+            const int n=qMin(quantity.size(),cost.size());
+            QVector<QPair<double,double>> measures;   // (cost, quantity)
+            for(int i=0;i<n;++i){
+                if(!finite(quantity[i])||!finite(cost[i])||!(quantity[i]>0.0)) continue;
+                measures.append({cost[i],quantity[i]});
+            }
+            std::sort(measures.begin(),measures.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first;
+                      });
+            double x=0.0;
+            for(int i=0;i<measures.size()&&i<200;++i){
+                const double c=measures[i].first, w=measures[i].second;
+                PlotSeries block;
+                block.label=QString();
+                block.color=c<0.0?in.style.positive:in.style.warning;
+                block.lineWidth=1.0;
+                block.x={x,x,x+w,x+w,x};
+                block.y={0.0,c,c,0.0,0.0};
+                out.series.append(block);
+                x+=w;
+            }
+            if(x>0.0){
+                PlotSeries axis;
+                axis.label=QString();
+                axis.color=in.style.gridColor;
+                axis.lineWidth=1.0;
+                axis.x={0.0,x}; axis.y={0.0,0.0};
+                out.series.append(axis);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cumulative abatement"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cost per unit abated"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------------------- Mohr's Circle
+    // A stress state as a circle on the (normal, shear) plane: the centre is
+    // the mean stress, the radius is the maximum shear, and the two points
+    // where the circle crosses the axis are the principal stresses. The
+    // diameter joins the two faces the state was measured on, and its angle to
+    // the axis is twice the angle to the principal directions.
+    if(in.engine==QLatin1String("Mohr's Circle")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& sx=in.series.at(0).y;
+            const QVector<double>& sy=in.series.at(1).y;
+            const QVector<double>& txy=in.series.at(2).y;
+            const int n=qMin(sx.size(),qMin(sy.size(),txy.size()));
+            // One circle per row, capped: a dozen stress states on one plane is
+            // a comparison; a hundred is a disc.
+            for(int i=0;i<n&&i<12;++i){
+                if(!finite(sx[i])||!finite(sy[i])||!finite(txy[i])) continue;
+                const double centre=(sx[i]+sy[i])/2.0;
+                const double half=(sx[i]-sy[i])/2.0;
+                const double radius=std::sqrt(half*half+txy[i]*txy[i]);
+                if(!(radius>0.0)) continue;
+                const double s1=centre+radius, s2=centre-radius;
+                const double theta=0.5*std::atan2(txy[i],half)*180.0/M_PI;
+
+                PlotSeries circle;
+                circle.label=(n==1||i==0)
+                    ?QStringLiteral("s1 %1, s2 %2, tmax %3, theta %4 deg")
+                         .arg(s1,0,'g',4).arg(s2,0,'g',4).arg(radius,0,'g',4)
+                         .arg(theta,0,'f',1)
+                    :QString();
+                circle.color=(n==1)?in.series.at(0).color
+                                  :QColor::fromHsvF(std::fmod(double(i)*0.13,1.0),0.6,0.92);
+                circle.lineWidth=qMax(1.2,in.style.lineWidth);
+                for(int k=0;k<=180;++k){
+                    const double a=2.0*M_PI*double(k)/180.0;
+                    circle.x.append(centre+radius*std::cos(a));
+                    circle.y.append(radius*std::sin(a));
+                }
+                out.series.append(circle);
+
+                // The measured diameter, and the two principal points.
+                PlotSeries diameter;
+                diameter.label=QString();
+                diameter.color=circle.color;
+                diameter.lineWidth=0.9;
+                diameter.opacity=0.85;
+                diameter.x={sx[i],sy[i]};
+                diameter.y={txy[i],-txy[i]};
+                out.series.append(diameter);
+
+                PlotSeries principal;
+                principal.label=QString();
+                principal.color=in.style.warning;
+                principal.drawLine=false; principal.drawMarkers=true; principal.markerSize=5.0;
+                principal.x={s1,s2}; principal.y={0.0,0.0};
+                out.series.append(principal);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("normal stress"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("shear stress"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------- P-M Interaction Diagram
+    // The axial-load and bending-moment pairs a section can carry, as a closed
+    // envelope. Anything inside is safe; anything outside is not; and the
+    // characteristic bulge means a column can carry MORE moment under some
+    // compression than under none, which is the fact the diagram exists to
+    // make obvious.
+    if(in.engine==QLatin1String("P-M Interaction Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& moment=in.series.at(0).y;
+            const QVector<double>& axial=in.series.at(1).y;
+            const int n=qMin(moment.size(),axial.size());
+            QVector<QPair<double,double>> pts;
+            double cx=0.0,cy=0.0;
+            for(int i=0;i<n;++i){
+                if(!finite(moment[i])||!finite(axial[i])) continue;
+                pts.append({moment[i],axial[i]});
+                cx+=moment[i]; cy+=axial[i];
+            }
+            if(pts.size()>=3){
+                cx/=double(pts.size()); cy/=double(pts.size());
+                // Ordered by angle about the centroid, so a capacity table
+                // written in any order still closes into an envelope rather
+                // than a scribble.
+                std::sort(pts.begin(),pts.end(),
+                          [cx,cy](const QPair<double,double>& a,const QPair<double,double>& b){
+                              return std::atan2(a.second-cy,a.first-cx)
+                                   < std::atan2(b.second-cy,b.first-cx);
+                          });
+                PlotSeries envelope;
+                envelope.color=in.series.at(1).color;
+                envelope.lineWidth=qMax(1.3,in.style.lineWidth);
+                int balanced=0;
+                for(int i=0;i<pts.size();++i){
+                    envelope.x.append(pts[i].first);
+                    envelope.y.append(pts[i].second);
+                    if(pts[i].first>pts[balanced].first) balanced=i;
+                }
+                envelope.x.append(pts.first().first);
+                envelope.y.append(pts.first().second);
+                envelope.label=QStringLiteral("balanced point: M %1 at P %2")
+                                   .arg(pts[balanced].first,0,'g',4)
+                                   .arg(pts[balanced].second,0,'g',4);
+                out.series.append(envelope);
+
+                PlotSeries mark;
+                mark.label=QString();
+                mark.color=in.style.warning;
+                mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.0;
+                mark.x={pts[balanced].first}; mark.y={pts[balanced].second};
+                out.series.append(mark);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("moment"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("axial load"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------- Pushover Capacity Curve
+    // Base shear against roof displacement, with the equal-area bilinear
+    // idealisation over it. The ductility ratio it yields - ultimate over yield
+    // displacement - is the number the whole nonlinear analysis was run to
+    // produce, and it cannot be read off the curve by eye.
+    if(in.engine==QLatin1String("Pushover Capacity Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& displacement=in.series.at(0).y;
+            const QVector<double>& shear=in.series.at(1).y;
+            const int n=qMin(displacement.size(),shear.size());
+            QVector<QPair<double,double>> curve;
+            for(int i=0;i<n;++i)
+                if(finite(displacement[i])&&finite(shear[i]))
+                    curve.append({displacement[i],shear[i]});
+            std::sort(curve.begin(),curve.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first;
+                      });
+            if(curve.size()>=3){
+                PlotSeries line;
+                line.label=QStringLiteral("capacity");
+                line.color=in.series.at(1).color;
+                line.lineWidth=qMax(1.3,in.style.lineWidth);
+                double vmax=0.0,dAtMax=0.0;
+                for(const auto& pt:curve){
+                    line.x.append(pt.first); line.y.append(pt.second);
+                    if(pt.second>vmax){ vmax=pt.second; dAtMax=pt.first; }
+                }
+                out.series.append(line);
+                (void)dAtMax;
+                // Initial stiffness through the 0.6*Vmax point, as the codes
+                // define it, rather than through the first two samples - which
+                // would make the answer depend on how finely the analysis
+                // happened to be stepped.
+                double d60=0.0;
+                for(int i=1;i<curve.size();++i){
+                    if(curve[i].second>=0.6*vmax){
+                        const double y0=curve[i-1].second, y1=curve[i].second;
+                        const double t=(y1>y0)?(0.6*vmax-y0)/(y1-y0):0.0;
+                        d60=curve[i-1].first+t*(curve[i].first-curve[i-1].first);
+                        break;
+                    }
+                }
+                const double du=curve.last().first;
+                if(d60>0.0&&vmax>0.0&&du>d60){
+                    const double k=0.6*vmax/d60;
+                    // Equal areas: the bilinear curve encloses the same energy
+                    // as the real one, which fixes the yield shear.
+                    double area=0.0;
+                    for(int i=1;i<curve.size();++i)
+                        area+=0.5*(curve[i].second+curve[i-1].second)
+                                 *(curve[i].first-curve[i-1].first);
+                    // area = Vy*du - Vy^2/(2k)  =>  quadratic in Vy.
+                    const double disc=du*du-2.0*area/k;
+                    double vy=vmax;
+                    if(disc>=0.0) vy=k*(du-std::sqrt(disc));
+                    const double dy=(k>0.0)?vy/k:0.0;
+                    if(dy>0.0){
+                        PlotSeries bilinear;
+                        bilinear.label=QStringLiteral("bilinear: Vy %1, dy %2, ductility %3")
+                                           .arg(vy,0,'g',4).arg(dy,0,'g',3)
+                                           .arg(du/dy,0,'f',2);
+                        bilinear.color=in.style.warning;
+                        bilinear.lineWidth=qMax(1.2,in.style.lineWidth);
+                        bilinear.x={0.0,dy,du};
+                        bilinear.y={0.0,vy,vy};
+                        out.series.append(bilinear);
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("roof displacement"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("base shear"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ Response Spectrum
+    // Peak response against period, one curve per damping ratio, on a
+    // logarithmic period axis - because the interesting structures span from a
+    // tenth of a second to ten seconds and a linear axis crushes the short end
+    // where most buildings sit.
+    if(in.engine==QLatin1String("Response Spectrum")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& period=in.series.at(0).y;
+            for(int s=1;s<in.series.size();++s){
+                const PlotSeries& src=in.series.at(s);
+                QVector<QPair<double,double>> pts;
+                const int n=qMin(period.size(),src.y.size());
+                for(int i=0;i<n;++i){
+                    if(!finite(period[i])||!finite(src.y[i])||!(period[i]>0.0)) continue;
+                    pts.append({period[i],src.y[i]});
+                }
+                std::sort(pts.begin(),pts.end(),
+                          [](const QPair<double,double>& a,const QPair<double,double>& b){
+                              return a.first<b.first;
+                          });
+                if(pts.size()<2) continue;
+                PlotSeries curve;
+                curve.label=src.label.isEmpty()?QStringLiteral("damping %1").arg(s):src.label;
+                curve.color=src.color;
+                curve.lineWidth=qMax(1.2,in.style.lineWidth);
+                double peak=0.0,tPeak=0.0;
+                for(const auto& pt:pts){
+                    curve.x.append(pt.first); curve.y.append(pt.second);
+                    if(pt.second>peak){ peak=pt.second; tPeak=pt.first; }
+                }
+                if(peak>0.0)
+                    curve.label+=QStringLiteral(" (peak %1 at T %2 s)")
+                                     .arg(peak,0,'g',3).arg(tPeak,0,'g',3);
+                out.series.append(curve);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("period (s)"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("spectral response"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------- Consolidation Curve
+    // Dial reading against log time for one load increment, with Casagrande's
+    // construction: the tangent at the steepest point and the secondary-
+    // compression asymptote meet at 100% primary consolidation, and t50 is read
+    // halfway between that and the corrected zero.
+    //
+    // The ordinate descends because settlement does. An axis drawn the other
+    // way up is a picture of a building rising out of the ground.
+    if(in.engine==QLatin1String("Consolidation Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& time=in.series.at(0).y;
+            const QVector<double>& settlement=in.series.at(1).y;
+            const int n=qMin(time.size(),settlement.size());
+            QVector<QPair<double,double>> pts;      // (log10 t, settlement)
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(settlement[i])||!(time[i]>0.0)) continue;
+                pts.append({std::log10(time[i]),settlement[i]});
+            }
+            std::sort(pts.begin(),pts.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first;
+                      });
+            if(pts.size()>=4){
+                PlotSeries curve;
+                curve.label=QStringLiteral("consolidation");
+                curve.color=in.series.at(1).color;
+                curve.lineWidth=qMax(1.3,in.style.lineWidth);
+                for(const auto& pt:pts){
+                    curve.x.append(std::pow(10.0,pt.first));
+                    curve.y.append(pt.second);
+                }
+                out.series.append(curve);
+
+                // Steepest segment in log time - the middle of primary
+                // consolidation - and the last quarter of the record, which is
+                // secondary compression.
+                int steep=1; double best=0.0;
+                for(int i=1;i<pts.size();++i){
+                    const double dx=pts[i].first-pts[i-1].first;
+                    if(!(dx>1e-12)) continue;
+                    const double slope=std::abs((pts[i].second-pts[i-1].second)/dx);
+                    if(slope>best){ best=slope; steep=i; }
+                }
+                const int tailFrom=qMax(1,pts.size()*3/4);
+                QVector<double> tx,ty;
+                for(int i=tailFrom;i<pts.size();++i){ tx.append(pts[i].first); ty.append(pts[i].second); }
+                const LineFit tail=fitLine(tx,ty);
+                const double primarySlope=(pts[steep].second-pts[steep-1].second)
+                                          /(pts[steep].first-pts[steep-1].first);
+                const double primaryB=pts[steep].second-primarySlope*pts[steep].first;
+                if(tail.ok&&std::abs(primarySlope-tail.slope)>1e-12){
+                    const double xi=(tail.intercept-primaryB)/(primarySlope-tail.slope);
+                    const double d100=primaryB+primarySlope*xi;
+                    const double d0=pts.first().second;
+                    const double d50=(d0+d100)/2.0;
+                    // t50 by walking the curve to the half-settlement, which is
+                    // where the coefficient of consolidation comes from.
+                    double t50=0.0;
+                    for(int i=1;i<pts.size();++i){
+                        const double a=pts[i-1].second, b2=pts[i].second;
+                        if((a-d50)*(b2-d50)<=0.0&&std::abs(b2-a)>1e-15){
+                            const double t=(d50-a)/(b2-a);
+                            t50=std::pow(10.0,pts[i-1].first+t*(pts[i].first-pts[i-1].first));
+                            break;
+                        }
+                    }
+                    if(t50>0.0){
+                        PlotSeries mark;
+                        mark.label=QStringLiteral("t50 %1, d100 %2")
+                                       .arg(t50,0,'g',3).arg(d100,0,'g',4);
+                        mark.color=in.style.warning;
+                        mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.0;
+                        mark.x={t50}; mark.y={d50};
+                        out.series.append(mark);
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time (log)"),true,unsetValue(),unsetValue()};
+        // Settlement downwards, by the axis flag rather than by negating the
+        // readings - which would put minus signs on every tick and make the
+        // axis label a lie.
+        out.yAxis=PlotAxis{QStringLiteral("settlement"),false,
+                           unsetValue(),unsetValue(),true};
+        return out;
+    }
+
+    // ------------------------------------------- Lomb-Scargle Periodogram
+    // Power against frequency for UNEVENLY sampled data - which is the whole
+    // reason it exists. An FFT periodogram needs a constant sampling interval,
+    // and astronomical, ecological and instrument records almost never have
+    // one; resampling them onto a grid first invents data and smears the very
+    // peak being looked for.
+    if(in.engine==QLatin1String("Lomb-Scargle Periodogram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& time=in.series.at(0).y;
+            const QVector<double>& value=in.series.at(1).y;
+            const int n=qMin(time.size(),value.size());
+            QVector<double> t,v;
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(value[i])) continue;
+                t.append(time[i]); v.append(value[i]);
+            }
+            if(t.size()>=8){
+                double mean=0.0;
+                for(double x:v) mean+=x;
+                mean/=double(v.size());
+                double variance=0.0;
+                for(double x:v) variance+=(x-mean)*(x-mean);
+                variance/=double(v.size()-1);
+
+                const Bounds span=boundsOf(t);
+                const double baseline=span.hi-span.lo;
+                if(baseline>0.0&&variance>0.0){
+                    // Frequencies from one cycle over the record to the
+                    // pseudo-Nyquist of the MEDIAN spacing. Using the mean
+                    // spacing instead would let one long gap halve the
+                    // frequency range that gets searched.
+                    QVector<double> gaps;
+                    QVector<double> sorted=t;
+                    std::sort(sorted.begin(),sorted.end());
+                    for(int i=1;i<sorted.size();++i)
+                        if(sorted[i]>sorted[i-1]) gaps.append(sorted[i]-sorted[i-1]);
+                    std::sort(gaps.begin(),gaps.end());
+                    const double median=gaps.isEmpty()?baseline/double(t.size())
+                                                      :gaps[gaps.size()/2];
+                    const double fLo=1.0/baseline;
+                    const double fHi=(median>0.0)?0.5/median:fLo*double(t.size());
+                    const int bins=qBound(64,int(t.size())*10,2000);
+                    PlotSeries power;
+                    power.label=QStringLiteral("power");
+                    power.color=in.series.at(1).color;
+                    power.lineWidth=qMax(1.1,in.style.lineWidth);
+                    double peak=0.0,fPeak=0.0;
+                    for(int b=0;b<bins;++b){
+                        const double f=fLo+(fHi-fLo)*double(b)/double(bins-1);
+                        if(!(f>0.0)) continue;
+                        const double w=2.0*M_PI*f;
+                        // The time offset tau is what makes this estimator
+                        // invariant to where the clock was started; without it
+                        // the power depends on the arbitrary time origin.
+                        double ss=0.0,cc=0.0;
+                        for(double x:t){ ss+=std::sin(2.0*w*x); cc+=std::cos(2.0*w*x); }
+                        const double tau=std::atan2(ss,cc)/(2.0*w);
+                        double sc=0.0,cs=0.0,s2=0.0,c2=0.0;
+                        for(int i=0;i<t.size();++i){
+                            const double a=w*(t[i]-tau);
+                            const double cosA=std::cos(a), sinA=std::sin(a);
+                            const double d=v[i]-mean;
+                            cs+=d*cosA; sc+=d*sinA;
+                            c2+=cosA*cosA; s2+=sinA*sinA;
+                        }
+                        double p=0.0;
+                        if(c2>1e-300) p+=cs*cs/c2;
+                        if(s2>1e-300) p+=sc*sc/s2;
+                        p/=(2.0*variance);
+                        power.x.append(f); power.y.append(p);
+                        if(p>peak){ peak=p; fPeak=f; }
+                    }
+                    if(!power.x.isEmpty()){
+                        if(fPeak>0.0)
+                            power.label=QStringLiteral("peak period %1 (power %2)")
+                                            .arg(1.0/fPeak,0,'g',4).arg(peak,0,'f',2);
+                        out.series.append(power);
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("frequency"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("normalised power"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ----------------------------------------------------------- Waffle Chart
+    // A hundred squares, coloured in proportion. It replaces a pie chart for
+    // the case a pie is worst at - reading a value rather than comparing two -
+    // because counting squares is exact and judging the angle of a wedge is
+    // not.
+    if(in.engine==QLatin1String("Waffle Chart")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        // One category per ROW of a single column, which is how a pie chart
+        // reads its input and what this replaces. Reading one category per
+        // COLUMN was tried first and is wrong for the ordinary case: a single
+        // mapped column then became one category holding a hundred squares,
+        // which is a picture of the number one.
+        QVector<double> shares;
+        if(!in.series.isEmpty())
+            for(double v:in.series.first().y)
+                if(finite(v)&&v>0.0) shares.append(v);
+        double grand=0.0;
+        for(double x:shares) grand+=x;
+        if(grand>0.0){
+            const int cells=100, cols=10;
+            // Largest-remainder apportionment, so the squares add to exactly a
+            // hundred. Rounding each share independently gives 99 or 101 and
+            // the chart stops being readable as a percentage - which is the one
+            // thing it is for.
+            QVector<int> quota(shares.size(),0);
+            QVector<double> remainder(shares.size(),0.0);
+            int assigned=0;
+            for(int i=0;i<shares.size();++i){
+                const double exact=shares[i]/grand*double(cells);
+                quota[i]=int(std::floor(exact));
+                remainder[i]=exact-quota[i];
+                assigned+=quota[i];
+            }
+            while(assigned<cells&&!remainder.isEmpty()){
+                int best=0;
+                for(int i=1;i<remainder.size();++i) if(remainder[i]>remainder[best]) best=i;
+                if(remainder[best]<0.0) break;      // every remainder spent
+                quota[best]+=1; remainder[best]=-1.0; ++assigned;
+            }
+            const QString stem=in.series.first().label.isEmpty()
+                               ?QStringLiteral("category"):in.series.first().label;
+            int cell=0;
+            for(int i=0;i<quota.size();++i){
+                PlotSeries block;
+                block.label=QStringLiteral("%1 %2  -  %3%").arg(stem).arg(i+1).arg(quota[i]);
+                block.color=QColor::fromHsvF(std::fmod(double(i)*0.137,1.0),0.55,0.93);
+                block.drawLine=false; block.drawMarkers=true; block.markerSize=11.0;
+                block.markerSizeExplicit=true;
+                for(int k=0;k<quota[i]&&cell<cells;++k,++cell){
+                    block.x.append(double(cell%cols));
+                    // Filled from the bottom up, so the first category is the
+                    // bottom row rather than the top - the direction a stacked
+                    // proportion is read in.
+                    block.y.append(double(9-cell/cols));
+                }
+                if(!block.x.isEmpty()) out.series.append(block);
+            }
+        }
+        out.xAxis=PlotAxis{QString(),false,-1.0,10.0};
+        out.yAxis=PlotAxis{QString(),false,-1.0,10.0};
+        out.style.gridVisible=false;
+        out.style.scaleLabelsVisible=false;
+        return out;
+    }
+
     return in;
 }
 

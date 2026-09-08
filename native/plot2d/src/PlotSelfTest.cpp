@@ -328,6 +328,135 @@ bool runEngineSweep(){
         resistance.append(0.2+double(i)*0.08);    // a sweep across the chart
         reactance.append(-1.5+double(i)*0.05);
     }
+    // Batch 5's inputs. Every one is generated from the equation the engine
+    // claims to fit, with known constants, so a plot that draws a curve through
+    // the wrong numbers can be caught by reading its legend rather than by
+    // looking at the shape and thinking it seems about right.
+    QVector<double> tafelEta,tafelJ,cvPotential,cvCurrent;
+    QVector<double> rotation,limitingCurrent,scanRate,peakCurrent;
+    QVector<double> monodS,monodMu,inhibitedRate;
+    QVector<double> ragonePower,ragoneEnergy,ragoneFamily;
+    QVector<double> pvVoltage,pvCurrent,outsideTemp,meteredEnergy;
+    QVector<double> abateQty,abateCost;
+    QVector<double> sigmaX,sigmaY,tauXY,pmMoment,pmAxial;
+    QVector<double> pushDisp,pushShear,specPeriod,specAccel;
+    QVector<double> consolTime,consolSettle,lombTime,lombValue,waffleShare;
+    {
+        // Butler-Volmer with j0 = 1e-4 and Tafel slopes of 120 mV/decade
+        // anodic, -100 cathodic. Both branches, so the two fits have something
+        // to separate.
+        for(int i=0;i<80;++i){
+            const double eta=-0.40+0.80*double(i)/79.0;
+            if(std::abs(eta)<0.01) continue;
+            const double slope=(eta>0.0)?0.120:-0.100;
+            tafelEta.append(eta);
+            tafelJ.append((eta>0.0?1.0:-1.0)*1e-4*std::pow(10.0,eta/slope));
+        }
+        // A reversible couple: a forward sweep and a reverse one that do NOT
+        // retrace, so a voltammogram that sorted its points would collapse
+        // visibly.
+        for(int i=0;i<=120;++i){
+            const double v=-0.4+0.8*double(i)/120.0;
+            cvPotential.append(v);
+            cvCurrent.append(4.0e-5*std::exp(-std::pow((v-0.13)/0.05,2.0)));
+        }
+        for(int i=120;i>=0;--i){
+            const double v=-0.4+0.8*double(i)/120.0;
+            cvPotential.append(v);
+            cvCurrent.append(-3.6e-5*std::exp(-std::pow((v-0.07)/0.05,2.0)));
+        }
+        // Levich: i = 0.62 * sqrt(omega), with a kinetic term so the
+        // Koutecky-Levich intercept is 1/0.004 rather than zero.
+        for(int i=1;i<=12;++i){
+            const double omega=double(i)*100.0;
+            rotation.append(omega);
+            const double diffusion=0.0006*std::sqrt(omega);
+            limitingCurrent.append(1.0/(1.0/0.004+1.0/diffusion));
+            scanRate.append(double(i)*0.01);
+            peakCurrent.append(0.0025*std::sqrt(double(i)*0.01));
+        }
+        // Monod with umax 0.45 and Ks 12, and the same culture inhibited above
+        // Ki 300 - so the second curve peaks at sqrt(12*300) = 60.
+        for(int i=1;i<=40;++i){
+            const double s=double(i)*15.0;
+            monodS.append(s);
+            monodMu.append(0.45*s/(12.0+s));
+            inhibitedRate.append(0.45*s/(12.0+s+s*s/300.0));
+        }
+        // Three device families a decade apart, which is what a Ragone plot is
+        // drawn to separate.
+        for(int i=0;i<36;++i){
+            const double u=double(i%12)/11.0;
+            const double family=double(i/12);
+            ragoneFamily.append(family);
+            const double p=std::pow(10.0,1.0+family*1.4+u*1.2);
+            ragonePower.append(p);
+            ragoneEnergy.append(std::pow(10.0,2.4-family*1.1-u*0.8));
+        }
+        // A single-diode cell: Isc 5 A, Voc 0.6 V.
+        for(int i=0;i<=60;++i){
+            const double v=0.62*double(i)/60.0;
+            const double current=5.0-1e-9*(std::exp(v/0.026)-1.0);
+            pvVoltage.append(v);
+            pvCurrent.append(qMax(0.0,current));
+        }
+        // A building with a 15.5 C balance point and 40 kWh per degree-day.
+        for(int i=0;i<48;++i){
+            const double t=-2.0+double(i)*0.6;
+            outsideTemp.append(t);
+            meteredEnergy.append(300.0+40.0*qMax(0.0,15.5-t)
+                                 +18.0*std::sin(double(i)*1.7));
+        }
+        // Measures spanning negative to positive cost, and widths differing by
+        // a factor of forty - which is the thing the block widths exist to
+        // show and a bar chart of cost alone cannot.
+        for(int i=0;i<14;++i){
+            abateQty.append(0.5+std::fmod(double(i)*7.0,20.0));
+            abateCost.append(-60.0+double(i)*18.0);
+        }
+        // Three stress states, including one in pure shear.
+        sigmaX={120.0,80.0,0.0}; sigmaY={40.0,-30.0,0.0}; tauXY={30.0,50.0,45.0};
+        // A column envelope: pure compression at the top, the balanced point
+        // bulging out to the right, pure bending at the bottom.
+        for(int i=0;i<=36;++i){
+            const double a=2.0*3.14159265358979323846*double(i)/36.0;
+            pmMoment.append(qMax(0.0,220.0*std::sin(a)));
+            pmAxial.append(1400.0*std::cos(a)+400.0);
+        }
+        // A pushover with an elastic branch, a knee and a plateau.
+        for(int i=0;i<=50;++i){
+            const double d=double(i)*0.006;
+            pushDisp.append(d);
+            pushShear.append(1800.0*(1.0-std::exp(-d/0.035)));
+        }
+        // A code-shaped spectrum: a short-period plateau, then a 1/T branch.
+        for(int i=0;i<=60;++i){
+            const double t=0.05*std::pow(10.0,2.0*double(i)/60.0);
+            specPeriod.append(t);
+            specAccel.append(t<0.5?0.9:0.9*0.5/t);
+        }
+        // Primary consolidation to 8 mm, then secondary compression.
+        for(int i=0;i<=40;++i){
+            const double t=std::pow(10.0,-1.0+4.0*double(i)/40.0);
+            consolTime.append(t);
+            consolSettle.append(8.0*(1.0-std::exp(-t/60.0))+0.35*std::log10(1.0+t));
+        }
+        // A 4.7-unit period sampled at UNEVEN times, which is the case an FFT
+        // periodogram cannot take and this one is for.
+        {
+            double t=0.0;
+            for(int i=0;i<220;++i){
+                t+=0.35+0.55*std::fmod(double(i)*0.618034,1.0);
+                lombTime.append(t);
+                lombValue.append(std::sin(2.0*3.14159265358979323846*t/4.7)
+                                 +0.25*std::cos(double(i)*1.31));
+            }
+        }
+        // Shares that do not divide into a hundred, so the largest-remainder
+        // apportionment has something to do.
+        waffleShare={37.0,29.0,21.0,13.0};
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -455,6 +584,43 @@ bool runEngineSweep(){
             {column("subject",swimSubject),column("start",swimStart),column("stop",swimStop)}},
         {QStringLiteral("Influence Plot"),
             {column("leverage",leverage),column("residual",studentised)}},
+        // Batch 5.
+        {QStringLiteral("Tafel Plot"),
+            {column("overpotential",tafelEta),column("current density",tafelJ)}},
+        {QStringLiteral("Cyclic Voltammogram"),
+            {column("potential",cvPotential),column("current",cvCurrent)}},
+        {QStringLiteral("Levich Plot"),
+            {column("rotation",rotation),column("limiting current",limitingCurrent)}},
+        {QStringLiteral("Koutecky-Levich Plot"),
+            {column("rotation",rotation),column("current",limitingCurrent)}},
+        {QStringLiteral("Randles-Sevcik Plot"),
+            {column("scan rate",scanRate),column("peak current",peakCurrent)}},
+        {QStringLiteral("Monod Growth Curve"),
+            {column("substrate",monodS),column("growth rate",monodMu)}},
+        {QStringLiteral("Substrate Inhibition Curve"),
+            {column("substrate",monodS),column("growth rate",inhibitedRate)}},
+        {QStringLiteral("Ragone Plot"),
+            {column("power",ragonePower),column("energy",ragoneEnergy),
+             column("family",ragoneFamily)}},
+        {QStringLiteral("I-V Curve"),
+            {column("voltage",pvVoltage),column("current",pvCurrent)}},
+        {QStringLiteral("Degree-Day Signature"),
+            {column("temperature",outsideTemp),column("energy",meteredEnergy)}},
+        {QStringLiteral("Abatement Cost Curve"),
+            {column("abatement",abateQty),column("cost",abateCost)}},
+        {QStringLiteral("Mohr's Circle"),
+            {column("sigma x",sigmaX),column("sigma y",sigmaY),column("tau xy",tauXY)}},
+        {QStringLiteral("P-M Interaction Diagram"),
+            {column("moment",pmMoment),column("axial",pmAxial)}},
+        {QStringLiteral("Pushover Capacity Curve"),
+            {column("displacement",pushDisp),column("base shear",pushShear)}},
+        {QStringLiteral("Response Spectrum"),
+            {column("period",specPeriod),column("Sa 5%",specAccel)}},
+        {QStringLiteral("Consolidation Curve"),
+            {column("time",consolTime),column("settlement",consolSettle)}},
+        {QStringLiteral("Lomb-Scargle Periodogram"),
+            {column("time",lombTime),column("value",lombValue)}},
+        {QStringLiteral("Waffle Chart"),{column("share",waffleShare)}},
     };
 
     for(const QString& engine:engines){

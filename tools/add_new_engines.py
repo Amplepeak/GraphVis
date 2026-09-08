@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 4.
+"""Catalogue entries for the engine expansion, batches 1 to 5.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -151,6 +151,44 @@ NEW = [
      "A subject-by-time raster — the readable alternative to a spaghetti plot"),
     ("Clinical & Meta-analysis", "swimmer", "Swimmer Plot",
      "One lane per subject from start to stop, longest at the top"),
+
+    # ---- batch 5: electrochemistry, bioprocess kinetics, energy, structures
+    ("Electrochemical & Bioprocess", "tafel", "Tafel Plot",
+     "Overpotential against log current density, each branch fitted for its slope and exchange current"),
+    ("Electrochemical & Bioprocess", "cyclicvoltammogram", "Cyclic Voltammogram",
+     "Current against potential as a swept loop, with the peak separation and current ratio"),
+    ("Electrochemical & Bioprocess", "levich", "Levich Plot",
+     "Limiting current against the square root of rotation rate, through the origin"),
+    ("Electrochemical & Bioprocess", "koutecky", "Koutecky-Levich Plot",
+     "Reciprocal current against reciprocal root rotation; the intercept is the kinetic current"),
+    ("Electrochemical & Bioprocess", "randles", "Randles-Sevcik Plot",
+     "Peak current against the square root of scan rate — diffusion control is a straight line"),
+    ("Electrochemical & Bioprocess", "monod", "Monod Growth Curve",
+     "Specific growth rate against substrate, with µmax and Ks fitted"),
+    ("Electrochemical & Bioprocess", "haldane", "Substrate Inhibition Curve",
+     "Haldane kinetics: growth rate rises, peaks and falls, with Ki and the optimum concentration"),
+    ("Energy & Building Services", "ragone", "Ragone Plot",
+     "Specific energy against specific power on log axes, over the constant-discharge-time diagonals"),
+    ("Energy & Building Services", "ivcurve", "I-V Curve",
+     "Photovoltaic current against voltage with the maximum-power rectangle and fill factor"),
+    ("Energy & Building Services", "degreeday", "Degree-Day Signature",
+     "Metered energy against outside temperature, with the balance point fitted by change-point search"),
+    ("Energy & Building Services", "macc", "Abatement Cost Curve",
+     "Measures cheapest first as blocks whose width is the saving and height the cost per unit"),
+    ("Tensor & Structure Analysis", "mohr", "Mohr's Circle",
+     "A stress state as a circle, with the principal stresses, maximum shear and principal angle"),
+    ("Civil & Structural", "pminteraction", "P-M Interaction Diagram",
+     "The axial-load and moment capacity envelope, closed, with the balanced point marked"),
+    ("Civil & Structural", "pushover", "Pushover Capacity Curve",
+     "Base shear against roof displacement with the equal-area bilinear idealisation and ductility"),
+    ("Civil & Structural", "responsespectrum", "Response Spectrum",
+     "Peak response against period on a log axis, one curve per damping ratio"),
+    ("Civil & Structural", "consolidation", "Consolidation Curve",
+     "Settlement against log time with Casagrande's construction and t50"),
+    ("Spectral", "lombscargle", "Lomb-Scargle Periodogram",
+     "Power against frequency for unevenly sampled data, which an FFT cannot take"),
+    ("Categorical & Set Views", "waffle", "Waffle Chart",
+     "A hundred squares apportioned by largest remainder, so the counts read exactly"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -161,9 +199,16 @@ if missing:
 added = 0
 for category, name, engine, description in NEW:
     cat = by_name[category]
-    cat["entries"] = [e for e in cat["entries"]
-                      if not (e["engine"] == engine and e.get("scale") is None)]
-    cat["entries"].append({
+    # Replaced IN PLACE when the entry is already there, appended only when it
+    # is new. Removing and re-appending would have been simpler and was wrong:
+    # add_scale_variants.py appends an engine's variants to the end of the
+    # category, so a rerun of this script moved the base entry down PAST its own
+    # variants and the file changed again - the pipeline needed two passes to
+    # stop moving, which is not what idempotent means. Nothing was lost by it;
+    # a catalogue that differs from itself is just impossible to review.
+    at = next((i for i, e in enumerate(cat["entries"])
+               if e["engine"] == engine and e.get("scale") is None), None)
+    entry = {
         "category": category,
         "name": name,
         "engine": engine,
@@ -172,12 +217,16 @@ for category, name, engine, description in NEW:
         "description": description,
         "preview": "",
         "thumbnail": "",
-    })
+    }
+    if at is None:
+        cat["entries"].append(entry)
+    else:
+        cat["entries"][at] = entry
     added += 1
 
 doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-4: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-5: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

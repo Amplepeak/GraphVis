@@ -54,6 +54,13 @@ NO_SCALE = {
     "OHLC Candlestick", "Plot Matrix", "Scatter + Marginals",
     "Parallel Coordinates", "Andrews Curves", "Population Pyramid",
     "Event Plot", "Eye Diagram", "Dendrogram",
+    # Batch 5. These four draw a GEOMETRIC claim on their axes, and a
+    # transformed axis makes the claim false while leaving it on the page:
+    # Mohr's circle is a circle only on equal linear axes; the I-V curve's
+    # rectangle has area Pmax only on linear ones; the voltammogram reports a
+    # peak separation in millivolts read off the potential axis; and the
+    # waffle's axes are grid positions rather than a quantity at all.
+    "Mohr's Circle", "I-V Curve", "Cyclic Voltammogram", "Waffle Chart",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in
