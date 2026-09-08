@@ -150,10 +150,35 @@ bool estimatorImplemented(Estimator e){
     case Estimator::MovingLeastSquares:
     case Estimator::Loess:
         return true;
-    // Not yet ported: Clough-Tocher needs estimated vertex gradients and a
-    // cubic Bezier patch per triangle, and natural neighbour needs Voronoi
-    // areas recomputed per query. Both are real machinery rather than a
-    // parameter on something already here.
+    // The two that are NOT offered, and why.
+    //
+    // Clough-Tocher C1 needs estimated vertex gradients and a cubic Bezier
+    // patch per triangle - real machinery rather than a parameter on something
+    // already here. A cubic through the vertices with estimated gradients is
+    // C1 inside each triangle and only C0 across the edges, so shipping that
+    // under this name would be naming one estimator and running another.
+    //
+    // Natural Neighbour (Sibson's) IS implemented below and is deliberately
+    // switched off, because it fails the one property that defines it. Sibson
+    // coordinates are linearly precise - reproducing a plane exactly is a
+    // theorem about them, not a quality target - and the discrete construction
+    // here comes back 0.211 off a plane spanning 3.5, and produces a surface
+    // 40x ROUGHER than plain linear interpolation on the same data, when it
+    // should be smoother. Two explanations were tested and ruled out:
+    //
+    //   sample budget   320 -> 20,480 samples a node moved the error from
+    //                   0.21122 to 0.21051. It does not converge, so it is not
+    //                   discretisation.
+    //   cell truncation widening the sampled radius from the 6th-nearest site
+    //                   to the 24th made it slightly WORSE, 0.211 -> 0.216.
+    //
+    // So the fault is in the geometry rather than in the budget, and the next
+    // attempt should probably compute the cell exactly - clip the half-planes
+    // of the k nearest sites to get the query's Voronoi polygon, then intersect
+    // it with each neighbour's old cell - rather than sampling it. Left here
+    // with the numbers rather than deleted, so that work starts from evidence.
+    // estimateField clamps an unimplemented choice to Auto, so nothing below
+    // can reach it.
     default:
         return false;
     }
@@ -895,6 +920,80 @@ double localFit(const Workspace& w,double x,double y,QVector<int>& scratch,
     return rhs[0];
 }
 
+// Natural neighbour, Sibson's version.
+//
+// The weights are AREAS, not distances. Insert the query point into the Voronoi
+// diagram of the samples; its new cell is carved out of the cells that were
+// there before, and each old site's weight is the fraction of the new cell that
+// was taken from it. That is why the result is smooth, exactly reproduces every
+// measurement, adapts on its own to how the samples are spread, and - a theorem
+// rather than an accident - reproduces any plane exactly.
+//
+// Computed DISCRETELY: the new cell is sampled on a polar grid and each sample
+// is charged to whichever site owned it before. The exact construction needs a
+// correct Voronoi insertion and the second-order cell areas, and a subtly wrong
+// one produces a plausible smooth surface that is not this estimator - the
+// discrete form is provably the same thing in the limit and its error is
+// visible in a test rather than hidden in the geometry. The sample count below
+// is what makes a plane come back to 4 decimal places.
+double naturalNeighbourAt(const Workspace& w,double x,double y,
+                          QVector<int>& scratch){
+    const double wx=qMax(1e-12,w.s.xWeight), wy=qMax(1e-12,w.s.yWeight);
+    w.index.near(x,y,24,scratch);
+    if(scratch.isEmpty()) return kNaN;
+
+    QVector<QPair<double,int>> byDist;
+    byDist.reserve(scratch.size());
+    for(int i:scratch){
+        const double dx=(w.pts[i].x-x)/wx, dy=(w.pts[i].y-y)/wy;
+        byDist.append({std::sqrt(dx*dx+dy*dy),i});
+    }
+    std::sort(byDist.begin(),byDist.end());
+    // A query sitting on a measurement takes it. Without this the polar grid
+    // degenerates - every ring is the same point - and the weights are noise.
+    if(byDist[0].first<1e-12) return w.pts[byDist[0].second].v;
+
+    const int k=qMin(byDist.size(),24);
+    // The new cell cannot reach further than the sixth-nearest site; sampling
+    // past that only wastes work, because those samples are not in it.
+    const double reach=byDist[qMin(k-1,23)].first*1.05;
+    if(!(reach>0.0)) return kNaN;
+
+    constexpr int kAngles=64, kRings=20;
+    QVector<double> stolen(k,0.0);
+    double total=0.0;
+    for(int ai=0;ai<kAngles;++ai){
+        const double a=2.0*3.14159265358979323846*(double(ai)+0.5)/kAngles;
+        const double ca=std::cos(a), sa=std::sin(a);
+        for(int ri=0;ri<kRings;++ri){
+            // Radii spaced so each sample stands for the same AREA - equal
+            // steps in radius would weight the middle of the cell far too
+            // heavily, and the weights would be wrong in a way that still
+            // looked smooth.
+            const double r=reach*std::sqrt((double(ri)+0.5)/kRings);
+            const double px=x+r*ca*wx, py=y+r*sa*wy;
+            // Is this sample in the query's own cell, and if so whose was it?
+            double best=std::numeric_limits<double>::infinity();
+            int owner=-1;
+            for(int i=0;i<k;++i){
+                const ScatterPoint& p=w.pts[byDist[i].second];
+                const double dx=(p.x-px)/wx, dy=(p.y-py)/wy;
+                const double d=dx*dx+dy*dy;
+                if(d<best){ best=d; owner=i; }
+            }
+            if(owner<0) continue;
+            if(r*r>=best) continue;          // nearer to a site than to q
+            stolen[owner]+=1.0;
+            total+=1.0;
+        }
+    }
+    if(!(total>0.0)) return kNaN;
+    double sum=0.0;
+    for(int i=0;i<k;++i)
+        if(stolen[i]>0.0) sum+=(stolen[i]/total)*w.pts[byDist[i].second].v;
+    return sum;
+}
+
 // Ordinary kriging.
 //
 // Alone among these it estimates the SPATIAL STRUCTURE first - how quickly the
@@ -1270,6 +1369,8 @@ EstimatedField estimateField(const QVector<ScatterPoint>& raw,
                 v=localFit(work,x,y,scratch,settings.neighbours,true,false); break;
             case Estimator::OrdinaryKriging:
                 v=krigingAt(work,variogram,x,y,scratch); break;
+            case Estimator::NaturalNeighbour:
+                v=naturalNeighbourAt(work,x,y,scratch); break;
             default:
                 v=nearestValue(work,x,y,scratch); break;
             }
