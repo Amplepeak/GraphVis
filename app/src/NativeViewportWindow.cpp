@@ -1,7 +1,9 @@
 #include "NativeViewportWindow.h"
 #include "NativeApi.h"
 #include <QMouseEvent>
+#include <QNativeGestureEvent>
 #include <QResizeEvent>
+#include <QTouchEvent>
 #include <QWheelEvent>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -44,4 +46,76 @@ void NativeViewportWindow::mousePressEvent(QMouseEvent* e){lastMouse_=e->positio
 void NativeViewportWindow::mouseReleaseEvent(QMouseEvent* e){dragButton_=Qt::NoButton;e->accept();}
 void NativeViewportWindow::mouseMoveEvent(QMouseEvent* e){const QPointF delta=e->position()-lastMouse_;lastMouse_=e->position();const bool pan=(dragButton_==Qt::MiddleButton)||((e->modifiers()&Qt::ShiftModifier)&&dragButton_==Qt::LeftButton);if(pan){panX_+=float(delta.x()/qMax(200,width()))*2.f;panY_-=float(delta.y()/qMax(200,height()))*2.f;}else if(dragButton_==Qt::LeftButton){az_+=float(delta.x())*.45f;el_=qBound(-89.f,el_+float(delta.y())*.35f,89.f);}pushCamera();requestNativeFrame();e->accept();}
 void NativeViewportWindow::wheelEvent(QWheelEvent* e){zoom_=qBound(.15f,zoom_*std::pow(1.0015f,float(e->angleDelta().y())),12.f);pushCamera();requestNativeFrame();e->accept();}
-bool NativeViewportWindow::event(QEvent* e){if(e->type()==QEvent::UpdateRequest){requestNativeFrame();return true;}return QWindow::event(e);}
+// ---------------------------------------------------------------------- touch
+//
+// Qt synthesises a mouse press and drag from a touch nobody accepted, which is
+// why a single finger already rotated the camera. It synthesises nothing for a
+// second finger, and this window's zoom is bound to wheelEvent and its pan to a
+// middle button or Shift - so on a touchscreen two thirds of the camera was
+// unreachable. Handling the touch directly costs one function and gives all
+// three gestures.
+bool NativeViewportWindow::handleTouch(QTouchEvent* e){
+    if(e->type()==QEvent::TouchEnd||e->type()==QEvent::TouchCancel){
+        touch_.reset(); return true;
+    }
+    const graphvis::TouchGesture::Step step=
+        touch_.update(e->points(),e->type()==QEvent::TouchBegin);
+    if(!step.usable) return true;
+
+    if(step.fingers==1){
+        az_+=float(step.movement.x())*.45f;
+        el_=qBound(-89.f,el_+float(step.movement.y())*.35f,89.f);
+    }else{
+        zoom_=qBound(.15f,zoom_*float(step.scale),12.f);
+        panX_+=float(step.movement.x()/qMax(200,width()))*2.f;
+        panY_-=float(step.movement.y()/qMax(200,height()))*2.f;
+    }
+    pushCamera(); requestNativeFrame();
+    return true;
+}
+
+// A precision touchpad, and a touchscreen on the Windows versions that report
+// a pinch as a gesture rather than as touch points. Same camera, same limits.
+bool NativeViewportWindow::handleNativeGesture(QNativeGestureEvent* e){
+    switch(e->gestureType()){
+    case Qt::ZoomNativeGesture:
+        zoom_=qBound(.15f,zoom_*float(1.0+e->value()),12.f);
+        break;
+    case Qt::RotateNativeGesture:
+        az_+=float(e->value());
+        break;
+    case Qt::PanNativeGesture:
+        panX_+=float(e->delta().x()/qMax(200,width()))*2.f;
+        panY_-=float(e->delta().y()/qMax(200,height()))*2.f;
+        break;
+    case Qt::SmartZoomNativeGesture:
+        resetCamera();
+        return true;
+    default:
+        return false;
+    }
+    pushCamera(); requestNativeFrame();
+    return true;
+}
+
+bool NativeViewportWindow::event(QEvent* e){
+    switch(e->type()){
+    case QEvent::UpdateRequest:
+        requestNativeFrame();
+        return true;
+    case QEvent::TouchBegin:
+    case QEvent::TouchUpdate:
+    case QEvent::TouchEnd:
+    case QEvent::TouchCancel:
+        // Accepting the touch is also what stops Qt synthesising a mouse drag
+        // from the same fingers, which would rotate the camera a second time.
+        e->accept();
+        return handleTouch(static_cast<QTouchEvent*>(e));
+    case QEvent::NativeGesture:
+        if(handleNativeGesture(static_cast<QNativeGestureEvent*>(e))){ e->accept(); return true; }
+        break;
+    default:
+        break;
+    }
+    return QWindow::event(e);
+}

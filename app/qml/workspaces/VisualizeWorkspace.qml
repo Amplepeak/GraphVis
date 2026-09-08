@@ -157,6 +157,17 @@ SplitView {
                         // Progress, outside the preview. Only appears when the full
                         // render is long enough to be worth mentioning.
                         RenderProgressBadge { canvas: plot }
+                        // Only while there is a zoom to undo. The figure pans
+                        // with a drag or a finger and zooms with the wheel or a
+                        // pinch, and nothing on screen would otherwise say how
+                        // to get back to the whole dataset.
+                        Button {
+                            text: "Reset view"
+                            visible: plot.viewZoomed
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Fit the axes back to the data. Double-click or double-tap the figure does the same."
+                            onClicked: plot.resetView()
+                        }
                         Button {
                             text: "Export PDF"
                             enabled: plot.pointCount > 0
@@ -169,8 +180,22 @@ SplitView {
                             }
                         }
                         StatusPill {
-                            text: plot.engineSupported ? ("Qt 2-D · " + plot.message)
-                                                       : plot.message
+                            // Which image is on screen. showingFullRender was
+                            // exposed to QML and never read by anything, so the
+                            // one question the preview raises - am I looking at
+                            // all of my data or at a tenth of it - had no answer
+                            // anywhere except the notice that appears for a few
+                            // seconds and then goes away.
+                            text: {
+                                var where = plot.showingFullRender
+                                    ? "full resolution"
+                                    : (plot.previewIsExact ? "all points"
+                                                           : "preview, " + plot.previewPointCount
+                                                             + " of " + plot.fullPointCount)
+                                return plot.engineSupported
+                                    ? ("Qt 2-D · " + where + " · " + plot.message)
+                                    : plot.message
+                            }
                             textColor: plot.engineSupported ? Theme.textSecondary : Theme.warning
                         }
                     }

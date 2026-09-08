@@ -34,6 +34,25 @@ public:
     static QVector<AxisTick> linearTicks(double lo, double hi, int wanted);
     static QVector<AxisTick> logTicks(double lo, double hi);
 
+    // What one figure currently spans, and whether it is drawn against axes at
+    // all. Both are for the canvas's interactive pan and zoom: a zoom starts
+    // from the range the figure already has, and a pie has nothing to zoom.
+    struct DataRange {
+        double xLo=0, xHi=1, yLo=0, yHi=1;
+        bool xLog=false, yLog=false;
+    };
+    DataRange rangeFor(const PlotSpec& spec) const;
+    // Where the last render put the plot area, in the target's coordinates. An
+    // interactive zoom has to be about the point under the finger, and the
+    // point under the finger is only meaningful against the drawn area - which
+    // is inset by however wide the y labels turned out to be. Written by
+    // computeFrame on whichever thread drew; the full-resolution render builds
+    // its own backend, so this is never touched from two threads at once.
+    QRectF lastPlotArea() const { return lastPlotArea_; }
+    // Public because the canvas decides whether to offer panning at all, and
+    // the answer must be the same one render() acts on.
+    static bool engineHasAxes(const QString& engine);
+
 private:
     struct Frame {
         QRectF plotArea;      // where series are drawn
@@ -43,6 +62,8 @@ private:
     };
     Frame computeFrame(QPainter* p, const QRectF& target, const PlotSpec& spec,
                        QVector<AxisTick>& xTicks, QVector<AxisTick>& yTicks) const;
+    // The data-space half of computeFrame, with no painter and no chrome.
+    Frame computeRange(const PlotSpec& spec) const;
     QPointF toDevice(const Frame& f, double x, double y) const;
     void drawChrome(QPainter* p, const Frame& f, const PlotSpec& spec,
                     const QVector<AxisTick>& xTicks, const QVector<AxisTick>& yTicks) const;
@@ -55,6 +76,11 @@ private:
     // spaced categories never overlap. Shared by drawBar, drawHorizontalBar
     // and drawFloatingBar.
     static double slotWidthFrom(QVector<double> centres, double fallback, double limit);
+    // Half a mark's width along the slot axis, shared by the three floating
+    // painters. alongY measures rows rather than columns; fraction is how much
+    // of the slot the mark fills. Returns 0 when there is nothing to measure.
+    double halfSlotAcross(const Frame& f, const PlotSpec& spec, bool alongY,
+                          double minimum, double fraction = 0.36) const;
     // One series' markers. drawLineChart, drawScatter and drawStem each had
     // their own copy of this loop, guards and radius included. Deliberately
     // does NOT test s.drawMarkers: for the Scatter engine the markers ARE the
@@ -78,6 +104,11 @@ private:
     // first two series, so a waterfall rewritten onto it drew a single point.
     // One series per bar: x = {slot}, y = {low, high}.
     void drawFloatingBar(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The same bar transposed: y = {row}, x = {start, end}. A schedule, an
+    // availability timeline and a borehole log are one shape drawn three ways.
+    void drawFloatingRow(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // Open/high/low/close. One series per period, y = {o, h, l, c}.
+    void drawCandlestick(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawPie(QPainter* p, const QRectF& target, const PlotSpec& spec, bool donut) const;
     // A scalar field sampled onto a regular lattice. Declared here rather than
     // in the .cpp so it can be cached across repaints - see gridCache_.
@@ -130,6 +161,17 @@ private:
     // Treemap, sunburst, Venn, word cloud, Sankey. All divide a whole rather
     // than plot a coordinate, so none of them uses the axis frame.
     void drawComposition(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Nodes and the links between them: a grid, a pipeline network, a route
+    // map. Both read an edge list - source, target, weight - and neither has
+    // axes, because a layout is not a coordinate system.
+    void drawNetwork(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawChord(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Three more that are their own coordinate system: the reflection plane
+    // with its impedance grid, a contingency table drawn to scale, and set
+    // intersections as bars over a membership matrix.
+    void drawSmith(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawMosaic(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawUpSet(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Quiver, cones, stream tubes and ribbons, tensor glyphs and the volume
     // family: six mapped columns for a vector field, four for a scalar volume.
     void draw3DField(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
@@ -139,6 +181,9 @@ private:
     // They rewrite the spec into drawable geometry before the frame and axes
     // are computed, so the generic axis code needs no special cases.
     PlotSpec prepareSpec(const PlotSpec& spec) const;
+    // The rewrite itself. prepareSpec wraps it so that axis limits set by the
+    // caller - the canvas's pan and zoom - survive an engine that sets its own.
+    PlotSpec prepareSpecCore(const PlotSpec& spec) const;
 
     // prepareSpec is where the statistical engines actually live: a KDE sums a
     // kernel over every sample for every output point, a periodogram runs an
@@ -154,6 +199,16 @@ private:
         quint64 hash=0;
         PlotSpec prepared;
     };
+    // The network layout, in a unit square. Same reasoning as gridCache_: it
+    // depends only on the edges, and recomputing it per repaint was measured at
+    // half a second for a 400-node graph.
+    struct NetworkLayout {
+        bool valid=false;
+        quint64 hash=0;
+        QVector<QPointF> pos;
+    };
+    mutable NetworkLayout networkCache_;
+    mutable QRectF lastPlotArea_;
     mutable PreparedCache prepCache_;
     // 64-bit FNV-1a over everything prepareSpec can read. Cheap enough to run
     // per repaint (it is a linear pass over data that render already copies)
@@ -166,8 +221,6 @@ public:
     // so the test needs to see what the rewrite actually produced.
     PlotSpec preparedFor(const PlotSpec& spec) const { return prepareSpec(spec); }
 private:
-    static bool engineHasAxes(const QString& engine);
-
     QFont font(const PlotSpec& spec, double pointSize) const;
 };
 

@@ -8,6 +8,8 @@ qt_add_executable(graphvis
   src/NativeViewportWindow.h
   src/ProjectWorkspace.cpp
   src/ProjectWorkspace.h
+  src/ReefScene.cpp
+  src/ReefScene.h
   src/SplashWindow.cpp
   src/SplashWindow.h
 )
@@ -37,6 +39,7 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/include/QtPlotBackend.h
   ${GRAPHVIS_PLOT2D_DIR}/include/ArrowTable.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotCanvas.h
+  ${GRAPHVIS_PLOT2D_DIR}/include/TouchGesture.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotSelfTest.h
   ${GRAPHVIS_PLOT2D_DIR}/include/Units.h
 )

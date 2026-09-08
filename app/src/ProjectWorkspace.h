@@ -113,11 +113,18 @@ signals:
     void recentChanged();
     void statusChanged();
 
+private:
     // A URL turned into an existing directory, or "" with the reason already
     // shown. Shared by openProject and adoptFolder.
+    //
+    // Private, and deliberately NOT in the signals section above, where it used
+    // to sit. `signals:` expands to `public Q_SIGNALS:`, and moc writes a
+    // definition for every function declared there - so this had two
+    // definitions, moc's generated emitter and the real one in the .cpp, and
+    // the link failed with "duplicate symbol ProjectWorkspace::validFolder".
+    // Every translation unit compiled cleanly; only the link could see it.
     QString validFolder(const QUrl& folder);
 
-private:
     QString datasetsDir() const;
     QString literatureDir() const;
     QString scriptsDir() const;

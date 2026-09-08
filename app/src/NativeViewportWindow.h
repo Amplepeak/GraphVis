@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QPointF>
 #include <QVariantMap>
+#include "TouchGesture.h"
 
 class NativeViewportWindow final : public QWindow {
     Q_OBJECT
@@ -33,7 +34,16 @@ protected:
 private:
     void ensureRenderer();
     void pushCamera();
+    // Touch, handled rather than left to Qt's mouse synthesis. Synthesis gives
+    // a one-finger drag and nothing else: zoom is bound to the wheel and pan
+    // needs a middle button or a Shift key, and a touchscreen has neither. One
+    // finger rotates, two pinch to zoom and drag to pan.
+    bool handleTouch(class QTouchEvent* e);
+    bool handleNativeGesture(class QNativeGestureEvent* e);
     void* runtime_{}; void* renderer_{};
     float az_=-40.f, el_=25.f, panX_=0.f, panY_=0.f, zoom_=1.f;
     QPointF lastMouse_; Qt::MouseButton dragButton_=Qt::NoButton; QString lastError_; QVariantMap lastMappingResult_;
+    // The same reader the 2-D figure uses, so "a second finger landed" cannot
+    // be handled one way here and another way there.
+    graphvis::TouchGesture touch_;
 };

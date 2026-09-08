@@ -305,7 +305,6 @@ PanelScroll {
             RowLayout {
                 Layout.fillWidth: true
                 ComboBox {
-                    id: groupPicker
                     Layout.fillWidth: true
                     model: ["All groups"].concat(root.groups)
                     onActivated: root.activeGroup = (currentIndex === 0 ? "" : currentText)

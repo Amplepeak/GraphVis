@@ -1,9 +1,9 @@
 {
   "schema": "graphvis.catalogue/1",
   "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
-  "category_count": 35,
-  "entry_count": 377,
-  "engine_count": 169,
+  "category_count": 44,
+  "entry_count": 409,
+  "engine_count": 201,
   "categories": [
     {
       "name": "Line Plots",
@@ -3946,6 +3946,371 @@
           "advanced": false,
           "description": "Open, high, low and close per period",
           "preview": "🕯",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Materials & Chemistry",
+      "entries": [
+        {
+          "category": "Materials & Chemistry",
+          "name": "stress-strain curve",
+          "engine": "Stress-Strain Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Engineering stress against strain, with the 0.2% offset yield, UTS and modulus marked",
+          "preview": "📏",
+          "thumbnail": ""
+        },
+        {
+          "category": "Materials & Chemistry",
+          "name": "Arrhenius plot",
+          "engine": "Arrhenius Plot",
+          "scale": null,
+          "advanced": false,
+          "description": "ln(k) against 1/T with the activation energy fitted",
+          "preview": "🌡",
+          "thumbnail": ""
+        },
+        {
+          "category": "Materials & Chemistry",
+          "name": "titration curve",
+          "engine": "Titration Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "pH against titrant volume, equivalence point at the steepest slope",
+          "preview": "🧪",
+          "thumbnail": ""
+        },
+        {
+          "category": "Materials & Chemistry",
+          "name": "calibration curve",
+          "engine": "Calibration Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Signal against known concentration, with the limit of detection",
+          "preview": "📈",
+          "thumbnail": ""
+        },
+        {
+          "category": "Materials & Chemistry",
+          "name": "Michaelis-Menten",
+          "engine": "Michaelis-Menten",
+          "scale": null,
+          "advanced": false,
+          "description": "Reaction rate against substrate, Vmax and Km fitted",
+          "preview": "🧬",
+          "thumbnail": ""
+        },
+        {
+          "category": "Materials & Chemistry",
+          "name": "dose-response curve",
+          "engine": "Dose-Response Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Four-parameter logistic against log dose, EC50 marked",
+          "preview": "💉",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Clinical & Meta-analysis",
+      "entries": [
+        {
+          "category": "Clinical & Meta-analysis",
+          "name": "Kaplan-Meier survival",
+          "engine": "Kaplan-Meier Survival",
+          "scale": null,
+          "advanced": false,
+          "description": "Survival probability as a step function, censoring ticked",
+          "preview": "🩺",
+          "thumbnail": ""
+        },
+        {
+          "category": "Clinical & Meta-analysis",
+          "name": "funnel plot",
+          "engine": "Funnel Plot",
+          "scale": null,
+          "advanced": false,
+          "description": "Effect size against precision, with the pseudo-confidence funnel",
+          "preview": "🔻",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Statistical Process Control",
+      "entries": [
+        {
+          "category": "Statistical Process Control",
+          "name": "X-bar and R chart",
+          "engine": "X-bar and R Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Subgroup means and ranges with Shewhart A2, D3 and D4 limits",
+          "preview": "📊",
+          "thumbnail": ""
+        },
+        {
+          "category": "Statistical Process Control",
+          "name": "process capability",
+          "engine": "Process Capability",
+          "scale": null,
+          "advanced": false,
+          "description": "The distribution against the specification, with Cp, Cpk and Pp",
+          "preview": "🎯",
+          "thumbnail": ""
+        },
+        {
+          "category": "Statistical Process Control",
+          "name": "p-chart",
+          "engine": "p-Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Defective fraction, limits widening as the subgroup shrinks",
+          "preview": "📉",
+          "thumbnail": ""
+        },
+        {
+          "category": "Statistical Process Control",
+          "name": "np-chart",
+          "engine": "np-Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Count of defectives for a constant subgroup size",
+          "preview": "🔢",
+          "thumbnail": ""
+        },
+        {
+          "category": "Statistical Process Control",
+          "name": "c-chart",
+          "engine": "c-Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Defects per unit, Poisson limits",
+          "preview": "🔵",
+          "thumbnail": ""
+        },
+        {
+          "category": "Statistical Process Control",
+          "name": "u-chart",
+          "engine": "u-Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Defects per unit area, limits varying with the area inspected",
+          "preview": "🟣",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Earth & Ocean Science",
+      "entries": [
+        {
+          "category": "Earth & Ocean Science",
+          "name": "T-S diagram",
+          "engine": "T-S Diagram",
+          "scale": null,
+          "advanced": false,
+          "description": "Temperature against salinity with density contours drawn behind",
+          "preview": "🌊",
+          "thumbnail": ""
+        },
+        {
+          "category": "Earth & Ocean Science",
+          "name": "CTD profile",
+          "engine": "CTD Profile",
+          "scale": null,
+          "advanced": false,
+          "description": "Depth downward against temperature, salinity and density",
+          "preview": "🌡",
+          "thumbnail": ""
+        },
+        {
+          "category": "Earth & Ocean Science",
+          "name": "rating curve",
+          "engine": "Rating Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Discharge against stage, with the power law fitted",
+          "preview": "🌊",
+          "thumbnail": ""
+        },
+        {
+          "category": "Earth & Ocean Science",
+          "name": "drawdown curve",
+          "engine": "Drawdown Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Well drawdown against log time, Cooper-Jacob transmissivity fitted",
+          "preview": "🕳",
+          "thumbnail": ""
+        },
+        {
+          "category": "Earth & Ocean Science",
+          "name": "stereonet",
+          "engine": "Stereonet",
+          "scale": null,
+          "advanced": false,
+          "description": "Poles and great circles on an equal-area lower hemisphere",
+          "preview": "🔮",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Energy & Building Services",
+      "entries": [
+        {
+          "category": "Energy & Building Services",
+          "name": "wind power curve",
+          "engine": "Wind Power Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Turbine power against wind speed with cut-in, rated and cut-out",
+          "preview": "💨",
+          "thumbnail": ""
+        },
+        {
+          "category": "Energy & Building Services",
+          "name": "psychrometric chart",
+          "engine": "Psychrometric Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Humidity ratio against dry-bulb, with the saturation and RH curves",
+          "preview": "💧",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Civil & Structural",
+      "entries": [
+        {
+          "category": "Civil & Structural",
+          "name": "mass haul diagram",
+          "engine": "Mass Haul Diagram",
+          "scale": null,
+          "advanced": false,
+          "description": "Cumulative cut and fill along a chainage, balance points marked",
+          "preview": "🚜",
+          "thumbnail": ""
+        },
+        {
+          "category": "Civil & Structural",
+          "name": "shear and moment",
+          "engine": "Shear and Moment",
+          "scale": null,
+          "advanced": false,
+          "description": "Shear force and bending moment along a beam",
+          "preview": "🏗",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Signals & RF",
+      "entries": [
+        {
+          "category": "Signals & RF",
+          "name": "eye diagram",
+          "engine": "Eye Diagram",
+          "scale": null,
+          "advanced": false,
+          "description": "Every symbol period overlaid, with the eye height and width",
+          "preview": "👁",
+          "thumbnail": ""
+        },
+        {
+          "category": "Signals & RF",
+          "name": "Smith chart",
+          "engine": "Smith Chart",
+          "scale": null,
+          "advanced": false,
+          "description": "Normalised impedance on the constant-R and constant-X circles",
+          "preview": "📡",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Categorical & Set Views",
+      "entries": [
+        {
+          "category": "Categorical & Set Views",
+          "name": "mosaic plot",
+          "engine": "Mosaic Plot",
+          "scale": null,
+          "advanced": false,
+          "description": "A contingency table as tiles sized by count, shaded by residual",
+          "preview": "🧩",
+          "thumbnail": ""
+        },
+        {
+          "category": "Categorical & Set Views",
+          "name": "UpSet plot",
+          "engine": "UpSet Plot",
+          "scale": null,
+          "advanced": false,
+          "description": "Set intersections as a bar chart with a membership matrix",
+          "preview": "🔼",
+          "thumbnail": ""
+        },
+        {
+          "category": "Categorical & Set Views",
+          "name": "dendrogram",
+          "engine": "Dendrogram",
+          "scale": null,
+          "advanced": false,
+          "description": "Hierarchical clustering drawn as a tree of merge heights",
+          "preview": "🌳",
+          "thumbnail": ""
+        },
+        {
+          "category": "Categorical & Set Views",
+          "name": "rug plot",
+          "engine": "Rug Plot",
+          "scale": null,
+          "advanced": false,
+          "description": "Every observation as a tick on the axis, under the main series",
+          "preview": "📏",
+          "thumbnail": ""
+        }
+      ]
+    },
+    {
+      "name": "Model Evaluation",
+      "entries": [
+        {
+          "category": "Model Evaluation",
+          "name": "precision-recall curve",
+          "engine": "Precision-Recall Curve",
+          "scale": null,
+          "advanced": false,
+          "description": "Precision against recall with the average precision",
+          "preview": "🎯",
+          "thumbnail": ""
+        },
+        {
+          "category": "Model Evaluation",
+          "name": "confusion matrix",
+          "engine": "Confusion Matrix",
+          "scale": null,
+          "advanced": false,
+          "description": "Predicted against actual as a shaded table of counts",
+          "preview": "🟦",
+          "thumbnail": ""
+        },
+        {
+          "category": "Model Evaluation",
+          "name": "MA plot",
+          "engine": "MA Plot",
+          "scale": null,
+          "advanced": false,
+          "description": "Log ratio against mean intensity, with a loess trend",
+          "preview": "🧪",
           "thumbnail": ""
         }
       ]

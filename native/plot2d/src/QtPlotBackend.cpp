@@ -194,6 +194,85 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Geo Line"),
         QStringLiteral("Geo Bubble"),
         QStringLiteral("Geo Density"),
+        // The projection is a catalogue variant, so these four gained
+        // Mercator, Web Mercator, Lambert conformal conic, azimuthal
+        // equidistant and UTM without becoming twenty entries.
+        QStringLiteral("Great Circle Route"),
+        QStringLiteral("Ground Track"),
+        QStringLiteral("Terrain Profile"),
+        QStringLiteral("Hypsometric Curve"),
+        QStringLiteral("Slope Map"),
+        QStringLiteral("Aspect Map"),
+        QStringLiteral("Hillshade"),
+        // Flight and aviation. Each computes what its chart is read for - the
+        // fitted drag coefficients, the lift-curve slope below the stall, the
+        // resolved wind components, whether the loading is inside the envelope.
+        QStringLiteral("Payload-Range Diagram"),
+        QStringLiteral("V-n Flight Envelope"),
+        QStringLiteral("Altitude-Mach Envelope"),
+        QStringLiteral("Drag Polar"),
+        QStringLiteral("Lift Curve"),
+        QStringLiteral("Flight Profile"),
+        QStringLiteral("Runway Crosswind"),
+        QStringLiteral("Weight and Balance Envelope"),
+        // Maintenance and reliability. Each reports its fitted parameter in the
+        // legend rather than leaving a slope to be measured off the picture.
+        QStringLiteral("Weibull Probability Plot"),
+        QStringLiteral("Reliability Growth"),
+        QStringLiteral("MTBF Trend"),
+        QStringLiteral("Calendar Heatmap"),
+        QStringLiteral("CUSUM Chart"),
+        QStringLiteral("EWMA Chart"),
+        QStringLiteral("S-N Fatigue Curve"),
+        QStringLiteral("Rainflow Matrix"),
+        // Logistics and infrastructure.
+        QStringLiteral("Gantt Schedule"),
+        QStringLiteral("Availability Timeline"),
+        QStringLiteral("Borehole Log"),
+        QStringLiteral("OHLC Candlestick"),
+        QStringLiteral("Network Graph"),
+        QStringLiteral("Chord Diagram"),
+        QStringLiteral("Origin-Destination Flow"),
+        QStringLiteral("Cumulative Flow"),
+        QStringLiteral("Duration Curve"),
+        QStringLiteral("Inventory Sawtooth"),
+        QStringLiteral("Fundamental Diagram"),
+        // Chemistry, materials and the laboratory.
+        QStringLiteral("Stress-Strain Curve"),
+        QStringLiteral("Arrhenius Plot"),
+        QStringLiteral("Titration Curve"),
+        QStringLiteral("Calibration Curve"),
+        QStringLiteral("Michaelis-Menten"),
+        QStringLiteral("Dose-Response Curve"),
+        // Medicine, epidemiology and quality.
+        QStringLiteral("Kaplan-Meier Survival"),
+        QStringLiteral("Funnel Plot"),
+        QStringLiteral("X-bar and R Chart"),
+        QStringLiteral("Process Capability"),
+        // Ocean, hydrology, energy, civil works and the specialised charts.
+        QStringLiteral("T-S Diagram"),
+        QStringLiteral("CTD Profile"),
+        QStringLiteral("Rating Curve"),
+        QStringLiteral("Wind Power Curve"),
+        QStringLiteral("Drawdown Curve"),
+        QStringLiteral("Mass Haul Diagram"),
+        QStringLiteral("Shear and Moment"),
+        QStringLiteral("Eye Diagram"),
+        QStringLiteral("Stereonet"),
+        QStringLiteral("Psychrometric Chart"),
+        QStringLiteral("Smith Chart"),
+        QStringLiteral("Mosaic Plot"),
+        QStringLiteral("UpSet Plot"),
+        // The gaps a comparison against LabPlot and sci-draw.com turned up.
+        QStringLiteral("Dendrogram"),
+        QStringLiteral("Precision-Recall Curve"),
+        QStringLiteral("Confusion Matrix"),
+        QStringLiteral("MA Plot"),
+        QStringLiteral("p-Chart"),
+        QStringLiteral("np-Chart"),
+        QStringLiteral("c-Chart"),
+        QStringLiteral("u-Chart"),
+        QStringLiteral("Rug Plot"),
         // Spectral. One radix-2 FFT, Hann-windowed, serves all three.
         QStringLiteral("Power Spectral Density"),
         QStringLiteral("Spectrogram"),
@@ -294,8 +373,17 @@ QVector<AxisTick> QtPlotBackend::logTicks(double lo,double hi){
     return ticks;
 }
 
-QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& target,const PlotSpec& spec,
-                                                 QVector<AxisTick>& xTicks,QVector<AxisTick>& yTicks) const {
+// The data range one figure occupies, before any of the chrome is measured.
+//
+// Split out of computeFrame so the canvas can ask what it is currently showing
+// without a painter: an interactive zoom has to start from the range the
+// figure already has, and re-deriving that in the canvas would be a second
+// copy of these rules - the explicit limits, the flat-series padding, the
+// engines that must include zero - that could drift from the drawn one.
+//
+// Values come back in the space the axis is drawn in, so log10 when the axis
+// is logarithmic. That is the space a zoom should be uniform in.
+QtPlotBackend::Frame QtPlotBackend::computeRange(const PlotSpec& spec) const {
     Frame f;
     f.xLog=spec.xAxis.log10;
     f.yLog=spec.yAxis.log10;
@@ -343,10 +431,36 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
 
     if(!f.yLog){ const double pad=(yHi-yLo)*0.05; yLo-=pad; yHi+=pad; }
 
-    f.xLo=xLo; f.xHi=xHi; f.yLo=yLo; f.yHi=yHi;
+    // An inverted axis is the same range, mapped the other way round. Doing it
+    // by swapping the bounds means every engine, every tick and every export
+    // gets it for free: toDevice divides by (hi - lo), which is simply negative
+    // now, and nothing else has to know.
+    if(spec.xAxis.inverted) std::swap(xLo,xHi);
+    if(spec.yAxis.inverted) std::swap(yLo,yHi);
 
-    xTicks=f.xLog?logTicks(xLo,xHi):linearTicks(xLo,xHi,7);
-    yTicks=f.yLog?logTicks(yLo,yHi):linearTicks(yLo,yHi,6);
+    f.xLo=xLo; f.xHi=xHi; f.yLo=yLo; f.yHi=yHi;
+    return f;
+}
+
+// What the canvas asks. prepareSpec first, because for a histogram or a violin
+// the drawn range belongs to the rewritten geometry rather than to the mapped
+// column - a histogram of values 0 to 1 is drawn against counts.
+QtPlotBackend::DataRange QtPlotBackend::rangeFor(const PlotSpec& spec) const {
+    const Frame f=computeRange(preparedCached(spec));
+    return DataRange{f.xLo,f.xHi,f.yLo,f.yHi,f.xLog,f.yLog};
+}
+
+QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& target,const PlotSpec& spec,
+                                                 QVector<AxisTick>& xTicks,QVector<AxisTick>& yTicks) const {
+    Frame f=computeRange(spec);
+    const double xLo=f.xLo,xHi=f.xHi,yLo=f.yLo,yHi=f.yHi;
+
+    // Ticks are chosen over the range in its natural order; which end of the
+    // picture each one lands on is toDevice's business.
+    const double xFrom=qMin(xLo,xHi),xTo=qMax(xLo,xHi);
+    const double yFrom=qMin(yLo,yHi),yTo=qMax(yLo,yHi);
+    xTicks=f.xLog?logTicks(xFrom,xTo):linearTicks(xFrom,xTo,7);
+    yTicks=f.yLog?logTicks(yFrom,yTo):linearTicks(yFrom,yTo,6);
 
     // Widen the left margin so the longest y label always fits.
     const QFontMetricsF fm(font(spec,spec.style.tickSize),p->device());
@@ -357,14 +471,20 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
     f.plotArea=QRectF(target.left()+left,target.top()+kMarginTop,
                       qMax(10.0,target.width()-left-kMarginRight),
                       qMax(10.0,target.height()-kMarginTop-kMarginBottom));
+    lastPlotArea_=f.plotArea;
     return f;
 }
 
 QPointF QtPlotBackend::toDevice(const Frame& f,double x,double y) const {
     if(f.xLog) x=(x>0)?std::log10(x):f.xLo;
     if(f.yLog) y=(y>0)?std::log10(y):f.yLo;
-    const double tx=(x-f.xLo)/qMax(1e-300,f.xHi-f.xLo);
-    const double ty=(y-f.yLo)/qMax(1e-300,f.yHi-f.yLo);
+    // The span is signed: an inverted axis has hi below lo, and clamping it up
+    // to a positive floor - which qMax(1e-300, span) does - turns every
+    // coordinate into an infinity and draws nothing at all. Only a span of
+    // zero needs the floor.
+    const double spanX=f.xHi-f.xLo,spanY=f.yHi-f.yLo;
+    const double tx=(x-f.xLo)/((std::abs(spanX)>1e-300)?spanX:1e-300);
+    const double ty=(y-f.yLo)/((std::abs(spanY)>1e-300)?spanY:1e-300);
     return QPointF(f.plotArea.left()+tx*f.plotArea.width(),
                    f.plotArea.bottom()-ty*f.plotArea.height());
 }
@@ -1625,6 +1745,545 @@ double hann(int i,int n){
 // than plot a coordinate, so none of them uses the axis frame. They share this
 // one function because they share the same input shape - a list of labelled
 // magnitudes - and differ only in how the area is divided.
+// ======================================================================
+// Networks
+//
+// A grid, a pipeline, a route map and a supply chain are all the same object:
+// nodes and the links between them. Nothing in the catalogue could draw one -
+// a Sankey is a flow through stages, not a graph - so a network arrived as a
+// table of pairs and stayed a table of pairs.
+//
+// Both of these read an edge list: the first three mapped columns are source,
+// target and weight, with the weight optional. Node identifiers are numbers,
+// because that is what a mapped column can carry.
+// ======================================================================
+namespace {
+
+struct EdgeList {
+    QVector<double> ids;                 // distinct node identifiers, in first-seen order
+    QVector<int> from,to;                // indices into ids
+    QVector<double> weight;
+    QVector<double> strength;            // total weight at each node
+    bool valid=false;
+};
+
+EdgeList edgesFrom(const PlotSpec& spec){
+    EdgeList e;
+    if(spec.series.size()<2) return e;
+    const QVector<double>& a=spec.series.at(0).y;
+    const QVector<double>& b=spec.series.at(1).y;
+    const bool weighted=spec.series.size()>=3;
+    const QVector<double> w=weighted?spec.series.at(2).y:QVector<double>();
+    const int n=qMin(a.size(),b.size());
+    QHash<double,int> index;
+    for(int i=0;i<n;++i){
+        if(!finite(a[i])||!finite(b[i])) continue;
+        double weightValue=1.0;
+        if(weighted&&i<w.size()){
+            if(!finite(w[i])||w[i]<=0) continue;
+            weightValue=w[i];
+        }
+        const auto seat=[&index,&e](double id){
+            auto it=index.find(id);
+            if(it!=index.end()) return it.value();
+            const int at=e.ids.size();
+            e.ids.append(id); e.strength.append(0.0);
+            index.insert(id,at);
+            return at;
+        };
+        const int u=seat(a[i]),v=seat(b[i]);
+        e.from.append(u); e.to.append(v); e.weight.append(weightValue);
+        e.strength[u]+=weightValue; e.strength[v]+=weightValue;
+    }
+    // One node is not a graph. There is no upper limit here: a large graph gets
+    // a cheaper layout rather than no picture - an engine that silently draws
+    // nothing on data it could have drawn is the failure this whole pass exists
+    // to remove.
+    e.valid=(e.ids.size()>=2&&!e.from.isEmpty());
+    return e;
+}
+
+} // namespace
+
+void QtPlotBackend::drawNetwork(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    const EdgeList e=edgesFrom(spec);
+    drawFloatingTitle(p,target,spec);
+    if(!e.valid) return;
+    const int n=e.ids.size();
+
+    // The layout is cached, and computed in a unit square rather than in device
+    // coordinates so that a resize reuses it.
+    //
+    // Measured before caching: 400 nodes took 542 ms per repaint, and a repaint
+    // happens on every hover, resize and theme change. The layout depends only
+    // on the edges, so recomputing it when nothing about the graph changed was
+    // half a second of arithmetic to produce the picture already on screen.
+    const quint64 hash=specFingerprint(spec);
+    if(!networkCache_.valid||networkCache_.hash!=hash||networkCache_.pos.size()!=n){
+        QVector<QPointF> pos(n),disp(n);
+        for(int i=0;i<n;++i){
+            const double angle=2.0*M_PI*double(i)/double(n);
+            pos[i]=QPointF(0.5+0.42*std::cos(angle),0.5+0.42*std::sin(angle));
+        }
+        // Fruchterman-Reingold, seeded from that circle and run for a fixed
+        // number of iterations. Deliberately deterministic: a figure that lays
+        // itself out differently every time cannot be exported, compared or
+        // published, and a random seed is exactly how that happens.
+        //
+        // The repulsion step is every pair against every other, so the layout
+        // costs iterations x n^2. Past a few hundred nodes that is seconds for a
+        // picture nobody can read anyway, so a large graph keeps the circle it
+        // was seeded with - the edges still show the structure, and the figure
+        // still appears rather than silently not drawing.
+        const int iterations=(n<=400)?150:0;
+        const double k=std::sqrt(1.0/double(n));
+        double temperature=0.10;
+        for(int step=0;step<iterations;++step){
+            for(int i=0;i<n;++i) disp[i]=QPointF(0,0);
+            for(int i=0;i<n;++i){
+                for(int j=i+1;j<n;++j){
+                    QPointF d=pos[i]-pos[j];
+                    double len=std::hypot(d.x(),d.y());
+                    if(len<1e-9){
+                        d=QPointF(1e-6*double(i+1),1e-6*double(j+1));
+                        len=std::hypot(d.x(),d.y());
+                    }
+                    const QPointF push=d/len*(k*k/len);
+                    disp[i]+=push; disp[j]-=push;
+                }
+            }
+            for(int m=0;m<e.from.size();++m){
+                const int i=e.from[m],j=e.to[m];
+                if(i==j) continue;
+                const QPointF d=pos[i]-pos[j];
+                const double len=qMax(1e-9,std::hypot(d.x(),d.y()));
+                const QPointF pull=d/len*(len*len/k);
+                disp[i]-=pull; disp[j]+=pull;
+            }
+            for(int i=0;i<n;++i){
+                const double len=std::hypot(disp[i].x(),disp[i].y());
+                if(len>1e-12) pos[i]+=disp[i]/len*qMin(len,temperature);
+                pos[i].setX(qBound(0.0,pos[i].x(),1.0));
+                pos[i].setY(qBound(0.0,pos[i].y(),1.0));
+            }
+            temperature*=0.955;
+        }
+        // Fit what the layout actually used to the whole unit square, so a
+        // graph that settled into a corner still fills the figure.
+        double xLo=1.0,xHi=0.0,yLo=1.0,yHi=0.0;
+        for(const QPointF& q:pos){
+            xLo=qMin(xLo,q.x()); xHi=qMax(xHi,q.x());
+            yLo=qMin(yLo,q.y()); yHi=qMax(yHi,q.y());
+        }
+        const double spanX=qMax(1e-6,xHi-xLo),spanY=qMax(1e-6,yHi-yLo);
+        for(QPointF& q:pos)
+            q=QPointF((q.x()-xLo)/spanX,(q.y()-yLo)/spanY);
+        networkCache_.pos=pos;
+        networkCache_.hash=hash;
+        networkCache_.valid=true;
+    }
+
+    const QRectF area=target.adjusted(target.width()*0.12,target.height()*0.12,
+                                      -target.width()*0.12,-target.height()*0.12);
+    QVector<QPointF> at(n);
+    for(int i=0;i<n;++i)
+        at[i]=QPointF(area.left()+networkCache_.pos[i].x()*area.width(),
+                      area.top()+networkCache_.pos[i].y()*area.height());
+
+    double heaviest=0.0,strongest=0.0;
+    for(double w:e.weight) heaviest=qMax(heaviest,w);
+    for(double w:e.strength) strongest=qMax(strongest,w);
+    if(!(heaviest>0)) heaviest=1.0;
+    if(!(strongest>0)) strongest=1.0;
+
+    p->save();
+    for(int m=0;m<e.from.size();++m){
+        QColor line=spec.style.gridColor;
+        line.setAlphaF(0.85);
+        QPen pen(line);
+        pen.setWidthF(qBound(0.4,3.0*e.weight[m]/heaviest,4.0));
+        p->setPen(pen);
+        p->drawLine(at[e.from[m]],at[e.to[m]]);
+    }
+    const QColor node=spec.series.at(0).color;
+    p->setPen(QPen(spec.style.foreground,0.8));
+    const QFont label=font(spec,spec.style.tickSize);
+    p->setFont(label);
+    const QFontMetricsF fm(label,p->device());
+    for(int i=0;i<n;++i){
+        const double radius=qBound(2.5,3.0+6.0*e.strength[i]/strongest,11.0);
+        p->setBrush(node);
+        p->drawEllipse(at[i],radius,radius);
+        // Labels only when they can be read. Forty nodes of overlapping text is
+        // less informative than none.
+        if(n<=40){
+            const QString text=QString::number(e.ids[i],'g',6);
+            p->drawText(QRectF(at[i].x()-40,at[i].y()-radius-fm.height()-1,80,fm.height()),
+                        Qt::AlignHCenter|Qt::AlignBottom,text);
+        }
+    }
+    p->restore();
+}
+
+// A chord diagram: the same edge list read as a matrix of flows between places.
+// Each node gets an arc in proportion to everything entering and leaving it,
+// and each flow a ribbon between two arcs. It is the one picture that shows an
+// origin-destination matrix as a whole rather than as a grid of numbers.
+void QtPlotBackend::drawChord(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    const EdgeList e=edgesFrom(spec);
+    drawFloatingTitle(p,target,spec);
+    if(!e.valid||e.ids.size()>60) return;
+    const int n=e.ids.size();
+
+    double grand=0.0;
+    for(double w:e.strength) grand+=w;
+    if(!(grand>0)||!finite(grand)) return;
+
+    const QPointF centre=target.center();
+    const double radius=0.36*qMin(target.width(),target.height());
+    const double inner=radius*0.90;
+    // A gap between arcs, so two adjacent nodes are two arcs and not one.
+    const double gap=qMin(0.03,0.6/double(n));
+    const double usable=2.0*M_PI*(1.0-gap*double(n));
+
+    QVector<double> start(n),extent(n);
+    double angle=-M_PI/2.0;
+    for(int i=0;i<n;++i){
+        extent[i]=usable*e.strength[i]/grand;
+        start[i]=angle;
+        angle+=extent[i]+gap*2.0*M_PI;
+    }
+    // Where the next ribbon leaving each node begins, so ribbons sit side by
+    // side inside their node's arc instead of on top of each other.
+    QVector<double> cursor=start;
+
+    p->save();
+    const QFont label=font(spec,spec.style.tickSize);
+    p->setFont(label);
+    for(int m=0;m<e.from.size();++m){
+        const int i=e.from[m],j=e.to[m];
+        const double share=e.weight[m]/qMax(1e-12,grand)*usable;
+        // Dropping the sub-pixel ribbons was tried here and reverted: 5.4x
+        // faster at sixty nodes (295 ms to 54 ms) and 16.4% of the pixels
+        // changed, because a ribbon that is thin where it meets the ring is
+        // wide in the middle where it bundles with its neighbours. The speed
+        // was real and so was the different picture.
+        const double a0=cursor[i],a1=cursor[i]+share;
+        const double b0=cursor[j],b1=cursor[j]+share;
+        cursor[i]=a1; cursor[j]=b1;
+        const auto at=[centre,inner](double t){
+            return QPointF(centre.x()+inner*std::cos(t),centre.y()+inner*std::sin(t));
+        };
+        QPainterPath ribbon(at(a0));
+        ribbon.arcTo(QRectF(centre.x()-inner,centre.y()-inner,inner*2,inner*2),
+                     -a0*180.0/M_PI,-(a1-a0)*180.0/M_PI);
+        ribbon.quadTo(centre,at(b0));
+        ribbon.arcTo(QRectF(centre.x()-inner,centre.y()-inner,inner*2,inner*2),
+                     -b0*180.0/M_PI,-(b1-b0)*180.0/M_PI);
+        ribbon.quadTo(centre,at(a0));
+        QColor fill=spec.series.at(0).color;
+        // Hue by source, so every flow out of one place reads as one family.
+        fill=QColor::fromHsvF(std::fmod(double(i)/double(n)+0.55,1.0),0.55,0.85);
+        fill.setAlphaF(0.45);
+        p->setBrush(fill);
+        p->setPen(Qt::NoPen);
+        p->drawPath(ribbon);
+    }
+    const QFontMetricsF fm(label,p->device());
+    for(int i=0;i<n;++i){
+        QColor arc=QColor::fromHsvF(std::fmod(double(i)/double(n)+0.55,1.0),0.6,0.95);
+        p->setBrush(arc);
+        p->setPen(Qt::NoPen);
+        QPainterPath band;
+        band.moveTo(centre.x()+inner*std::cos(start[i]),centre.y()+inner*std::sin(start[i]));
+        band.arcTo(QRectF(centre.x()-inner,centre.y()-inner,inner*2,inner*2),
+                   -start[i]*180.0/M_PI,-extent[i]*180.0/M_PI);
+        band.arcTo(QRectF(centre.x()-radius,centre.y()-radius,radius*2,radius*2),
+                   -(start[i]+extent[i])*180.0/M_PI,extent[i]*180.0/M_PI);
+        band.closeSubpath();
+        p->drawPath(band);
+
+        const double mid=start[i]+extent[i]*0.5;
+        const QPointF where(centre.x()+(radius+6.0)*std::cos(mid),
+                            centre.y()+(radius+6.0)*std::sin(mid));
+        p->setPen(spec.style.foreground);
+        const QString text=QString::number(e.ids[i],'g',6);
+        p->drawText(QRectF(where.x()-40,where.y()-fm.height()*0.5,80,fm.height()),
+                    Qt::AlignHCenter|Qt::AlignVCenter,text);
+    }
+    p->restore();
+}
+
+// A Smith chart: normalised impedance on the reflection-coefficient plane.
+//
+// The chart IS its grid. Constant-resistance circles and constant-reactance
+// arcs are what turn a dot inside a circle into a reading, so they are drawn
+// here rather than assumed to be on the paper underneath - and a match at the
+// centre, an open at the right and a short at the left are labelled, because
+// those three points are how the chart is oriented.
+//
+// Two mapped columns: normalised resistance and normalised reactance.
+void QtPlotBackend::drawSmith(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const double radius=0.42*qMin(target.width(),target.height());
+    const QPointF centre=target.center();
+    const auto at=[centre,radius](double re,double im){
+        return QPointF(centre.x()+re*radius,centre.y()-im*radius);
+    };
+
+    p->save();
+    QPen grid(spec.style.gridColor); grid.setWidthF(0.7);
+    p->setPen(grid);
+    p->setBrush(Qt::NoBrush);
+    // Constant resistance: circles centred at r/(1+r) with radius 1/(1+r).
+    for(const double r:{0.0,0.2,0.5,1.0,2.0,5.0}){
+        const double cx=r/(1.0+r),rr=1.0/(1.0+r);
+        p->drawEllipse(at(cx,0.0),rr*radius,rr*radius);
+    }
+    // Constant reactance: arcs centred at 1 + i/x with radius 1/|x|, clipped to
+    // the unit circle - outside it they are not part of the chart.
+    p->save();
+    QPainterPath unit;
+    unit.addEllipse(centre,radius,radius);
+    p->setClipPath(unit);
+    for(const double x:{0.2,0.5,1.0,2.0,5.0}){
+        for(const double sign:{1.0,-1.0}){
+            const double rr=1.0/std::abs(x);
+            p->drawEllipse(at(1.0,sign/x),rr*radius,rr*radius);
+        }
+    }
+    p->restore();
+    QPen axis(spec.style.foreground); axis.setWidthF(0.9);
+    p->setPen(axis);
+    p->drawEllipse(centre,radius,radius);
+    p->drawLine(at(-1.0,0.0),at(1.0,0.0));
+
+    const QFont label=font(spec,spec.style.tickSize);
+    p->setFont(label);
+    const QFontMetricsF fm(label,p->device());
+    const auto tag=[&](const QPointF& where,const QString& text,int flags){
+        p->drawText(QRectF(where.x()-45,where.y()-fm.height()*0.5,90,fm.height()),flags,text);
+    };
+    tag(at(0.0,0.0)+QPointF(0,-6),QStringLiteral("match"),Qt::AlignHCenter|Qt::AlignVCenter);
+    tag(at(1.0,0.0)+QPointF(-14,-10),QStringLiteral("open"),Qt::AlignRight|Qt::AlignVCenter);
+    tag(at(-1.0,0.0)+QPointF(14,-10),QStringLiteral("short"),Qt::AlignLeft|Qt::AlignVCenter);
+
+    if(spec.series.size()>=2){
+        const QVector<double>& resistance=spec.series.at(0).y;
+        const QVector<double>& reactance=spec.series.at(1).y;
+        const int n=qMin(resistance.size(),reactance.size());
+        QPen trace(spec.series.at(0).color);
+        trace.setWidthF(qMax(1.0,spec.style.lineWidth));
+        p->setPen(trace);
+        p->setBrush(spec.series.at(0).color);
+        QPointF previous;
+        bool have=false;
+        for(int i=0;i<n;++i){
+            if(!finite(resistance[i])||!finite(reactance[i])) continue;
+            // Gamma = (z - 1) / (z + 1), with z = r + jx.
+            const double ar=resistance[i]-1.0,ai=reactance[i];
+            const double br=resistance[i]+1.0,bi=reactance[i];
+            const double denom=br*br+bi*bi;
+            // finite(denom), not just denom > 0. An impedance near the top of
+            // the double range squares to infinity, and infinity over infinity
+            // is NaN - which reaches QPainter as a NaN coordinate and is drawn
+            // as something undefined. Qt says so out loud
+            // ("QPainterPath::arcTo: Adding arc where a parameter is NaN") and
+            // the pathological-data sweep is where it said it.
+            if(!(denom>1e-12)||!finite(denom)) continue;
+            const QPointF here=at((ar*br+ai*bi)/denom,(ai*br-ar*bi)/denom);
+            if(!finite(here.x())||!finite(here.y())) continue;
+            p->drawEllipse(here,2.6,2.6);
+            if(have&&finite(previous.x())&&finite(previous.y())) p->drawLine(previous,here);
+            previous=here; have=true;
+        }
+    }
+    p->restore();
+}
+
+// A mosaic plot: a contingency table drawn to scale. Column widths are the
+// column totals and each column is divided by its own proportions, so an
+// association shows as tiles that fail to line up across columns - which is
+// exactly what a chi-squared test is testing and what a grid of numbers hides.
+//
+// Three mapped columns: the column category, the row category, and the count.
+void QtPlotBackend::drawMosaic(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    if(spec.series.size()<2) return;
+    const QVector<double>& columnOf=spec.series.at(0).y;
+    const QVector<double>& rowOf=spec.series.at(1).y;
+    const bool counted=spec.series.size()>=3;
+    const QVector<double> weight=counted?spec.series.at(2).y:QVector<double>();
+    const int n=qMin(columnOf.size(),rowOf.size());
+
+    QVector<double> columns,rows;
+    QHash<double,int> columnIndex,rowIndex;
+    QVector<QVector<double>> table;
+    for(int i=0;i<n;++i){
+        if(!finite(columnOf[i])||!finite(rowOf[i])) continue;
+        double amount=1.0;
+        if(counted){
+            if(i>=weight.size()||!finite(weight[i])||weight[i]<=0) continue;
+            amount=weight[i];
+        }
+        if(!columnIndex.contains(columnOf[i])){
+            columnIndex.insert(columnOf[i],columns.size());
+            columns.append(columnOf[i]);
+            for(QVector<double>& r:table) r.append(0.0);
+        }
+        if(!rowIndex.contains(rowOf[i])){
+            rowIndex.insert(rowOf[i],rows.size());
+            rows.append(rowOf[i]);
+            table.append(QVector<double>(columns.size(),0.0));
+        }
+        table[rowIndex.value(rowOf[i])][columnIndex.value(columnOf[i])]+=amount;
+    }
+    if(columns.isEmpty()||rows.isEmpty()||columns.size()>40||rows.size()>40) return;
+
+    QVector<double> columnTotal(columns.size(),0.0);
+    double grand=0.0;
+    for(const QVector<double>& row:table)
+        for(int c=0;c<row.size();++c){ columnTotal[c]+=row[c]; grand+=row[c]; }
+    if(!(grand>0)) return;
+
+    const QRectF area=target.adjusted(target.width()*0.08,target.height()*0.12,
+                                      -target.width()*0.04,-target.height()*0.10);
+    const double gap=qMin(3.0,area.width()/double(qMax(1,columns.size()))*0.06);
+    const QFont label=font(spec,spec.style.tickSize);
+    p->save();
+    p->setFont(label);
+    const QFontMetricsF fm(label,p->device());
+    double x=area.left();
+    for(int c=0;c<columns.size();++c){
+        const double width=(area.width()-gap*double(columns.size()-1))*columnTotal[c]/grand;
+        double y=area.top();
+        for(int r=0;r<rows.size();++r){
+            const double share=(columnTotal[c]>0)?table[r][c]/columnTotal[c]:0.0;
+            const double height=area.height()*share;
+            if(height>0){
+                QColor fill=QColor::fromHsvF(std::fmod(double(r)/double(qMax(1,rows.size()))+0.08,1.0),
+                                             0.5,0.9);
+                fill.setAlphaF(0.85);
+                p->setBrush(fill);
+                p->setPen(QPen(spec.style.background,0.8));
+                p->drawRect(QRectF(x,y,width,height));
+                if(height>fm.height()+2&&width>fm.horizontalAdvance(QStringLiteral("00"))+4){
+                    p->setPen(spec.style.background);
+                    p->drawText(QRectF(x,y,width,height),Qt::AlignCenter,
+                                QString::number(table[r][c],'g',4));
+                }
+            }
+            y+=height;
+        }
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(x,area.bottom()+2,width,fm.height()),
+                    Qt::AlignHCenter|Qt::AlignTop,QString::number(columns[c],'g',6));
+        x+=width+gap;
+    }
+    p->restore();
+}
+
+// An UpSet plot: how big each combination of sets is, as bars, with a matrix of
+// dots underneath saying which combination each bar is.
+//
+// A Venn diagram stops being readable at four sets and cannot be drawn at all
+// past five; this is the standard answer to that, and the combinations are
+// sorted by size so the ones that matter are on the left.
+//
+// One mapped column per set, holding 1 for a member and 0 for a non-member.
+void QtPlotBackend::drawUpSet(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const int sets=spec.series.size();
+    if(sets<2||sets>12) return;
+    int rows=std::numeric_limits<int>::max();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+    if(rows<=0) return;
+
+    QHash<quint32,int> tally;
+    for(int i=0;i<rows;++i){
+        quint32 mask=0;
+        bool usable=true;
+        for(int k=0;k<sets;++k){
+            const double v=spec.series.at(k).y[i];
+            if(!finite(v)){ usable=false; break; }
+            if(v>=0.5) mask|=(1u<<k);
+        }
+        if(!usable||mask==0) continue;      // a row in no set is not an intersection
+        tally[mask]+=1;
+    }
+    if(tally.isEmpty()) return;
+    QVector<QPair<quint32,int>> ordered;
+    for(auto it=tally.constBegin();it!=tally.constEnd();++it) ordered.append({it.key(),it.value()});
+    std::sort(ordered.begin(),ordered.end(),
+              [](const QPair<quint32,int>& a,const QPair<quint32,int>& b){
+                  return a.second>b.second; });
+    if(ordered.size()>24) ordered.resize(24);
+
+    const QFont label=font(spec,spec.style.tickSize);
+    p->save();
+    p->setFont(label);
+    const QFontMetricsF fm(label,p->device());
+    double widest=0;
+    for(const PlotSeries& s:spec.series) widest=qMax(widest,fm.horizontalAdvance(s.label));
+    const double left=target.left()+qMin(target.width()*0.32,widest+14.0);
+    const double matrixHeight=qMin(target.height()*0.42,double(sets)*18.0);
+    const QRectF bars(left,target.top()+22.0,
+                      target.right()-left-8.0,
+                      qMax(20.0,target.height()-matrixHeight-52.0));
+    const double column=bars.width()/double(ordered.size());
+    int biggest=0;
+    for(const auto& entry:ordered) biggest=qMax(biggest,entry.second);
+    if(biggest<=0){ p->restore(); return; }
+
+    for(int i=0;i<ordered.size();++i){
+        const double height=bars.height()*double(ordered[i].second)/double(biggest);
+        const QRectF bar(bars.left()+column*double(i)+column*0.15,
+                         bars.bottom()-height,column*0.7,height);
+        p->setBrush(spec.series.at(0).color);
+        p->setPen(Qt::NoPen);
+        p->drawRect(bar);
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(bar.left()-6,bar.top()-fm.height()-1,bar.width()+12,fm.height()),
+                    Qt::AlignHCenter|Qt::AlignBottom,QString::number(ordered[i].second));
+    }
+
+    const double rowHeight=matrixHeight/double(sets);
+    for(int k=0;k<sets;++k){
+        const double y=bars.bottom()+14.0+rowHeight*(double(k)+0.5);
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(target.left()+4,y-fm.height()*0.5,left-target.left()-10,fm.height()),
+                    Qt::AlignRight|Qt::AlignVCenter,spec.series.at(k).label);
+        // A band behind alternate rows, so a dot can be traced back to its set.
+        if(k%2==0){
+            QColor band=spec.style.gridColor; band.setAlphaF(0.35);
+            p->fillRect(QRectF(left,y-rowHeight*0.5,bars.width(),rowHeight),band);
+        }
+    }
+    for(int i=0;i<ordered.size();++i){
+        const double cx=bars.left()+column*(double(i)+0.5);
+        double firstY=-1,lastY=-1;
+        for(int k=0;k<sets;++k){
+            const double y=bars.bottom()+14.0+rowHeight*(double(k)+0.5);
+            const bool member=(ordered[i].first&(1u<<k))!=0;
+            p->setPen(Qt::NoPen);
+            QColor dot=member?spec.series.at(0).color:spec.style.gridColor;
+            if(!member) dot.setAlphaF(0.55);
+            p->setBrush(dot);
+            p->drawEllipse(QPointF(cx,y),qMin(4.0,rowHeight*0.3),qMin(4.0,rowHeight*0.3));
+            if(member){ if(firstY<0) firstY=y; lastY=y; }
+        }
+        // The line joining the members is what makes a combination readable as
+        // one thing rather than as a column of unrelated dots.
+        if(firstY>=0&&lastY>firstY){
+            QPen join(spec.series.at(0).color);
+            join.setWidthF(1.6);
+            p->setPen(join);
+            p->drawLine(QPointF(cx,firstY),QPointF(cx,lastY));
+        }
+    }
+    p->restore();
+}
+
 void QtPlotBackend::drawComposition(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
     // Each mapped series contributes its total as one part of the whole.
     struct Part { QString label; double value; QColor colour; };
@@ -1997,6 +2656,14 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Word Cloud")
         && engine!=QLatin1String("Bubble Cloud")
         && engine!=QLatin1String("Sankey Diagram")
+        // A force-directed layout and a ring of arcs are both positions this
+        // backend invented, not coordinates the data has. An axis around
+        // either would be chrome with numbers on it that mean nothing.
+        && engine!=QLatin1String("Network Graph")
+        && engine!=QLatin1String("Chord Diagram")
+        && engine!=QLatin1String("Smith Chart")
+        && engine!=QLatin1String("Mosaic Plot")
+        && engine!=QLatin1String("UpSet Plot")
         && engine!=QLatin1String("3D Quiver")
         && engine!=QLatin1String("Cone Plot")
         && engine!=QLatin1String("Stream Tube")
@@ -2045,8 +2712,11 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     fnvString(h,spec.title);
     for(const PlotAxis* a:{&spec.xAxis,&spec.yAxis}){
         fnvString(h,a->label);
-        const unsigned char lg=a->log10?1:0; fnvBytes(h,&lg,1);
-        fnvDouble(h,a->min); fnvDouble(h,a->max);
+        const unsigned char lg=(a->log10?1:0)|(a->inverted?2:0); fnvBytes(h,&lg,1);
+        // Deliberately NOT the limits. No rewrite reads them - the only code
+        // that touches them copies them onto the result - and they now change
+        // on every frame of a pan or a pinch. Hashing them meant dragging a
+        // violin plot re-derived the violin sixty times a second.
     }
     for(const PlotSeries& s:spec.series){
         fnvString(h,s.label);
@@ -2074,6 +2744,17 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     return h;
 }
 
+namespace {
+// The caller's limits, put back on top of a rewrite that set its own.
+PlotSpec& applyLimits(PlotSpec& out,const PlotSpec& in){
+    if(!isUnset(in.xAxis.min)) out.xAxis.min=in.xAxis.min;
+    if(!isUnset(in.xAxis.max)) out.xAxis.max=in.xAxis.max;
+    if(!isUnset(in.yAxis.min)) out.yAxis.min=in.yAxis.min;
+    if(!isUnset(in.yAxis.max)) out.yAxis.max=in.yAxis.max;
+    return out;
+}
+} // namespace
+
 const PlotSpec& QtPlotBackend::preparedCached(const PlotSpec& in) const {
     int seriesCount=in.series.size();
     qsizetype pointCount=0;
@@ -2087,9 +2768,11 @@ const PlotSpec& QtPlotBackend::preparedCached(const PlotSpec& in) const {
        && prepCache_.engine==in.engine
        && prepCache_.variant==in.variant
        && prepCache_.expression==in.expression)
-        return prepCache_.prepared;
+        return applyLimits(prepCache_.prepared,in);
 
-    prepCache_.prepared=prepareSpec(in);
+    // The core, not the wrapper: the wrapper's only job is to put the caller's
+    // limits back on top, and that is done below on every call, hit or miss.
+    prepCache_.prepared=prepareSpecCore(in);
     prepCache_.engine=in.engine;
     prepCache_.variant=in.variant;
     prepCache_.expression=in.expression;
@@ -2097,7 +2780,7 @@ const PlotSpec& QtPlotBackend::preparedCached(const PlotSpec& in) const {
     prepCache_.pointCount=pointCount;
     prepCache_.hash=hash;
     prepCache_.valid=true;
-    return prepCache_.prepared;
+    return applyLimits(prepCache_.prepared,in);
 }
 
 namespace {
@@ -2112,9 +2795,288 @@ PlotSpec derivedAs(const PlotSpec& in,const QString& engine){
     out.series.clear();
     return out;
 }
+
+// Least squares through paired values, in whatever space the caller has already
+// transformed them into.
+//
+// Six engines fit a straight line and read a physical parameter off it: the
+// drag polar's CD0 and k, the lift-curve slope, the Weibull shape and scale,
+// the Crow-AMSAA growth, Basquin's exponent, and the free-flow speed in a
+// fundamental diagram. Each had written out the same four sums and the same
+// determinant, which is six places for a sign to be wrong in one of them.
+struct LineFit {
+    double slope=0.0;
+    double intercept=0.0;
+    bool ok=false;
+};
+
+LineFit fitLine(const QVector<double>& x,const QVector<double>& y,int upTo=-1){
+    const int n=(upTo<0)?qMin(x.size(),y.size()):qMin(upTo,qMin(x.size(),y.size()));
+    double sx=0,sy=0,sxx=0,sxy=0; int m=0;
+    for(int i=0;i<n;++i){
+        if(!finite(x[i])||!finite(y[i])) continue;
+        sx+=x[i]; sy+=y[i]; sxx+=x[i]*x[i]; sxy+=x[i]*y[i]; ++m;
+    }
+    LineFit fit;
+    if(m<3) return fit;
+    const double denom=double(m)*sxx-sx*sx;
+    if(std::abs(denom)<1e-18) return fit;
+    fit.slope=(double(m)*sxy-sx*sy)/denom;
+    fit.intercept=(sy-fit.slope*sx)/double(m);
+    fit.ok=finite(fit.slope)&&finite(fit.intercept);
+    return fit;
+}
+
+// ======================================================================
+// Geography
+//
+// Every geographic engine used to be longitude on x and latitude on y, and
+// nothing else. That is an equirectangular projection, and it is wrong in a
+// way that gets worse the further from the equator you work: at 55 degrees
+// north a degree of longitude is 64 km, not 111, so a country is drawn half
+// again too wide, a circle of range is drawn as an ellipse, and the shortest
+// path between two airports - a great circle - is drawn as a curve while a
+// straight line on the picture is not the shortest path at all.
+//
+// So the projection became a catalogue variant. "Equirectangular" is still the
+// default and still exactly what it was, so every figure already saved is
+// unchanged; the others are the standard formulas, on a sphere of radius
+// 6378137 m for the cylindricals and on WGS-84 for UTM, which is the ellipsoid
+// every survey and infrastructure dataset is already in.
+//
+// Same anonymous namespace as derivedAs above: these are helpers for the
+// rewrites, not part of the backend's interface.
+
+constexpr double kEarthRadius=6378137.0;            // WGS-84 semi-major axis, metres
+constexpr double kFlattening=1.0/298.257223563;     // WGS-84
+constexpr double kDegToRad=M_PI/180.0;
+constexpr double kRadToDeg=180.0/M_PI;
+
+// Named MapProjection because Projection above is the 3-D orthographic one:
+// two different things called the same thing in one file is how the wrong one
+// gets used.
+enum class MapProjection { Equirectangular, Mercator, WebMercator, LambertConformal,
+                        AzimuthalEquidistant, UTM };
+
+MapProjection mapProjectionFor(const QString& variant){
+    const QString v=variant.trimmed();
+    if(v.compare(QLatin1String("Mercator"),Qt::CaseInsensitive)==0) return MapProjection::Mercator;
+    if(v.compare(QLatin1String("Web Mercator"),Qt::CaseInsensitive)==0) return MapProjection::WebMercator;
+    if(v.compare(QLatin1String("Lambert Conformal Conic"),Qt::CaseInsensitive)==0) return MapProjection::LambertConformal;
+    if(v.compare(QLatin1String("Azimuthal Equidistant"),Qt::CaseInsensitive)==0) return MapProjection::AzimuthalEquidistant;
+    if(v.compare(QLatin1String("UTM"),Qt::CaseInsensitive)==0) return MapProjection::UTM;
+    return MapProjection::Equirectangular;
+}
+
+// A projection needs a place to be centred on, and the honest choice is the
+// data's own middle: a Lambert cone fitted to Norway and used for Chile is a
+// worse picture than no projection at all. The standard parallels follow
+// Kavrayskiy's rule, at a sixth in from each edge of the latitude span.
+struct GeoFrame {
+    MapProjection kind=MapProjection::Equirectangular;
+    double lon0=0.0, lat0=0.0, lat1=0.0, lat2=0.0;
+    int utmZone=31;
+    bool northern=true;
+};
+
+GeoFrame geoFrameFor(MapProjection kind,const QVector<double>& lon,const QVector<double>& lat){
+    GeoFrame f; f.kind=kind;
+    double lonLo=std::numeric_limits<double>::infinity(),lonHi=-lonLo;
+    double latLo=lonLo,latHi=-lonLo;
+    const int n=qMin(lon.size(),lat.size());
+    for(int i=0;i<n;++i){
+        if(!finite(lon[i])||!finite(lat[i])) continue;
+        lonLo=qMin(lonLo,lon[i]); lonHi=qMax(lonHi,lon[i]);
+        latLo=qMin(latLo,lat[i]); latHi=qMax(latHi,lat[i]);
+    }
+    // Every bound, not just the two lows. A column of 1e308 gives a finite low
+    // and an infinite high, the midpoint is then infinite, and casting that to
+    // an int for the UTM zone is undefined behaviour - which the sanitiser
+    // catches and a release build does not.
+    if(!finite(lonLo)||!finite(lonHi)||!finite(latLo)||!finite(latHi)) return f;
+    f.lon0=0.5*(lonLo+lonHi);
+    f.lat0=0.5*(latLo+latHi);
+    if(!finite(f.lon0)||!finite(f.lat0)) return f;
+    const double span=latHi-latLo;
+    f.lat1=latLo+span/6.0;
+    f.lat2=latHi-span/6.0;
+    if(std::abs(f.lat2-f.lat1)<1e-6){ f.lat1=f.lat0-1.0; f.lat2=f.lat0+1.0; }
+    f.utmZone=qBound(1,int(std::floor((f.lon0+180.0)/6.0))+1,60);
+    f.northern=(f.lat0>=0.0);
+    return f;
+}
+
+// Transverse Mercator on the WGS-84 ellipsoid, Krueger series to fourth order.
+// Sub-millimetre inside a zone, which is far past what any plot resolves, and
+// it is the projection that survey, cadastral and infrastructure data arrives
+// in - so a UTM easting and northing can be plotted against the coordinates
+// they were measured in rather than converted by hand first.
+QPointF utmForward(double lonDeg,double latDeg,int zone,bool northern){
+    const double k0=0.9996;
+    const double e2=kFlattening*(2.0-kFlattening);
+    const double ep2=e2/(1.0-e2);
+    const double lon0=double((zone-1)*6-180+3)*kDegToRad;
+    const double lat=latDeg*kDegToRad;
+    const double lon=lonDeg*kDegToRad;
+    const double sinLat=std::sin(lat),cosLat=std::cos(lat),tanLat=std::tan(lat);
+    const double N=kEarthRadius/std::sqrt(1.0-e2*sinLat*sinLat);
+    const double T=tanLat*tanLat;
+    const double C=ep2*cosLat*cosLat;
+    const double A=(lon-lon0)*cosLat;
+    const double M=kEarthRadius*((1.0-e2/4.0-3.0*e2*e2/64.0-5.0*e2*e2*e2/256.0)*lat
+                   -(3.0*e2/8.0+3.0*e2*e2/32.0+45.0*e2*e2*e2/1024.0)*std::sin(2.0*lat)
+                   +(15.0*e2*e2/256.0+45.0*e2*e2*e2/1024.0)*std::sin(4.0*lat)
+                   -(35.0*e2*e2*e2/3072.0)*std::sin(6.0*lat));
+    const double easting=k0*N*(A+(1.0-T+C)*A*A*A/6.0
+                   +(5.0-18.0*T+T*T+72.0*C-58.0*ep2)*A*A*A*A*A/120.0)+500000.0;
+    double northing=k0*(M+N*tanLat*(A*A/2.0+(5.0-T+9.0*C+4.0*C*C)*A*A*A*A/24.0
+                   +(61.0-58.0*T+T*T+600.0*C-330.0*ep2)*A*A*A*A*A*A/720.0));
+    if(!northern) northing+=10000000.0;
+    return QPointF(easting,northing);
+}
+
+// One longitude and latitude as a point on the picture. Non-finite in, non-
+// finite out: a point that cannot be projected - a pole in Mercator, a place on
+// the far side of the globe in an azimuthal projection - is dropped by the
+// caller rather than clamped to an edge it does not belong on.
+QPointF projectPoint(const GeoFrame& f,double lonDeg,double latDeg){
+    if(!finite(lonDeg)||!finite(latDeg)) return QPointF(qQNaN(),qQNaN());
+    switch(f.kind){
+    case MapProjection::Equirectangular:
+        return QPointF(lonDeg,latDeg);
+    case MapProjection::Mercator: {
+        // The poles are infinitely far away in Mercator; 85.05 degrees is where
+        // the projection is conventionally cut, and it is exactly square there.
+        if(std::abs(latDeg)>85.0511) return QPointF(qQNaN(),qQNaN());
+        const double y=kRadToDeg*std::log(std::tan(M_PI/4.0+latDeg*kDegToRad/2.0));
+        return QPointF(lonDeg,y);
+    }
+    case MapProjection::WebMercator: {
+        if(std::abs(latDeg)>85.0511) return QPointF(qQNaN(),qQNaN());
+        const double x=kEarthRadius*lonDeg*kDegToRad;
+        const double y=kEarthRadius*std::log(std::tan(M_PI/4.0+latDeg*kDegToRad/2.0));
+        return QPointF(x,y);
+    }
+    case MapProjection::LambertConformal: {
+        const double lat1=f.lat1*kDegToRad,lat2=f.lat2*kDegToRad;
+        const double lat=latDeg*kDegToRad,lat0=f.lat0*kDegToRad;
+        const double cosLat1=std::cos(lat1);
+        const double t=std::tan(M_PI/4.0+lat/2.0);
+        const double t1=std::tan(M_PI/4.0+lat1/2.0);
+        const double t2=std::tan(M_PI/4.0+lat2/2.0);
+        const double t0=std::tan(M_PI/4.0+lat0/2.0);
+        if(!(t>0)||!(t1>0)||!(t2>0)||!(t0>0)) return QPointF(qQNaN(),qQNaN());
+        // Two standard parallels, unless they coincide - then the tangent case.
+        const double n=(std::abs(lat1-lat2)<1e-9)
+            ? std::sin(lat1)
+            : std::log(cosLat1/std::cos(lat2))/std::log(t2/t1);
+        if(!finite(n)||std::abs(n)<1e-12) return QPointF(qQNaN(),qQNaN());
+        const double F=cosLat1*std::pow(t1,n)/n;
+        const double rho=kEarthRadius*F/std::pow(t,n);
+        const double rho0=kEarthRadius*F/std::pow(t0,n);
+        const double theta=n*(lonDeg-f.lon0)*kDegToRad;
+        if(!finite(rho)||!finite(rho0)) return QPointF(qQNaN(),qQNaN());
+        return QPointF(rho*std::sin(theta),rho0-rho*std::cos(theta));
+    }
+    case MapProjection::AzimuthalEquidistant: {
+        // Distance and bearing from the centre are both true, so a great
+        // circle through the centre is a straight line and a range ring is a
+        // circle. This is the projection a route or a coverage map wants.
+        const double lat=latDeg*kDegToRad,lat0=f.lat0*kDegToRad;
+        const double dLon=(lonDeg-f.lon0)*kDegToRad;
+        const double cosC=std::sin(lat0)*std::sin(lat)+std::cos(lat0)*std::cos(lat)*std::cos(dLon);
+        const double c=std::acos(qBound(-1.0,cosC,1.0));
+        if(!finite(c)) return QPointF(qQNaN(),qQNaN());
+        // The antipode has no unique direction, so it is dropped rather than
+        // drawn at an arbitrary bearing.
+        if(std::abs(M_PI-c)<1e-6) return QPointF(qQNaN(),qQNaN());
+        const double k=(std::abs(c)<1e-12)?1.0:(c/std::sin(c));
+        const double x=kEarthRadius*k*std::cos(lat)*std::sin(dLon);
+        const double y=kEarthRadius*k*(std::cos(lat0)*std::sin(lat)
+                                       -std::sin(lat0)*std::cos(lat)*std::cos(dLon));
+        return QPointF(x,y);
+    }
+    case MapProjection::UTM:
+        return utmForward(lonDeg,latDeg,f.utmZone,f.northern);
+    }
+    return QPointF(lonDeg,latDeg);
+}
+
+QString projectionXLabel(const GeoFrame& f){
+    switch(f.kind){
+    case MapProjection::Equirectangular: return QStringLiteral("longitude (deg E)");
+    case MapProjection::Mercator:        return QStringLiteral("longitude (deg E, Mercator)");
+    case MapProjection::WebMercator:     return QStringLiteral("easting (m, Web Mercator)");
+    case MapProjection::LambertConformal:return QStringLiteral("easting (m, Lambert conformal)");
+    case MapProjection::AzimuthalEquidistant: return QStringLiteral("easting (m, azimuthal equidistant)");
+    case MapProjection::UTM:             return QStringLiteral("easting (m)");
+    }
+    return QStringLiteral("x");
+}
+
+QString projectionYLabel(const GeoFrame& f){
+    switch(f.kind){
+    case MapProjection::Equirectangular: return QStringLiteral("latitude (deg N)");
+    case MapProjection::Mercator:        return QStringLiteral("latitude (deg N, Mercator)");
+    case MapProjection::WebMercator:     return QStringLiteral("northing (m, Web Mercator)");
+    case MapProjection::LambertConformal:return QStringLiteral("northing (m, Lambert conformal)");
+    case MapProjection::AzimuthalEquidistant: return QStringLiteral("northing (m, azimuthal equidistant)");
+    case MapProjection::UTM:             return QStringLiteral("northing (m, zone %1%2")
+                                          .arg(f.utmZone).arg(f.northern?QStringLiteral("N)"):QStringLiteral("S)"));
+    }
+    return QStringLiteral("y");
+}
+
+// Great-circle distance, on a sphere. The haversine form, because the simple
+// spherical cosine loses all its precision on the short legs - and a taxi-out
+// or an approach leg is exactly where a track has its shortest legs.
+double greatCircleMetres(double lon1,double lat1,double lon2,double lat2){
+    const double p1=lat1*kDegToRad,p2=lat2*kDegToRad;
+    const double dp=(lat2-lat1)*kDegToRad,dl=(lon2-lon1)*kDegToRad;
+    const double a=std::sin(dp/2)*std::sin(dp/2)
+                  +std::cos(p1)*std::cos(p2)*std::sin(dl/2)*std::sin(dl/2);
+    return 2.0*kEarthRadius*std::asin(std::sqrt(qBound(0.0,a,1.0)));
+}
+
+// A point a fraction of the way along the great circle between two others.
+// Spherical interpolation on the unit vectors, which stays well behaved when
+// the two ends are nearly coincident and when they are nearly antipodal.
+void greatCirclePoint(double lon1,double lat1,double lon2,double lat2,
+                      double t,double& lon,double& lat){
+    const double p1=lat1*kDegToRad,l1=lon1*kDegToRad;
+    const double p2=lat2*kDegToRad,l2=lon2*kDegToRad;
+    const double x1=std::cos(p1)*std::cos(l1),y1=std::cos(p1)*std::sin(l1),z1=std::sin(p1);
+    const double x2=std::cos(p2)*std::cos(l2),y2=std::cos(p2)*std::sin(l2),z2=std::sin(p2);
+    const double dot=qBound(-1.0,x1*x2+y1*y2+z1*z2,1.0);
+    const double omega=std::acos(dot);
+    double a=1.0-t,b=t;
+    if(omega>1e-9){
+        const double s=std::sin(omega);
+        a=std::sin((1.0-t)*omega)/s;
+        b=std::sin(t*omega)/s;
+    }
+    const double x=a*x1+b*x2,y=a*y1+b*y2,z=a*z1+b*z2;
+    lat=std::atan2(z,std::sqrt(x*x+y*y))*kRadToDeg;
+    lon=std::atan2(y,x)*kRadToDeg;
+}
+
 } // namespace
 
+// A caller's axis limits outrank the engine's own.
+//
+// Many of the rewrites below set out.xAxis/yAxis themselves, because a
+// histogram is drawn against counts and a correlation matrix against variable
+// indices - ranges the mapped columns know nothing about. Those assignments are
+// unconditional, so once the canvas gained an interactive zoom, every one of
+// those engines would have thrown the user's zoom away on the next repaint and
+// snapped back to the full range. The limits that arrive on the spec are the
+// ones the user is looking at, and they win.
 PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
+    PlotSpec out=prepareSpecCore(in);
+    return applyLimits(out,in);
+}
+
+PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
     // ----------------------------------------------------------------- ECDF
     // The empirical distribution: every observation contributes one step of
     // 1/n. Drawn as a staircase because that is what it is - joining the points
@@ -3435,39 +4397,2771 @@ PlotSpec QtPlotBackend::prepareSpec(const PlotSpec& in) const {
     }
 
     // ---------------------------------------------------------- geographic
-    // Longitude east, latitude north, drawn as an equirectangular projection.
-    // There is no basemap and this does not pretend to be a map: the axes are
-    // labelled as coordinates so nobody reads a country outline that is not
-    // there. Geo Density bins to a heatmap, the rest are scatter and line.
-    if(in.engine.startsWith(QLatin1String("Geo "))){
-        PlotSpec out=in;
-        if(in.engine==QLatin1String("Geo Density")){
-            out.engine=QStringLiteral("2D Histogram");
-            PlotSpec relabelled=out;
-            return prepareSpec(relabelled);
-        }
-        out.engine=(in.engine==QLatin1String("Geo Line"))
-                       ? QStringLiteral("Line Chart") : QStringLiteral("4D / 5D Scatter");
-        out.series.clear();
-        if(in.series.size()>=2){
-            const PlotSeries& lon=in.series.at(0);
-            const PlotSeries& lat=in.series.at(1);
-            const int n=qMin(lon.y.size(),lat.y.size());
-            PlotSeries pts;
-            pts.label=QStringLiteral("position");
-            pts.color=lon.color;
-            pts.drawLine=(in.engine==QLatin1String("Geo Line"));
-            pts.drawMarkers=!pts.drawLine;
-            pts.markerSize=(in.engine==QLatin1String("Geo Bubble"))?5.5:3.6;
-            pts.lineWidth=qMax(1.2,lon.lineWidth);
-            for(int i=0;i<n;++i){
-                if(!finite(lon.y[i])||!finite(lat.y[i])) continue;
-                pts.x.append(lon.y[i]); pts.y.append(lat.y[i]);
+    // Longitude east, latitude north, through a real projection.
+    //
+    // There is still no basemap and this still does not pretend to be one: the
+    // axes are labelled with what they carry so nobody reads a country outline
+    // that is not there. What changed is that the coordinates are projected
+    // rather than plotted raw. Raw longitude against latitude IS a projection -
+    // equirectangular - and it is the one that gets a route, a range ring and
+    // the width of a country wrong everywhere except the equator. It remains
+    // the default, so every figure already saved is drawn exactly as before,
+    // and the catalogue variant chooses another.
+    if(in.engine.startsWith(QLatin1String("Geo "))
+       ||in.engine==QLatin1String("Great Circle Route")
+       ||in.engine==QLatin1String("Ground Track")){
+        if(in.series.size()<2) return in;
+        const PlotSeries& lonSeries=in.series.at(0);
+        const PlotSeries& latSeries=in.series.at(1);
+        const MapProjection kind=mapProjectionFor(in.variant);
+        const GeoFrame frame=geoFrameFor(kind,lonSeries.y,latSeries.y);
+        const int n=qMin(lonSeries.y.size(),latSeries.y.size());
+
+        // A route is the great circle between the points, not the straight line
+        // between them: London to Tokyo over the pole is 9,600 km and the line
+        // an equirectangular plot draws across Asia is 11,300. Each leg is
+        // densified before projection, so the curve is the projection's own.
+        QVector<double> lon,lat;
+        if(in.engine==QLatin1String("Great Circle Route")){
+            for(int i=0;i+1<n;++i){
+                if(!finite(lonSeries.y[i])||!finite(latSeries.y[i])) continue;
+                if(!finite(lonSeries.y[i+1])||!finite(latSeries.y[i+1])) continue;
+                // Steps sized to the leg: a 40 km hop needs no subdivision at
+                // all, a transpolar one needs plenty.
+                const double metres=greatCircleMetres(lonSeries.y[i],latSeries.y[i],
+                                                      lonSeries.y[i+1],latSeries.y[i+1]);
+                const int steps=qBound(2,int(metres/25000.0),256);
+                for(int k=0;k<steps;++k){
+                    double gl=0,gp=0;
+                    greatCirclePoint(lonSeries.y[i],latSeries.y[i],
+                                     lonSeries.y[i+1],latSeries.y[i+1],
+                                     double(k)/double(steps),gl,gp);
+                    lon.append(gl); lat.append(gp);
+                }
             }
-            if(!pts.x.isEmpty()) out.series.append(pts);
+            if(n>0&&finite(lonSeries.y[n-1])&&finite(latSeries.y[n-1])){
+                lon.append(lonSeries.y[n-1]); lat.append(latSeries.y[n-1]);
+            }
+        }else{
+            for(int i=0;i<n;++i){ lon.append(lonSeries.y[i]); lat.append(latSeries.y[i]); }
         }
-        out.xAxis=PlotAxis{QStringLiteral("longitude (deg E)"),false,unsetValue(),unsetValue()};
-        out.yAxis=PlotAxis{QStringLiteral("latitude (deg N)"),false,unsetValue(),unsetValue()};
+
+        if(in.engine==QLatin1String("Geo Density")){
+            PlotSpec out=derivedAs(in,QStringLiteral("2D Histogram"));
+            PlotSeries px,py;
+            px.label=projectionXLabel(frame); py.label=projectionYLabel(frame);
+            for(int i=0;i<lon.size();++i){
+                const QPointF q=projectPoint(frame,lon[i],lat[i]);
+                if(!finite(q.x())||!finite(q.y())) continue;
+                px.y.append(q.x()); py.y.append(q.y());
+            }
+            out.series={px,py};
+            return prepareSpecCore(out);
+        }
+
+        PlotSpec out=derivedAs(in,(in.engine==QLatin1String("Geo Line")
+                                   ||in.engine==QLatin1String("Great Circle Route")
+                                   ||in.engine==QLatin1String("Ground Track"))
+                                      ? QStringLiteral("Line Chart")
+                                      : QStringLiteral("4D / 5D Scatter"));
+        const bool asLine=(out.engine==QLatin1String("Line Chart"));
+        // A ground track crosses the antimeridian, and a polyline that does is
+        // drawn straight back across the whole picture unless it is cut there.
+        // The cut is a new series rather than a gap, because a series is
+        // documented as already cleaned of non-finite pairs - a NaN break would
+        // be relying on behaviour nothing promises.
+        const bool cutAtWrap=(in.engine==QLatin1String("Ground Track"));
+        PlotSeries run;
+        // "position", not the longitude column's name: the series is a place,
+        // and labelling it "Longitude" describes half of it.
+        run.label=QStringLiteral("position");
+        run.color=lonSeries.color;
+        run.drawLine=asLine;
+        run.drawMarkers=!asLine;
+        run.markerSize=(in.engine==QLatin1String("Geo Bubble"))?5.5:3.6;
+        run.lineWidth=qMax(1.2,lonSeries.lineWidth);
+        double previousLon=qQNaN();
+        for(int i=0;i<lon.size();++i){
+            if(cutAtWrap&&finite(previousLon)&&finite(lon[i])
+               &&std::abs(lon[i]-previousLon)>180.0){
+                if(run.x.size()>1) out.series.append(run);
+                run.x.clear(); run.y.clear();
+                run.label.clear();          // one legend entry for the track
+            }
+            if(finite(lon[i])) previousLon=lon[i];
+            const QPointF q=projectPoint(frame,lon[i],lat[i]);
+            if(!finite(q.x())||!finite(q.y())) continue;
+            run.x.append(q.x()); run.y.append(q.y());
+        }
+        if(!run.x.isEmpty()) out.series.append(run);
+        out.xAxis=PlotAxis{projectionXLabel(frame),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{projectionYLabel(frame),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ terrain profile
+    // Elevation along a path: longitude, latitude and height, drawn against the
+    // distance actually travelled rather than against a row index. The distance
+    // is the great-circle sum leg by leg, so a profile of a flight, a pipeline
+    // or a transect is in kilometres on the ground.
+    if(in.engine==QLatin1String("Terrain Profile")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
+        if(in.series.size()>=3){
+            const QVector<double>& lon=in.series.at(0).y;
+            const QVector<double>& lat=in.series.at(1).y;
+            const QVector<double>& elevation=in.series.at(2).y;
+            const int n=qMin(lon.size(),qMin(lat.size(),elevation.size()));
+            PlotSeries profile;
+            profile.label=in.series.at(2).label.isEmpty()
+                             ? QStringLiteral("elevation") : in.series.at(2).label;
+            profile.color=in.series.at(2).color;
+            profile.drawLine=true;
+            double travelled=0.0;
+            double lastLon=qQNaN(),lastLat=qQNaN();
+            for(int i=0;i<n;++i){
+                if(!finite(lon[i])||!finite(lat[i])||!finite(elevation[i])) continue;
+                if(finite(lastLon))
+                    travelled+=greatCircleMetres(lastLon,lastLat,lon[i],lat[i])/1000.0;
+                lastLon=lon[i]; lastLat=lat[i];
+                profile.x.append(travelled);
+                profile.y.append(elevation[i]);
+            }
+            if(!profile.x.isEmpty()) out.series.append(profile);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("distance along path (km)"),false,unsetValue(),unsetValue()};
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("elevation");
+        return out;
+    }
+
+    // ------------------------------ hypsometric and duration curves
+    // One operation: sort the values from largest to smallest and plot them
+    // against the fraction of the whole that reaches at least that value. It is
+    // called a hypsometric curve when the whole is an area and the values are
+    // heights, and a duration curve when the whole is a year and the values are
+    // a load or a flow - and it was written out twice here before that was
+    // noticed.
+    //
+    // What each says is the same thing about a different quantity: a convex
+    // curve is a young incised landscape or a peaky demand, a concave one is a
+    // worn basin or a steady baseload. Neither is visible in a histogram of the
+    // same numbers.
+    if(in.engine==QLatin1String("Hypsometric Curve")
+       ||in.engine==QLatin1String("Duration Curve")){
+        const bool hypsometric=(in.engine==QLatin1String("Hypsometric Curve"));
+        const double fullScale=hypsometric?1.0:100.0;
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            if(v.size()<3) continue;
+            std::sort(v.begin(),v.end(),std::greater<double>());
+            PlotSeries curve;
+            curve.label=s.label; curve.color=s.color; curve.drawLine=true;
+            curve.lineWidth=qMax(1.2,s.lineWidth);
+            for(int i=0;i<v.size();++i){
+                curve.x.append(fullScale*double(i+1)/double(v.size()));
+                curve.y.append(v[i]);
+            }
+            out.series.append(curve);
+        }
+        out.xAxis=PlotAxis{hypsometric?QStringLiteral("fraction of area above")
+                                      :QStringLiteral("per cent of time exceeded"),
+                           false,0.0,fullScale};
+        if(out.yAxis.label.isEmpty())
+            out.yAxis.label=hypsometric?QStringLiteral("elevation"):QStringLiteral("value");
+        return out;
+    }
+
+    // ------------------------------------------- slope / aspect / hillshade
+    // The three things a height grid is actually read for. All from the same
+    // gridded surface and the same central differences, so they cannot disagree
+    // with each other about which way the ground faces.
+    //
+    // Aspect is a compass bearing, and the discontinuity at north is real: a
+    // slope facing 359 degrees and one facing 1 degree are neighbours on the
+    // ground and at opposite ends of the colour scale. That is a property of
+    // the quantity, not a fault in the drawing, and smoothing it away would be
+    // the dishonest choice.
+    if(in.engine==QLatin1String("Slope Map")||in.engine==QLatin1String("Aspect Map")
+       ||in.engine==QLatin1String("Hillshade")){
+        PlotSpec out=derivedAs(in,QStringLiteral("2D Heatmap"));
+        out.legendVisible=false;
+        // Resolution from the sample count, the same rule every other field
+        // engine uses. Asking for a fixed grid would read a sparse survey at a
+        // detail it does not have, and a dense one at less than it does.
+        const ValueGrid g=gridFromSeries(in,0,GridAggregate::Mean);
+        if(!g.valid||g.nx<3||g.ny<3) return out;
+
+        ValueGrid filled=g;
+        closeGaps(filled,2);
+        const double dx=(filled.xHi-filled.xLo)/qMax(1,filled.nx-1);
+        const double dy=(filled.yHi-filled.yLo)/qMax(1,filled.ny-1);
+        PlotSeries xi,yi,vi;
+        xi.label=QStringLiteral("x"); yi.label=QStringLiteral("y");
+        vi.label=in.engine==QLatin1String("Slope Map") ? QStringLiteral("slope (deg)")
+                : in.engine==QLatin1String("Aspect Map") ? QStringLiteral("aspect (deg from N)")
+                                                         : QStringLiteral("shading");
+        // Sun at 315 degrees and 45 degrees up: the convention every relief map
+        // is lit by, and the one people read as terrain rather than as a hole.
+        const double sunAzimuth=(360.0-315.0+90.0)*kDegToRad;
+        const double sunAltitude=45.0*kDegToRad;
+        for(int j=1;j<filled.ny-1;++j){
+            for(int i=1;i<filled.nx-1;++i){
+                const double zL=filled.cells[j*filled.nx+i-1];
+                const double zR=filled.cells[j*filled.nx+i+1];
+                const double zD=filled.cells[(j-1)*filled.nx+i];
+                const double zU=filled.cells[(j+1)*filled.nx+i];
+                if(!finite(zL)||!finite(zR)||!finite(zD)||!finite(zU)) continue;
+                const double gxv=(zR-zL)/(2.0*qMax(1e-12,dx));
+                const double gyv=(zU-zD)/(2.0*qMax(1e-12,dy));
+                double value=0.0;
+                if(in.engine==QLatin1String("Slope Map")){
+                    value=std::atan(std::hypot(gxv,gyv))*kRadToDeg;
+                }else if(in.engine==QLatin1String("Aspect Map")){
+                    if(std::abs(gxv)<1e-15&&std::abs(gyv)<1e-15) continue;  // flat has no aspect
+                    // Downslope direction, as a bearing clockwise from north.
+                    double bearing=std::atan2(-gxv,gyv)*kRadToDeg;
+                    if(bearing<0) bearing+=360.0;
+                    value=bearing;
+                }else{
+                    const double slope=std::atan(std::hypot(gxv,gyv));
+                    double aspect=std::atan2(gyv,-gxv);
+                    value=std::cos(sunAltitude)*std::cos(slope)
+                         +std::sin(sunAltitude)*std::sin(slope)*std::cos(sunAzimuth-aspect);
+                    value=qBound(0.0,value,1.0);
+                }
+                xi.y.append(filled.xLo+double(i)*dx);
+                yi.y.append(filled.yLo+double(j)*dy);
+                vi.y.append(value);
+            }
+        }
+        out.series={xi,yi,vi};
+        out.xAxis=PlotAxis{in.series.size()>0?in.series.at(0).label:QStringLiteral("x"),
+                           false,filled.xLo,filled.xHi};
+        out.yAxis=PlotAxis{in.series.size()>1?in.series.at(1).label:QStringLiteral("y"),
+                           false,filled.yLo,filled.yHi};
+        return out;
+    }
+
+    // =====================================================================
+    // Flight and aviation
+    //
+    // These are the charts an aircraft is actually specified and operated by,
+    // and none of them is a plot of the mapped columns as they stand: a drag
+    // polar is read for the two coefficients fitted through it, a lift curve
+    // for its slope and where it stops being a line, a crosswind chart for
+    // components that have to be resolved from a wind and a runway heading,
+    // and a weight-and-balance chart for whether the loaded point is inside the
+    // envelope or outside it. Drawing the columns and leaving the reader to do
+    // that arithmetic is what a general-purpose line chart already does.
+    // =====================================================================
+
+    // Payload against range: the four-cornered envelope every aircraft is sold
+    // on. Filled to the axis, because the area under it is the useful part -
+    // every payload/range pair inside it is a flight the aircraft can do.
+    if(in.engine==QLatin1String("Payload-Range Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
+        for(const PlotSeries& s:in.series){
+            PlotSeries leg=s;
+            leg.drawLine=true;
+            leg.drawMarkers=true;
+            leg.markerSize=qMax(5.0,s.markerSize);
+            leg.markerSizeExplicit=true;
+            out.series.append(leg);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("range");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("payload");
+        return out;
+    }
+
+    // A flight envelope is a closed shape, and a polyline that is not closed
+    // reads as a boundary with a hole in it. Both of these close it and mark
+    // the reference the envelope is read against: one g for the V-n diagram,
+    // where the whole point is how far above and below one g the aircraft may
+    // be flown.
+    if(in.engine==QLatin1String("V-n Flight Envelope")
+       ||in.engine==QLatin1String("Altitude-Mach Envelope")){
+        const bool vn=(in.engine==QLatin1String("V-n Flight Envelope"));
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries loop;
+            loop.label=s.label; loop.color=s.color; loop.drawLine=true;
+            loop.drawMarkers=true; loop.markerSize=4.0;
+            loop.lineWidth=qMax(1.6,s.lineWidth); loop.lineWidthExplicit=true;
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                loop.x.append(s.x[i]); loop.y.append(s.y[i]);
+            }
+            if(loop.x.size()<3) continue;
+            // Close it, unless the data already did.
+            if(!qFuzzyCompare(loop.x.first(),loop.x.last())
+               ||!qFuzzyCompare(loop.y.first(),loop.y.last())){
+                loop.x.append(loop.x.first());
+                loop.y.append(loop.y.first());
+            }
+            out.series.append(loop);
+        }
+        if(vn&&!out.series.isEmpty()){
+            double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            for(const PlotSeries& s:out.series)
+                for(double v:s.x){ lo=qMin(lo,v); hi=qMax(hi,v); }
+            if(finite(lo)&&finite(hi)&&hi>lo){
+                PlotSeries level;
+                level.label=QStringLiteral("1 g");
+                level.color=in.style.foreground;
+                level.drawLine=true; level.lineWidth=0.8; level.lineWidthExplicit=true;
+                level.dashPattern={4.0,3.0};
+                level.x={lo,hi}; level.y={1.0,1.0};
+                out.series.append(level);
+            }
+        }
+        if(out.xAxis.label.isEmpty())
+            out.xAxis.label=vn?QStringLiteral("equivalent airspeed"):QStringLiteral("Mach number");
+        if(out.yAxis.label.isEmpty())
+            out.yAxis.label=vn?QStringLiteral("load factor n (g)"):QStringLiteral("altitude");
+        return out;
+    }
+
+    // The drag polar, with the two numbers it exists to give: the zero-lift
+    // drag and the induced-drag factor of CD = CD0 + k CL^2, fitted by least
+    // squares on CL^2, and the best lift-to-drag ratio that pair implies. The
+    // measured points, the fitted parabola and the tangent point are drawn
+    // together so a departure from the parabola is visible rather than averaged
+    // into a number.
+    if(in.engine==QLatin1String("Drag Polar")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.label=s.label; pts.color=s.color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            // CD = CD0 + k CL^2 is a straight line in CL^2, so that is the
+            // space the fit is done in.
+            QVector<double> squared,drag;
+            for(int i=0;i<n;++i){
+                const double cd=s.x[i],cl=s.y[i];
+                if(!finite(cd)||!finite(cl)) continue;
+                pts.x.append(cd); pts.y.append(cl);
+                squared.append(cl*cl); drag.append(cd);
+            }
+            if(pts.x.isEmpty()) continue;
+            out.series.append(pts);
+            const LineFit fit=fitLine(squared,drag);
+            const double k=fit.slope,cd0=fit.intercept;
+            if(!fit.ok||!(k>0)||!(cd0>0)) continue;
+
+            double clLo=std::numeric_limits<double>::infinity(),clHi=-clLo;
+            for(double cl:pts.y){ clLo=qMin(clLo,cl); clHi=qMax(clHi,cl); }
+            PlotSeries curve;
+            const double clBest=std::sqrt(cd0/k);
+            const double ldMax=1.0/(2.0*std::sqrt(cd0*k));
+            curve.label=QStringLiteral("CD0 %1, k %2, (L/D)max %3")
+                            .arg(cd0,0,'f',4).arg(k,0,'f',4).arg(ldMax,0,'f',1);
+            curve.color=s.color; curve.drawLine=true; curve.drawMarkers=false;
+            curve.lineWidth=1.4; curve.lineWidthExplicit=true;
+            for(int i=0;i<=120;++i){
+                const double cl=clLo+(clHi-clLo)*double(i)/120.0;
+                curve.x.append(cd0+k*cl*cl);
+                curve.y.append(cl);
+            }
+            out.series.append(curve);
+            if(clBest>=clLo&&clBest<=clHi){
+                PlotSeries best;
+                best.label=QStringLiteral("best L/D at CL %1").arg(clBest,0,'f',3);
+                best.color=in.style.positive;
+                best.drawLine=false; best.drawMarkers=true;
+                best.markerSize=8.0; best.markerSizeExplicit=true;
+                best.x={cd0+k*clBest*clBest}; best.y={clBest};
+                out.series.append(best);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("drag coefficient CD");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("lift coefficient CL");
+        return out;
+    }
+
+    // The lift curve, with the slope of its straight part and the stall it ends
+    // at. The slope is fitted only below the maximum, because fitting through
+    // the stall is what makes a lift-curve slope wrong - and quietly, since the
+    // fit still returns a number.
+    if(in.engine==QLatin1String("Lift Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.label=s.label; pts.color=s.color;
+            pts.drawLine=true; pts.drawMarkers=true; pts.markerSize=4.0;
+            int peak=-1; double peakCl=-std::numeric_limits<double>::infinity();
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                pts.x.append(s.x[i]); pts.y.append(s.y[i]);
+                if(s.y[i]>peakCl){ peakCl=s.y[i]; peak=pts.x.size()-1; }
+            }
+            if(pts.x.isEmpty()) continue;
+
+            // Only up to the peak: the linear region is what a lift-curve
+            // slope means, and fitting through the stall quietly returns a
+            // smaller number that still looks like an answer.
+            const LineFit fit0=fitLine(pts.x,pts.y,(peak>=0)?peak+1:-1);
+            {
+                const double slope=fit0.slope,intercept=fit0.intercept;
+                if(fit0.ok){
+                    pts.label=QStringLiteral("%1 (a %2 /deg, %3 /rad, CLmax %4)")
+                                  .arg(s.label).arg(slope,0,'f',4)
+                                  .arg(slope*180.0/M_PI,0,'f',3).arg(peakCl,0,'f',3);
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("linear region");
+                    fit.color=in.style.warning;
+                    fit.drawLine=true; fit.drawMarkers=false;
+                    fit.lineWidth=1.0; fit.lineWidthExplicit=true;
+                    fit.dashPattern={5.0,3.0};
+                    const double a0=pts.x.first(),a1=pts.x.at(peak>=0?peak:pts.x.size()-1);
+                    fit.x={a0,a1};
+                    fit.y={intercept+slope*a0,intercept+slope*a1};
+                    out.series.append(pts);
+                    out.series.append(fit);
+                    if(peak>=0){
+                        PlotSeries stall;
+                        stall.label=QStringLiteral("stall");
+                        stall.color=in.style.danger;
+                        stall.drawLine=false; stall.drawMarkers=true;
+                        stall.markerSize=8.0; stall.markerSizeExplicit=true;
+                        stall.x={pts.x.at(peak)}; stall.y={pts.y.at(peak)};
+                        out.series.append(stall);
+                    }
+                    continue;
+                }
+            }
+            out.series.append(pts);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("angle of attack (deg)");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("lift coefficient CL");
+        return out;
+    }
+
+    // Altitude against time or distance, filled, with the top of climb marked.
+    // The apex is where the profile stops being a climb and starts being a
+    // cruise, and finding it by eye off a line is exactly the sort of reading
+    // that goes wrong on a compressed x axis.
+    if(in.engine==QLatin1String("Flight Profile")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<2) continue;
+            PlotSeries leg=s;
+            leg.drawLine=true;
+            out.series.append(leg);
+            int apex=-1; double top=-std::numeric_limits<double>::infinity();
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                if(s.y[i]>top){ top=s.y[i]; apex=i; }
+            }
+            if(apex>=0){
+                PlotSeries mark;
+                mark.label=QStringLiteral("top of climb %1").arg(top,0,'f',0);
+                mark.color=in.style.positive;
+                mark.drawLine=false; mark.drawMarkers=true;
+                mark.markerSize=7.0; mark.markerSizeExplicit=true;
+                mark.x={s.x[apex]}; mark.y={s.y[apex]};
+                out.series.append(mark);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("time or distance");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("altitude");
+        return out;
+    }
+
+    // Crosswind and headwind, resolved. Three mapped columns - runway heading,
+    // wind direction and wind speed - and the components computed from them,
+    // because that is the arithmetic the chart exists to save and the one that
+    // gets done wrong in a hurry. Sign matters and is kept: a negative
+    // headwind is a tailwind and is a different decision.
+    if(in.engine==QLatin1String("Runway Crosswind")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=3){
+            const QVector<double>& runway=in.series.at(0).y;
+            const QVector<double>& from=in.series.at(1).y;
+            const QVector<double>& speed=in.series.at(2).y;
+            const int n=qMin(runway.size(),qMin(from.size(),speed.size()));
+            PlotSeries pts;
+            pts.label=QStringLiteral("wind");
+            pts.color=in.series.at(2).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            double worstCross=0.0;
+            for(int i=0;i<n;++i){
+                if(!finite(runway[i])||!finite(from[i])||!finite(speed[i])) continue;
+                const double delta=(from[i]-runway[i])*kDegToRad;
+                const double cross=speed[i]*std::sin(delta);
+                const double head=speed[i]*std::cos(delta);
+                pts.x.append(cross); pts.y.append(head);
+                worstCross=qMax(worstCross,std::abs(cross));
+            }
+            if(!pts.x.isEmpty()){
+                pts.label=QStringLiteral("wind (max crosswind %1)").arg(worstCross,0,'f',1);
+                out.series.append(pts);
+                // The line where a headwind becomes a tailwind. Everything
+                // below it is a downwind landing.
+                PlotSeries zero;
+                zero.label=QStringLiteral("no headwind");
+                zero.color=in.style.warning;
+                zero.drawLine=true; zero.drawMarkers=false;
+                zero.lineWidth=0.8; zero.lineWidthExplicit=true;
+                zero.dashPattern={4.0,3.0};
+                zero.x={-worstCross,worstCross}; zero.y={0.0,0.0};
+                out.series.append(zero);
+            }
+        }
+        if(out.xAxis.label.isEmpty())
+            out.xAxis.label=QStringLiteral("crosswind component (right positive)");
+        if(out.yAxis.label.isEmpty())
+            out.yAxis.label=QStringLiteral("headwind component (tailwind negative)");
+        return out;
+    }
+
+    // Weight and balance. The first mapped column pair is the envelope; every
+    // pair after it is a loading to test against it, and each is drawn in the
+    // colour of its answer. Inside or outside is a ray-crossing test on the
+    // polygon rather than a judgement by eye, because a point a millimetre
+    // outside the aft limit looks exactly like one a millimetre inside.
+    if(in.engine==QLatin1String("Weight and Balance Envelope")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        if(!in.series.isEmpty()){
+            const PlotSeries& env=in.series.at(0);
+            QVector<double> ex,ey;
+            const int n=qMin(env.x.size(),env.y.size());
+            for(int i=0;i<n;++i){
+                if(!finite(env.x[i])||!finite(env.y[i])) continue;
+                ex.append(env.x[i]); ey.append(env.y[i]);
+            }
+            if(ex.size()>=3){
+                PlotSeries loop;
+                loop.label=env.label.isEmpty()?QStringLiteral("envelope"):env.label;
+                loop.color=env.color; loop.drawLine=true; loop.drawMarkers=false;
+                loop.lineWidth=qMax(1.6,env.lineWidth); loop.lineWidthExplicit=true;
+                loop.x=ex; loop.y=ey;
+                if(!qFuzzyCompare(loop.x.first(),loop.x.last())
+                   ||!qFuzzyCompare(loop.y.first(),loop.y.last())){
+                    loop.x.append(loop.x.first()); loop.y.append(loop.y.first());
+                }
+                out.series.append(loop);
+
+                const auto inside=[&ex,&ey](double px,double py){
+                    bool in=false;
+                    const int m=ex.size();
+                    for(int i=0,j=m-1;i<m;j=i++){
+                        const bool straddles=((ey[i]>py)!=(ey[j]>py));
+                        if(!straddles) continue;
+                        const double t=(py-ey[i])/(ey[j]-ey[i]);
+                        if(px<ex[i]+t*(ex[j]-ex[i])) in=!in;
+                    }
+                    return in;
+                };
+                for(int k=1;k<in.series.size();++k){
+                    const PlotSeries& load=in.series.at(k);
+                    PlotSeries ok,bad;
+                    ok.color=in.style.positive; bad.color=in.style.danger;
+                    ok.drawLine=false; bad.drawLine=false;
+                    ok.drawMarkers=true; bad.drawMarkers=true;
+                    ok.markerSize=7.0; bad.markerSize=7.0;
+                    ok.markerSizeExplicit=true; bad.markerSizeExplicit=true;
+                    const int ln=qMin(load.x.size(),load.y.size());
+                    for(int i=0;i<ln;++i){
+                        if(!finite(load.x[i])||!finite(load.y[i])) continue;
+                        PlotSeries& target=inside(load.x[i],load.y[i])?ok:bad;
+                        target.x.append(load.x[i]); target.y.append(load.y[i]);
+                    }
+                    if(!ok.x.isEmpty()){
+                        ok.label=QStringLiteral("%1 within limits (%2)")
+                                     .arg(load.label).arg(ok.x.size());
+                        out.series.append(ok);
+                    }
+                    if(!bad.x.isEmpty()){
+                        bad.label=QStringLiteral("%1 OUTSIDE limits (%2)")
+                                      .arg(load.label).arg(bad.x.size());
+                        out.series.append(bad);
+                    }
+                }
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("centre of gravity");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("weight");
+        return out;
+    }
+
+    // =====================================================================
+    // Maintenance and reliability
+    //
+    // These are read for a fitted parameter, not for their shape: a Weibull
+    // plot for the shape that says whether things are failing early, randomly
+    // or by wear-out; a growth plot for whether the fixes are working; a CUSUM
+    // for the moment a process shifted. Every one of them puts its numbers in
+    // the legend, because a chart that makes you get a ruler out is a chart
+    // that gets read wrong.
+    // =====================================================================
+
+    // The Weibull probability plot. Median ranks on the doubly-logarithmic
+    // scale where a Weibull is a straight line, then a least-squares fit for
+    // the shape and the scale.
+    //
+    // The shape is the whole point: below 1 the failures are early-life and a
+    // burn-in is indicated; near 1 they are random and preventive replacement
+    // buys nothing; above 1 they are wear-out and a life limit does. That
+    // reading is not available from a histogram of the same times.
+    if(in.engine==QLatin1String("Weibull Probability Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> t=finiteValues(s);
+            // A failure at or before zero has no logarithm and is not a life.
+            QVector<double> lives;
+            for(double v:t) if(v>0) lives.append(v);
+            if(lives.size()<3) continue;
+            std::sort(lives.begin(),lives.end());
+            const int n=lives.size();
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            for(int i=0;i<n;++i){
+                // Bernard's approximation to the median rank. The plotting
+                // position matters at small n, which is where reliability data
+                // usually is.
+                const double f=(double(i+1)-0.3)/(double(n)+0.4);
+                const double x=std::log(lives[i]);
+                const double y=std::log(-std::log(1.0-f));
+                if(!finite(x)||!finite(y)) continue;
+                pts.x.append(x); pts.y.append(y);
+            }
+            if(pts.x.size()<3) continue;
+            {
+                const LineFit line=fitLine(pts.x,pts.y);
+                const double beta=line.slope;
+                const double intercept=line.intercept;
+                const double eta=std::exp(-intercept/qMax(1e-12,beta));
+                if(line.ok&&finite(eta)&&beta>0){
+                    pts.label=QStringLiteral("%1 (beta %2, eta %3, %4)")
+                        .arg(s.label).arg(beta,0,'f',2).arg(eta,0,'f',3)
+                        .arg(beta<0.95?QStringLiteral("early-life")
+                            :beta<1.05?QStringLiteral("random")
+                                      :QStringLiteral("wear-out"));
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("Weibull fit");
+                    fit.color=in.style.warning;
+                    fit.drawLine=true; fit.drawMarkers=false;
+                    fit.lineWidth=1.2; fit.lineWidthExplicit=true;
+                    fit.x={pts.x.first(),pts.x.last()};
+                    fit.y={intercept+beta*pts.x.first(),intercept+beta*pts.x.last()};
+                    out.series.append(pts);
+                    out.series.append(fit);
+                    continue;
+                }
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("ln(life)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("ln(-ln(1-F))"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // Reliability growth. Cumulative failures against cumulative time, fitted
+    // as N = lambda t^beta on log-log, which is the Crow-AMSAA model and the
+    // Duane plot's straight line.
+    //
+    // Beta is the answer: below one the intervals between failures are getting
+    // longer and the fixes are working, above one they are getting shorter and
+    // the fleet is getting worse. The number is reported rather than left to be
+    // eyeballed off a slope, because on log-log a slope of 0.8 and one of 1.2
+    // look much the same.
+    if(in.engine==QLatin1String("Reliability Growth")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> times=finiteValues(s);
+            QVector<double> valid;
+            for(double v:times) if(v>0) valid.append(v);
+            if(valid.size()<3) continue;
+            std::sort(valid.begin(),valid.end());
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            QVector<double> logTime,logCount;
+            for(int i=0;i<valid.size();++i){
+                const double x=std::log(valid[i]);
+                const double y=std::log(double(i+1));
+                if(!finite(x)||!finite(y)) continue;
+                pts.x.append(valid[i]); pts.y.append(double(i+1));
+                logTime.append(x); logCount.append(y);
+            }
+            if(logTime.size()<3) continue;
+            {
+                const LineFit line=fitLine(logTime,logCount);
+                const double beta=line.slope;
+                const double lambda=std::exp(line.intercept);
+                if(line.ok&&finite(lambda)){
+                    pts.label=QStringLiteral("%1 (beta %2, lambda %3, %4)")
+                        .arg(s.label).arg(beta,0,'f',3).arg(lambda,0,'g',3)
+                        .arg(beta<0.95?QStringLiteral("improving")
+                            :beta>1.05?QStringLiteral("deteriorating")
+                                      :QStringLiteral("steady"));
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("Crow-AMSAA fit");
+                    fit.color=in.style.warning;
+                    fit.drawLine=true; fit.drawMarkers=false;
+                    fit.lineWidth=1.2; fit.lineWidthExplicit=true;
+                    for(int i=0;i<=60;++i){
+                        const double t=valid.first()
+                            +(valid.last()-valid.first())*double(i)/60.0;
+                        if(!(t>0)) continue;
+                        fit.x.append(t);
+                        fit.y.append(lambda*std::pow(t,beta));
+                    }
+                    out.series.append(pts);
+                    out.series.append(fit);
+                    continue;
+                }
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cumulative operating time"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative failures"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // Mean time between failures, as it moves. The column is failure times; the
+    // intervals between them are what MTBF is the mean of, and a running mean
+    // of those intervals is the only form of this chart that can show a trend
+    // rather than a single number that hides one.
+    if(in.engine==QLatin1String("MTBF Trend")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> times=finiteValues(s);
+            if(times.size()<3) continue;
+            std::sort(times.begin(),times.end());
+            QVector<double> gaps;
+            for(int i=1;i<times.size();++i) gaps.append(times[i]-times[i-1]);
+            if(gaps.isEmpty()) continue;
+            // A window that adapts: five points is noise on a long history and
+            // all of the history on a short one.
+            const int window=qBound(3,gaps.size()/6,25);
+            PlotSeries cumulative,rolling;
+            cumulative.label=QStringLiteral("%1 cumulative MTBF").arg(s.label);
+            cumulative.color=s.color; cumulative.drawLine=true;
+            rolling.label=QStringLiteral("last %1 intervals").arg(window);
+            rolling.color=in.style.warning; rolling.drawLine=true;
+            // Not dashed. A dash pattern over a curve of thousands of points is
+            // both unreadable and slow - Qt's dash iterator runs per segment,
+            // and this one series took a 36,000-point figure from 59 ms to
+            // 4.7 SECONDS per repaint. Dashes are for the two-point reference
+            // lines; a data curve is told apart by its colour.
+
+            // A running sum, not a sum over the window at every step. The
+            // window grows with the history - a sixth of it - so re-adding it
+            // per point is quadratic, and it measured at 1,026 ms per repaint
+            // on a few thousand failures. Subtracting the interval that leaves
+            // and adding the one that arrives gives the same numbers in one
+            // pass.
+            // One point per failure is more than a trend chart can show. A
+            // figure is a couple of thousand pixels wide at most, and both of
+            // these are smoothed summaries - a running mean has no detail
+            // between neighbouring points to lose. Striding to about two
+            // thousand points was measured against the undecimated picture
+            // before being kept.
+            //
+            // It matters because a noisy curve is expensive to draw: this one
+            // series took 1,077 ms per repaint at three thousand points while
+            // the smooth one beside it took 51.
+            const int stride=qMax(1,int(gaps.size()/2000));
+            double running=0.0,windowed=0.0;
+            for(int i=0;i<gaps.size();++i){
+                running+=gaps[i];
+                windowed+=gaps[i];
+                if(i>=window) windowed-=gaps[i-window];
+                const bool keep=(i%stride==0)||(i==gaps.size()-1);
+                if(keep){
+                    cumulative.x.append(times[i+1]);
+                    cumulative.y.append(running/double(i+1));
+                }
+                if(i+1>=window&&keep){
+                    rolling.x.append(times[i+1]);
+                    rolling.y.append(windowed/double(window));
+                }
+            }
+            out.series.append(cumulative);
+            if(!rolling.x.isEmpty()) out.series.append(rolling);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("operating time");
+        out.yAxis=PlotAxis{QStringLiteral("mean time between failures"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // A year of daily values as a grid of weeks. The pattern a calendar shows
+    // and a time series does not is the weekly one: a maintenance backlog that
+    // clears every Friday, a fleet that flies at weekends. x is the week, y is
+    // the day within it, and the value is the colour.
+    if(in.engine==QLatin1String("Calendar Heatmap")){
+        PlotSpec out=derivedAs(in,QStringLiteral("2D Heatmap"));
+        out.legendVisible=false;
+        if(!in.series.isEmpty()){
+            const PlotSeries& s=in.series.at(0);
+            const int n=qMin(s.x.size(),s.y.size());
+            double first=std::numeric_limits<double>::infinity();
+            for(int i=0;i<n;++i) if(finite(s.x[i])) first=qMin(first,s.x[i]);
+            if(finite(first)){
+                PlotSeries wx,wy,wv;
+                for(int i=0;i<n;++i){
+                    if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                    // The x column is a date in days. Anything with a fixed
+                    // daily step works - a day number, a Julian day, a serial
+                    // date - because only the difference is used.
+                    const double days=std::floor(s.x[i]-first);
+                    if(!(days>=0)) continue;
+                    wx.y.append(std::floor(days/7.0));
+                    wy.y.append(days-std::floor(days/7.0)*7.0);
+                    wv.y.append(s.y[i]);
+                }
+                wx.label=QStringLiteral("week"); wy.label=QStringLiteral("day");
+                wv.label=s.label;
+                double weeks=0.0;
+                for(double v:wx.y) weeks=qMax(weeks,v);
+                out.series={wx,wy,wv};
+                // Explicit, because these series carry values in .y and nothing
+                // in .x: left to fit itself the frame would read the union of
+                // week, weekday and value, and label the axis 0 to 1.
+                out.xAxis=PlotAxis{QStringLiteral("week from first date"),false,-0.5,weeks+0.5};
+                out.yAxis=PlotAxis{QStringLiteral("day within week"),false,-0.5,6.5};
+                return out;
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("week from first date"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("day within week"),false,-0.5,6.5};
+        return out;
+    }
+
+    // CUSUM. The tabular form, with the standard slack of half a sigma and a
+    // decision interval of five: a chart that answers "when did it shift" for
+    // shifts a Shewhart chart never triggers on, because a run of small
+    // deviations all one way accumulates here and does not there.
+    if(in.engine==QLatin1String("CUSUM Chart")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            if(v.size()<4) continue;
+            const double mean=meanOf(v);
+            const double sigma=stdevOf(v);
+            if(!(sigma>0)) continue;
+            const double slack=0.5*sigma,limit=5.0*sigma;
+            PlotSeries up,down,upper,lower;
+            up.label=QStringLiteral("%1 C+").arg(s.label);
+            up.color=s.color; up.drawLine=true;
+            down.label=QStringLiteral("%1 C-").arg(s.label);
+            down.color=in.style.warning; down.drawLine=true;
+            double cp=0,cm=0; int alarms=0;
+            for(int i=0;i<v.size();++i){
+                cp=qMax(0.0,cp+(v[i]-mean)-slack);
+                cm=qMin(0.0,cm+(v[i]-mean)+slack);
+                if(cp>limit||cm<-limit) ++alarms;
+                up.x.append(double(i+1)); up.y.append(cp);
+                down.x.append(double(i+1)); down.y.append(cm);
+            }
+            up.label=QStringLiteral("%1 C+ (%2 point%3 beyond h)")
+                         .arg(s.label).arg(alarms).arg(alarms==1?QString():QStringLiteral("s"));
+            upper.label=QStringLiteral("h = 5 sigma");
+            upper.color=in.style.danger; upper.drawLine=true;
+            upper.lineWidth=0.8; upper.lineWidthExplicit=true;
+            upper.dashPattern={4.0,3.0};
+            upper.x={1.0,double(v.size())}; upper.y={limit,limit};
+            lower=upper; lower.label.clear();
+            lower.y={-limit,-limit};
+            out.series.append(up);
+            out.series.append(down);
+            out.series.append(upper);
+            out.series.append(lower);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("observation"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative sum of deviations"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // EWMA, with the limits that widen from the first point to their asymptote
+    // rather than the asymptote drawn flat across the start. Early points are
+    // the ones a flat limit judges wrongly, and they are the ones you have when
+    // a process has just been changed.
+    if(in.engine==QLatin1String("EWMA Chart")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            QVector<double> v=finiteValues(s);
+            if(v.size()<4) continue;
+            const double mean=meanOf(v),sigma=stdevOf(v);
+            if(!(sigma>0)) continue;
+            const double lambda=0.2,L=3.0;
+            PlotSeries z,upper,lower,centre;
+            z.label=QStringLiteral("%1 EWMA (lambda 0.2)").arg(s.label);
+            z.color=s.color; z.drawLine=true; z.drawMarkers=true; z.markerSize=3.0;
+            upper.label=QStringLiteral("3 sigma limits");
+            upper.color=in.style.danger; upper.drawLine=true;
+            upper.lineWidth=0.8; upper.lineWidthExplicit=true;
+            lower=upper; lower.label.clear();
+            centre.label=QStringLiteral("mean");
+            centre.color=in.style.foreground; centre.drawLine=true;
+            centre.lineWidth=0.6; centre.lineWidthExplicit=true;
+            centre.dashPattern={4.0,4.0};
+            double value=mean;
+            // The centre is a constant: two points draw it exactly, and dashing
+            // two points costs nothing while dashing one per observation is the
+            // same cliff the MTBF rolling line fell off.
+            centre.x={1.0,double(v.size())};
+            centre.y={mean,mean};
+            int alarms=0;
+            for(int i=0;i<v.size();++i){
+                value=lambda*v[i]+(1.0-lambda)*value;
+                const double spread=sigma*std::sqrt((lambda/(2.0-lambda))
+                                     *(1.0-std::pow(1.0-lambda,2.0*double(i+1))));
+                const double hi=mean+L*spread,lo=mean-L*spread;
+                if(value>hi||value<lo) ++alarms;
+                z.x.append(double(i+1)); z.y.append(value);
+                upper.x.append(double(i+1)); upper.y.append(hi);
+                lower.x.append(double(i+1)); lower.y.append(lo);
+            }
+            z.label=QStringLiteral("%1 EWMA (%2 out of control)").arg(s.label).arg(alarms);
+            out.series.append(z);
+            out.series.append(upper);
+            out.series.append(lower);
+            out.series.append(centre);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("observation"),false,unsetValue(),unsetValue()};
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("EWMA");
+        return out;
+    }
+
+    // The S-N curve, with Basquin's law fitted through it: S = A N^b on log-log,
+    // which is the form fatigue life is quoted in and the one that lets a life
+    // be read off at a stress the test never ran at.
+    if(in.engine==QLatin1String("S-N Fatigue Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            QVector<double> logCycles,logStress;
+            for(int i=0;i<n;++i){
+                const double cycles=s.x[i],stress=s.y[i];
+                if(!(cycles>0)||!(stress>0)) continue;
+                pts.x.append(cycles); pts.y.append(stress);
+                logCycles.append(std::log(cycles)); logStress.append(std::log(stress));
+            }
+            if(logCycles.size()<3) continue;
+            {
+                const LineFit line=fitLine(logCycles,logStress);
+                const double b=line.slope;
+                const double A=std::exp(line.intercept);
+                if(line.ok&&finite(A)){
+                    pts.label=QStringLiteral("%1 (S = %2 N^%3)")
+                                  .arg(s.label).arg(A,0,'g',4).arg(b,0,'f',4);
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("Basquin fit");
+                    fit.color=in.style.warning;
+                    fit.drawLine=true; fit.drawMarkers=false;
+                    fit.lineWidth=1.2; fit.lineWidthExplicit=true;
+                    double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+                    for(double c:pts.x){ lo=qMin(lo,c); hi=qMax(hi,c); }
+                    for(int i=0;i<=60;++i){
+                        const double c=std::exp(std::log(lo)
+                                     +(std::log(hi)-std::log(lo))*double(i)/60.0);
+                        fit.x.append(c); fit.y.append(A*std::pow(c,b));
+                    }
+                    out.series.append(pts);
+                    out.series.append(fit);
+                    continue;
+                }
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cycles to failure N"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("stress amplitude S"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // Rainflow counting, ASTM E1049 four-point, on a load history.
+    //
+    // A fatigue life cannot be computed from a load history directly: the
+    // damage is done by closed hysteresis loops, and finding them means pairing
+    // a reversal with the one it closes against, which is what rainflow does
+    // and what counting peaks does not. The result is the cycles by range and
+    // mean, as a grid - the form a damage sum is taken over.
+    if(in.engine==QLatin1String("Rainflow Matrix")){
+        PlotSpec out=derivedAs(in,QStringLiteral("2D Heatmap"));
+        out.legendVisible=false;
+        if(!in.series.isEmpty()){
+            const QVector<double> raw=finiteValues(in.series.at(0));
+            // Reversals only: the points where the load changes direction. The
+            // straight runs between them do no damage and would otherwise be
+            // counted as cycles of zero range.
+            QVector<double> turns;
+            for(int i=0;i<raw.size();++i){
+                if(i==0||i==raw.size()-1){ turns.append(raw[i]); continue; }
+                const double a=raw[i]-raw[i-1],b=raw[i+1]-raw[i];
+                if((a>0&&b<0)||(a<0&&b>0)) turns.append(raw[i]);
+            }
+            QVector<double> ranges,means,counts;
+            QVector<double> stack;
+            const auto record=[&ranges,&means,&counts](double a,double b,double count){
+                ranges.append(std::abs(a-b));
+                means.append(0.5*(a+b));
+                counts.append(count);
+            };
+            for(double point:turns){
+                stack.append(point);
+                // Four-point: the inner range closes when it is no larger than
+                // the range on either side of it.
+                while(stack.size()>=4){
+                    const int k=stack.size();
+                    const double r1=std::abs(stack[k-3]-stack[k-4]);
+                    const double r2=std::abs(stack[k-2]-stack[k-3]);
+                    const double r3=std::abs(stack[k-1]-stack[k-2]);
+                    if(r2<=r1&&r2<=r3){
+                        record(stack[k-3],stack[k-2],1.0);
+                        stack.remove(k-3,2);
+                    }else break;
+                }
+            }
+            // Whatever is left never closed. Those are half cycles, and
+            // dropping them would under-count the largest ranges - which are
+            // the ones that do the damage.
+            for(int i=0;i+1<stack.size();++i) record(stack[i],stack[i+1],0.5);
+
+            if(!ranges.isEmpty()){
+                PlotSeries rx,my,cv;
+                rx.y=means; my.y=ranges; cv.y=counts;
+                rx.label=QStringLiteral("mean");
+                my.label=QStringLiteral("range");
+                cv.label=QStringLiteral("cycles");
+                out.series={rx,my,cv};
+                double meanLo=std::numeric_limits<double>::infinity(),meanHi=-meanLo;
+                double rangeHi=0.0;
+                for(double v:means){ meanLo=qMin(meanLo,v); meanHi=qMax(meanHi,v); }
+                for(double v:ranges) rangeHi=qMax(rangeHi,v);
+                if(finite(meanLo)&&finite(meanHi)){
+                    const double pad=qMax(1e-9,(meanHi-meanLo)*0.05);
+                    out.xAxis=PlotAxis{QStringLiteral("cycle mean"),false,meanLo-pad,meanHi+pad};
+                    out.yAxis=PlotAxis{QStringLiteral("cycle range"),false,0.0,rangeHi*1.05};
+                    return out;
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("cycle mean"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cycle range"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // =====================================================================
+    // Logistics and infrastructure
+    // =====================================================================
+
+    // A schedule, an availability timeline and a borehole log: three names for
+    // one shape, which is a row per thing and a bar from a start to an end.
+    // Three mapped columns - row, start, end - and one series per bar, because
+    // that is what the floating-row painter reads.
+    if(in.engine==QLatin1String("Gantt Schedule")
+       ||in.engine==QLatin1String("Availability Timeline")
+       ||in.engine==QLatin1String("Borehole Log")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Floating Row"));
+        out.legendVisible=false;
+        if(in.series.size()>=3){
+            const QVector<double>& row=in.series.at(0).y;
+            const QVector<double>& from=in.series.at(1).y;
+            const QVector<double>& to=in.series.at(2).y;
+            const int n=qMin(row.size(),qMin(from.size(),to.size()));
+            double rowLo=std::numeric_limits<double>::infinity(),rowHi=-rowLo;
+            for(int i=0;i<n;++i){
+                if(!finite(row[i])||!finite(from[i])||!finite(to[i])) continue;
+                PlotSeries bar;
+                bar.label=QStringLiteral("%1").arg(row[i]);
+                // Alternating hues by row, so neighbouring rows are separable
+                // without a legend - which a hundred-row schedule cannot have.
+                bar.color=QColor::fromHsvF(std::fmod(std::abs(row[i])*0.17,1.0),0.45,0.9);
+                bar.y={row[i]};
+                bar.x={qMin(from[i],to[i]),qMax(from[i],to[i])};
+                out.series.append(bar);
+                rowLo=qMin(rowLo,row[i]); rowHi=qMax(rowHi,row[i]);
+            }
+            if(finite(rowLo)&&finite(rowHi))
+                out.yAxis=PlotAxis{in.series.at(0).label.isEmpty()
+                                       ?QStringLiteral("row"):in.series.at(0).label,
+                                   false,rowLo-0.6,rowHi+0.6};
+        }
+        if(out.xAxis.label.isEmpty())
+            out.xAxis.label=(in.engine==QLatin1String("Borehole Log"))
+                                ? QStringLiteral("depth") : QStringLiteral("time");
+        return out;
+    }
+
+    // Open, high, low, close. Four mapped columns and one series per period,
+    // which is what the candlestick painter reads.
+    if(in.engine==QLatin1String("OHLC Candlestick")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Candlestick"));
+        out.legendVisible=false;
+        if(in.series.size()>=4){
+            const PlotSeries& first=in.series.at(0);
+            const QVector<double>& open=in.series.at(0).y;
+            const QVector<double>& high=in.series.at(1).y;
+            const QVector<double>& low=in.series.at(2).y;
+            const QVector<double>& close=in.series.at(3).y;
+            const int n=qMin(qMin(open.size(),high.size()),qMin(low.size(),close.size()));
+            for(int i=0;i<n;++i){
+                if(!finite(open[i])||!finite(high[i])||!finite(low[i])||!finite(close[i]))
+                    continue;
+                PlotSeries candle;
+                // The period's own x when one was mapped, otherwise its order.
+                candle.x={(i<first.x.size()&&finite(first.x[i]))?first.x[i]:double(i)};
+                candle.y={open[i],high[i],low[i],close[i]};
+                out.series.append(candle);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("period");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("price");
+        return out;
+    }
+
+    // Flows between places, on a map. Five mapped columns - origin longitude
+    // and latitude, destination longitude and latitude, and the weight - drawn
+    // as great circles whose width is the flow, through the same projection
+    // every other geographic engine uses.
+    if(in.engine==QLatin1String("Origin-Destination Flow")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        out.legendVisible=false;
+        if(in.series.size()>=4){
+            const QVector<double>& oLon=in.series.at(0).y;
+            const QVector<double>& oLat=in.series.at(1).y;
+            const QVector<double>& dLon=in.series.at(2).y;
+            const QVector<double>& dLat=in.series.at(3).y;
+            const bool weighted=in.series.size()>=5;
+            const QVector<double> w=weighted?in.series.at(4).y:QVector<double>();
+            const int n=qMin(qMin(oLon.size(),oLat.size()),qMin(dLon.size(),dLat.size()));
+
+            QVector<double> allLon,allLat;
+            for(int i=0;i<n;++i){ allLon.append(oLon[i]); allLat.append(oLat[i]);
+                                  allLon.append(dLon[i]); allLat.append(dLat[i]); }
+            const GeoFrame frame=geoFrameFor(mapProjectionFor(in.variant),allLon,allLat);
+
+            double heaviest=0.0;
+            for(int i=0;i<n&&weighted;++i) if(i<w.size()&&finite(w[i]))
+                heaviest=qMax(heaviest,std::abs(w[i]));
+            if(!(heaviest>0)) heaviest=1.0;
+
+            for(int i=0;i<n;++i){
+                if(!finite(oLon[i])||!finite(oLat[i])||!finite(dLon[i])||!finite(dLat[i]))
+                    continue;
+                const double flow=(weighted&&i<w.size()&&finite(w[i]))?std::abs(w[i]):1.0;
+                PlotSeries arc;
+                arc.color=in.series.at(0).color;
+                arc.drawLine=true; arc.drawMarkers=false;
+                arc.lineWidth=qBound(0.5,4.0*flow/heaviest,5.0);
+                arc.lineWidthExplicit=true;
+                arc.opacity=0.85;
+                const double metres=greatCircleMetres(oLon[i],oLat[i],dLon[i],dLat[i]);
+                // Detail per arc, scaled by how many arcs there are. A dozen
+                // routes deserve a smooth curve; three thousand of them are a
+                // few pixels each, and drawing 128 points per arc cost 800 ms
+                // per repaint to produce a picture indistinguishable from this
+                // one. The budget is about forty thousand points in total.
+                const int perArc=qBound(2,40000/qMax(1,n),128);
+                const int steps=qBound(2,qMin(perArc,int(metres/50000.0)),128);
+                for(int k=0;k<=steps;++k){
+                    double gl=0,gp=0;
+                    greatCirclePoint(oLon[i],oLat[i],dLon[i],dLat[i],
+                                     double(k)/double(steps),gl,gp);
+                    const QPointF q=projectPoint(frame,gl,gp);
+                    if(!finite(q.x())||!finite(q.y())) continue;
+                    arc.x.append(q.x()); arc.y.append(q.y());
+                }
+                if(arc.x.size()>1) out.series.append(arc);
+            }
+            out.xAxis=PlotAxis{projectionXLabel(frame),false,unsetValue(),unsetValue()};
+            out.yAxis=PlotAxis{projectionYLabel(frame),false,unsetValue(),unsetValue()};
+        }
+        return out;
+    }
+
+    // The cumulative flow diagram. Bands stacked in the order the work moves
+    // through them, so the vertical distance between two lines is how much is
+    // sitting in that stage and the horizontal distance is how long it stays
+    // there. Drawn largest first, because each band is filled to the baseline
+    // and the later ones have to paint over the earlier.
+    if(in.engine==QLatin1String("Cumulative Flow")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
+        const int k=in.series.size();
+        if(k>0){
+            const int n=in.series.at(0).y.size();
+            for(int band=k-1;band>=0;--band){
+                PlotSeries area;
+                area.label=in.series.at(band).label;
+                area.color=in.series.at(band).color;
+                area.drawLine=true; area.drawMarkers=false;
+                area.opacity=0.85;
+                for(int i=0;i<n;++i){
+                    double total=0.0; bool ok=true;
+                    for(int j=0;j<=band;++j){
+                        if(i>=in.series.at(j).y.size()||!finite(in.series.at(j).y[i])){ ok=false; break; }
+                        total+=in.series.at(j).y[i];
+                    }
+                    if(!ok) continue;
+                    const QVector<double>& xs=in.series.at(band).x;
+                    area.x.append((i<xs.size()&&finite(xs[i]))?xs[i]:double(i));
+                    area.y.append(total);
+                }
+                if(!area.x.isEmpty()) out.series.append(area);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("time");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("cumulative count");
+        return out;
+    }
+
+    // Stock over time, with the reorder points marked and the average level
+    // stated. The sawtooth is read for two things - how low it gets and how
+    // often it is refilled - and both are marked rather than counted by eye.
+    if(in.engine==QLatin1String("Inventory Sawtooth")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries level=s;
+            level.drawLine=true; level.drawMarkers=false;
+            PlotSeries troughs;
+            troughs.label=QStringLiteral("reorder");
+            troughs.color=in.style.danger;
+            troughs.drawLine=false; troughs.drawMarkers=true;
+            troughs.markerSize=6.0; troughs.markerSizeExplicit=true;
+            double sum=0.0; int counted=0; double lowest=std::numeric_limits<double>::infinity();
+            for(int i=0;i<n;++i){
+                if(!finite(s.y[i])) continue;
+                sum+=s.y[i]; ++counted;
+                lowest=qMin(lowest,s.y[i]);
+                if(i==0||i==n-1) continue;
+                if(!finite(s.y[i-1])||!finite(s.y[i+1])) continue;
+                // A trough: the level falls into this point and rises out of
+                // it. That is a replenishment, whatever the interval.
+                if(s.y[i]<s.y[i-1]&&s.y[i+1]>s.y[i]){
+                    troughs.x.append(s.x[i]); troughs.y.append(s.y[i]);
+                }
+            }
+            if(counted>0){
+                const double mean=sum/double(counted);
+                level.label=QStringLiteral("%1 (mean %2, minimum %3, %4 reorders)")
+                                .arg(s.label).arg(mean,0,'g',4).arg(lowest,0,'g',4)
+                                .arg(troughs.x.size());
+                out.series.append(level);
+                if(!troughs.x.isEmpty()) out.series.append(troughs);
+                PlotSeries average;
+                average.label=QStringLiteral("mean level");
+                average.color=in.style.warning;
+                average.drawLine=true; average.lineWidth=0.8; average.lineWidthExplicit=true;
+                average.dashPattern={4.0,3.0};
+                average.x={s.x.first(),s.x.last()};
+                average.y={mean,mean};
+                out.series.append(average);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("time");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("stock on hand");
+        return out;
+    }
+
+    // The fundamental diagram of traffic: flow against density, with
+    // Greenshields fitted through it. The two numbers it gives - free-flow
+    // speed and jam density - are what a road's capacity is computed from, and
+    // the capacity itself is the apex of the parabola, which is easy to
+    // mis-read off scattered points and exact from the fit.
+    if(in.engine==QLatin1String("Fundamental Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<4) continue;
+            PlotSeries pts;
+            pts.label=s.label; pts.color=s.color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.0;
+            // q = vf k - (vf/kj) k^2, fitted through the origin as
+            // q/k = vf - (vf/kj) k, which is a straight line in speed.
+            QVector<double> densities,speeds;
+            double densest=0.0;
+            for(int i=0;i<n;++i){
+                const double density=s.x[i],flow=s.y[i];
+                if(!finite(density)||!finite(flow)||!(density>0)) continue;
+                pts.x.append(density); pts.y.append(flow);
+                densities.append(density); speeds.append(flow/density);
+                densest=qMax(densest,density);
+            }
+            if(pts.x.isEmpty()) continue;
+            out.series.append(pts);
+            const LineFit line=fitLine(densities,speeds);
+            const double slope=line.slope,freeFlow=line.intercept;
+            if(!line.ok||!(freeFlow>0)||!(slope<0)) continue;
+            const double jam=-freeFlow/slope;
+            const double capacity=freeFlow*jam/4.0;
+            PlotSeries curve;
+            curve.label=QStringLiteral("Greenshields (vf %1, kj %2, capacity %3)")
+                            .arg(freeFlow,0,'f',1).arg(jam,0,'f',1).arg(capacity,0,'f',0);
+            curve.color=in.style.warning;
+            curve.drawLine=true; curve.drawMarkers=false;
+            curve.lineWidth=1.3; curve.lineWidthExplicit=true;
+            for(int i=0;i<=80;++i){
+                const double k=qMax(densest,jam)*double(i)/80.0;
+                curve.x.append(k);
+                curve.y.append(freeFlow*k+slope*k*k);
+            }
+            out.series.append(curve);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("density (veh/km)");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("flow (veh/h)");
+        return out;
+    }
+
+    // =====================================================================
+    // Chemistry, materials and the laboratory
+    //
+    // Every one of these is read for a number rather than for its shape - a
+    // modulus, an activation energy, a pKa, a detection limit, a Km, an EC50 -
+    // and every one of those numbers comes from a construction the reader is
+    // otherwise expected to do with a ruler and a calculator.
+    // =====================================================================
+
+    // Stress against strain, with the three numbers a tensile test is run for:
+    // the elastic modulus, the 0.2 per cent offset yield and the tensile
+    // strength. The modulus is fitted over the first tenth of the strain range
+    // rather than over everything, because a fit through the plastic region
+    // returns a smaller modulus that still looks like an answer.
+    if(in.engine==QLatin1String("Stress-Strain Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<5) continue;
+            PlotSeries curve;
+            curve.label=s.label; curve.color=s.color; curve.drawLine=true;
+            double strainHi=0.0,peak=-std::numeric_limits<double>::infinity();
+            int peakAt=-1;
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                curve.x.append(s.x[i]); curve.y.append(s.y[i]);
+                strainHi=qMax(strainHi,s.x[i]);
+                if(s.y[i]>peak){ peak=s.y[i]; peakAt=curve.x.size()-1; }
+            }
+            if(curve.x.size()<5) continue;
+
+            // The elastic region: everything below a tenth of the strain range.
+            int elastic=0;
+            while(elastic<curve.x.size()&&curve.x[elastic]<=strainHi*0.10) ++elastic;
+            const LineFit line=fitLine(curve.x,curve.y,qMax(3,elastic));
+            if(line.ok&&line.slope>0){
+                // The 0.2% offset line, and where the curve crosses it - which
+                // is the definition of yield for anything without a sharp one.
+                const double offset=0.002;
+                PlotSeries offsetLine;
+                offsetLine.label=QStringLiteral("0.2%% offset");
+                offsetLine.color=in.style.warning;
+                offsetLine.drawLine=true; offsetLine.lineWidth=0.9;
+                offsetLine.lineWidthExplicit=true; offsetLine.dashPattern={5.0,3.0};
+                offsetLine.x={offset,strainHi};
+                offsetLine.y={line.slope*(offset-offset)+line.intercept,
+                              line.slope*(strainHi-offset)+line.intercept};
+                double yieldStress=qQNaN(),yieldStrain=qQNaN();
+                for(int i=1;i<curve.x.size();++i){
+                    const double model=line.slope*(curve.x[i]-offset)+line.intercept;
+                    const double before=line.slope*(curve.x[i-1]-offset)+line.intercept;
+                    if((curve.y[i-1]-before)>0&&(curve.y[i]-model)<=0){
+                        yieldStrain=curve.x[i]; yieldStress=curve.y[i];
+                        break;
+                    }
+                }
+                curve.label=QStringLiteral("%1 (E %2, UTS %3%4)")
+                    .arg(s.label).arg(line.slope,0,'g',4).arg(peak,0,'g',4)
+                    .arg(finite(yieldStress)?QStringLiteral(", yield %1").arg(yieldStress,0,'g',4)
+                                            :QString());
+                out.series.append(curve);
+                out.series.append(offsetLine);
+                if(finite(yieldStress)){
+                    PlotSeries mark;
+                    mark.label=QStringLiteral("yield");
+                    mark.color=in.style.positive;
+                    mark.drawLine=false; mark.drawMarkers=true;
+                    mark.markerSize=8.0; mark.markerSizeExplicit=true;
+                    mark.x={yieldStrain}; mark.y={yieldStress};
+                    out.series.append(mark);
+                }
+            }else{
+                out.series.append(curve);
+            }
+            if(peakAt>=0){
+                PlotSeries uts;
+                uts.label=QStringLiteral("tensile strength");
+                uts.color=in.style.danger;
+                uts.drawLine=false; uts.drawMarkers=true;
+                uts.markerSize=8.0; uts.markerSizeExplicit=true;
+                uts.x={curve.x.at(peakAt)}; uts.y={curve.y.at(peakAt)};
+                out.series.append(uts);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("strain");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("stress");
+        return out;
+    }
+
+    // ln k against 1/T. The slope is -Ea/R, and the activation energy is the
+    // reason the plot is drawn at all - so it is computed here rather than left
+    // as a slope on a picture with a reciprocal axis.
+    if(in.engine==QLatin1String("Arrhenius Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        constexpr double kGasConstant=8.314462618;   // J/(mol K)
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            QVector<double> inverse,logRate;
+            for(int i=0;i<n;++i){
+                const double temperature=s.x[i],rate=s.y[i];
+                if(!(temperature>0)||!(rate>0)) continue;
+                const double x=1000.0/temperature;      // 1000/T, the usual axis
+                const double y=std::log(rate);
+                pts.x.append(x); pts.y.append(y);
+                inverse.append(x); logRate.append(y);
+            }
+            if(pts.x.size()<3) continue;
+            const LineFit line=fitLine(inverse,logRate);
+            if(line.ok){
+                // The x axis is 1000/T, so the slope is -Ea/(1000 R).
+                const double activation=-line.slope*kGasConstant*1000.0;
+                pts.label=QStringLiteral("%1 (Ea %2 kJ/mol, A %3)")
+                              .arg(s.label).arg(activation/1000.0,0,'f',1)
+                              .arg(std::exp(line.intercept),0,'g',3);
+                PlotSeries fit;
+                fit.label=QStringLiteral("Arrhenius fit");
+                fit.color=in.style.warning;
+                fit.drawLine=true; fit.lineWidth=1.2; fit.lineWidthExplicit=true;
+                double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+                for(double v:pts.x){ lo=qMin(lo,v); hi=qMax(hi,v); }
+                fit.x={lo,hi};
+                fit.y={line.intercept+line.slope*lo,line.intercept+line.slope*hi};
+                out.series.append(pts);
+                out.series.append(fit);
+                continue;
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("1000/T (1/K)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("ln k"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // A titration curve, with the equivalence point taken as the steepest part
+    // of the curve rather than as the middle of the visible jump, and the pKa
+    // read at half that volume. Both are constructions done by hand on a
+    // printout, and both are done wrong when the jump is not symmetrical.
+    if(in.engine==QLatin1String("Titration Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<5) continue;
+            PlotSeries curve;
+            curve.label=s.label; curve.color=s.color; curve.drawLine=true;
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                curve.x.append(s.x[i]); curve.y.append(s.y[i]);
+            }
+            if(curve.x.size()<5) continue;
+            int steepest=-1; double slope=0.0;
+            for(int i=1;i<curve.x.size();++i){
+                const double dx=curve.x[i]-curve.x[i-1];
+                if(!(std::abs(dx)>1e-12)) continue;
+                const double gradient=std::abs((curve.y[i]-curve.y[i-1])/dx);
+                if(gradient>slope){ slope=gradient; steepest=i; }
+            }
+            out.series.append(curve);
+            if(steepest>0){
+                const double volume=0.5*(curve.x[steepest]+curve.x[steepest-1]);
+                PlotSeries mark;
+                mark.label=QStringLiteral("equivalence at %1").arg(volume,0,'g',4);
+                mark.color=in.style.danger;
+                mark.drawLine=false; mark.drawMarkers=true;
+                mark.markerSize=8.0; mark.markerSizeExplicit=true;
+                mark.x={volume}; mark.y={0.5*(curve.y[steepest]+curve.y[steepest-1])};
+                out.series.append(mark);
+                // Half-equivalence: for a weak acid the pH there is the pKa.
+                const double half=volume*0.5;
+                double pka=qQNaN();
+                for(int i=1;i<curve.x.size();++i){
+                    if(curve.x[i-1]<=half&&half<=curve.x[i]){
+                        const double span=curve.x[i]-curve.x[i-1];
+                        const double t=(std::abs(span)>1e-12)?(half-curve.x[i-1])/span:0.0;
+                        pka=curve.y[i-1]+t*(curve.y[i]-curve.y[i-1]);
+                        break;
+                    }
+                }
+                if(finite(pka)){
+                    PlotSeries halfMark;
+                    halfMark.label=QStringLiteral("half-equivalence, pKa %1").arg(pka,0,'f',2);
+                    halfMark.color=in.style.positive;
+                    halfMark.drawLine=false; halfMark.drawMarkers=true;
+                    halfMark.markerSize=7.0; halfMark.markerSizeExplicit=true;
+                    halfMark.x={half}; halfMark.y={pka};
+                    out.series.append(halfMark);
+                }
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("titrant added");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("pH");
+        return out;
+    }
+
+    // A calibration curve with the two limits every analytical result depends
+    // on: the detection limit at 3.3 residual standard deviations over the
+    // slope, and the quantitation limit at 10. Reporting a concentration below
+    // the first is reporting noise, and it is done constantly because the
+    // limits are not on the chart.
+    if(in.engine==QLatin1String("Calibration Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=5.0;
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                pts.x.append(s.x[i]); pts.y.append(s.y[i]);
+            }
+            if(pts.x.size()<3) continue;
+            const LineFit line=fitLine(pts.x,pts.y);
+            if(!line.ok||!(std::abs(line.slope)>0)){ pts.label=s.label; out.series.append(pts); continue; }
+            double ssResidual=0.0,ssTotal=0.0,mean=0.0;
+            for(double v:pts.y) mean+=v;
+            mean/=double(pts.y.size());
+            for(int i=0;i<pts.x.size();++i){
+                const double predicted=line.intercept+line.slope*pts.x[i];
+                ssResidual+=(pts.y[i]-predicted)*(pts.y[i]-predicted);
+                ssTotal+=(pts.y[i]-mean)*(pts.y[i]-mean);
+            }
+            const int dof=pts.x.size()-2;
+            const double sigma=(dof>0)?std::sqrt(ssResidual/double(dof)):0.0;
+            const double r2=(ssTotal>0)?1.0-ssResidual/ssTotal:0.0;
+            const double lod=3.3*sigma/std::abs(line.slope);
+            const double loq=10.0*sigma/std::abs(line.slope);
+            pts.label=QStringLiteral("%1 (slope %2, R2 %3, LOD %4, LOQ %5)")
+                          .arg(s.label).arg(line.slope,0,'g',4).arg(r2,0,'f',4)
+                          .arg(lod,0,'g',3).arg(loq,0,'g',3);
+            out.series.append(pts);
+            double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            for(double v:pts.x){ lo=qMin(lo,v); hi=qMax(hi,v); }
+            PlotSeries fit;
+            fit.label=QStringLiteral("least squares");
+            fit.color=in.style.warning; fit.drawLine=true;
+            fit.lineWidth=1.2; fit.lineWidthExplicit=true;
+            fit.x={lo,hi};
+            fit.y={line.intercept+line.slope*lo,line.intercept+line.slope*hi};
+            out.series.append(fit);
+            for(const auto& limit:{qMakePair(lod,QStringLiteral("LOD")),
+                                   qMakePair(loq,QStringLiteral("LOQ"))}){
+                if(!finite(limit.first)||limit.first<lo||limit.first>hi) continue;
+                PlotSeries mark;
+                mark.label=limit.second;
+                mark.color=(limit.second==QLatin1String("LOD"))?in.style.danger:in.style.positive;
+                mark.drawLine=true; mark.drawMarkers=false;
+                mark.lineWidth=0.8; mark.lineWidthExplicit=true;
+                mark.dashPattern={3.0,3.0};
+                double yLo=std::numeric_limits<double>::infinity(),yHi=-yLo;
+                for(double v:pts.y){ yLo=qMin(yLo,v); yHi=qMax(yHi,v); }
+                mark.x={limit.first,limit.first};
+                mark.y={yLo,yHi};
+                out.series.append(mark);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("concentration");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("response");
+        return out;
+    }
+
+    // Michaelis-Menten, with Vmax and Km from the Lineweaver-Burk
+    // linearisation. The double-reciprocal plot is drawn as well as the
+    // hyperbola, because that is where a departure from the model shows -
+    // inhibition bends the reciprocal line and barely moves the hyperbola.
+    if(in.engine==QLatin1String("Michaelis-Menten")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            QVector<double> reciprocalS,reciprocalV;
+            for(int i=0;i<n;++i){
+                const double substrate=s.x[i],rate=s.y[i];
+                if(!(substrate>0)||!(rate>0)) continue;
+                pts.x.append(substrate); pts.y.append(rate);
+                reciprocalS.append(1.0/substrate); reciprocalV.append(1.0/rate);
+            }
+            if(pts.x.size()<3) continue;
+            const LineFit line=fitLine(reciprocalS,reciprocalV);
+            if(line.ok&&line.intercept>0){
+                const double vmax=1.0/line.intercept;
+                const double km=line.slope*vmax;
+                pts.label=QStringLiteral("%1 (Vmax %2, Km %3)")
+                              .arg(s.label).arg(vmax,0,'g',4).arg(km,0,'g',4);
+                PlotSeries curve;
+                curve.label=QStringLiteral("Michaelis-Menten fit");
+                curve.color=in.style.warning; curve.drawLine=true;
+                curve.lineWidth=1.2; curve.lineWidthExplicit=true;
+                double hi=0.0;
+                for(double v:pts.x) hi=qMax(hi,v);
+                for(int i=0;i<=120;++i){
+                    const double substrate=hi*double(i)/120.0;
+                    curve.x.append(substrate);
+                    curve.y.append(vmax*substrate/qMax(1e-12,km+substrate));
+                }
+                out.series.append(pts);
+                out.series.append(curve);
+                continue;
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("substrate concentration");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("initial rate");
+        return out;
+    }
+
+    // A dose-response curve with its EC50, from the Hill linearisation: the
+    // logit of the normalised response against log dose is a straight line
+    // whose slope is the Hill coefficient and whose root is the EC50. The
+    // plateau is taken from the data rather than assumed to be one, because a
+    // response normalised to a plateau that was never reached puts the EC50 in
+    // the wrong place.
+    if(in.engine==QLatin1String("Dose-Response Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<4) continue;
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            double top=-std::numeric_limits<double>::infinity();
+            double bottom=std::numeric_limits<double>::infinity();
+            for(int i=0;i<n;++i){
+                if(!(s.x[i]>0)||!finite(s.y[i])) continue;
+                pts.x.append(s.x[i]); pts.y.append(s.y[i]);
+                top=qMax(top,s.y[i]); bottom=qMin(bottom,s.y[i]);
+            }
+            if(pts.x.size()<4||!(top>bottom)) continue;
+            QVector<double> logDose,logit;
+            for(int i=0;i<pts.x.size();++i){
+                const double fraction=(pts.y[i]-bottom)/(top-bottom);
+                if(!(fraction>0.02)||!(fraction<0.98)) continue;   // the plateaus carry no slope
+                logDose.append(std::log10(pts.x[i]));
+                logit.append(std::log10(fraction/(1.0-fraction)));
+            }
+            const LineFit line=fitLine(logDose,logit);
+            if(line.ok&&std::abs(line.slope)>1e-9){
+                const double ec50=std::pow(10.0,-line.intercept/line.slope);
+                pts.label=QStringLiteral("%1 (EC50 %2, Hill %3)")
+                              .arg(s.label).arg(ec50,0,'g',4).arg(line.slope,0,'f',2);
+                PlotSeries curve;
+                curve.label=QStringLiteral("Hill fit");
+                curve.color=in.style.warning; curve.drawLine=true;
+                curve.lineWidth=1.2; curve.lineWidthExplicit=true;
+                double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+                for(double v:pts.x){ lo=qMin(lo,v); hi=qMax(hi,v); }
+                for(int i=0;i<=120;++i){
+                    const double dose=std::pow(10.0,std::log10(lo)
+                                     +(std::log10(hi)-std::log10(lo))*double(i)/120.0);
+                    const double ratio=std::pow(dose/qMax(1e-300,ec50),line.slope);
+                    curve.x.append(dose);
+                    curve.y.append(bottom+(top-bottom)*ratio/(1.0+ratio));
+                }
+                out.series.append(pts);
+                out.series.append(curve);
+                PlotSeries mark;
+                mark.label=QStringLiteral("EC50");
+                mark.color=in.style.positive;
+                mark.drawLine=false; mark.drawMarkers=true;
+                mark.markerSize=8.0; mark.markerSizeExplicit=true;
+                mark.x={ec50}; mark.y={0.5*(top+bottom)};
+                out.series.append(mark);
+                continue;
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        out.xAxis=PlotAxis{in.xAxis.label.isEmpty()?QStringLiteral("dose"):in.xAxis.label,
+                           true,unsetValue(),unsetValue()};
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("response");
+        return out;
+    }
+
+    // =====================================================================
+    // Medicine, epidemiology and quality
+    // =====================================================================
+
+    // Kaplan-Meier. Two mapped columns - the time, and 1 for an event and 0 for
+    // a censored observation - and the product-limit estimate over them, with
+    // the censored observations ticked on the curve.
+    //
+    // An ECDF of the same times is not this: it treats a subject who left the
+    // study alive as one who died, which biases survival down by exactly the
+    // amount of follow-up that was lost.
+    if(in.engine==QLatin1String("Kaplan-Meier Survival")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Stairs"));
+        if(in.series.size()>=2){
+            const QVector<double>& times=in.series.at(0).y;
+            const QVector<double>& events=in.series.at(1).y;
+            const int n=qMin(times.size(),events.size());
+            QVector<QPair<double,bool>> subjects;
+            for(int i=0;i<n;++i){
+                if(!finite(times[i])||!finite(events[i])) continue;
+                subjects.append({times[i],events[i]>=0.5});
+            }
+            std::sort(subjects.begin(),subjects.end(),
+                      [](const QPair<double,bool>& a,const QPair<double,bool>& b){
+                          return a.first<b.first; });
+            if(subjects.size()>=2){
+                PlotSeries curve,censored;
+                curve.label=in.series.at(0).label;
+                curve.color=in.series.at(0).color;
+                curve.drawLine=true; curve.drawMarkers=false;
+                censored.label=QStringLiteral("censored");
+                censored.color=in.style.warning;
+                censored.drawLine=false; censored.drawMarkers=true;
+                censored.markerSize=5.0; censored.markerSizeExplicit=true;
+                double survival=1.0;
+                int atRisk=subjects.size();
+                int deaths=0;
+                double median=qQNaN();
+                curve.x.append(subjects.first().first); curve.y.append(1.0);
+                for(int i=0;i<subjects.size();){
+                    const double t=subjects[i].first;
+                    int eventsHere=0,leaving=0;
+                    while(i<subjects.size()&&subjects[i].first==t){
+                        if(subjects[i].second) ++eventsHere;
+                        ++leaving; ++i;
+                    }
+                    if(eventsHere>0&&atRisk>0){
+                        survival*=(1.0-double(eventsHere)/double(atRisk));
+                        deaths+=eventsHere;
+                        curve.x.append(t); curve.y.append(survival);
+                        if(!finite(median)&&survival<=0.5) median=t;
+                    }else if(leaving>0){
+                        censored.x.append(t); censored.y.append(survival);
+                    }
+                    atRisk-=leaving;
+                }
+                curve.label=QStringLiteral("%1 (%2 events of %3%4)")
+                    .arg(in.series.at(0).label).arg(deaths).arg(subjects.size())
+                    .arg(finite(median)?QStringLiteral(", median %1").arg(median,0,'g',4)
+                                       :QStringLiteral(", median not reached"));
+                out.series.append(curve);
+                if(!censored.x.isEmpty()) out.series.append(censored);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("time");
+        out.yAxis=PlotAxis{QStringLiteral("surviving fraction"),false,0.0,1.02};
+        return out;
+    }
+
+    // A funnel plot: effect against precision, with the funnel a symmetrical
+    // literature would fall inside. Asymmetry at the wide end is the signal -
+    // small studies reporting only large effects - and it is invisible in a
+    // forest plot of the same studies.
+    if(in.engine==QLatin1String("Funnel Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& effect=in.series.at(0).y;
+            const QVector<double>& error=in.series.at(1).y;
+            const int n=qMin(effect.size(),error.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("studies");
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=5.0;
+            double weighted=0.0,weight=0.0,widest=0.0;
+            for(int i=0;i<n;++i){
+                if(!finite(effect[i])||!(error[i]>0)) continue;
+                pts.x.append(effect[i]); pts.y.append(error[i]);
+                const double w=1.0/(error[i]*error[i]);
+                weighted+=effect[i]*w; weight+=w;
+                widest=qMax(widest,error[i]);
+            }
+            if(!pts.x.isEmpty()&&weight>0){
+                const double summary=weighted/weight;
+                pts.label=QStringLiteral("studies (summary %1, %2 of them)")
+                              .arg(summary,0,'g',4).arg(pts.x.size());
+                out.series.append(pts);
+                PlotSeries centre,left,right;
+                centre.label=QStringLiteral("fixed-effect summary");
+                centre.color=in.style.warning;
+                centre.drawLine=true; centre.lineWidth=1.0; centre.lineWidthExplicit=true;
+                centre.x={summary,summary}; centre.y={0.0,widest};
+                left.label=QStringLiteral("95%% funnel");
+                left.color=in.style.foreground;
+                left.drawLine=true; left.lineWidth=0.8; left.lineWidthExplicit=true;
+                left.dashPattern={4.0,3.0};
+                right=left; right.label.clear();
+                left.x={summary-1.96*widest,summary}; left.y={widest,0.0};
+                right.x={summary+1.96*widest,summary}; right.y={widest,0.0};
+                out.series.append(centre);
+                out.series.append(left);
+                out.series.append(right);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("effect size");
+        // Precision upward is the convention, and the axis is inverted by
+        // giving it a maximum of zero at the top.
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("standard error");
+        return out;
+    }
+
+    // X-bar and R. Subgroup means with limits from the average range, which is
+    // how a control chart is actually set up: the within-subgroup range
+    // estimates the process spread, and using the overall standard deviation
+    // instead gives limits that are too wide to catch anything.
+    if(in.engine==QLatin1String("X-bar and R Chart")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        // Shewhart's constants, by subgroup size, from the standard tables.
+        static const double kA2[11]={0,0,1.880,1.023,0.729,0.577,0.483,0.419,0.373,0.337,0.308};
+        static const double kD3[11]={0,0,0.000,0.000,0.000,0.000,0.000,0.076,0.136,0.184,0.223};
+        static const double kD4[11]={0,0,3.267,2.574,2.282,2.114,2.004,1.924,1.864,1.816,1.777};
+        const int subgroup=qBound(2,in.series.size(),10);
+        if(in.series.size()>=2){
+            int rows=std::numeric_limits<int>::max();
+            for(const PlotSeries& s:in.series) rows=qMin(rows,int(s.y.size()));
+            PlotSeries means,ranges;
+            means.label=QStringLiteral("subgroup mean");
+            means.color=in.series.at(0).color;
+            means.drawLine=true; means.drawMarkers=true; means.markerSize=3.5;
+            ranges.label=QStringLiteral("subgroup range");
+            ranges.color=in.style.warning;
+            ranges.drawLine=true; ranges.drawMarkers=true; ranges.markerSize=3.0;
+            double grand=0.0,averageRange=0.0; int counted=0;
+            for(int r=0;r<rows;++r){
+                double sum=0.0,lo=std::numeric_limits<double>::infinity(),hi=-lo;
+                bool ok=true;
+                for(int k=0;k<subgroup;++k){
+                    const double v=in.series.at(k).y[r];
+                    if(!finite(v)){ ok=false; break; }
+                    sum+=v; lo=qMin(lo,v); hi=qMax(hi,v);
+                }
+                if(!ok) continue;
+                const double mean=sum/double(subgroup);
+                means.x.append(double(r+1)); means.y.append(mean);
+                ranges.x.append(double(r+1)); ranges.y.append(hi-lo);
+                grand+=mean; averageRange+=hi-lo; ++counted;
+            }
+            if(counted>0){
+                grand/=double(counted); averageRange/=double(counted);
+                const double a2=kA2[subgroup],d3=kD3[subgroup],d4=kD4[subgroup];
+                const double upper=grand+a2*averageRange,lower=grand-a2*averageRange;
+                int beyond=0;
+                for(double v:means.y) if(v>upper||v<lower) ++beyond;
+                means.label=QStringLiteral("subgroup mean (n %1, %2 beyond the limits)")
+                                .arg(subgroup).arg(beyond);
+                out.series.append(means);
+                out.series.append(ranges);
+                const auto level=[&out,&means](const QString& label,double value,const QColor& colour,
+                                               bool dashed){
+                    if(!finite(value)||means.x.isEmpty()) return;
+                    PlotSeries line;
+                    line.label=label; line.color=colour;
+                    line.drawLine=true; line.lineWidth=0.8; line.lineWidthExplicit=true;
+                    if(dashed) line.dashPattern={4.0,3.0};
+                    line.x={means.x.first(),means.x.last()};
+                    line.y={value,value};
+                    out.series.append(line);
+                };
+                level(QStringLiteral("centre"),grand,in.style.foreground,false);
+                level(QStringLiteral("mean limits"),upper,in.style.danger,true);
+                level(QString(),lower,in.style.danger,true);
+                level(QStringLiteral("range limits"),d4*averageRange,in.style.positive,true);
+                if(d3>0) level(QString(),d3*averageRange,in.style.positive,true);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("subgroup"),false,unsetValue(),unsetValue()};
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("value");
+        return out;
+    }
+
+    // Process capability: the distribution against the specification, with Cp
+    // and Cpk. Cp alone says the spread would fit; Cpk says whether it fits
+    // where it actually sits, and a process with Cp 2.0 and Cpk 0.6 is one that
+    // could be capable and is not.
+    //
+    // Three mapped columns: the measurements, then the lower and upper limits,
+    // read from the first finite value of each.
+    if(in.engine==QLatin1String("Process Capability")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Histogram"));
+        if(!in.series.isEmpty()){
+            PlotSeries values=in.series.at(0);
+            const QVector<double> v=finiteValues(values);
+            double lsl=qQNaN(),usl=qQNaN();
+            const auto firstFinite=[](const PlotSeries& s){
+                for(double x:s.y) if(finite(x)) return x;
+                return qQNaN();
+            };
+            if(in.series.size()>=2) lsl=firstFinite(in.series.at(1));
+            if(in.series.size()>=3) usl=firstFinite(in.series.at(2));
+            out.series.append(values);
+            if(v.size()>=4){
+                const double mean=meanOf(v),sigma=stdevOf(v);
+                if(sigma>0&&finite(lsl)&&finite(usl)&&usl>lsl){
+                    const double cp=(usl-lsl)/(6.0*sigma);
+                    const double cpk=qMin(usl-mean,mean-lsl)/(3.0*sigma);
+                    values.label=QStringLiteral("%1 (Cp %2, Cpk %3, mean %4, sigma %5)")
+                        .arg(in.series.at(0).label).arg(cp,0,'f',2).arg(cpk,0,'f',2)
+                        .arg(mean,0,'g',4).arg(sigma,0,'g',3);
+                    out.series[0]=values;
+                }
+            }
+            for(const auto& limit:{qMakePair(lsl,QStringLiteral("LSL")),
+                                   qMakePair(usl,QStringLiteral("USL"))}){
+                if(!finite(limit.first)) continue;
+                PlotSeries line;
+                line.label=limit.second;
+                line.color=in.style.danger;
+                line.drawLine=true; line.drawMarkers=false;
+                line.lineWidth=1.0; line.lineWidthExplicit=true;
+                line.dashPattern={4.0,3.0};
+                // A histogram rewrite reads only the first series, so the
+                // limits travel as their own and are drawn over it.
+                line.x={limit.first,limit.first};
+                line.y={0.0,1.0};
+                out.series.append(line);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("measurement");
+        return out;
+    }
+
+    // =====================================================================
+    // Ocean, hydrology, energy and civil works
+    // =====================================================================
+
+    // Temperature against salinity, with the density contours a water mass is
+    // actually identified by. Two samples at the same density and different
+    // temperatures are different water masses, and on a plot without isopycnals
+    // they are two dots with nothing to say so.
+    //
+    // Density is sigma-t from the UNESCO one-atmosphere equation of state,
+    // which is the form oceanography quotes and is good to a hundredth of a
+    // kg/m3 over the range any CTD returns.
+    if(in.engine==QLatin1String("T-S Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& salinity=in.series.at(0).y;
+            const QVector<double>& temperature=in.series.at(1).y;
+            const int n=qMin(salinity.size(),temperature.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("samples");
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.0;
+            double sLo=std::numeric_limits<double>::infinity(),sHi=-sLo;
+            double tLo=sLo,tHi=-sLo;
+            for(int i=0;i<n;++i){
+                if(!finite(salinity[i])||!finite(temperature[i])) continue;
+                pts.x.append(salinity[i]); pts.y.append(temperature[i]);
+                sLo=qMin(sLo,salinity[i]); sHi=qMax(sHi,salinity[i]);
+                tLo=qMin(tLo,temperature[i]); tHi=qMax(tHi,temperature[i]);
+            }
+            if(!pts.x.isEmpty()&&finite(sLo)&&sHi>sLo&&tHi>tLo){
+                out.series.append(pts);
+                // sigma-t: density at one atmosphere, minus 1000.
+                const auto sigmaT=[](double S,double T){
+                    const double rw=999.842594+6.793952e-2*T-9.095290e-3*T*T
+                                   +1.001685e-4*T*T*T-1.120083e-6*T*T*T*T+6.536332e-9*T*T*T*T*T;
+                    const double A=8.24493e-1-4.0899e-3*T+7.6438e-5*T*T
+                                  -8.2467e-7*T*T*T+5.3875e-9*T*T*T*T;
+                    const double B=-5.72466e-3+1.0227e-4*T-1.6546e-6*T*T;
+                    const double C=4.8314e-4;
+                    return rw+A*S+B*S*std::sqrt(qMax(0.0,S))+C*S*S-1000.0;
+                };
+                double densityLo=std::numeric_limits<double>::infinity(),densityHi=-densityLo;
+                for(const double sv:{sLo,sHi})
+                    for(const double tv:{tLo,tHi}){
+                        const double d=sigmaT(sv,tv);
+                        densityLo=qMin(densityLo,d); densityHi=qMax(densityHi,d);
+                    }
+                // Contours on a round interval, at most a dozen of them.
+                const double span=densityHi-densityLo;
+                double step=0.5;
+                for(const double candidate:{0.1,0.2,0.5,1.0,2.0,5.0})
+                    if(span/candidate<=12.0){ step=candidate; break; }
+                bool labelled=false;
+                for(double level=std::ceil(densityLo/step)*step;level<=densityHi;level+=step){
+                    PlotSeries isopycnal;
+                    isopycnal.label=labelled?QString()
+                                            :QStringLiteral("sigma-t contours, %1 apart").arg(step);
+                    labelled=true;
+                    isopycnal.color=in.style.gridColor;
+                    isopycnal.drawLine=true; isopycnal.drawMarkers=false;
+                    isopycnal.lineWidth=0.7; isopycnal.lineWidthExplicit=true;
+                    // Solve for the temperature at this density for each
+                    // salinity, by bisection: sigma-t falls monotonically with
+                    // temperature over the oceanographic range.
+                    for(int i=0;i<=60;++i){
+                        const double S=sLo+(sHi-sLo)*double(i)/60.0;
+                        double lo=tLo-5.0,hi=tHi+5.0;
+                        if((sigmaT(S,lo)-level)*(sigmaT(S,hi)-level)>0) continue;
+                        for(int k=0;k<40;++k){
+                            const double mid=0.5*(lo+hi);
+                            if((sigmaT(S,lo)-level)*(sigmaT(S,mid)-level)<=0) hi=mid; else lo=mid;
+                        }
+                        isopycnal.x.append(S); isopycnal.y.append(0.5*(lo+hi));
+                    }
+                    if(isopycnal.x.size()>1) out.series.append(isopycnal);
+                }
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("salinity");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("temperature");
+        return out;
+    }
+
+    // A profile down through the water column, or down a borehole: the property
+    // on x and depth on y, increasing downward. Depth is negated so the surface
+    // is at the top, which is the only orientation this is ever read in.
+    if(in.engine==QLatin1String("CTD Profile")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& depth=in.series.at(0).y;
+            for(int k=1;k<in.series.size();++k){
+                const PlotSeries& property=in.series.at(k);
+                const int n=qMin(depth.size(),property.y.size());
+                PlotSeries trace;
+                trace.label=property.label; trace.color=property.color;
+                trace.drawLine=true; trace.drawMarkers=false;
+                for(int i=0;i<n;++i){
+                    if(!finite(depth[i])||!finite(property.y[i])) continue;
+                    trace.x.append(property.y[i]);
+                    trace.y.append(std::abs(depth[i]));
+                }
+                if(!trace.x.isEmpty()) out.series.append(trace);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("measured property");
+        // Depth as a positive number, on an axis that runs downward. Negating
+        // the data was the way to do this before PlotAxis could be inverted,
+        // and it put minus signs on every tick of an axis labelled "depth".
+        out.yAxis=PlotAxis{QStringLiteral("depth"),false,unsetValue(),unsetValue(),true};
+        return out;
+    }
+
+    // Stage against discharge, with the power law fitted through it. That
+    // relation is what turns a level gauge - which is all most rivers have -
+    // into a flow record, so its two coefficients are the useful output.
+    if(in.engine==QLatin1String("Rating Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries pts;
+            pts.color=s.color; pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.5;
+            QVector<double> logStage,logFlow;
+            for(int i=0;i<n;++i){
+                const double stage=s.x[i],flow=s.y[i];
+                if(!(stage>0)||!(flow>0)) continue;
+                pts.x.append(stage); pts.y.append(flow);
+                logStage.append(std::log(stage)); logFlow.append(std::log(flow));
+            }
+            if(pts.x.size()<3) continue;
+            const LineFit line=fitLine(logStage,logFlow);
+            if(line.ok){
+                const double coefficient=std::exp(line.intercept);
+                pts.label=QStringLiteral("%1 (Q = %2 h^%3)")
+                              .arg(s.label).arg(coefficient,0,'g',4).arg(line.slope,0,'f',3);
+                PlotSeries fit;
+                fit.label=QStringLiteral("rating");
+                fit.color=in.style.warning; fit.drawLine=true;
+                fit.lineWidth=1.2; fit.lineWidthExplicit=true;
+                double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+                for(double v:pts.x){ lo=qMin(lo,v); hi=qMax(hi,v); }
+                for(int i=0;i<=80;++i){
+                    const double stage=lo+(hi-lo)*double(i)/80.0;
+                    fit.x.append(stage);
+                    fit.y.append(coefficient*std::pow(stage,line.slope));
+                }
+                out.series.append(pts);
+                out.series.append(fit);
+                continue;
+            }
+            pts.label=s.label;
+            out.series.append(pts);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("stage");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("discharge");
+        return out;
+    }
+
+    // A turbine's power curve, with the three speeds that define it found from
+    // the data: where it starts generating, where it reaches rated power, and
+    // where it shuts down. A warranty is written against those three numbers.
+    if(in.engine==QLatin1String("Wind Power Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Connected Scatter"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<4) continue;
+            QVector<QPair<double,double>> points;
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                points.append({s.x[i],s.y[i]});
+            }
+            if(points.size()<4) continue;
+            std::sort(points.begin(),points.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first; });
+            PlotSeries curve;
+            curve.color=s.color; curve.drawLine=true; curve.drawMarkers=true; curve.markerSize=3.0;
+            double rated=-std::numeric_limits<double>::infinity();
+            for(const auto& pt:points){
+                curve.x.append(pt.first); curve.y.append(pt.second);
+                rated=qMax(rated,pt.second);
+            }
+            const double threshold=rated*0.01;
+            double cutIn=qQNaN(),ratedSpeed=qQNaN(),cutOut=qQNaN();
+            for(const auto& pt:points){
+                if(!finite(cutIn)&&pt.second>threshold) cutIn=pt.first;
+                if(!finite(ratedSpeed)&&pt.second>=rated*0.99) ratedSpeed=pt.first;
+            }
+            for(int i=points.size()-1;i>=0;--i)
+                if(points[i].second>threshold){ cutOut=points[i].first; break; }
+            curve.label=QStringLiteral("%1 (cut-in %2, rated %3 at %4, cut-out %5)")
+                .arg(s.label)
+                .arg(finite(cutIn)?QString::number(cutIn,'g',3):QStringLiteral("-"))
+                .arg(rated,0,'g',4)
+                .arg(finite(ratedSpeed)?QString::number(ratedSpeed,'g',3):QStringLiteral("-"))
+                .arg(finite(cutOut)?QString::number(cutOut,'g',3):QStringLiteral("-"));
+            out.series.append(curve);
+            PlotSeries marks;
+            marks.label=QStringLiteral("cut-in, rated, cut-out");
+            marks.color=in.style.positive;
+            marks.drawLine=false; marks.drawMarkers=true;
+            marks.markerSize=7.0; marks.markerSizeExplicit=true;
+            for(const double speed:{cutIn,ratedSpeed,cutOut}){
+                if(!finite(speed)) continue;
+                for(const auto& pt:points)
+                    if(pt.first==speed){ marks.x.append(pt.first); marks.y.append(pt.second); break; }
+            }
+            if(!marks.x.isEmpty()) out.series.append(marks);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("wind speed");
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("power");
+        return out;
+    }
+
+    // Drawdown: how far below its own running peak a series has fallen, and the
+    // worst of those. A rising line with a bad month in it looks fine; the
+    // drawdown of the same series shows the month.
+    if(in.engine==QLatin1String("Drawdown Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries curve;
+            curve.color=s.color; curve.drawLine=true; curve.drawMarkers=false;
+            double peak=-std::numeric_limits<double>::infinity();
+            double worst=0.0; double worstAt=qQNaN();
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                peak=qMax(peak,s.y[i]);
+                // Relative where the peak is positive, absolute otherwise: a
+                // per-cent drawdown of a quantity that passes through zero is
+                // not a number anyone should be shown.
+                const double fall=(peak>0)?(s.y[i]-peak)/peak*100.0:(s.y[i]-peak);
+                curve.x.append(s.x[i]); curve.y.append(fall);
+                if(fall<worst){ worst=fall; worstAt=s.x[i]; }
+            }
+            if(curve.x.isEmpty()) continue;
+            curve.label=QStringLiteral("%1 (worst %2%3)")
+                .arg(s.label).arg(worst,0,'f',1)
+                .arg((peak>0)?QStringLiteral("%"):QString());
+            out.series.append(curve);
+            if(finite(worstAt)){
+                PlotSeries mark;
+                mark.label=QStringLiteral("maximum drawdown");
+                mark.color=in.style.danger;
+                mark.drawLine=false; mark.drawMarkers=true;
+                mark.markerSize=7.0; mark.markerSizeExplicit=true;
+                mark.x={worstAt}; mark.y={worst};
+                out.series.append(mark);
+            }
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("time");
+        out.yAxis=PlotAxis{QStringLiteral("drawdown from the running peak"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // The mass haul diagram: cumulative cut minus fill along a chainage, with
+    // the balance points where it crosses zero. Between two balance points the
+    // earth moves within the job; outside them it is imported or carted away,
+    // and that is the difference between a profitable job and a loss.
+    if(in.engine==QLatin1String("Mass Haul Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Area"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries curve,balance;
+            curve.label=s.label; curve.color=s.color; curve.drawLine=true;
+            balance.label=QStringLiteral("balance points");
+            balance.color=in.style.positive;
+            balance.drawLine=false; balance.drawMarkers=true;
+            balance.markerSize=7.0; balance.markerSizeExplicit=true;
+            double running=0.0,previous=qQNaN(),previousX=qQNaN();
+            double highest=-std::numeric_limits<double>::infinity();
+            double lowest=std::numeric_limits<double>::infinity();
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                running+=s.y[i];
+                curve.x.append(s.x[i]); curve.y.append(running);
+                highest=qMax(highest,running); lowest=qMin(lowest,running);
+                if(finite(previous)&&((previous>0&&running<=0)||(previous<0&&running>=0))){
+                    const double span=running-previous;
+                    const double t=(std::abs(span)>1e-12)?(-previous/span):0.0;
+                    balance.x.append(previousX+t*(s.x[i]-previousX));
+                    balance.y.append(0.0);
+                }
+                previous=running; previousX=s.x[i];
+            }
+            if(curve.x.isEmpty()) continue;
+            curve.label=QStringLiteral("%1 (net %2, most cut %3, most fill %4)")
+                .arg(s.label).arg(running,0,'g',4).arg(highest,0,'g',4).arg(lowest,0,'g',4);
+            out.series.append(curve);
+            if(!balance.x.isEmpty()) out.series.append(balance);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("chainage");
+        out.yAxis=PlotAxis{QStringLiteral("cumulative cut minus fill"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // Shear and bending moment from a distributed load along a beam: one
+    // integral and then a second. They are drawn together because the pair is
+    // read together - the moment peaks where the shear crosses zero, and seeing
+    // that on one chart is the check that the integration is right.
+    if(in.engine==QLatin1String("Shear and Moment")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        for(const PlotSeries& s:in.series){
+            const int n=qMin(s.x.size(),s.y.size());
+            if(n<3) continue;
+            PlotSeries shear,moment;
+            shear.label=QStringLiteral("%1 shear").arg(s.label);
+            shear.color=s.color; shear.drawLine=true;
+            moment.label=QStringLiteral("%1 bending moment").arg(s.label);
+            moment.color=in.style.warning; moment.drawLine=true;
+            double v=0.0,m=0.0,previousX=qQNaN(),previousLoad=0.0,previousShear=0.0;
+            double peakMoment=0.0,peakAt=qQNaN();
+            for(int i=0;i<n;++i){
+                if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                if(finite(previousX)){
+                    const double dx=s.x[i]-previousX;
+                    v+=0.5*(previousLoad+s.y[i])*dx;      // trapezoidal, both ways
+                    m+=0.5*(previousShear+v)*dx;
+                }
+                shear.x.append(s.x[i]); shear.y.append(v);
+                moment.x.append(s.x[i]); moment.y.append(m);
+                if(std::abs(m)>std::abs(peakMoment)){ peakMoment=m; peakAt=s.x[i]; }
+                previousX=s.x[i]; previousLoad=s.y[i]; previousShear=v;
+            }
+            if(shear.x.isEmpty()) continue;
+            moment.label=QStringLiteral("%1 bending moment (peak %2 at %3)")
+                .arg(s.label).arg(peakMoment,0,'g',4)
+                .arg(finite(peakAt)?QString::number(peakAt,'g',4):QStringLiteral("-"));
+            out.series.append(shear);
+            out.series.append(moment);
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("position along the beam");
+        out.yAxis=PlotAxis{QStringLiteral("shear and moment"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // An eye diagram: the signal cut into symbol-length pieces and laid on top
+    // of each other. What it shows is the opening in the middle - how much
+    // noise and timing error the link can take before a bit is read wrongly -
+    // and that is invisible in the signal drawn end to end.
+    //
+    // The symbol period comes from the second mapped column's first value, or
+    // from the dominant period in the signal when only one column is mapped.
+    if(in.engine==QLatin1String("Eye Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(!in.series.isEmpty()){
+            const PlotSeries& s=in.series.at(0);
+            const int n=qMin(s.x.size(),s.y.size());
+            double period=qQNaN();
+            if(in.series.size()>=2)
+                for(double v:in.series.at(1).y) if(finite(v)&&v>0){ period=v; break; }
+            if(!finite(period)&&n>2){
+                // Zero crossings of the centred signal: the median gap between
+                // them is one half-symbol, so twice it is the period.
+                double mean=0.0; int counted=0;
+                for(int i=0;i<n;++i) if(finite(s.y[i])){ mean+=s.y[i]; ++counted; }
+                if(counted>0){
+                    mean/=double(counted);
+                    QVector<double> gaps; double last=qQNaN();
+                    for(int i=1;i<n;++i){
+                        if(!finite(s.y[i])||!finite(s.y[i-1])) continue;
+                        if((s.y[i-1]-mean)*(s.y[i]-mean)<0){
+                            if(finite(last)) gaps.append(s.x[i]-last);
+                            last=s.x[i];
+                        }
+                    }
+                    if(!gaps.isEmpty()){
+                        std::sort(gaps.begin(),gaps.end());
+                        period=2.0*gaps[gaps.size()/2];
+                    }
+                }
+            }
+            if(finite(period)&&period>0&&n>2){
+                const double start=s.x.first();
+                PlotSeries trace;
+                trace.color=s.color; trace.drawLine=true; trace.drawMarkers=false;
+                trace.opacity=0.35;
+                trace.lineWidth=0.8; trace.lineWidthExplicit=true;
+                int sweeps=0;
+                double previousPhase=-1.0;
+                for(int i=0;i<n;++i){
+                    if(!finite(s.x[i])||!finite(s.y[i])) continue;
+                    // Two symbols wide, which is how an eye is drawn: the
+                    // opening sits in the middle with a transition either side.
+                    const double phase=std::fmod(s.x[i]-start,2.0*period);
+                    if(phase<previousPhase){
+                        if(trace.x.size()>1){ out.series.append(trace); ++sweeps; }
+                        trace.x.clear(); trace.y.clear();
+                        trace.label.clear();
+                    }
+                    previousPhase=phase;
+                    trace.x.append(phase); trace.y.append(s.y[i]);
+                }
+                if(trace.x.size()>1){ out.series.append(trace); ++sweeps; }
+                if(!out.series.isEmpty())
+                    out.series[0].label=QStringLiteral("%1 (%2 sweeps, symbol %3)")
+                                            .arg(s.label).arg(sweeps).arg(period,0,'g',4);
+                out.legendVisible=true;
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time within two symbols"),false,unsetValue(),unsetValue()};
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("amplitude");
+        return out;
+    }
+
+    // A stereonet: dip direction and dip, on the equal-area projection that
+    // structural geology counts orientations on. Drawn as a polar scatter with
+    // the radius computed - equal-area means a cluster of readings covers the
+    // same area of the net wherever it sits, which is the whole reason to count
+    // on this projection rather than on a plain polar plot.
+    if(in.engine==QLatin1String("Stereonet")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Polar Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& azimuth=in.series.at(0).y;
+            const QVector<double>& dip=in.series.at(1).y;
+            const int n=qMin(azimuth.size(),dip.size());
+            PlotSeries poles;
+            poles.label=QStringLiteral("poles to planes");
+            poles.color=in.series.at(0).color;
+            poles.drawLine=false; poles.drawMarkers=true; poles.markerSize=4.5;
+            for(int i=0;i<n;++i){
+                if(!finite(azimuth[i])||!finite(dip[i])) continue;
+                const double plunge=qBound(0.0,90.0-dip[i],90.0);
+                // Schmidt: r = R sqrt(2) sin((90 - plunge)/2), with R = 1.
+                const double r=std::sqrt(2.0)*std::sin((90.0-plunge)*kDegToRad/2.0);
+                // The pole to a plane lies opposite its dip direction.
+                poles.x.append(std::fmod(azimuth[i]+180.0,360.0));
+                poles.y.append(r);
+            }
+            if(!poles.x.isEmpty()) out.series.append(poles);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("dip direction (deg)"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("equal-area radius"),false,0.0,std::sqrt(2.0)};
+        return out;
+    }
+
+    // A psychrometric chart: dry-bulb temperature against humidity ratio, with
+    // the relative-humidity curves that make it readable drawn as part of the
+    // figure rather than as a background image. Saturation pressure is the
+    // Magnus form, which is within a tenth of a per cent over the range a
+    // building is conditioned in.
+    if(in.engine==QLatin1String("Psychrometric Chart")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        const auto saturation=[](double t){       // kPa
+            return 0.61094*std::exp(17.625*t/(t+243.04));
+        };
+        const auto ratio=[&saturation](double t,double rh){   // kg water / kg dry air
+            const double pressure=101.325;
+            const double vapour=rh*saturation(t);
+            return 0.62198*vapour/qMax(1e-9,pressure-vapour);
+        };
+        double tLo=0.0,tHi=50.0;
+        if(in.series.size()>=2){
+            const QVector<double>& dry=in.series.at(0).y;
+            const QVector<double>& humidity=in.series.at(1).y;
+            const int n=qMin(dry.size(),humidity.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("states");
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=5.0;
+            double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            for(int i=0;i<n;++i){
+                if(!finite(dry[i])||!finite(humidity[i])) continue;
+                // A humidity column above 1.5 is read as a percentage.
+                const double rh=(humidity[i]>1.5)?humidity[i]/100.0:humidity[i];
+                pts.x.append(dry[i]);
+                pts.y.append(ratio(dry[i],qBound(0.0,rh,1.0))*1000.0);   // g/kg
+                lo=qMin(lo,dry[i]); hi=qMax(hi,dry[i]);
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                tLo=std::floor(lo-2.0); tHi=std::ceil(hi+2.0);
+            }
+        }
+        for(const int rh:{10,20,30,40,50,60,70,80,90,100}){
+            PlotSeries line;
+            line.label=(rh==100)?QStringLiteral("saturation")
+                                :(rh==50?QStringLiteral("relative humidity, 10%% steps"):QString());
+            line.color=(rh==100)?in.style.foreground:in.style.gridColor;
+            line.drawLine=true; line.drawMarkers=false;
+            line.lineWidth=(rh==100)?1.1:0.6; line.lineWidthExplicit=true;
+            for(int i=0;i<=60;++i){
+                const double t=tLo+(tHi-tLo)*double(i)/60.0;
+                line.x.append(t);
+                line.y.append(ratio(t,double(rh)/100.0)*1000.0);
+            }
+            out.series.append(line);
+        }
+        out.xAxis=PlotAxis{QStringLiteral("dry-bulb temperature (degC)"),false,tLo,tHi};
+        out.yAxis=PlotAxis{QStringLiteral("humidity ratio (g/kg dry air)"),false,0.0,unsetValue()};
+        return out;
+    }
+
+    // =====================================================================
+    // The gaps a comparison against LabPlot and sci-draw turned up
+    // =====================================================================
+
+    // A dendrogram. The multivariate engine already computes the hierarchical
+    // clustering; nothing could draw the tree it produces, so the one output
+    // that says WHERE to cut - the height at which the merges suddenly get
+    // expensive - had no picture.
+    //
+    // Two mapped columns: the merge heights, and the size of each merged
+    // cluster. Drawn as a linkage tree with the leaves in merge order.
+    if(in.engine==QLatin1String("Dendrogram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        out.legendVisible=false;
+        if(!in.series.isEmpty()){
+            QVector<double> heights=finiteValues(in.series.at(0));
+            if(heights.size()>=2){
+                if(heights.size()>200) heights.resize(200);
+                // The leaves sit at unit spacing; each merge joins the two
+                // nearest unjoined positions and takes their midpoint, which
+                // reproduces the shape of a linkage tree from the heights
+                // alone.
+                QVector<double> positions;
+                for(int i=0;i<heights.size()+1;++i) positions.append(double(i));
+                QVector<double> live=positions;
+                QVector<double> base(live.size(),0.0);
+                for(int m=0;m<heights.size()&&live.size()>=2;++m){
+                    // Merge the closest pair, which for unit-spaced leaves is
+                    // the pair with the smallest gap.
+                    int at=0; double closest=std::numeric_limits<double>::infinity();
+                    for(int i=0;i+1<live.size();++i){
+                        const double gap=live[i+1]-live[i];
+                        if(gap<closest){ closest=gap; at=i; }
+                    }
+                    const double left=live[at],right=live[at+1];
+                    const double top=heights[m];
+                    const double leftBase=base[at],rightBase=base[at+1];
+                    PlotSeries link;
+                    link.color=in.series.at(0).color;
+                    link.drawLine=true; link.drawMarkers=false;
+                    link.lineWidth=1.1; link.lineWidthExplicit=true;
+                    link.x={left,left,right,right};
+                    link.y={leftBase,top,top,rightBase};
+                    out.series.append(link);
+                    live[at]=0.5*(left+right);
+                    base[at]=top;
+                    live.remove(at+1); base.remove(at+1);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("observation"),false,unsetValue(),unsetValue()};
+        if(out.yAxis.label.isEmpty()) out.yAxis.label=QStringLiteral("merge distance");
+        return out;
+    }
+
+    // Precision against recall, with the average precision that summarises it.
+    // On an unbalanced problem this is the curve that tells the truth: a ROC
+    // can look excellent while almost every positive prediction is wrong,
+    // because the false-positive rate is diluted by a huge negative class.
+    //
+    // Two mapped columns: the score, and the true label as 1 or 0.
+    if(in.engine==QLatin1String("Precision-Recall Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& score=in.series.at(0).y;
+            const QVector<double>& truth=in.series.at(1).y;
+            const int n=qMin(score.size(),truth.size());
+            QVector<QPair<double,bool>> rows;
+            int positives=0;
+            for(int i=0;i<n;++i){
+                if(!finite(score[i])||!finite(truth[i])) continue;
+                const bool positive=truth[i]>=0.5;
+                rows.append({score[i],positive});
+                if(positive) ++positives;
+            }
+            if(positives>0&&rows.size()>1){
+                std::sort(rows.begin(),rows.end(),
+                          [](const QPair<double,bool>& a,const QPair<double,bool>& b){
+                              return a.first>b.first; });
+                PlotSeries curve;
+                curve.color=in.series.at(0).color;
+                curve.drawLine=true; curve.drawMarkers=false;
+                int truePositives=0,called=0;
+                double average=0.0,previousRecall=0.0;
+                for(const auto& row:rows){
+                    ++called;
+                    if(row.second) ++truePositives;
+                    const double precision=double(truePositives)/double(called);
+                    const double recall=double(truePositives)/double(positives);
+                    // Average precision: the precision at each point weighted
+                    // by the recall it gained, which is the area under this
+                    // curve without interpolating between the points.
+                    average+=precision*(recall-previousRecall);
+                    previousRecall=recall;
+                    curve.x.append(recall); curve.y.append(precision);
+                }
+                curve.label=QStringLiteral("%1 (average precision %2)")
+                                .arg(in.series.at(0).label).arg(average,0,'f',3);
+                out.series.append(curve);
+                // The line a coin-flip classifier sits on: the prevalence.
+                PlotSeries chance;
+                chance.label=QStringLiteral("chance (%1 positive)")
+                                 .arg(double(positives)/double(rows.size()),0,'f',3);
+                chance.color=in.style.warning;
+                chance.drawLine=true; chance.lineWidth=0.8; chance.lineWidthExplicit=true;
+                chance.dashPattern={4.0,3.0};
+                const double prevalence=double(positives)/double(rows.size());
+                chance.x={0.0,1.0}; chance.y={prevalence,prevalence};
+                out.series.append(chance);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("recall"),false,0.0,1.0};
+        out.yAxis=PlotAxis{QStringLiteral("precision"),false,0.0,1.02};
+        return out;
+    }
+
+    // A confusion matrix, as a grid with the counts on it. Two mapped columns -
+    // the true class and the predicted one - and the accuracy in the title
+    // line, because a matrix without it invites reading the diagonal and
+    // guessing.
+    if(in.engine==QLatin1String("Confusion Matrix")){
+        PlotSpec out=derivedAs(in,QStringLiteral("2D Heatmap"));
+        out.legendVisible=false;
+        if(in.series.size()>=2){
+            const QVector<double>& truth=in.series.at(0).y;
+            const QVector<double>& predicted=in.series.at(1).y;
+            const int n=qMin(truth.size(),predicted.size());
+            QVector<double> classes;
+            for(int i=0;i<n;++i){
+                for(const double v:{truth[i],predicted[i]}){
+                    if(!finite(v)) continue;
+                    if(!classes.contains(v)) classes.append(v);
+                }
+            }
+            std::sort(classes.begin(),classes.end());
+            if(!classes.isEmpty()&&classes.size()<=20){
+                QVector<double> cells(classes.size()*classes.size(),0.0);
+                int correct=0,total=0;
+                for(int i=0;i<n;++i){
+                    if(!finite(truth[i])||!finite(predicted[i])) continue;
+                    const int r=classes.indexOf(truth[i]);
+                    const int c=classes.indexOf(predicted[i]);
+                    if(r<0||c<0) continue;
+                    cells[r*classes.size()+c]+=1.0;
+                    if(r==c) ++correct;
+                    ++total;
+                }
+                PlotSeries xi,yi,vi;
+                for(int r=0;r<classes.size();++r)
+                    for(int c=0;c<classes.size();++c){
+                        xi.y.append(double(c)); yi.y.append(double(r));
+                        vi.y.append(cells[r*classes.size()+c]);
+                    }
+                xi.label=QStringLiteral("predicted");
+                yi.label=QStringLiteral("true");
+                vi.label=total>0
+                    ? QStringLiteral("count (accuracy %1)").arg(double(correct)/double(total),0,'f',3)
+                    : QStringLiteral("count");
+                out.series={xi,yi,vi};
+                out.xAxis=PlotAxis{QStringLiteral("predicted class"),false,
+                                   -0.5,double(classes.size())-0.5};
+                out.yAxis=PlotAxis{QStringLiteral("true class"),false,
+                                   -0.5,double(classes.size())-0.5};
+                return out;
+            }
+        }
+        return out;
+    }
+
+    // An MA plot: the log ratio between two conditions against their average
+    // intensity. The shape is the point - a ratio that drifts with intensity is
+    // a normalisation problem, not biology - and it is invisible in a plot of
+    // one condition against the other.
+    if(in.engine==QLatin1String("MA Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& a=in.series.at(0).y;
+            const QVector<double>& b=in.series.at(1).y;
+            const int n=qMin(a.size(),b.size());
+            PlotSeries pts;
+            pts.color=in.series.at(0).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=3.2;
+            double sum=0.0; int counted=0;
+            for(int i=0;i<n;++i){
+                if(!(a[i]>0)||!(b[i]>0)) continue;      // a log needs a positive
+                const double la=std::log2(a[i]),lb=std::log2(b[i]);
+                pts.x.append(0.5*(la+lb));              // A, the average
+                pts.y.append(la-lb);                    // M, the log ratio
+                sum+=la-lb; ++counted;
+            }
+            if(counted>0){
+                const double bias=sum/double(counted);
+                pts.label=QStringLiteral("%1 vs %2 (median shift %3)")
+                              .arg(in.series.at(0).label,in.series.at(1).label)
+                              .arg(bias,0,'f',3);
+                out.series.append(pts);
+                PlotSeries zero;
+                zero.label=QStringLiteral("no change");
+                zero.color=in.style.warning;
+                zero.drawLine=true; zero.lineWidth=0.9; zero.lineWidthExplicit=true;
+                zero.dashPattern={4.0,3.0};
+                double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+                for(double v:pts.x){ lo=qMin(lo,v); hi=qMax(hi,v); }
+                zero.x={lo,hi}; zero.y={0.0,0.0};
+                out.series.append(zero);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("A, mean log2 intensity"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("M, log2 ratio"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // The four attribute control charts. They differ only in what is counted
+    // and how the limits are derived, so they are one rewrite with a table
+    // rather than four near-identical ones:
+    //
+    //   p   the fraction defective, limits from the binomial, varying with n
+    //   np  the number defective, constant n
+    //   c   the count of defects per unit
+    //   u   the count of defects per unit of opportunity, varying opportunity
+    //
+    // Mapped columns: the count, and for p, np and u the sample size beside it.
+    if(in.engine==QLatin1String("p-Chart")||in.engine==QLatin1String("np-Chart")
+       ||in.engine==QLatin1String("c-Chart")||in.engine==QLatin1String("u-Chart")){
+        const bool proportion=(in.engine==QLatin1String("p-Chart"));
+        const bool number=(in.engine==QLatin1String("np-Chart"));
+        const bool perUnit=(in.engine==QLatin1String("u-Chart"));
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(!in.series.isEmpty()){
+            const QVector<double>& counts=in.series.at(0).y;
+            const QVector<double> sizes=(in.series.size()>=2)?in.series.at(1).y:QVector<double>();
+            const int n=counts.size();
+            PlotSeries values,upper,lower,centre;
+            values.color=in.series.at(0).color;
+            values.drawLine=true; values.drawMarkers=true; values.markerSize=3.5;
+            upper.label=QStringLiteral("control limits");
+            upper.color=in.style.danger;
+            upper.drawLine=true; upper.lineWidth=0.9; upper.lineWidthExplicit=true;
+            lower=upper; lower.label.clear();
+            centre.label=QStringLiteral("centre");
+            centre.color=in.style.foreground;
+            centre.drawLine=true; centre.lineWidth=0.7; centre.lineWidthExplicit=true;
+            centre.dashPattern={4.0,4.0};
+
+            double totalCount=0.0,totalSize=0.0; int used=0;
+            for(int i=0;i<n;++i){
+                if(!finite(counts[i])||counts[i]<0) continue;
+                const double size=(i<sizes.size()&&finite(sizes[i])&&sizes[i]>0)?sizes[i]:1.0;
+                totalCount+=counts[i]; totalSize+=size; ++used;
+            }
+            if(used>0&&totalSize>0){
+                // The centre line: a pooled proportion for p and np, a mean
+                // count for c, a pooled rate for u. Pooling rather than
+                // averaging the per-sample values is what makes the limits
+                // right when the samples are different sizes.
+                const double meanSize=totalSize/double(used);
+                const double centreValue=
+                    proportion ? totalCount/totalSize
+                  : number     ? totalCount/double(used)
+                  : perUnit    ? totalCount/totalSize
+                               : totalCount/double(used);
+                int beyond=0;
+                for(int i=0;i<n;++i){
+                    if(!finite(counts[i])||counts[i]<0) continue;
+                    const double size=(i<sizes.size()&&finite(sizes[i])&&sizes[i]>0)?sizes[i]:1.0;
+                    const double value=
+                        proportion ? counts[i]/size
+                      : perUnit    ? counts[i]/size
+                                   : counts[i];
+                    double spread=0.0;
+                    if(proportion)      spread=std::sqrt(qMax(0.0,centreValue*(1.0-centreValue)/size));
+                    else if(number)     spread=std::sqrt(qMax(0.0,centreValue*(1.0-centreValue/qMax(1.0,meanSize))));
+                    else if(perUnit)    spread=std::sqrt(qMax(0.0,centreValue/size));
+                    else                spread=std::sqrt(qMax(0.0,centreValue));
+                    const double hi=centreValue+3.0*spread;
+                    // A count cannot be negative, and neither can a rate.
+                    const double lo=qMax(0.0,centreValue-3.0*spread);
+                    if(value>hi||value<lo) ++beyond;
+                    values.x.append(double(i+1)); values.y.append(value);
+                    upper.x.append(double(i+1)); upper.y.append(hi);
+                    lower.x.append(double(i+1)); lower.y.append(lo);
+                    centre.x.append(double(i+1)); centre.y.append(centreValue);
+                }
+                values.label=QStringLiteral("%1 (%2, centre %3, %4 out of control)")
+                    .arg(in.series.at(0).label)
+                    .arg(in.engine).arg(centreValue,0,'g',4).arg(beyond);
+                out.series.append(values);
+                out.series.append(upper);
+                out.series.append(lower);
+                out.series.append(centre);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("sample"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{proportion?QStringLiteral("fraction defective")
+                          :number    ?QStringLiteral("number defective")
+                          :perUnit   ?QStringLiteral("defects per unit")
+                                     :QStringLiteral("defects per sample"),
+                           false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // A rug: one tick per observation along the axis. It costs almost no ink
+    // and it puts the actual sample back under a smoothed curve, which is the
+    // one thing a density estimate hides - a beautiful KDE over eleven points
+    // looks exactly like one over eleven thousand.
+    if(in.engine==QLatin1String("Rug Plot")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        double slot=0.0;
+        for(const PlotSeries& s:in.series){
+            const QVector<double> v=finiteValues(s);
+            if(v.isEmpty()) continue;
+            double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+            for(double value:v){ lo=qMin(lo,value); hi=qMax(hi,value); }
+            const double height=(hi>lo)?(hi-lo)*0.03:0.5;
+            PlotSeries ticks;
+            ticks.label=QStringLiteral("%1 (%2 observations)").arg(s.label).arg(v.size());
+            ticks.color=s.color;
+            ticks.drawLine=false; ticks.drawMarkers=true;
+            ticks.markerSize=2.0; ticks.markerSizeExplicit=true;
+            // A tick is two marks a hair apart rather than a drawn segment, so
+            // ten thousand of them cost what ten thousand points cost and not
+            // what ten thousand polylines cost.
+            for(double value:v){
+                ticks.x.append(value); ticks.y.append(slot);
+                ticks.x.append(value); ticks.y.append(slot+height);
+            }
+            out.series.append(ticks);
+            slot+=height*2.0;
+        }
+        if(out.xAxis.label.isEmpty()) out.xAxis.label=QStringLiteral("value");
+        out.yAxis=PlotAxis{QStringLiteral("series"),false,unsetValue(),unsetValue()};
         return out;
     }
 
@@ -4295,19 +7989,101 @@ void QtPlotBackend::drawErrorBar(QPainter* p,const Frame& f,const PlotSpec& spec
     p->restore();
 }
 
-void QtPlotBackend::drawFloatingBar(QPainter* p,const Frame& f,const PlotSpec& spec) const {
-    // Bar width from the closest neighbouring pair, so bars never overlap
-    // however the slots are spaced.
+// The same bar lying down: one row per series, spanning from a start to an end
+// along x. A schedule, an availability timeline and a stratigraphic log are all
+// this shape, and none of them can be drawn by drawFloatingBar - a Gantt with
+// time on the vertical axis is not a Gantt, it is a puzzle.
+//
+// One series per bar, as above, but transposed: y = {row}, x = {start, end}.
+void QtPlotBackend::drawFloatingRow(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    const double halfHeight=halfSlotAcross(f,spec,true,1.0);
+    if(!(halfHeight>0)) return;
+
+    for(const PlotSeries& s:spec.series){
+        if(s.y.isEmpty()||s.x.size()<2) continue;
+        const double row=s.y.first();
+        const double from=s.x[s.x.size()-2],to=s.x[s.x.size()-1];
+        if(!finite(row)||!finite(from)||!finite(to)) continue;
+        const double cy=toDevice(f,f.xLo,row).y();
+        const double xFrom=toDevice(f,from,row).x();
+        const double xTo=toDevice(f,to,row).x();
+        QColor fill=s.color; fill.setAlphaF(qBound(0.05,s.opacity,1.0)*0.85);
+        p->save();
+        QPen pen(s.color); pen.setWidthF(qMax(0.4,spec.style.lineWidth*0.8)); p->setPen(pen);
+        p->setBrush(fill);
+        // A zero-length task is a milestone, and a milestone that is one pixel
+        // wide is still a milestone. It must not vanish.
+        const double w=qMax(1.5,std::abs(xTo-xFrom));
+        p->drawRect(QRectF(qMin(xFrom,xTo),cy-halfHeight,w,halfHeight*2));
+        p->restore();
+    }
+}
+
+// Open, high, low and close, drawn the way a price series is read: the body is
+// the open-to-close range and the wick is the whole range, so a long wick over
+// a short body says the period moved and came back. Colour carries direction,
+// which is the one thing a reader takes from the chart at a glance.
+//
+// One series per period: x = {slot}, y = {open, high, low, close}.
+void QtPlotBackend::drawCandlestick(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    // A candle is a little narrower than a bar, and may be thinner than a
+    // pixel and a half when a year of daily prices is on screen.
+    const double halfWidth=halfSlotAcross(f,spec,false,0.75,0.34);
+    if(!(halfWidth>0)) return;
+
+    for(const PlotSeries& s:spec.series){
+        if(s.x.isEmpty()||s.y.size()<4) continue;
+        const double slotX=s.x.first();
+        const double open=s.y[0],high=s.y[1],low=s.y[2],close=s.y[3];
+        if(!finite(slotX)||!finite(open)||!finite(high)||!finite(low)||!finite(close)) continue;
+        const double cx=toDevice(f,slotX,f.yLo).x();
+        const double yOpen=toDevice(f,slotX,open).y();
+        const double yClose=toDevice(f,slotX,close).y();
+        const double yHigh=toDevice(f,slotX,high).y();
+        const double yLow=toDevice(f,slotX,low).y();
+        const bool up=(close>=open);
+        const QColor colour=up?spec.style.positive:spec.style.danger;
+        p->save();
+        QPen pen(colour); pen.setWidthF(qMax(0.6,spec.style.lineWidth)); p->setPen(pen);
+        p->drawLine(QPointF(cx,yHigh),QPointF(cx,yLow));
+        // A hollow body for a rise and a filled one for a fall, so the chart
+        // still reads in monochrome and in the colour-vision modes.
+        p->setBrush(up?QBrush(Qt::NoBrush):QBrush(colour));
+        const double h=qMax(1.0,std::abs(yClose-yOpen));
+        p->drawRect(QRectF(cx-halfWidth,qMin(yOpen,yClose),halfWidth*2,h));
+        p->restore();
+    }
+}
+
+// Half the width of one bar, from the closest neighbouring pair of slots, so
+// bars never overlap however unevenly the slots are spaced.
+//
+// The three floating painters - the vertical bar, the horizontal row and the
+// candle - each measured this for themselves, with the same loop, the same
+// fallback and the same clamp written out three times. The only differences
+// were the axis it is measured along and how much of the slot a mark fills.
+double QtPlotBackend::halfSlotAcross(const Frame& f,const PlotSpec& spec,bool alongY,
+                                     double minimum,double fraction) const {
     QVector<double> centres;
     for(const PlotSeries& s:spec.series){
-        if(s.x.isEmpty()||s.y.size()<2) continue;
-        if(!finite(s.x.first())) continue;
-        centres.push_back(toDevice(f,s.x.first(),f.yLo).x());
+        // Not "slots": Qt defines that as a keyword macro, and the error it
+        // produces points at the assignment rather than at the name.
+        const QVector<double>& seats=alongY?s.y:s.x;
+        const QVector<double>& values=alongY?s.x:s.y;
+        if(seats.isEmpty()||values.size()<2) continue;
+        if(!finite(seats.first())) continue;
+        centres.push_back(alongY?toDevice(f,f.xLo,seats.first()).y()
+                                :toDevice(f,seats.first(),f.yLo).x());
     }
-    if(centres.isEmpty()) return;
-    const double slot=slotWidthFrom(centres,f.plotArea.width()/double(qMax(1,centres.size())),
-                                    f.plotArea.width());
-    const double halfWidth=qBound(1.0,slot*0.36,f.plotArea.width()*0.45);
+    if(centres.isEmpty()) return 0.0;
+    const double across=alongY?f.plotArea.height():f.plotArea.width();
+    const double slot=slotWidthFrom(centres,across/double(qMax(1,centres.size())),across);
+    return qBound(minimum,slot*fraction,across*0.45);
+}
+
+void QtPlotBackend::drawFloatingBar(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    const double halfWidth=halfSlotAcross(f,spec,false,1.0);
+    if(!(halfWidth>0)) return;
 
     for(const PlotSeries& s:spec.series){
         if(s.x.isEmpty()||s.y.size()<2) continue;
@@ -4418,6 +8194,31 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             painter->restore();
             return;
         }
+        if(spec.engine==QLatin1String("Network Graph")){
+            drawNetwork(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Chord Diagram")){
+            drawChord(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Smith Chart")){
+            drawSmith(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Mosaic Plot")){
+            drawMosaic(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("UpSet Plot")){
+            drawUpSet(painter,target,spec);
+            painter->restore();
+            return;
+        }
         if(spec.engine==QLatin1String("Treemap")
            ||spec.engine==QLatin1String("Sunburst")
            ||spec.engine==QLatin1String("Venn Diagram")
@@ -4455,6 +8256,8 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
     else if(spec.engine==QLatin1String("Histogram"))         drawBar(painter,f,spec);
     else if(spec.engine==QLatin1String("Horizontal Bar"))    drawHorizontalBar(painter,f,spec);
     else if(spec.engine==QLatin1String("Floating Bar"))      drawFloatingBar(painter,f,spec);
+    else if(spec.engine==QLatin1String("Floating Row"))      drawFloatingRow(painter,f,spec);
+    else if(spec.engine==QLatin1String("Candlestick"))       drawCandlestick(painter,f,spec);
     else if(spec.engine==QLatin1String("Stem"))              drawStem(painter,f,spec);
     else if(spec.engine==QLatin1String("Stacked Lines"))     drawStackedLines(painter,f,spec);
     else if(spec.engine==QLatin1String("Error Bar"))         drawErrorBar(painter,f,spec);

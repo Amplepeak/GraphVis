@@ -6,9 +6,14 @@
 
 #include "QtPlotBackend.h"
 
+#include <cmath>
+
 #include <QFileInfo>
 #include <QImage>
+#include <QMouseEvent>
 #include <QPainter>
+#include <QTouchEvent>
+#include <QWheelEvent>
 #include <QPdfWriter>
 #include <QPageSize>
 #include <QSvgGenerator>
@@ -161,6 +166,12 @@ PlotCanvas::PlotCanvas(QQuickItem* parent):QQuickPaintedItem(parent){
     setRenderTarget(QQuickPaintedItem::FramebufferObject);
     spec_.engine=QStringLiteral("Line Chart");
 
+    // Without these the item is transparent to the pointer: no press, no
+    // wheel, and no touch either, which is why the figure had never been
+    // draggable by any input device.
+    setAcceptedMouseButtons(Qt::LeftButton|Qt::MiddleButton);
+    setAcceptTouchEvents(true);
+
     // Edits arrive in bursts - dragging a slider is dozens of changes a second -
     // and starting a multi-second render for each one would be worse than
     // useless. The preview redraws on every one of them; only the expensive
@@ -241,6 +252,15 @@ void PlotCanvas::applyVariant(){
 void PlotCanvas::rebuild(){
     if(!dirty_) return;
     dirty_=false;
+    // A zoom belongs to the figure it was made on. Keeping it across a change
+    // of dataset, engine or mapped columns would open the next figure already
+    // clipped to a range that means nothing in it - and with no visible reason
+    // why, since the range came from a plot that is no longer on screen.
+    if(hasView_){
+        hasView_=false;
+        spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
+        spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
+    }
     spec_.series.clear();
     pointCount_=0;
     available_.clear();
@@ -303,6 +323,187 @@ void PlotCanvas::renderTo(QPainter* painter,const QRectF& target){
     // Every backend selection still exports through Qt: a rasterising backend
     // cannot emit vectors. See docs/PORT-PLAN.md, rule 2.
     qtBackend_.render(painter,target,spec_);
+}
+
+// ======================================================================
+// Pan and zoom
+//
+// The view is written straight onto spec_.xAxis/yAxis min and max. Those
+// fields existed, the backend already honoured them ahead of the fitted range,
+// and nothing in the application had ever set them - so a zoom needs no second
+// notion of "what is being shown" that the exports and the full-resolution
+// render could then disagree with. What is on screen is what is exported,
+// which is the rule this canvas is built on.
+//
+// The view is kept in the space the axis is DRAWN in - log10 when the axis is
+// logarithmic - because that is the space a zoom should be uniform in. It is
+// converted back on the way onto the axis, which stores real data values.
+// ======================================================================
+
+bool PlotCanvas::viewInteractive() const {
+    // The same question render() asks. A pie, a radar, a treemap and the 3-D
+    // projections have no axis range to change, and offering to drag them
+    // would be an affordance that does nothing.
+    return QtPlotBackend::engineHasAxes(spec_.engine)&&!spec_.series.isEmpty();
+}
+
+QRectF PlotCanvas::interactionArea() const {
+    // Where the figure was actually drawn. Falling back to the whole item is
+    // only wrong by the margins, and only until the first paint.
+    const QRectF drawn=qtBackend_.lastPlotArea();
+    if(drawn.width()>1.0&&drawn.height()>1.0) return drawn;
+    return QRectF(0,0,qMax(1.0,width()),qMax(1.0,height()));
+}
+
+void PlotCanvas::ensureView(){
+    if(hasView_) return;
+    const QtPlotBackend::DataRange r=qtBackend_.rangeFor(spec_);
+    const auto usable=[](double lo,double hi){ return lo==lo&&hi==hi&&hi>lo; };
+    if(!usable(r.xLo,r.xHi)||!usable(r.yLo,r.yHi)) return;
+    // Straight onto the axes, in real data values.
+    spec_.xAxis.min=r.xLog?std::pow(10.0,r.xLo):r.xLo;
+    spec_.xAxis.max=r.xLog?std::pow(10.0,r.xHi):r.xHi;
+    spec_.yAxis.min=r.yLog?std::pow(10.0,r.yLo):r.yLo;
+    spec_.yAxis.max=r.yLog?std::pow(10.0,r.yHi):r.yHi;
+    hasView_=true;
+}
+
+namespace {
+// The view in drawn space, and back again. Two conversions in one place so a
+// log axis cannot be handled one way going in and another coming out.
+struct AxisView { double lo=0,hi=1; bool log=false; };
+AxisView viewOf(const PlotAxis& axis){
+    AxisView v; v.log=axis.log10;
+    const double lo=isUnset(axis.min)?0.0:axis.min;
+    const double hi=isUnset(axis.max)?1.0:axis.max;
+    v.lo=v.log?std::log10(qMax(1e-300,lo)):lo;
+    v.hi=v.log?std::log10(qMax(1e-300,hi)):hi;
+    return v;
+}
+void writeBack(PlotAxis& axis,const AxisView& v){
+    axis.min=v.log?std::pow(10.0,v.lo):v.lo;
+    axis.max=v.log?std::pow(10.0,v.hi):v.hi;
+}
+} // namespace
+
+void PlotCanvas::commitView(){
+    // A view change makes the accepted full-resolution image a picture of a
+    // different range, so it goes through the same path as any other edit.
+    scheduleFullRender();
+    update();
+    emit stateChanged();
+}
+
+void PlotCanvas::panByPixels(double dx,double dy){
+    if(!viewInteractive()) return;
+    ensureView();
+    if(!hasView_) return;
+    const QRectF area=interactionArea();
+    AxisView vx=viewOf(spec_.xAxis),vy=viewOf(spec_.yAxis);
+    const double spanX=vx.hi-vx.lo,spanY=vy.hi-vy.lo;
+    if(!(spanX>0)||!(spanY>0)) return;
+    const double stepX=dx*spanX/area.width();
+    const double stepY=dy*spanY/area.height();
+    vx.lo-=stepX; vx.hi-=stepX;
+    // Dragging the figure down should move the data down with the finger, and
+    // y grows upwards on screen.
+    vy.lo+=stepY; vy.hi+=stepY;
+    writeBack(spec_.xAxis,vx); writeBack(spec_.yAxis,vy);
+    commitView();
+}
+
+void PlotCanvas::zoomAt(const QPointF& pos,double factor){
+    if(!viewInteractive()) return;
+    ensureView();
+    if(!hasView_) return;
+    if(!(factor>0)||!(factor==factor)) return;
+    const QRectF area=interactionArea();
+    AxisView vx=viewOf(spec_.xAxis),vy=viewOf(spec_.yAxis);
+    const double spanX=vx.hi-vx.lo,spanY=vy.hi-vy.lo;
+    if(!(spanX>0)||!(spanY>0)) return;
+
+    // Where the pointer sits inside the drawn area, 0..1. Clamped rather than
+    // rejected, so a wheel event that lands on the axis labels still zooms
+    // about the nearest edge instead of doing nothing.
+    const double tx=qBound(0.0,(pos.x()-area.left())/area.width(),1.0);
+    const double ty=qBound(0.0,(area.bottom()-pos.y())/area.height(),1.0);
+    const double anchorX=vx.lo+tx*spanX;
+    const double anchorY=vy.lo+ty*spanY;
+
+    // A span that reaches zero can never be zoomed back out, and one that
+    // reaches infinity stops being drawable. Both are refused rather than
+    // clamped silently to a range the user did not ask for.
+    const double newSpanX=spanX/factor,newSpanY=spanY/factor;
+    if(!(newSpanX>1e-12)||!(newSpanY>1e-12)) return;
+    if(!std::isfinite(newSpanX)||!std::isfinite(newSpanY)) return;
+    if(newSpanX>1e12*qMax(1.0,std::abs(anchorX))) return;
+    if(newSpanY>1e12*qMax(1.0,std::abs(anchorY))) return;
+
+    vx.lo=anchorX-tx*newSpanX; vx.hi=vx.lo+newSpanX;
+    vy.lo=anchorY-ty*newSpanY; vy.hi=vy.lo+newSpanY;
+    writeBack(spec_.xAxis,vx); writeBack(spec_.yAxis,vy);
+    commitView();
+}
+
+void PlotCanvas::zoomBy(double factor){
+    zoomAt(interactionArea().center(),factor);
+}
+
+void PlotCanvas::resetView(){
+    if(!hasView_) return;
+    hasView_=false;
+    spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
+    spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
+    commitView();
+}
+
+void PlotCanvas::mousePressEvent(QMouseEvent* e){
+    if(!viewInteractive()){ e->ignore(); return; }
+    dragging_=true;
+    lastPointer_=e->position();
+    e->accept();
+}
+
+void PlotCanvas::mouseMoveEvent(QMouseEvent* e){
+    if(!dragging_){ e->ignore(); return; }
+    const QPointF delta=e->position()-lastPointer_;
+    lastPointer_=e->position();
+    panByPixels(delta.x(),delta.y());
+    e->accept();
+}
+
+void PlotCanvas::mouseReleaseEvent(QMouseEvent* e){
+    dragging_=false;
+    e->accept();
+}
+
+void PlotCanvas::mouseDoubleClickEvent(QMouseEvent* e){
+    resetView();
+    e->accept();
+}
+
+void PlotCanvas::wheelEvent(QWheelEvent* e){
+    if(!viewInteractive()){ e->ignore(); return; }
+    // The same gain as the 3-D viewport, so one notch feels the same in both.
+    const double factor=std::pow(1.0015,double(e->angleDelta().y()));
+    zoomAt(e->position(),factor);
+    e->accept();
+}
+
+void PlotCanvas::touchEvent(QTouchEvent* e){
+    if(!viewInteractive()){ e->ignore(); return; }
+    if(e->type()==QEvent::TouchEnd||e->type()==QEvent::TouchCancel){
+        touch_.reset(); e->accept(); return;
+    }
+    const TouchGesture::Step step=touch_.update(e->points(),e->type()==QEvent::TouchBegin);
+    if(!step.usable){ e->accept(); return; }
+
+    if(step.fingers>=2&&step.scale!=1.0) zoomAt(step.centre,step.scale);
+    // Both one finger and two pan, so a pinch that also moves does both -
+    // which is what a pinch on a map does.
+    if(step.movement.x()!=0.0||step.movement.y()!=0.0)
+        panByPixels(step.movement.x(),step.movement.y());
+    e->accept();
 }
 
 void PlotCanvas::geometryChange(const QRectF& newGeometry,const QRectF& oldGeometry){
@@ -376,6 +577,13 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("background"),spec_.style.background.name(QColor::HexArgb)},
         {QStringLiteral("foreground"),spec_.style.foreground.name(QColor::HexArgb)},
         {QStringLiteral("grid"),spec_.style.gridColor.name(QColor::HexArgb)},
+        // The zoom, when there is one. A figure saved while zoomed in reopens
+        // showing what was on screen when it was saved; one saved fitted to
+        // its data carries no limits at all and stays that way.
+        {QStringLiteral("xMin"),isUnset(spec_.xAxis.min)?QVariant():QVariant(spec_.xAxis.min)},
+        {QStringLiteral("xMax"),isUnset(spec_.xAxis.max)?QVariant():QVariant(spec_.xAxis.max)},
+        {QStringLiteral("yMin"),isUnset(spec_.yAxis.min)?QVariant():QVariant(spec_.yAxis.min)},
+        {QStringLiteral("yMax"),isUnset(spec_.yAxis.max)?QVariant():QVariant(spec_.yAxis.max)},
     };
 }
 
@@ -417,9 +625,24 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
 
     dirty_=true;
     rebuild();
+    // After rebuild, deliberately: rebuild clears any view, and these limits
+    // are the view this figure was saved with.
+    const auto limit=[&state](const char* key,double fallback){
+        const QVariant v=state.value(QString::fromLatin1(key));
+        if(!v.isValid()||v.isNull()) return fallback;
+        bool ok=false;
+        const double d=v.toDouble(&ok);
+        return (ok&&d==d)?d:fallback;
+    };
+    spec_.xAxis.min=limit("xMin",unsetValue());
+    spec_.xAxis.max=limit("xMax",unsetValue());
+    spec_.yAxis.min=limit("yMin",unsetValue());
+    spec_.yAxis.max=limit("yMax",unsetValue());
+    hasView_=!isUnset(spec_.xAxis.min)||!isUnset(spec_.yAxis.min);
     update();
     emit sourceChanged();
     emit styleChanged();
+    emit stateChanged();
 }
 
 bool PlotCanvas::exportPdf(const QString& filePath,double widthIn,double heightIn,int dpi){

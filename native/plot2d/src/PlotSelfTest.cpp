@@ -2,6 +2,7 @@
 #include "QtPlotBackend.h"
 
 #include <QFile>
+#include <QHash>
 #include <QImage>
 #include <QFileInfo>
 #include <QPageSize>
@@ -91,13 +92,71 @@ bool runEngineSweep(){
     }
     printf("selftest: empty-frame baseline %lld px\n",static_cast<long long>(baseline));
 
+    // A few engines do not read a measurement at all. An edge list is a list of
+    // pairs, a mosaic is a contingency table, an UpSet plot is set membership,
+    // a Kaplan-Meier needs an event flag beside its times, and a Smith chart
+    // reads an impedance. Sweeping those with the shared signal asks them to
+    // read 240 floating-point values as node identifiers or as category labels,
+    // and drawing nothing is the CORRECT answer to that - so the sweep would be
+    // reporting a right answer as a fault.
+    //
+    // Each entry below is that engine's real input shape, so the sweep still
+    // demands ink from every engine; it just stops demanding it from nonsense.
+    const auto column=[](const QString& label,const QVector<double>& values){
+        PlotSeries s; s.label=label; s.y=values; s.x.reserve(values.size());
+        for(int i=0;i<values.size();++i) s.x.append(double(i));
+        return s;
+    };
+    QVector<double> edgeFrom,edgeTo,edgeWeight;
+    for(int i=0;i<12;++i){
+        edgeFrom.append(double(i%6));
+        edgeTo.append(double((i+2)%6));
+        edgeWeight.append(1.0+double(i%4));
+    }
+    QVector<double> categoryA,categoryB,tally;
+    for(int i=0;i<40;++i){
+        categoryA.append(double(i%4));
+        categoryB.append(double((i/4)%3));
+        tally.append(1.0+double((i*7)%5));
+    }
+    QVector<double> lifetimes,events,memberA,memberB,memberC;
+    QVector<double> resistance,reactance;
+    for(int i=0;i<60;++i){
+        lifetimes.append(1.0+double(i)*0.7);
+        events.append((i%4==0)?0.0:1.0);          // a quarter censored
+        memberA.append((i%2==0)?1.0:0.0);
+        memberB.append((i%3==0)?1.0:0.0);
+        memberC.append((i%5==0)?1.0:0.0);
+        resistance.append(0.2+double(i)*0.08);    // a sweep across the chart
+        reactance.append(-1.5+double(i)*0.05);
+    }
+    const QHash<QString,QVector<PlotSeries>> shaped{
+        {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
+                                          column("weight",edgeWeight)}},
+        {QStringLiteral("Chord Diagram"),{column("from",edgeFrom),column("to",edgeTo),
+                                          column("weight",edgeWeight)}},
+        {QStringLiteral("Mosaic Plot"),{column("region",categoryA),column("grade",categoryB),
+                                        column("count",tally)}},
+        {QStringLiteral("UpSet Plot"),{column("set A",memberA),column("set B",memberB),
+                                       column("set C",memberC)}},
+        {QStringLiteral("Kaplan-Meier Survival"),{column("time",lifetimes),column("event",events)}},
+        {QStringLiteral("Smith Chart"),{column("resistance",resistance),
+                                        column("reactance",reactance)}},
+        // A confusion matrix is a pair of class labels. Given the shared
+        // continuous signal it sees 240 distinct classes, refuses to draw a
+        // 240x240 grid, and is right to.
+        {QStringLiteral("Confusion Matrix"),{column("true",categoryA),
+                                             column("predicted",categoryB)}},
+    };
+
     for(const QString& engine:engines){
         PlotSpec spec;
         spec.engine=engine;
         spec.title=engine;
         spec.xAxis.label=QStringLiteral("time_h");
         spec.yAxis.label=QStringLiteral("value");
-        spec.series={a,b,c,d,e};
+        spec.series=shaped.contains(engine)?shaped.value(engine)
+                                          :QVector<PlotSeries>{a,b,c,d,e};
         spec.style.background=Qt::white;
         spec.style.foreground=QColor(0x11,0x11,0x11);
         spec.style.gridColor=QColor(0xd8,0xd8,0xd8);

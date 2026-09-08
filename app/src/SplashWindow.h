@@ -32,6 +32,10 @@ protected:
 
 private:
     QImage logo_;
+    // Which of the hundred reefs this launch got. Chosen once, in the
+    // constructor: setStage() repaints several times while the application
+    // starts, and a scene re-rolled on every repaint would strobe.
+    unsigned reefSeed_=0;
     QString stage_;
     double fraction_=0.0;
     QElapsedTimer shown_;

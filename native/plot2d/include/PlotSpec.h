@@ -52,6 +52,11 @@ struct PlotAxis {
     bool log10 = false;          // decade ticks, mathtext power labels
     double min = unsetValue();   // unset -> fit to data
     double max = unsetValue();
+    // Drawn with the larger value at the origin end. Depth increases downward,
+    // magnitude increases downward, rank 1 belongs at the top - and every one
+    // of those was previously drawn by negating the data, which puts minus
+    // signs on the ticks and makes the axis label a lie.
+    bool inverted = false;
 };
 
 // Typography and geometry, taken straight from a GraphVis 17 publication

@@ -15,6 +15,7 @@
 // what is exported is what was on screen.
 // =========================================================================
 #include "PlotSpec.h"
+#include "TouchGesture.h"
 #include "QtPlotBackend.h"
 
 #include <QQuickPaintedItem>
@@ -74,6 +75,19 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(bool fullRenderWaiting READ fullRenderWaiting NOTIFY renderStateChanged)
     Q_PROPERTY(bool showingFullRender READ showingFullRender NOTIFY renderStateChanged)
     Q_PROPERTY(int pendingEditCount READ pendingEditCount NOTIFY renderStateChanged)
+
+    // Pan and zoom.
+    //
+    // The figure had no pointer interaction of any kind - no wheel, no drag,
+    // and so nothing for a finger to do either. The axis limits it zooms with
+    // were already in PlotSpec and already honoured by the backend; nothing
+    // had ever set them.
+    //
+    // viewInteractive is false for the engines drawn without a rectangular
+    // frame - pie, polar, treemap, the 3-D projections - where an axis range
+    // means nothing. QML uses it to decide whether to offer the affordance.
+    Q_PROPERTY(bool viewInteractive READ viewInteractive NOTIFY stateChanged)
+    Q_PROPERTY(bool viewZoomed READ viewZoomed NOTIFY stateChanged)
 public:
     explicit PlotCanvas(QQuickItem* parent=nullptr);
     ~PlotCanvas() override;
@@ -129,6 +143,13 @@ public:
     // working against.
     Q_INVOKABLE void acceptFullRender();
     Q_INVOKABLE void cancelFullRender();
+
+    bool viewInteractive() const;
+    bool viewZoomed() const { return hasView_; }
+    // Back to fitting the data. Also what a double-click and a double-tap do.
+    Q_INVOKABLE void resetView();
+    // For a QML button or a keyboard shortcut: >1 zooms in, about the centre.
+    Q_INVOKABLE void zoomBy(double factor);
     QColor gridColor() const { return spec_.style.gridColor; }
     void setBackgroundColor(const QColor& c);
     void setForegroundColor(const QColor& c);
@@ -163,6 +184,20 @@ public:
     Q_INVOKABLE QString reproducibleScript(const QString& profileName) const;
 
     void paint(QPainter* painter) override;
+
+protected:
+    // Mouse, wheel and touch. A finger is not a second-class pointer here: one
+    // finger pans, two pinch to zoom and drag together, and a double-tap
+    // resets - none of which Qt's mouse synthesis could have given, because
+    // there was no wheel handler and no middle button to synthesise onto.
+    void mousePressEvent(QMouseEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
+    void mouseReleaseEvent(QMouseEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
+    void wheelEvent(QWheelEvent* e) override;
+    void touchEvent(QTouchEvent* e) override;
+
+public:
     // A resize invalidates the full-resolution image: paint() draws it scaled
     // into the new size, so without this the "full resolution" view became a
     // stretched bitmap of the old geometry and stayed that way until something
@@ -176,6 +211,21 @@ signals:
     void renderStateChanged();
 
 private:
+    // Seed the view from what is currently drawn, so the first drag or pinch
+    // continues from the figure the user is looking at rather than from a
+    // range invented here.
+    void ensureView();
+    void panByPixels(double dx,double dy);
+    void zoomAt(const QPointF& pos,double factor);
+    void commitView();       // write the view onto the axes and redraw
+    QRectF interactionArea() const;
+    bool hasView_=false;
+    QPointF lastPointer_;
+    bool dragging_=false;
+    // Fingers. The same reader the 3-D viewport uses - see TouchGesture.h for
+    // why that is one class rather than two copies of the same arithmetic.
+    TouchGesture touch_;
+
     void rebuild();          // reload data and regenerate the spec's series
     void applyVariant();     // catalogue scale variants: Semi-Log X, etc.
     void renderTo(QPainter* painter,const QRectF& target);

@@ -1,11 +1,14 @@
 #include "SplashWindow.h"
 
+#include "ReefScene.h"
+
 #include <QCoreApplication>
 #include <QCursor>
 #include <QGuiApplication>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRandomGenerator>
 #include <QScreen>
 #include <QThread>
 
@@ -23,6 +26,11 @@ SplashWindow::SplashWindow(){
     resize(kWidth,kHeight);
 
     logo_.load(QStringLiteral(":/qt/qml/GraphVis/assets/graphvis_icon.png"));
+
+    // One of a hundred reefs, drawn from a seed rather than loaded from a
+    // hundred image files. The otter is untouched - it is the logo, and it is
+    // drawn over the reef exactly as it always was.
+    reefSeed_=QRandomGenerator::global()->bounded(int(kReefSceneCount));
 
     // Centred on the screen under the pointer, for the same reason the main
     // window is: centring on the virtual desktop straddles the bezel.
@@ -61,14 +69,28 @@ void SplashWindow::paintEvent(QPaintEvent*){
 
     // Deep water behind the otter, so the artwork sits on something rather than
     // floating on a grey rectangle.
-    QLinearGradient sea(box.topLeft(),box.bottomRight());
-    sea.setColorAt(0.0,QColor(0x07,0x1a,0x24));
-    sea.setColorAt(0.55,QColor(0x0b,0x28,0x33));
-    sea.setColorAt(1.0,QColor(0x10,0x1a,0x2c));
     QPainterPath rounded;
     rounded.addRoundedRect(box,14,14);
-    p.fillPath(rounded,sea);
+    p.save();
+    p.setClipPath(rounded);
+    drawReefScene(p,box,reefSeed_);
+    p.restore();
+
+    // A scrim under the writing. The reef's floor is pale sand and the text is
+    // pale blue: without this the progress bar and the percentage sit on a
+    // light background in the colours chosen for a dark one, which is the one
+    // way a splash screen can be genuinely unreadable.
+    QLinearGradient scrim(QPointF(0,box.height()*0.44),QPointF(0,box.bottom()));
+    scrim.setColorAt(0.0,QColor(0x05,0x12,0x1a,0));
+    scrim.setColorAt(0.45,QColor(0x05,0x12,0x1a,190));
+    scrim.setColorAt(1.0,QColor(0x05,0x12,0x1a,225));
+    p.save();
+    p.setClipPath(rounded);
+    p.fillRect(box,scrim);
+    p.restore();
+
     p.setPen(QPen(QColor(0x27,0x63,0x72),1.0));
+    p.setBrush(Qt::NoBrush);
     p.drawPath(rounded);
 
     if(!logo_.isNull()){
