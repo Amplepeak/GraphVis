@@ -1853,6 +1853,7 @@ dependencies = [
  "graphvis-data",
  "graphvis-render",
  "graphvis-smart",
+ "parking_lot",
  "serde_json",
  "tokio",
  "uuid",

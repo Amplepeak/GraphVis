@@ -133,6 +133,30 @@ function Assert-GraphVisLockfiles {
   if(-not (Test-Path $lock)){
     throw 'native/Cargo.lock is required for deterministic builds. Run scripts/Generate-And-Verify-Lockfile.ps1, review it, and commit it.'
   }
+
+  # That the file EXISTS was all this used to check, and a lock that exists can
+  # still disagree with the manifests - a dependency added to a crate and the
+  # lock never regenerated. `cargo fetch --locked` then refuses, correctly, with
+  # a message about updating the lock file.
+  #
+  # This is worth a second here because of where it used to be found: the fetch
+  # runs AFTER the vcpkg build, so a one-line mismatch in the lock surfaced
+  # after nine hours of compiling VTK. `cargo metadata --locked` resolves the
+  # workspace and touches no network, so it answers the same question before
+  # anything expensive starts.
+  $manifest=Join-Path $Root 'native\Cargo.toml'
+  & cargo metadata --locked --format-version 1 --manifest-path $manifest --no-deps 2>&1 | Out-Null
+  if($LASTEXITCODE -ne 0){
+    Write-Warning 'native/Cargo.lock does not match the crate manifests. Regenerating it with the pinned toolchain - review the diff and commit it.'
+    & cargo generate-lockfile --manifest-path $manifest
+    if($LASTEXITCODE -ne 0){
+      throw 'native/Cargo.lock does not match native/Cargo.toml and could not be regenerated. Run: cargo generate-lockfile --manifest-path native\Cargo.toml'
+    }
+    & cargo metadata --locked --format-version 1 --manifest-path $manifest --no-deps 2>&1 | Out-Null
+    if($LASTEXITCODE -ne 0){
+      throw 'native/Cargo.lock still does not match the manifests after regenerating it.'
+    }
+  }
   $vcpkg=Get-Content (Join-Path $Root 'vcpkg.json') -Raw | ConvertFrom-Json
   if(-not $vcpkg.'builtin-baseline'){ throw 'vcpkg.json must contain builtin-baseline.' }
 
