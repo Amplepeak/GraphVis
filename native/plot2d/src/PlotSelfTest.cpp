@@ -565,6 +565,200 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 7's inputs. Every one is built from a KNOWN constant so the
+    // engine's own label can be checked against the number the generator used:
+    // a concordia chord whose upper intercept is 1200 Ma, an isochron for a
+    // 500 Ma age, a Tauc edge at 2.40 eV, a Stern-Volmer Ksv of 12. A generator
+    // that only makes a plausible shape can prove that an engine draws and
+    // nothing at all about whether it draws the right thing.
+    QVector<double> concordia207,concordia206;
+    QVector<double> isochronParent,isochronDaughter;
+    QVector<double> harkerSilica,harkerMgO,harkerCaO;
+    QVector<double> spiderReference,spiderSampleA,spiderSampleB;
+    QVector<double> keelingConc,keelingDelta;
+    QVector<double> idfDuration,idfIntensity,idfPeriod;
+    QVector<double> vantHoffT,vantHoffK;
+    QVector<double> taucEnergy,taucAbsorption;
+    QVector<double> quencher,quenchedIntensity;
+    QVector<double> tgaTemperature,tgaMass;
+    QVector<double> dscTemperature,dscHeatFlow;
+    QVector<double> creepTime,creepStrain;
+    QVector<double> ttsFrequency,ttsModulus,ttsTemperature;
+    QVector<double> shearRate,shearStress;
+    QVector<double> bandFrequency,bandLevel;
+    QVector<double> pkTime,pkConcentration;
+    QVector<double> yieldMaturity,yieldRate,yieldDate;
+    QVector<double> nyquistReal,nyquistImag;
+    {
+        // A discordia chord: closure at 1200 Ma, lead loss at 250 Ma, samples
+        // spread along it. The engine's upper intercept must come back 1200.
+        const double lambda235=9.8485e-10,lambda238=1.55125e-10;
+        const double upper=1200.0e6,lower=250.0e6;
+        const double ux=std::expm1(lambda235*upper),uy=std::expm1(lambda238*upper);
+        const double lx=std::expm1(lambda235*lower),ly=std::expm1(lambda238*lower);
+        for(int i=0;i<12;++i){
+            const double f=double(i)/11.0;
+            concordia207.append(lx+f*(ux-lx));
+            concordia206.append(ly+f*(uy-ly));
+        }
+        // Rb-Sr isochron for 500 Ma with an initial ratio of 0.7050.
+        {
+            const double lambdaRb=1.397e-11;
+            const double slope=std::expm1(lambdaRb*500.0e6);
+            for(int i=0;i<10;++i){
+                const double parent=0.5+double(i)*0.9;
+                isochronParent.append(parent);
+                isochronDaughter.append(0.7050+slope*parent);
+            }
+        }
+        // A fractionation trend: MgO falls 0.15 and CaO 0.20 per wt% silica.
+        for(int i=0;i<24;++i){
+            const double silica=45.0+double(i)*(30.0/23.0);
+            harkerSilica.append(silica);
+            harkerMgO.append(12.0-0.15*silica);
+            harkerCaO.append(20.0-0.20*silica);
+        }
+        // A reference falling by a decade over the series, one sample enriched
+        // two-fold throughout and one with a trough in the middle.
+        for(int i=0;i<14;++i){
+            const double reference=10.0*std::pow(0.85,double(i));
+            spiderReference.append(reference);
+            spiderSampleA.append(reference*2.0);
+            spiderSampleB.append(reference*(i>=5&&i<=8?0.4:1.5));
+        }
+        // Two-component mixing: a background of 380 at -8 and a source at -26.
+        // The Keeling intercept must be -26.
+        for(int i=0;i<20;++i){
+            const double total=380.0+double(i)*12.0;
+            keelingConc.append(total);
+            keelingDelta.append(-26.0+380.0*(-8.0-(-26.0))/total);
+        }
+        // Intensity-duration-frequency with a duration exponent of -0.7.
+        {
+            const double periods[]={2.0,10.0,50.0};
+            for(double period:periods){
+                for(int i=0;i<10;++i){
+                    const double duration=5.0*std::pow(1440.0/5.0,double(i)/9.0);
+                    idfDuration.append(duration);
+                    idfIntensity.append(60.0*std::pow(period,0.2)*std::pow(duration,-0.7));
+                    idfPeriod.append(period);
+                }
+            }
+        }
+        // Van 't Hoff for dH = -50 kJ/mol and dS = -100 J/(mol K).
+        {
+            const double gasConstant=8.314462618;
+            const double enthalpy=-50000.0,entropy=-100.0;
+            for(int i=0;i<12;++i){
+                const double t=280.0+double(i)*8.0;
+                vantHoffT.append(t);
+                vantHoffK.append(std::exp(-enthalpy/(gasConstant*t)+entropy/gasConstant));
+            }
+        }
+        // A direct allowed edge at 2.40 eV: (a h v)^2 rises linearly above it
+        // and is flat below, so the extrapolated intercept must be 2.40.
+        for(int i=0;i<80;++i){
+            const double energy=1.5+double(i)*(2.0/79.0);
+            taucEnergy.append(energy);
+            const double tauc=(energy>2.40)?4.0e4*(energy-2.40):0.0;
+            taucAbsorption.append(std::sqrt(tauc)/energy);
+        }
+        // Stern-Volmer with Ksv = 12.
+        for(int i=0;i<12;++i){
+            const double q=double(i)*0.02;
+            quencher.append(q);
+            quenchedIntensity.append(1000.0/(1.0+12.0*q));
+        }
+        // A single decomposition step centred at 400, 100% down to 40%.
+        for(int i=0;i<160;++i){
+            const double temperature=25.0+double(i)*(700.0/159.0);
+            tgaTemperature.append(temperature);
+            tgaMass.append(4.0*(0.40+0.60/(1.0+std::exp((temperature-400.0)/18.0))));
+        }
+        // A sloping baseline with one Gaussian peak at 150.
+        for(int i=0;i<200;++i){
+            const double temperature=50.0+double(i)*(200.0/199.0);
+            dscTemperature.append(temperature);
+            const double excess=6.0*std::exp(-0.5*std::pow((temperature-150.0)/8.0,2.0));
+            dscHeatFlow.append(-2.0+0.01*(temperature-50.0)+excess);
+        }
+        // Primary, secondary at a minimum rate of 2e-4, then tertiary.
+        for(int i=0;i<120;++i){
+            const double t=double(i)*10.0;
+            creepTime.append(t);
+            creepStrain.append(0.004*std::log1p(t*0.5)
+                               +2.0e-4*t
+                               +0.0006*std::exp((t-1000.0)/140.0));
+        }
+        // Three isotherms of one master curve, shifted by log aT = -0.05 dT.
+        //
+        // -0.15 was used first and the isotherms did not overlap: each covers
+        // three decades and the shift moved them three decades apart, so they
+        // met at a point. Superposition cannot be determined from that, and the
+        // engine correctly refused - the generator was what needed fixing.
+        {
+            const double temperatures[]={5.0,25.0,45.0};
+            for(double t:temperatures){
+                const double logShift=-0.05*(t-25.0);
+                for(int i=0;i<14;++i){
+                    const double logF=-1.0+double(i)*(3.0/13.0);
+                    const double reduced=logF+logShift;
+                    ttsFrequency.append(std::pow(10.0,logF));
+                    // A smooth sigmoid in log reduced frequency, so the shifted
+                    // isotherms genuinely superpose and the recovered shifts
+                    // can be compared against -0.15 dT.
+                    ttsModulus.append(std::pow(10.0,6.0+2.0/(1.0+std::exp(-reduced))));
+                    ttsTemperature.append(t);
+                }
+            }
+        }
+        // Herschel-Bulkley with a yield stress of 5, K of 2 and n of 0.6.
+        for(int i=0;i<30;++i){
+            const double rate=0.1*std::pow(1000.0,double(i)/29.0);
+            shearRate.append(rate);
+            shearStress.append(5.0+2.0*std::pow(rate,0.6));
+        }
+        // A broadband floor with a tone at 1 kHz, sampled every 10 Hz.
+        for(int i=1;i<=2000;++i){
+            const double f=double(i)*10.0;
+            bandFrequency.append(f);
+            const double tone=(f>950.0&&f<1050.0)?30.0:0.0;
+            bandLevel.append(40.0-5.0*std::log10(f/20.0)+tone);
+        }
+        // One-compartment, first-order absorption: ka 1.2, ke 0.2, so the
+        // terminal half-life must come back at ln2/0.2 = 3.466.
+        for(int i=0;i<40;++i){
+            const double t=double(i)*0.75;
+            pkTime.append(t);
+            pkConcentration.append(120.0*(std::exp(-0.2*t)-std::exp(-1.2*t)));
+        }
+        // Three term structures, the last one inverted.
+        {
+            const double dates[]={20240101.0,20240701.0,20250101.0};
+            const double maturities[]={0.25,0.5,1.0,2.0,3.0,5.0,7.0,10.0,20.0,30.0};
+            int which=0;
+            for(double date:dates){
+                for(double maturity:maturities){
+                    yieldDate.append(date);
+                    yieldMaturity.append(maturity);
+                    yieldRate.append(which<2
+                        ? 2.0+1.6*(1.0-std::exp(-maturity/4.0))
+                        : 5.2-1.1*(1.0-std::exp(-maturity/4.0)));
+                }
+                ++which;
+            }
+        }
+        // G(jw) = 1 / (jw (jw+1) (jw+2)), the textbook third-order loop.
+        for(int i=0;i<200;++i){
+            const double w=std::pow(10.0,-1.0+2.0*double(i)/199.0);
+            // (jw)(jw+1)(jw+2) = -3w^2 + j(2w - w^3)
+            const double dr=-3.0*w*w, di=2.0*w-w*w*w;
+            const double mag2=dr*dr+di*di;
+            nyquistReal.append(dr/mag2);
+            nyquistImag.append(-di/mag2);
+        }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -768,6 +962,47 @@ bool runEngineSweep(){
             {column("A",mvA),column("B",mvB),column("C",mvC),column("D",mvD)}},
         {QStringLiteral("Sunflower Plot"),
             {column("x",noisyX),column("y",noisyY)}},
+        // Batch 7.
+        {QStringLiteral("Concordia Diagram"),
+            {column("207Pb/235U",concordia207),column("206Pb/238U",concordia206)}},
+        {QStringLiteral("Isochron Plot"),
+            {column("87Rb/86Sr",isochronParent),column("87Sr/86Sr",isochronDaughter)}},
+        {QStringLiteral("Harker Diagram"),
+            {column("SiO2",harkerSilica),column("MgO",harkerMgO),column("CaO",harkerCaO)}},
+        {QStringLiteral("Normalised Spider Diagram"),
+            {column("chondrite",spiderReference),column("sample A",spiderSampleA),
+             column("sample B",spiderSampleB)}},
+        {QStringLiteral("Keeling Plot"),
+            {column("CO2",keelingConc),column("d13C",keelingDelta)}},
+        {QStringLiteral("IDF Curve"),
+            {column("duration",idfDuration),column("intensity",idfIntensity),
+             column("return period",idfPeriod)}},
+        {QStringLiteral("Van 't Hoff Plot"),
+            {column("T",vantHoffT),column("K",vantHoffK)}},
+        {QStringLiteral("Tauc Plot"),
+            {column("energy",taucEnergy),column("alpha",taucAbsorption)}},
+        {QStringLiteral("Stern-Volmer Plot"),
+            {column("quencher",quencher),column("intensity",quenchedIntensity)}},
+        {QStringLiteral("TGA / DTG Curve"),
+            {column("temperature",tgaTemperature),column("mass",tgaMass)}},
+        {QStringLiteral("DSC Thermogram"),
+            {column("temperature",dscTemperature),column("heat flow",dscHeatFlow)}},
+        {QStringLiteral("Creep Curve"),
+            {column("time",creepTime),column("strain",creepStrain)}},
+        {QStringLiteral("Master Curve (TTS)"),
+            {column("frequency",ttsFrequency),column("modulus",ttsModulus),
+             column("temperature",ttsTemperature)}},
+        {QStringLiteral("Rheology Flow Curve"),
+            {column("shear rate",shearRate),column("shear stress",shearStress)}},
+        {QStringLiteral("Octave Band Spectrum"),
+            {column("frequency",bandFrequency),column("level",bandLevel)}},
+        {QStringLiteral("Pharmacokinetic Profile"),
+            {column("time",pkTime),column("concentration",pkConcentration)}},
+        {QStringLiteral("Yield Curve"),
+            {column("maturity",yieldMaturity),column("yield",yieldRate),
+             column("date",yieldDate)}},
+        {QStringLiteral("Nyquist Stability Plot"),
+            {column("real",nyquistReal),column("imaginary",nyquistImag)}},
     };
 
     for(const QString& engine:engines){

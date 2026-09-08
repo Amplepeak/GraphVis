@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 1859,
- "engine_count": 303,
+ "entry_count": 1889,
+ "engine_count": 321,
  "categories": [
   {
    "name": "Line Plots",
@@ -7947,6 +7947,28 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "tauc",
+     "engine": "Tauc Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "(alpha h v)^2 against photon energy, with the band gap from the steepest tangent",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Spectroscopy & Chromatography",
+     "name": "sternvolmer",
+     "engine": "Stern-Volmer Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "I0/I against quencher concentration, with the Stern-Volmer constant fitted",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -10709,6 +10731,83 @@
      "scale": null,
      "advanced": false,
      "description": "Return against risk with the non-dominated frontier drawn through the cloud",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve",
+     "engine": "Yield Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve · Semi-Log Y",
+     "engine": "Yield Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve · Logarithmic Scale",
+     "engine": "Yield Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve · Semi-Log X",
+     "engine": "Yield Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve · Semi-Log(1+x) Y",
+     "engine": "Yield Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve · Standardised (Z-Score)",
+     "engine": "Yield Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "yieldcurve · Quantile X",
+     "engine": "Yield Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "",
      "thumbnail": "",
      "pack": "base"
@@ -15540,6 +15639,72 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "vanthoff",
+     "engine": "Van 't Hoff Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "ln K against 1/T, with the reaction enthalpy and entropy read off the line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "tga",
+     "engine": "TGA / DTG Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Mass against temperature with its derivative over the top and the extrapolated onset",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "dsc",
+     "engine": "DSC Thermogram",
+     "scale": null,
+     "advanced": false,
+     "description": "Heat flow against temperature with the integration baseline and the peak area",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "creep",
+     "engine": "Creep Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Strain against time under load, with the minimum creep rate fitted in the secondary stage",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "mastercurve",
+     "engine": "Master Curve (TTS)",
+     "scale": null,
+     "advanced": false,
+     "description": "Isotherms shifted horizontally until they superpose, with the shift factor for each",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "flowcurve",
+     "engine": "Rheology Flow Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Shear stress against shear rate with Herschel-Bulkley fitted: yield stress, consistency and index",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -16701,6 +16866,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile",
+     "engine": "Pharmacokinetic Profile",
+     "scale": null,
+     "advanced": false,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile · Semi-Log Y",
+     "engine": "Pharmacokinetic Profile",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile · Logarithmic Scale",
+     "engine": "Pharmacokinetic Profile",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile · Semi-Log X",
+     "engine": "Pharmacokinetic Profile",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile · Semi-Log(1+x) Y",
+     "engine": "Pharmacokinetic Profile",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile · Standardised (Z-Score)",
+     "engine": "Pharmacokinetic Profile",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "pkprofile · Quantile X",
+     "engine": "Pharmacokinetic Profile",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -17788,6 +18030,72 @@
      "scale": null,
      "advanced": false,
      "description": "Wind u against v traced with height, with speed rings",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "concordia",
+     "engine": "Concordia Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "U-Pb ratios against the concordia curve, with the discordia chord and its upper intercept",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "isochron",
+     "engine": "Isochron Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Daughter against parent, both over a stable isotope; the slope is the age and the intercept the initial ratio",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "harker",
+     "engine": "Harker Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Every oxide against silica, with the fractionation trend fitted for each",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "spider",
+     "engine": "Normalised Spider Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Samples divided element by element by a reference composition, on a log axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "keeling",
+     "engine": "Keeling Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Isotopic composition against one over concentration; the intercept is the source signature",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "idf",
+     "engine": "IDF Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Rainfall intensity against duration on log-log axes, one curve per return period",
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
@@ -19148,6 +19456,28 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "Loop gain and phase against frequency, with the 0 dB crossover — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "octaveband",
+     "engine": "Octave Band Spectrum",
+     "scale": null,
+     "advanced": false,
+     "description": "Narrowband levels summed in energy into third-octave bands, with the A-weighted overall",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "nyquiststability",
+     "engine": "Nyquist Stability Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "The open-loop locus against the critical point, with the gain and phase margins",
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
@@ -20736,31 +21066,31 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 767
+   "entryCount": 774
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 541
+   "entryCount": 547
   },
   {
    "id": "earth",
    "name": "Earth & Environment",
    "description": "Map projections, GIS, terrain, hydrology, geology and oceanography.",
-   "entryCount": 184
+   "entryCount": 190
   },
   {
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 245
+   "entryCount": 254
   },
   {
    "id": "physics",
    "name": "Physics & Signals",
    "description": "Spectral analysis, signal imaging, RF and control, and volume visualisation.",
-   "entryCount": 122
+   "entryCount": 124
   }
  ]
 }

@@ -69,6 +69,27 @@ NO_SCALE = {
     # characteristic curve computes its own axes from a sampling plan.
     "Star Glyph Plot", "Recurrence Plot", "Biplot", "Sunflower Plot",
     "Wavelet Scalogram", "Operating Characteristic Curve",
+    # Batch 7. Two separate reasons, and both are about the picture becoming
+    # false rather than merely odd.
+    #
+    # A LINEARISATION reports its answer as the slope or the intercept of a
+    # straight line, and a transformed axis is a different line: van 't Hoff's
+    # enthalpy, an isochron's age, Stern-Volmer's constant, Keeling's source
+    # signature and Tauc's band gap are all read off one, and a concordia
+    # chord's upper intercept is read off where a straight line meets a curve.
+    # Harker's fitted trends, the extrapolated TGA onset and the secondary
+    # creep tangent are drawn from two endpoints for the same reason.
+    #
+    # The rest already SET their own axes - the IDF family, the master curve,
+    # the flow curve and the octave band spectrum are logarithmic by
+    # construction, a spider diagram's x is column order, and a Nyquist plot
+    # carries a unit circle and the point -1 that stop being those things the
+    # moment an axis is transformed.
+    "Concordia Diagram", "Isochron Plot", "Harker Diagram",
+    "Normalised Spider Diagram", "Keeling Plot", "IDF Curve",
+    "Van 't Hoff Plot", "Tauc Plot", "Stern-Volmer Plot", "TGA / DTG Curve",
+    "DSC Thermogram", "Creep Curve", "Master Curve (TTS)",
+    "Rheology Flow Curve", "Octave Band Spectrum", "Nyquist Stability Plot",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

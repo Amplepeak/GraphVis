@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 6.
+"""Catalogue entries for the engine expansion, batches 1 to 7.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -227,6 +227,45 @@ NEW = [
      "One small radar per observation on a grid, so shapes can be matched by eye"),
     ("Scatter & Bubble Charts", "sunflower", "Sunflower Plot",
      "A petal per observation where points coincide, so density shows without hiding points"),
+
+    # ---- batch 7: geochronology, hydrology, thermal analysis, spectroscopy,
+    # rheology, acoustics, pharmacokinetics and control
+    ("Earth & Ocean Science", "concordia", "Concordia Diagram",
+     "U-Pb ratios against the concordia curve, with the discordia chord and its upper intercept"),
+    ("Earth & Ocean Science", "isochron", "Isochron Plot",
+     "Daughter against parent, both over a stable isotope; the slope is the age and the intercept the initial ratio"),
+    ("Earth & Ocean Science", "harker", "Harker Diagram",
+     "Every oxide against silica, with the fractionation trend fitted for each"),
+    ("Earth & Ocean Science", "spider", "Normalised Spider Diagram",
+     "Samples divided element by element by a reference composition, on a log axis"),
+    ("Earth & Ocean Science", "keeling", "Keeling Plot",
+     "Isotopic composition against one over concentration; the intercept is the source signature"),
+    ("Earth & Ocean Science", "idf", "IDF Curve",
+     "Rainfall intensity against duration on log-log axes, one curve per return period"),
+    ("Materials & Chemistry", "vanthoff", "Van 't Hoff Plot",
+     "ln K against 1/T, with the reaction enthalpy and entropy read off the line"),
+    ("Spectroscopy & Chromatography", "tauc", "Tauc Plot",
+     "(alpha h v)^2 against photon energy, with the band gap from the steepest tangent"),
+    ("Spectroscopy & Chromatography", "sternvolmer", "Stern-Volmer Plot",
+     "I0/I against quencher concentration, with the Stern-Volmer constant fitted"),
+    ("Materials & Chemistry", "tga", "TGA / DTG Curve",
+     "Mass against temperature with its derivative over the top and the extrapolated onset"),
+    ("Materials & Chemistry", "dsc", "DSC Thermogram",
+     "Heat flow against temperature with the integration baseline and the peak area"),
+    ("Materials & Chemistry", "creep", "Creep Curve",
+     "Strain against time under load, with the minimum creep rate fitted in the secondary stage"),
+    ("Materials & Chemistry", "mastercurve", "Master Curve (TTS)",
+     "Isotherms shifted horizontally until they superpose, with the shift factor for each"),
+    ("Materials & Chemistry", "flowcurve", "Rheology Flow Curve",
+     "Shear stress against shear rate with Herschel-Bulkley fitted: yield stress, consistency and index"),
+    ("Signals & RF", "octaveband", "Octave Band Spectrum",
+     "Narrowband levels summed in energy into third-octave bands, with the A-weighted overall"),
+    ("Clinical & Meta-analysis", "pkprofile", "Pharmacokinetic Profile",
+     "Concentration against time with Cmax, Tmax, the trapezoidal AUC and the terminal half-life"),
+    ("Presentation & Comparison", "yieldcurve", "Yield Curve",
+     "Yield against maturity, one curve per date, with the long-short spread and any inversion flagged"),
+    ("Signals & RF", "nyquiststability", "Nyquist Stability Plot",
+     "The open-loop locus against the critical point, with the gain and phase margins"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -266,5 +305,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-6: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-7: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))
