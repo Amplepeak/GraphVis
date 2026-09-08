@@ -117,6 +117,21 @@ NO_SCALE = {
     "Hertzsprung-Russell Diagram", "Rotation Curve", "Hubble Diagram",
     "Constellation Diagram", "Wind Profile (Log Law)", "Experience Curve",
     "Half-Normal Plot", "Response Waterfall",
+    # Batch 10, on the same two tests. Linearisations whose answer is a slope
+    # or an intercept: the decay constant, the attenuation coefficient, the
+    # critical power. Fixed geometry a transform would falsify: the E = y
+    # asymptote and the critical depth, the counterflow limit, the 50% and 10%
+    # contrast levels, R90 and R80 as fractions of a peak, the 4 mmol line and
+    # the D-max chord, the peak over root two, the 80% line on a Pareto chart
+    # and on a power curve, Wald's boundaries, a fitted Bass curve, and the
+    # ramp rate and the delay AREA, both of which are quantities read off the
+    # untransformed axes.
+    "Specific Energy Diagram", "NTU-Effectiveness Curve", "Duck Curve (Net Load)",
+    "Protection Coordination Curve", "MTF Curve", "Radioactive Decay Fit",
+    "Attenuation Curve", "Depth-Dose Curve", "Critical Power Curve",
+    "Lactate Threshold Curve", "Half-Power Bandwidth", "Cumulative Vehicle Count",
+    "Bass Diffusion Curve", "Pareto Chart", "Statistical Power Curve",
+    "Sequential Test Boundaries",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

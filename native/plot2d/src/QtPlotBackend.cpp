@@ -494,6 +494,27 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("EOQ Cost Curve"),
         QStringLiteral("Half-Normal Plot"),
         QStringLiteral("Response Waterfall"),
+        // Batch 10: open-channel and process hydraulics, power systems,
+        // imaging, radiation, exercise physiology, traffic, and two
+        // sequential decisions.
+        QStringLiteral("Specific Energy Diagram"),
+        QStringLiteral("NTU-Effectiveness Curve"),
+        QStringLiteral("Pump Operating Point"),
+        QStringLiteral("Duck Curve (Net Load)"),
+        QStringLiteral("Protection Coordination Curve"),
+        QStringLiteral("MTF Curve"),
+        QStringLiteral("Radioactive Decay Fit"),
+        QStringLiteral("Attenuation Curve"),
+        QStringLiteral("Depth-Dose Curve"),
+        QStringLiteral("Critical Power Curve"),
+        QStringLiteral("Lactate Threshold Curve"),
+        QStringLiteral("Half-Power Bandwidth"),
+        QStringLiteral("Cumulative Vehicle Count"),
+        QStringLiteral("Cohort Retention Curve"),
+        QStringLiteral("Bass Diffusion Curve"),
+        QStringLiteral("Pareto Chart"),
+        QStringLiteral("Statistical Power Curve"),
+        QStringLiteral("Sequential Test Boundaries"),
     };
     return kEngines;
 }
@@ -1887,7 +1908,21 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Wind Profile (Log Law)"),
         QStringLiteral("Experience Curve"),
         QStringLiteral("Half-Normal Plot"),
-        QStringLiteral("Response Waterfall")};
+        QStringLiteral("Response Waterfall"),
+        // Batch 10. Two columns each: a depth and a discharge, a thickness
+        // and an intensity, a duration and a power, a category and a count.
+        QStringLiteral("Specific Energy Diagram"),
+        QStringLiteral("MTF Curve"),
+        QStringLiteral("Radioactive Decay Fit"),
+        QStringLiteral("Attenuation Curve"),
+        QStringLiteral("Depth-Dose Curve"),
+        QStringLiteral("Critical Power Curve"),
+        QStringLiteral("Lactate Threshold Curve"),
+        QStringLiteral("Half-Power Bandwidth"),
+        QStringLiteral("Bass Diffusion Curve"),
+        QStringLiteral("Pareto Chart"),
+        QStringLiteral("Statistical Power Curve"),
+        QStringLiteral("Sequential Test Boundaries")};
     if(kPairs.contains(engine)) return {2,2,true};
 
     // ---- Every column mapped, read as one series each. These get WIDER with
@@ -1983,7 +2018,17 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Balanced Field Length"),
         QStringLiteral("Composite Curves (Pinch)"),
         // Batch 9. An order quantity and the two costs it trades off.
-        QStringLiteral("EOQ Cost Curve")};
+        QStringLiteral("EOQ Cost Curve"),
+        // Batch 10. A third column that is either a SECOND CURVE to cross
+        // against the first - a system head, a renewable output, a
+        // departure count - or the group a curve belongs to: a capacity
+        // ratio, a protective device, an intake cohort.
+        QStringLiteral("NTU-Effectiveness Curve"),
+        QStringLiteral("Pump Operating Point"),
+        QStringLiteral("Duck Curve (Net Load)"),
+        QStringLiteral("Protection Coordination Curve"),
+        QStringLiteral("Cumulative Vehicle Count"),
+        QStringLiteral("Cohort Retention Curve")};
     if(kThree.contains(engine)) return {3,3,true};
 
     // Contingency: the two categories, and a count column if there is one.
@@ -18549,6 +18594,1262 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         out.xAxis=PlotAxis{QStringLiteral("patient, ranked"),false,unsetValue(),unsetValue()};
         out.yAxis=PlotAxis{QStringLiteral("best change from baseline (%)"),false,
                            unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ====================================================================
+    // Batch 10: open-channel and process hydraulics, power systems, imaging,
+    // radiation, exercise physiology, traffic and two sequential decisions.
+
+    // ------------------------------------------------- Specific Energy Diagram
+    // Depth against the energy the flow carries past a section. The curve has a
+    // MINIMUM, and everything about open-channel behaviour follows from it:
+    // below that energy no flow of this discharge is possible, above it there
+    // are two depths that carry the same discharge with the same energy, and
+    // which one a channel is in decides whether a disturbance can travel back
+    // upstream.
+    //
+    // The energy is computed from the discharge rather than read from a column,
+    // because the whole point is the shape of the curve at a FIXED discharge.
+    if(in.engine==QLatin1String("Specific Energy Diagram")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& depth=in.series.at(0).y;
+            const QVector<double>& discharge=in.series.at(1).y;
+            // One discharge per curve. The median of the column is used when
+            // it varies, so a noisy or repeated reading does not split the
+            // family into a hundred near-identical curves.
+            QVector<double> flows;
+            for(double v:discharge) if(finite(v)&&v>0.0) flows.append(v);
+            std::sort(flows.begin(),flows.end());
+            const Bounds bd=boundsOf(depth);
+            if(!flows.isEmpty()&&bd.valid&&bd.hi>0.0){
+                const double unitDischarge=flows[flows.size()/2];
+                const double gravity=9.81;
+                auto energyAt=[&](double y){
+                    return y+unitDischarge*unitDischarge/(2.0*gravity*y*y);
+                };
+                const double critical=std::cbrt(unitDischarge*unitDischarge/gravity);
+                const double minimumEnergy=1.5*critical;
+                PlotSeries curve;
+                curve.label=QStringLiteral("q %1, yc %2, Emin %3 (g 9.81)")
+                                .arg(unitDischarge,0,'g',4).arg(critical,0,'g',4)
+                                .arg(minimumEnergy,0,'g',4);
+                curve.color=in.series.at(0).color;
+                curve.lineWidth=qMax(1.4,in.style.lineWidth);
+                const double lo=qMax(0.05*critical,0.02*bd.hi);
+                const double hi=qMax(bd.hi,2.5*critical);
+                for(int i=0;i<=200;++i){
+                    const double y=lo+(hi-lo)*double(i)/200.0;
+                    if(!(y>0.0)) continue;
+                    curve.x.append(energyAt(y)); curve.y.append(y);
+                }
+                out.series.append(curve);
+                // E = y is the asymptote the upper branch approaches as the
+                // velocity head vanishes. Without it the two branches read as
+                // one bent line rather than as two regimes.
+                PlotSeries asymptote;
+                asymptote.label=QStringLiteral("E = y (no velocity head)");
+                asymptote.color=in.style.gridColor;
+                asymptote.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                asymptote.dashPattern={5,4};
+                asymptote.x={0.0,hi}; asymptote.y={0.0,hi};
+                out.series.append(asymptote);
+                PlotSeries measured;
+                measured.label=QStringLiteral("measured depths");
+                measured.color=in.series.at(1).color;
+                measured.drawLine=false; measured.drawMarkers=true; measured.markerSize=4.4;
+                for(double y:depth){
+                    if(!finite(y)||!(y>0.0)) continue;
+                    measured.x.append(energyAt(y)); measured.y.append(y);
+                }
+                if(!measured.x.isEmpty()) out.series.append(measured);
+                PlotSeries mark;
+                mark.label=QStringLiteral("critical depth");
+                mark.color=in.style.danger;
+                mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.5;
+                mark.x={minimumEnergy}; mark.y={critical};
+                out.series.append(mark);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("specific energy"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("depth"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------ NTU-Effectiveness Curve
+    // How much of the available temperature difference an exchanger actually
+    // recovers, against how big it is. The measured points are drawn over the
+    // COUNTERFLOW relation for the same capacity ratio, which is the ceiling
+    // for that geometry - so the gap is the finding, and it is a gap from a
+    // formula rather than from a fitted line through the same points.
+    if(in.engine==QLatin1String("NTU-Effectiveness Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& units=in.series.at(0).y;
+            const QVector<double>& effectiveness=in.series.at(1).y;
+            const QVector<double>& ratio=in.series.at(2).y;
+            const int n=qMin(units.size(),qMin(effectiveness.size(),ratio.size()));
+            QMap<double,QVector<QPair<double,double>>> byRatio;
+            for(int i=0;i<n;++i){
+                if(!finite(units[i])||!finite(effectiveness[i])||!finite(ratio[i])) continue;
+                if(!(units[i]>0.0)) continue;
+                byRatio[ratio[i]].append(qMakePair(units[i],effectiveness[i]));
+            }
+            int index=0;
+            for(auto it=byRatio.constBegin();it!=byRatio.constEnd();++it,++index){
+                QVector<QPair<double,double>> rows=it.value();
+                std::sort(rows.begin(),rows.end(),
+                          [](const QPair<double,double>& a,const QPair<double,double>& b){
+                              return a.first<b.first; });
+                const double capacity=qBound(0.0,it.key(),1.0);
+                PlotSeries pts;
+                pts.label=QStringLiteral("Cr %1, measured").arg(it.key(),0,'g',3);
+                pts.color=QColor::fromHsvF(std::fmod(0.55+double(index)*0.14,1.0),0.62,0.95);
+                pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.2;
+                double worst=0.0;
+                for(const QPair<double,double>& r:rows){ pts.x.append(r.first); pts.y.append(r.second); }
+                PlotSeries reference;
+                reference.color=pts.color;
+                reference.lineWidth=qMax(1.2,in.style.lineWidth);
+                const Bounds bu=boundsOf(pts.x);
+                if(bu.valid){
+                    auto counterflow=[&](double ntu){
+                        // Cr = 1 is the removable singularity of the general
+                        // relation, not a special case of the exchanger: the
+                        // limit is NTU/(1+NTU) and computing the general form
+                        // there divides zero by zero.
+                        if(std::abs(1.0-capacity)<1e-9) return ntu/(1.0+ntu);
+                        const double e=std::exp(-ntu*(1.0-capacity));
+                        return (1.0-e)/(1.0-capacity*e);
+                    };
+                    for(int i=0;i<=120;++i){
+                        const double ntu=bu.lo+(bu.hi-bu.lo)*double(i)/120.0;
+                        if(!(ntu>0.0)) continue;
+                        reference.x.append(ntu); reference.y.append(counterflow(ntu));
+                    }
+                    for(const QPair<double,double>& r:rows)
+                        worst=qMax(worst,counterflow(r.first)-r.second);
+                    reference.label=QStringLiteral("Cr %1, counterflow limit (worst shortfall %2)")
+                                        .arg(it.key(),0,'g',3).arg(worst,0,'f',3);
+                }
+                out.series.append(pts);
+                if(reference.x.size()>=2) out.series.append(reference);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("NTU"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("effectiveness"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------------- Pump Operating Point
+    // The pump's head against the head the system demands, on one pair of axes.
+    // Neither curve alone says what the pump will actually do; where they cross
+    // does, and that duty point is the only flow the installation can settle at.
+    if(in.engine==QLatin1String("Pump Operating Point")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& flow=in.series.at(0).y;
+            const QVector<double>& pumpHead=in.series.at(1).y;
+            const QVector<double>& systemHead=in.series.at(2).y;
+            const int n=qMin(flow.size(),qMin(pumpHead.size(),systemHead.size()));
+            QVector<QPair<double,QPair<double,double>>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(flow[i])||!finite(pumpHead[i])||!finite(systemHead[i])) continue;
+                rows.append(qMakePair(flow[i],qMakePair(pumpHead[i],systemHead[i])));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,QPair<double,double>>& a,
+                         const QPair<double,QPair<double,double>>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=2){
+                PlotSeries pump,system;
+                pump.color=in.series.at(1).color;
+                pump.lineWidth=qMax(1.4,in.style.lineWidth);
+                system.label=QStringLiteral("system demand");
+                system.color=in.series.at(2).color;
+                system.lineWidth=qMax(1.4,in.style.lineWidth);
+                double dutyFlow=std::numeric_limits<double>::quiet_NaN();
+                double dutyHead=std::numeric_limits<double>::quiet_NaN();
+                for(int i=0;i<rows.size();++i){
+                    pump.x.append(rows[i].first);   pump.y.append(rows[i].second.first);
+                    system.x.append(rows[i].first); system.y.append(rows[i].second.second);
+                    if(i==0) continue;
+                    const double before=rows[i-1].second.first-rows[i-1].second.second;
+                    const double now=rows[i].second.first-rows[i].second.second;
+                    if((before<0.0)!=(now<0.0)&&now!=before&&!finite(dutyFlow)){
+                        const double f=(0.0-before)/(now-before);
+                        dutyFlow=rows[i-1].first+f*(rows[i].first-rows[i-1].first);
+                        dutyHead=rows[i-1].second.first
+                                +f*(rows[i].second.first-rows[i-1].second.first);
+                    }
+                }
+                pump.label=finite(dutyFlow)
+                    ? QStringLiteral("pump; duty point %1 at head %2")
+                          .arg(dutyFlow,0,'g',5).arg(dutyHead,0,'g',5)
+                    : QStringLiteral("pump (the two curves do not cross in this range)");
+                out.series.append(pump);
+                out.series.append(system);
+                if(finite(dutyFlow)){
+                    PlotSeries mark;
+                    mark.label=QStringLiteral("duty point");
+                    mark.color=in.style.danger;
+                    mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.5;
+                    mark.x={dutyFlow}; mark.y={dutyHead};
+                    out.series.append(mark);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("flow"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("head"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ Duck Curve (Net Load)
+    // Demand minus what the renewables produced, through the day. The shape is
+    // the reason the plot has a nickname: solar hollows out the middle of the
+    // day and the load it was covering all arrives at once when it stops. What
+    // the system has to be built for is not the peak but the RAMP, so the
+    // steepest rise is computed and reported in load per hour.
+    if(in.engine==QLatin1String("Duck Curve (Net Load)")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& when=in.series.at(0).y;
+            const QVector<double>& demand=in.series.at(1).y;
+            const QVector<double>& renewable=in.series.at(2).y;
+            const int n=qMin(when.size(),qMin(demand.size(),renewable.size()));
+            QVector<QPair<double,QPair<double,double>>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(when[i])||!finite(demand[i])||!finite(renewable[i])) continue;
+                rows.append(qMakePair(when[i],qMakePair(demand[i],renewable[i])));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,QPair<double,double>>& a,
+                         const QPair<double,QPair<double,double>>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=3){
+                PlotSeries gross,clean,net;
+                gross.label=QStringLiteral("demand");
+                gross.color=in.series.at(1).color;
+                gross.lineWidth=qMax(1.1,in.style.lineWidth*0.9);
+                clean.label=QStringLiteral("renewable generation");
+                clean.color=in.style.positive;
+                clean.lineWidth=qMax(1.1,in.style.lineWidth*0.9);
+                net.color=in.style.warning;
+                net.lineWidth=qMax(1.5,in.style.lineWidth);
+                int lowest=0,highest=0; double steepest=0.0,steepestAt=0.0;
+                QVector<double> netLoad;
+                for(int i=0;i<rows.size();++i){
+                    const double value=rows[i].second.first-rows[i].second.second;
+                    netLoad.append(value);
+                    gross.x.append(rows[i].first); gross.y.append(rows[i].second.first);
+                    clean.x.append(rows[i].first); clean.y.append(rows[i].second.second);
+                    net.x.append(rows[i].first);   net.y.append(value);
+                    if(value<netLoad[lowest]) lowest=i;
+                    if(value>netLoad[highest]) highest=i;
+                    if(i==0) continue;
+                    const double span=rows[i].first-rows[i-1].first;
+                    if(!(span>1e-300)) continue;
+                    const double rate=(value-netLoad[i-1])/span;
+                    if(rate>steepest){ steepest=rate; steepestAt=rows[i].first; }
+                }
+                net.label=QStringLiteral("net load; trough %1 at %2, peak %3, steepest ramp %4 per unit time at %5")
+                              .arg(netLoad[lowest],0,'g',5).arg(rows[lowest].first,0,'g',4)
+                              .arg(netLoad[highest],0,'g',5)
+                              .arg(steepest,0,'g',4).arg(steepestAt,0,'g',4);
+                out.series.append(gross);
+                out.series.append(clean);
+                out.series.append(net);
+                PlotSeries marks;
+                marks.label=QStringLiteral("trough and peak");
+                marks.color=in.style.danger;
+                marks.drawLine=false; marks.drawMarkers=true; marks.markerSize=6.0;
+                marks.x={rows[lowest].first,rows[highest].first};
+                marks.y={netLoad[lowest],netLoad[highest]};
+                out.series.append(marks);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time of day"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("load"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------- Protection Coordination Curve
+    // Operating time against fault current, one curve per device, on log-log
+    // axes. Coordination means the device nearest the fault always operates
+    // first, so what matters is the smallest TIME GAP between a device and the
+    // one upstream of it - and that gap is computed at every current the two
+    // curves share rather than eyeballed where they look closest.
+    if(in.engine==QLatin1String("Protection Coordination Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& current=in.series.at(0).y;
+            const QVector<double>& operating=in.series.at(1).y;
+            const QVector<double>& device=in.series.at(2).y;
+            const int n=qMin(current.size(),qMin(operating.size(),device.size()));
+            QMap<double,QVector<QPair<double,double>>> byDevice;
+            for(int i=0;i<n;++i){
+                if(!finite(current[i])||!finite(operating[i])||!finite(device[i])) continue;
+                if(!(current[i]>0.0)||!(operating[i]>0.0)) continue;
+                byDevice[device[i]].append(qMakePair(current[i],operating[i]));
+            }
+            QVector<QVector<QPair<double,double>>> curves;
+            int index=0;
+            for(auto it=byDevice.constBegin();it!=byDevice.constEnd();++it,++index){
+                QVector<QPair<double,double>> rows=it.value();
+                std::sort(rows.begin(),rows.end(),
+                          [](const QPair<double,double>& a,const QPair<double,double>& b){
+                              return a.first<b.first; });
+                curves.append(rows);
+                PlotSeries s;
+                s.label=QStringLiteral("device %1").arg(it.key(),0,'g',6);
+                s.color=QColor::fromHsvF(std::fmod(0.06+double(index)*0.17,1.0),0.68,0.95);
+                s.lineWidth=qMax(1.3,in.style.lineWidth);
+                for(const QPair<double,double>& r:rows){ s.x.append(r.first); s.y.append(r.second); }
+                out.series.append(s);
+            }
+            if(curves.size()>=2&&!out.series.isEmpty()){
+                const auto timeAt=[](const QVector<QPair<double,double>>& c,double i){
+                    // Closed at both ends. Excluding them was a guard against
+                    // extrapolating, and it also refused the two currents most
+                    // likely to carry the answer: on a pair of curves that end
+                    // together, the tightest interval is usually AT the end,
+                    // and it was being reported one grid step short of it.
+                    if(i<c.first().first||i>c.last().first)
+                        return std::numeric_limits<double>::quiet_NaN();
+                    int hi=1;
+                    while(hi<c.size()&&c[hi].first<i) ++hi;
+                    hi=qBound(1,hi,c.size()-1);
+                    const double x0=c[hi-1].first,x1=c[hi].first;
+                    const double y0=c[hi-1].second,y1=c[hi].second;
+                    return (x1>x0)?y0+(i-x0)/(x1-x0)*(y1-y0):y1;
+                };
+                double tightest=std::numeric_limits<double>::infinity();
+                double tightestAt=0.0;
+                for(int a=0;a+1<curves.size();++a){
+                    const double lo=qMax(curves[a].first().first,curves[a+1].first().first);
+                    const double hi=qMin(curves[a].last().first,curves[a+1].last().first);
+                    for(int k=0;k<=200&&hi>lo;++k){
+                        const double i=lo*std::pow(hi/qMax(1e-300,lo),double(k)/200.0);
+                        const double ta=timeAt(curves[a],i),tb=timeAt(curves[a+1],i);
+                        if(!finite(ta)||!finite(tb)) continue;
+                        const double gap=std::abs(tb-ta);
+                        if(gap<tightest){ tightest=gap; tightestAt=i; }
+                    }
+                }
+                if(finite(tightest))
+                    out.series[0].label=QStringLiteral("%1; tightest interval %2 at current %3")
+                                            .arg(out.series[0].label)
+                                            .arg(tightest,0,'g',4).arg(tightestAt,0,'g',5);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("current"),true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("operating time"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ----------------------------------------------------------------- MTF Curve
+    // How much contrast survives at each spatial frequency. A lens is quoted by
+    // the frequency at which half the contrast is left, so that crossing is
+    // interpolated rather than read off the nearest measured frequency - the
+    // measurement grid is usually coarse exactly where the curve is steepest.
+    if(in.engine==QLatin1String("MTF Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& spatial=in.series.at(0).y;
+            const QVector<double>& modulation=in.series.at(1).y;
+            const int n=qMin(spatial.size(),modulation.size());
+            QVector<QPair<double,double>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(spatial[i])||!finite(modulation[i])) continue;
+                rows.append(qMakePair(spatial[i],modulation[i]));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=3){
+                const auto crossing=[&](double level){
+                    for(int i=1;i<rows.size();++i){
+                        const double a=rows[i-1].second,b=rows[i].second;
+                        if((a>=level)==(b>=level)||a==b) continue;
+                        const double f=(level-a)/(b-a);
+                        return rows[i-1].first+f*(rows[i].first-rows[i-1].first);
+                    }
+                    return std::numeric_limits<double>::quiet_NaN();
+                };
+                const double half=crossing(0.5), tenth=crossing(0.1);
+                PlotSeries curve;
+                curve.label=finite(half)
+                    ? (finite(tenth)?QStringLiteral("MTF50 %1, MTF10 %2").arg(half,0,'g',5).arg(tenth,0,'g',5)
+                                    :QStringLiteral("MTF50 %1").arg(half,0,'g',5))
+                    : QStringLiteral("contrast never falls to half in this range");
+                curve.color=in.series.at(1).color;
+                curve.lineWidth=qMax(1.4,in.style.lineWidth);
+                curve.drawMarkers=true; curve.markerSize=3.4;
+                for(const QPair<double,double>& r:rows){ curve.x.append(r.first); curve.y.append(r.second); }
+                out.series.append(curve);
+                const struct { double level; const char* name; } marks[]={
+                    {0.5,"50% contrast"},{0.1,"10% contrast"}};
+                for(const auto& rule:marks){
+                    PlotSeries level;
+                    level.label=QString::fromLatin1(rule.name);
+                    level.color=(rule.level>0.3)?in.style.warning:in.style.gridColor;
+                    level.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                    level.dashPattern={5,4};
+                    level.x={rows.first().first,rows.last().first};
+                    level.y={rule.level,rule.level};
+                    out.series.append(level);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("spatial frequency"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("modulation"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------- Radioactive Decay Fit
+    // Activity against time on a logarithmic ordinate, where a single decaying
+    // species is a straight line. The half-life comes off the slope, and the
+    // straightness is itself a result: a curve that bends has more than one
+    // species in it, or a background that was never subtracted.
+    if(in.engine==QLatin1String("Radioactive Decay Fit")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& time=in.series.at(0).y;
+            const QVector<double>& activity=in.series.at(1).y;
+            const int n=qMin(time.size(),activity.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("measured");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.0;
+            QVector<double> fx,fy;
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(activity[i])||!(activity[i]>0.0)) continue;
+                pts.x.append(time[i]); pts.y.append(activity[i]);
+                fx.append(time[i]); fy.append(std::log(activity[i]));
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                const LineFit f=fitLine(fx,fy);
+                const Bounds bx=boundsOf(fx);
+                if(f.ok&&bx.valid&&f.slope<0.0){
+                    const double constant=-f.slope;
+                    double ssRes=0.0,ssTot=0.0,mean=0.0;
+                    for(double v:fy) mean+=v;
+                    mean/=double(fy.size());
+                    for(int i=0;i<fx.size();++i){
+                        const double r=fy[i]-(f.intercept+f.slope*fx[i]);
+                        ssRes+=r*r; ssTot+=(fy[i]-mean)*(fy[i]-mean);
+                    }
+                    const double r2=(ssTot>1e-300)?1.0-ssRes/ssTot:0.0;
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("half-life %1, lambda %2, R2 %3")
+                                  .arg(std::log(2.0)/constant,0,'g',5)
+                                  .arg(constant,0,'g',4).arg(r2,0,'f',5);
+                    fit.color=in.style.warning;
+                    fit.lineWidth=qMax(1.3,in.style.lineWidth);
+                    // Drawn as a polyline because the ordinate is logarithmic
+                    // and a two-point line across a log axis is a curve that
+                    // does not pass through the fit it claims to be.
+                    for(int i=0;i<=80;++i){
+                        const double t=bx.lo+(bx.hi-bx.lo)*double(i)/80.0;
+                        fit.x.append(t); fit.y.append(std::exp(f.intercept+f.slope*t));
+                    }
+                    out.series.append(fit);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("activity"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------------- Attenuation Curve
+    // Transmitted intensity against absorber thickness. Exponential attenuation
+    // is a straight line on a logarithmic ordinate, and the two numbers that
+    // come off it are the linear attenuation coefficient and the half-value
+    // layer - the thickness that stops half of what arrives, which is what a
+    // shielding calculation is actually written in.
+    if(in.engine==QLatin1String("Attenuation Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& thickness=in.series.at(0).y;
+            const QVector<double>& intensity=in.series.at(1).y;
+            const int n=qMin(thickness.size(),intensity.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("measured");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.0;
+            QVector<double> fx,fy;
+            for(int i=0;i<n;++i){
+                if(!finite(thickness[i])||!finite(intensity[i])||!(intensity[i]>0.0)) continue;
+                pts.x.append(thickness[i]); pts.y.append(intensity[i]);
+                fx.append(thickness[i]); fy.append(std::log(intensity[i]));
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                const LineFit f=fitLine(fx,fy);
+                const Bounds bx=boundsOf(fx);
+                if(f.ok&&bx.valid&&f.slope<0.0){
+                    const double attenuation=-f.slope;
+                    const double halfValue=std::log(2.0)/attenuation;
+                    PlotSeries fit;
+                    fit.label=QStringLiteral("mu %1, half-value layer %2, I0 %3")
+                                  .arg(attenuation,0,'g',5).arg(halfValue,0,'g',5)
+                                  .arg(std::exp(f.intercept),0,'g',5);
+                    fit.color=in.style.warning;
+                    fit.lineWidth=qMax(1.3,in.style.lineWidth);
+                    for(int i=0;i<=80;++i){
+                        const double x=bx.lo+(bx.hi-bx.lo)*double(i)/80.0;
+                        fit.x.append(x); fit.y.append(std::exp(f.intercept+f.slope*x));
+                    }
+                    out.series.append(fit);
+                    PlotSeries mark;
+                    mark.label=QStringLiteral("half-value layer");
+                    mark.color=in.style.danger;
+                    mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.0;
+                    mark.x={halfValue}; mark.y={0.5*std::exp(f.intercept)};
+                    out.series.append(mark);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("absorber thickness"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("transmitted intensity"),true,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ----------------------------------------------------------- Depth-Dose Curve
+    // Dose against depth. A treatment is planned on the DISTAL edge rather than
+    // on the peak, because the peak is where the dose is highest and the edge
+    // is where the healthy tissue behind it starts - so the depths at which the
+    // dose has fallen back through 90% and 80% of its maximum are computed on
+    // the far side of the peak and marked.
+    if(in.engine==QLatin1String("Depth-Dose Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& depth=in.series.at(0).y;
+            const QVector<double>& dose=in.series.at(1).y;
+            const int n=qMin(depth.size(),dose.size());
+            QVector<QPair<double,double>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(depth[i])||!finite(dose[i])) continue;
+                rows.append(qMakePair(depth[i],dose[i]));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=4){
+                int peakAt=0;
+                for(int i=1;i<rows.size();++i) if(rows[i].second>rows[peakAt].second) peakAt=i;
+                const double peak=rows[peakAt].second;
+                const auto distal=[&](double share){
+                    const double level=share*peak;
+                    for(int i=peakAt+1;i<rows.size();++i){
+                        const double a=rows[i-1].second,b=rows[i].second;
+                        if((a>=level)==(b>=level)||a==b) continue;
+                        const double f=(level-a)/(b-a);
+                        return rows[i-1].first+f*(rows[i].first-rows[i-1].first);
+                    }
+                    return std::numeric_limits<double>::quiet_NaN();
+                };
+                const double r90=distal(0.90), r80=distal(0.80);
+                PlotSeries curve;
+                curve.label=(finite(r90)&&finite(r80))
+                    ? QStringLiteral("peak %1 at depth %2; R90 %3, R80 %4")
+                          .arg(peak,0,'g',5).arg(rows[peakAt].first,0,'g',5)
+                          .arg(r90,0,'g',5).arg(r80,0,'g',5)
+                    : QStringLiteral("peak %1 at depth %2 (no distal fall-off in this range)")
+                          .arg(peak,0,'g',5).arg(rows[peakAt].first,0,'g',5);
+                curve.color=in.series.at(1).color;
+                curve.lineWidth=qMax(1.4,in.style.lineWidth);
+                for(const QPair<double,double>& r:rows){ curve.x.append(r.first); curve.y.append(r.second); }
+                out.series.append(curve);
+                if(finite(r90)&&finite(r80)){
+                    PlotSeries marks;
+                    marks.label=QStringLiteral("peak, R90, R80");
+                    marks.color=in.style.danger;
+                    marks.drawLine=false; marks.drawMarkers=true; marks.markerSize=6.0;
+                    marks.x={rows[peakAt].first,r90,r80};
+                    marks.y={peak,0.90*peak,0.80*peak};
+                    out.series.append(marks);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("depth"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("dose"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------------------- Critical Power Curve
+    // Sustainable power against how long it was sustained for. Power against
+    // one over duration is a STRAIGHT LINE, and the two numbers it gives are
+    // the whole model: the intercept is the power that can be held more or less
+    // indefinitely, and the slope is the fixed amount of work available above
+    // it - a battery that empties once, whatever rate it is spent at.
+    if(in.engine==QLatin1String("Critical Power Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("4D / 5D Scatter"));
+        if(in.series.size()>=2){
+            const QVector<double>& duration=in.series.at(0).y;
+            const QVector<double>& power=in.series.at(1).y;
+            const int n=qMin(duration.size(),power.size());
+            PlotSeries pts;
+            pts.label=QStringLiteral("efforts");
+            pts.color=in.series.at(1).color;
+            pts.drawLine=false; pts.drawMarkers=true; pts.markerSize=4.6;
+            QVector<double> fx,fy;
+            for(int i=0;i<n;++i){
+                if(!finite(duration[i])||!finite(power[i])||!(duration[i]>0.0)) continue;
+                pts.x.append(1.0/duration[i]); pts.y.append(power[i]);
+                fx.append(1.0/duration[i]); fy.append(power[i]);
+            }
+            if(!pts.x.isEmpty()){
+                out.series.append(pts);
+                const LineFit f=fitLine(fx,fy);
+                const Bounds bx=boundsOf(fx);
+                if(f.ok&&bx.valid){
+                    double ssRes=0.0,ssTot=0.0,mean=0.0;
+                    for(double v:fy) mean+=v;
+                    mean/=double(fy.size());
+                    for(int i=0;i<fx.size();++i){
+                        const double r=fy[i]-(f.intercept+f.slope*fx[i]);
+                        ssRes+=r*r; ssTot+=(fy[i]-mean)*(fy[i]-mean);
+                    }
+                    const double r2=(ssTot>1e-300)?1.0-ssRes/ssTot:0.0;
+                    PlotSeries line;
+                    line.label=QStringLiteral("CP %1, W' %2, R2 %3")
+                                   .arg(f.intercept,0,'g',5).arg(f.slope,0,'g',5)
+                                   .arg(r2,0,'f',5);
+                    line.color=in.style.warning;
+                    line.lineWidth=qMax(1.3,in.style.lineWidth);
+                    // Back to zero, where an infinitely long effort would sit
+                    // and where the intercept is therefore read.
+                    line.x={0.0,bx.hi};
+                    line.y={f.intercept,f.intercept+f.slope*bx.hi};
+                    out.series.append(line);
+                    PlotSeries mark;
+                    mark.label=QStringLiteral("critical power");
+                    mark.color=in.style.danger;
+                    mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.5;
+                    mark.x={0.0}; mark.y={f.intercept};
+                    out.series.append(mark);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("1 / duration"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("power"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------------- Lactate Threshold
+    // Blood lactate against work rate, with two thresholds that are defined
+    // differently on purpose. The fixed four millimole crossing is comparable
+    // between people and arbitrary for any one of them; the D-max point is the
+    // work rate furthest from the chord joining the first and last measurement,
+    // so it is defined by the shape of THIS curve and is not comparable in the
+    // same way. Both are drawn because neither answers the other's question.
+    if(in.engine==QLatin1String("Lactate Threshold Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& intensity=in.series.at(0).y;
+            const QVector<double>& lactate=in.series.at(1).y;
+            const int n=qMin(intensity.size(),lactate.size());
+            QVector<QPair<double,double>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(intensity[i])||!finite(lactate[i])) continue;
+                rows.append(qMakePair(intensity[i],lactate[i]));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=3){
+                double fixed=std::numeric_limits<double>::quiet_NaN();
+                for(int i=1;i<rows.size();++i){
+                    const double a=rows[i-1].second,b=rows[i].second;
+                    if((a>=4.0)==(b>=4.0)||a==b) continue;
+                    const double f=(4.0-a)/(b-a);
+                    fixed=rows[i-1].first+f*(rows[i].first-rows[i-1].first);
+                    break;
+                }
+                // Perpendicular distance to the chord, computed from the cross
+                // product so it does not need the chord's slope and does not
+                // blow up on a vertical one.
+                const double x0=rows.first().first,y0=rows.first().second;
+                const double x1=rows.last().first,y1=rows.last().second;
+                const double length=std::hypot(x1-x0,y1-y0);
+                int furthest=0; double best=-1.0;
+                if(length>1e-300)
+                    for(int i=0;i<rows.size();++i){
+                        const double d=std::abs((x1-x0)*(y0-rows[i].second)
+                                               -(x0-rows[i].first)*(y1-y0))/length;
+                        if(d>best){ best=d; furthest=i; }
+                    }
+                PlotSeries curve;
+                curve.label=finite(fixed)
+                    ? QStringLiteral("4 mmol at %1; D-max at %2")
+                          .arg(fixed,0,'g',5).arg(rows[furthest].first,0,'g',5)
+                    : QStringLiteral("lactate never reaches 4 mmol; D-max at %1")
+                          .arg(rows[furthest].first,0,'g',5);
+                curve.color=in.series.at(1).color;
+                curve.lineWidth=qMax(1.4,in.style.lineWidth);
+                curve.drawMarkers=true; curve.markerSize=3.8;
+                for(const QPair<double,double>& r:rows){ curve.x.append(r.first); curve.y.append(r.second); }
+                out.series.append(curve);
+                PlotSeries chord;
+                chord.label=QStringLiteral("D-max chord");
+                chord.color=in.style.gridColor;
+                chord.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                chord.dashPattern={5,4};
+                chord.x={x0,x1}; chord.y={y0,y1};
+                out.series.append(chord);
+                PlotSeries level;
+                level.label=QStringLiteral("4 mmol");
+                level.color=in.style.warning;
+                level.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                level.dashPattern={5,4};
+                level.x={rows.first().first,rows.last().first};
+                level.y={4.0,4.0};
+                out.series.append(level);
+                PlotSeries mark;
+                mark.label=QStringLiteral("D-max");
+                mark.color=in.style.danger;
+                mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.5;
+                mark.x={rows[furthest].first}; mark.y={rows[furthest].second};
+                out.series.append(mark);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("work rate"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("blood lactate"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------- Half-Power Bandwidth
+    // A resonance peak with the two frequencies either side of it where the
+    // response has fallen to one over root two of the maximum. The width
+    // between them gives the quality factor and the damping ratio, which is the
+    // only way to get damping out of a frequency sweep without fitting a model
+    // to the whole curve.
+    if(in.engine==QLatin1String("Half-Power Bandwidth")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& frequency=in.series.at(0).y;
+            const QVector<double>& magnitude=in.series.at(1).y;
+            const int n=qMin(frequency.size(),magnitude.size());
+            QVector<QPair<double,double>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(frequency[i])||!finite(magnitude[i])) continue;
+                rows.append(qMakePair(frequency[i],magnitude[i]));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=5){
+                int peakAt=0;
+                for(int i=1;i<rows.size();++i) if(rows[i].second>rows[peakAt].second) peakAt=i;
+                const double peak=rows[peakAt].second;
+                const double level=peak/std::sqrt(2.0);
+                double lower=std::numeric_limits<double>::quiet_NaN();
+                double upper=std::numeric_limits<double>::quiet_NaN();
+                for(int i=peakAt;i>0;--i){
+                    const double a=rows[i-1].second,b=rows[i].second;
+                    if((a>=level)==(b>=level)||a==b) continue;
+                    const double f=(level-a)/(b-a);
+                    lower=rows[i-1].first+f*(rows[i].first-rows[i-1].first);
+                    break;
+                }
+                for(int i=peakAt+1;i<rows.size();++i){
+                    const double a=rows[i-1].second,b=rows[i].second;
+                    if((a>=level)==(b>=level)||a==b) continue;
+                    const double f=(level-a)/(b-a);
+                    upper=rows[i-1].first+f*(rows[i].first-rows[i-1].first);
+                    break;
+                }
+                PlotSeries curve;
+                const double centre=rows[peakAt].first;
+                if(finite(lower)&&finite(upper)&&upper>lower){
+                    const double quality=centre/(upper-lower);
+                    curve.label=QStringLiteral("f0 %1, bandwidth %2, Q %3, zeta %4")
+                                    .arg(centre,0,'g',5).arg(upper-lower,0,'g',4)
+                                    .arg(quality,0,'f',2).arg(0.5/quality,0,'f',4);
+                }else{
+                    curve.label=QStringLiteral("f0 %1 (the response does not fall to half power on both sides)")
+                                    .arg(centre,0,'g',5);
+                }
+                curve.color=in.series.at(1).color;
+                curve.lineWidth=qMax(1.4,in.style.lineWidth);
+                for(const QPair<double,double>& r:rows){ curve.x.append(r.first); curve.y.append(r.second); }
+                out.series.append(curve);
+                PlotSeries halfPower;
+                halfPower.label=QStringLiteral("half power (peak / sqrt 2)");
+                halfPower.color=in.style.warning;
+                halfPower.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                halfPower.dashPattern={5,4};
+                halfPower.x={rows.first().first,rows.last().first};
+                halfPower.y={level,level};
+                out.series.append(halfPower);
+                if(finite(lower)&&finite(upper)){
+                    PlotSeries marks;
+                    marks.label=QStringLiteral("half-power points");
+                    marks.color=in.style.danger;
+                    marks.drawLine=false; marks.drawMarkers=true; marks.markerSize=6.0;
+                    marks.x={lower,upper}; marks.y={level,level};
+                    out.series.append(marks);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("frequency"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("response magnitude"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // --------------------------------------------------- Cumulative Vehicle Count
+    // Cumulative arrivals and cumulative departures against time. Everything
+    // about a queue is in the gap between the two curves: the VERTICAL gap is
+    // how many vehicles are waiting, the HORIZONTAL gap is how long each waits,
+    // and the AREA between them is the total delay. Reading all three off one
+    // pair of curves is why this is drawn instead of three separate plots.
+    if(in.engine==QLatin1String("Cumulative Vehicle Count")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& when=in.series.at(0).y;
+            const QVector<double>& arrivals=in.series.at(1).y;
+            const QVector<double>& departures=in.series.at(2).y;
+            const int n=qMin(when.size(),qMin(arrivals.size(),departures.size()));
+            QVector<QPair<double,QPair<double,double>>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(when[i])||!finite(arrivals[i])||!finite(departures[i])) continue;
+                rows.append(qMakePair(when[i],qMakePair(arrivals[i],departures[i])));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,QPair<double,double>>& a,
+                         const QPair<double,QPair<double,double>>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=2){
+                PlotSeries arriving,departing;
+                departing.label=QStringLiteral("cumulative departures");
+                departing.color=in.series.at(2).color;
+                departing.lineWidth=qMax(1.3,in.style.lineWidth);
+                arriving.color=in.series.at(1).color;
+                arriving.lineWidth=qMax(1.3,in.style.lineWidth);
+                double longest=0.0,longestAt=0.0,delay=0.0;
+                for(int i=0;i<rows.size();++i){
+                    const double queue=rows[i].second.first-rows[i].second.second;
+                    arriving.x.append(rows[i].first);  arriving.y.append(rows[i].second.first);
+                    departing.x.append(rows[i].first); departing.y.append(rows[i].second.second);
+                    if(queue>longest){ longest=queue; longestAt=rows[i].first; }
+                    if(i==0) continue;
+                    const double before=rows[i-1].second.first-rows[i-1].second.second;
+                    delay+=0.5*(qMax(0.0,queue)+qMax(0.0,before))
+                              *(rows[i].first-rows[i-1].first);
+                }
+                arriving.label=QStringLiteral("cumulative arrivals; longest queue %1 at %2, total delay %3 vehicle-time")
+                                   .arg(longest,0,'g',5).arg(longestAt,0,'g',5)
+                                   .arg(delay,0,'g',5);
+                out.series.append(arriving);
+                out.series.append(departing);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative vehicles"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------------- Cohort Retention
+    // What fraction of each intake is still there after so many periods, with
+    // the cohorts laid over one another by AGE rather than by calendar date.
+    // Aligning them that way is the whole method: on a calendar axis a cohort
+    // that started later simply has a shorter line, and nothing can be compared.
+    if(in.engine==QLatin1String("Cohort Retention Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=3){
+            const QVector<double>& age=in.series.at(0).y;
+            const QVector<double>& retained=in.series.at(1).y;
+            const QVector<double>& cohort=in.series.at(2).y;
+            const int n=qMin(age.size(),qMin(retained.size(),cohort.size()));
+            QMap<double,QVector<QPair<double,double>>> byCohort;
+            for(int i=0;i<n;++i){
+                if(!finite(age[i])||!finite(retained[i])||!finite(cohort[i])) continue;
+                byCohort[cohort[i]].append(qMakePair(age[i],retained[i]));
+            }
+            int index=0;
+            QVector<double> lastValues;
+            for(auto it=byCohort.constBegin();it!=byCohort.constEnd();++it,++index){
+                QVector<QPair<double,double>> rows=it.value();
+                std::sort(rows.begin(),rows.end(),
+                          [](const QPair<double,double>& a,const QPair<double,double>& b){
+                              return a.first<b.first; });
+                if(rows.isEmpty()) continue;
+                PlotSeries s;
+                s.color=QColor::fromHsvF(std::fmod(0.48+double(index)*0.12,1.0),0.6,0.95);
+                s.lineWidth=qMax(1.2,in.style.lineWidth);
+                s.drawMarkers=true; s.markerSize=3.4;
+                for(const QPair<double,double>& r:rows){ s.x.append(r.first); s.y.append(r.second); }
+                s.label=QStringLiteral("cohort %1, %2 at age %3")
+                            .arg(QString::number(it.key(),'g',12))
+                            .arg(rows.last().second,0,'g',4).arg(rows.last().first,0,'g',4);
+                lastValues.append(rows.last().second);
+                out.series.append(s);
+            }
+            // Whether the newer cohorts are doing better or worse than the
+            // older ones, which is the question a retention chart is drawn to
+            // answer and the one nobody can read off a dozen crossing lines.
+            if(lastValues.size()>=2&&!out.series.isEmpty()){
+                const double first=lastValues.first(),last=lastValues.last();
+                out.series[0].label=QStringLiteral("%1; newest cohort ends %2 than the oldest (%3 vs %4)")
+                                        .arg(out.series[0].label)
+                                        .arg(last>=first?QStringLiteral("higher"):QStringLiteral("lower"))
+                                        .arg(last,0,'g',4).arg(first,0,'g',4);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("periods since joining"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("retained"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------------- Bass Diffusion
+    // Cumulative adoption against time, with the Bass model fitted to it. The
+    // model separates two things a single S-curve cannot: adoption driven by
+    // people who would have bought anyway, and adoption driven by people who
+    // bought because others had. It is LINEAR in three coefficients once
+    // written as adoptions against cumulative adoptions and their square, so it
+    // is one normal-equation solve rather than a nonlinear search.
+    if(in.engine==QLatin1String("Bass Diffusion Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& time=in.series.at(0).y;
+            const QVector<double>& cumulative=in.series.at(1).y;
+            const int n=qMin(time.size(),cumulative.size());
+            QVector<QPair<double,double>> rows;
+            for(int i=0;i<n;++i){
+                if(!finite(time[i])||!finite(cumulative[i])) continue;
+                rows.append(qMakePair(time[i],cumulative[i]));
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first<b.first; });
+            if(rows.size()>=5){
+                PlotSeries observed;
+                observed.label=QStringLiteral("cumulative adopters");
+                observed.color=in.series.at(1).color;
+                observed.drawLine=false; observed.drawMarkers=true; observed.markerSize=3.8;
+                for(const QPair<double,double>& r:rows){ observed.x.append(r.first); observed.y.append(r.second); }
+                out.series.append(observed);
+                // n(t) = a + b N + c N^2, where a = p m, b = q - p and
+                // c = -q/m. Three sums, one 3x3 solve, and the parameters come
+                // back out of the coefficients by the quadratic formula.
+                double s[3][4]={};
+                int used=0;
+                for(int i=1;i<rows.size();++i){
+                    const double span=rows[i].first-rows[i-1].first;
+                    if(!(span>1e-300)) continue;
+                    const double adoptions=(rows[i].second-rows[i-1].second)/span;
+                    // Paired with the MIDPOINT of N over the interval, not with
+                    // its value at the start. A difference quotient estimates
+                    // the derivative in the middle of the interval it was taken
+                    // over, so regressing it on the left endpoint - which is
+                    // what the original discrete formulation of this model does
+                    // - is a first-order error that grows with the sampling
+                    // step. On a series built from p 0.03 and q 0.38 it came
+                    // back with p 0.036 and q 0.364, and the peak six per cent
+                    // early; on the midpoint it recovers all three.
+                    const double middle=0.5*(rows[i].second+rows[i-1].second);
+                    const double basis[3]={1.0,middle,middle*middle};
+                    for(int r=0;r<3;++r){
+                        for(int c=0;c<3;++c) s[r][c]+=basis[r]*basis[c];
+                        s[r][3]+=basis[r]*adoptions;
+                    }
+                    ++used;
+                }
+                bool ok=(used>=4);
+                for(int col=0;col<3&&ok;++col){
+                    int pivot=col;
+                    for(int r=col+1;r<3;++r)
+                        if(std::abs(s[r][col])>std::abs(s[pivot][col])) pivot=r;
+                    if(std::abs(s[pivot][col])<1e-14){ ok=false; break; }
+                    if(pivot!=col) for(int c=0;c<4;++c) std::swap(s[col][c],s[pivot][c]);
+                    const double d=s[col][col];
+                    for(int c=0;c<4;++c) s[col][c]/=d;
+                    for(int r=0;r<3;++r){
+                        if(r==col) continue;
+                        const double f=s[r][col];
+                        for(int c=0;c<4;++c) s[r][c]-=f*s[col][c];
+                    }
+                }
+                if(ok){
+                    const double a=s[0][3],b=s[1][3],c=s[2][3];
+                    // m is the positive root of c m^2 + b m + a = 0, and it has
+                    // to be positive and larger than what has already been
+                    // adopted or it is not a market size.
+                    const double discriminant=b*b-4.0*c*a;
+                    double market=std::numeric_limits<double>::quiet_NaN();
+                    if(std::abs(c)>1e-300&&discriminant>=0.0){
+                        const double root=std::sqrt(discriminant);
+                        const double one=(-b+root)/(2.0*c),two=(-b-root)/(2.0*c);
+                        market=qMax(one,two);
+                        if(!(market>0.0)) market=std::numeric_limits<double>::quiet_NaN();
+                    }
+                    if(finite(market)&&market>1e-300){
+                        const double innovation=a/market;
+                        const double imitation=b+innovation;
+                        PlotSeries fit;
+                        // The peak of adoption, which is the date a launch plan
+                        // is written around, in closed form rather than found
+                        // by scanning the fitted curve.
+                        const double peakOffset=(innovation>0.0&&imitation>innovation)
+                            ? std::log(imitation/innovation)/(innovation+imitation)
+                            : std::numeric_limits<double>::quiet_NaN();
+                        fit.label=finite(peakOffset)
+                            ? QStringLiteral("p %1, q %2, m %3, peak %4 after t0")
+                                  .arg(innovation,0,'g',4).arg(imitation,0,'g',4)
+                                  .arg(market,0,'g',5).arg(peakOffset,0,'g',4)
+                            : QStringLiteral("p %1, q %2, m %3")
+                                  .arg(innovation,0,'g',4).arg(imitation,0,'g',4)
+                                  .arg(market,0,'g',5);
+                        fit.color=in.style.warning;
+                        fit.lineWidth=qMax(1.3,in.style.lineWidth);
+                        const double start=rows.first().first;
+                        for(int i=0;i<=140;++i){
+                            const double t=start+(rows.last().first-start)*double(i)/140.0;
+                            const double e=std::exp(-(innovation+imitation)*(t-start));
+                            const double denom=1.0+(imitation/innovation)*e;
+                            if(!(std::abs(denom)>1e-300)) continue;
+                            fit.x.append(t);
+                            fit.y.append(market*(1.0-e)/denom);
+                        }
+                        if(fit.x.size()>=2) out.series.append(fit);
+                        PlotSeries ceiling;
+                        ceiling.label=QStringLiteral("fitted market size");
+                        ceiling.color=in.style.gridColor;
+                        ceiling.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                        ceiling.dashPattern={5,4};
+                        ceiling.x={rows.first().first,rows.last().first};
+                        ceiling.y={market,market};
+                        out.series.append(ceiling);
+                    }
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("time"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("cumulative adopters"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // -------------------------------------------------------------- Pareto Chart
+    // Counts by category, largest first, with the running share over them. The
+    // claim being tested is that a small number of causes account for most of
+    // the total, so how many categories it actually takes to reach eighty per
+    // cent is computed and said - rather than left as a rule of thumb that the
+    // chart is assumed to demonstrate.
+    if(in.engine==QLatin1String("Pareto Chart")){
+        // Drawn as outlined blocks on a Line Chart rather than through the Bar
+        // engine, because that engine reads each SERIES as a group and draws
+        // them side by side - so a cumulative line handed to it comes back as a
+        // second row of bars standing next to the first. The blocks are the
+        // same construction the abatement cost curve uses.
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& category=in.series.at(0).y;
+            const QVector<double>& count=in.series.at(1).y;
+            const int n=qMin(category.size(),count.size());
+            QVector<QPair<double,double>> rows;   // (count, category)
+            double total=0.0;
+            for(int i=0;i<n;++i){
+                if(!finite(category[i])||!finite(count[i])||!(count[i]>0.0)) continue;
+                rows.append(qMakePair(count[i],category[i]));
+                total+=count[i];
+            }
+            std::sort(rows.begin(),rows.end(),
+                      [](const QPair<double,double>& a,const QPair<double,double>& b){
+                          return a.first>b.first; });
+            if(!rows.isEmpty()&&total>1e-300){
+                for(int i=0;i<rows.size()&&i<200;++i){
+                    PlotSeries block;
+                    block.label=QString();
+                    block.color=in.series.at(1).color;
+                    block.lineWidth=1.0;
+                    const double left=double(i+1)-0.4,right=double(i+1)+0.4;
+                    block.x={left,left,right,right,left};
+                    block.y={0.0,rows[i].first,rows[i].first,0.0,0.0};
+                    out.series.append(block);
+                }
+                // The running share is drawn ON THE COUNT AXIS, scaled by the
+                // total, rather than on a second ordinate this backend does not
+                // have. Scaling by the total puts the 80% line at 0.8 of the
+                // total, which is where it belongs whatever the counts are.
+                PlotSeries running;
+                running.color=in.style.warning;
+                running.lineWidth=qMax(1.4,in.style.lineWidth);
+                running.drawMarkers=true; running.markerSize=3.6;
+                double cumulative=0.0; int needed=0;
+                for(int i=0;i<rows.size();++i){
+                    cumulative+=rows[i].first;
+                    running.x.append(double(i+1)); running.y.append(cumulative);
+                    if(needed==0&&cumulative>=0.8*total) needed=i+1;
+                }
+                running.label=(needed>0)
+                    ? QStringLiteral("%1 categories, total %2; %3 of them reach 80%")
+                          .arg(rows.size()).arg(total,0,'g',6).arg(needed)
+                    : QStringLiteral("%1 categories, total %2")
+                          .arg(rows.size()).arg(total,0,'g',6);
+                out.series.append(running);
+                PlotSeries level;
+                level.label=QStringLiteral("80% of the total");
+                level.color=in.style.danger;
+                level.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                level.dashPattern={5,4};
+                level.x={0.5,double(rows.size())+0.5};
+                level.y={0.8*total,0.8*total};
+                out.series.append(level);
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("category, ranked"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("count"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ Statistical Power Curve
+    // The chance of detecting an effect that is really there, against how many
+    // observations are collected, one curve per effect size. This is COMPUTED
+    // from the design rather than fitted to anything: the columns say which
+    // sample sizes and which effects to draw, and the power at each is what the
+    // two-sample t-test gives under a normal approximation.
+    if(in.engine==QLatin1String("Statistical Power Curve")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& sample=in.series.at(0).y;
+            const QVector<double>& effect=in.series.at(1).y;
+            const int n=qMin(sample.size(),effect.size());
+            QMap<double,QVector<double>> byEffect;
+            for(int i=0;i<n;++i){
+                if(!finite(sample[i])||!finite(effect[i])) continue;
+                if(!(sample[i]>=2.0)) continue;
+                byEffect[effect[i]].append(sample[i]);
+            }
+            const double alpha=0.05;
+            const double critical=normalQuantile(1.0-alpha/2.0);
+            // The standard normal distribution function, from the error
+            // function, so power and the quantile used to get the critical
+            // value are consistent with each other.
+            const auto probability=[](double z){ return 0.5*std::erfc(-z/std::sqrt(2.0)); };
+            int index=0;
+            for(auto it=byEffect.constBegin();it!=byEffect.constEnd();++it,++index){
+                QVector<double> sizes=it.value();
+                std::sort(sizes.begin(),sizes.end());
+                sizes.erase(std::unique(sizes.begin(),sizes.end()),sizes.end());
+                if(sizes.isEmpty()) continue;
+                PlotSeries s;
+                s.color=QColor::fromHsvF(std::fmod(0.30+double(index)*0.15,1.0),0.62,0.95);
+                s.lineWidth=qMax(1.3,in.style.lineWidth);
+                s.drawMarkers=true; s.markerSize=3.2;
+                double eighty=std::numeric_limits<double>::quiet_NaN();
+                double previousSize=0.0,previousPower=0.0;
+                for(double size:sizes){
+                    const double shift=std::abs(it.key())*std::sqrt(size/2.0);
+                    const double power=probability(shift-critical);
+                    s.x.append(size); s.y.append(power);
+                    if(!finite(eighty)&&previousSize>0.0
+                       &&(previousPower<0.8)!=(power<0.8)&&power!=previousPower){
+                        const double f=(0.8-previousPower)/(power-previousPower);
+                        eighty=previousSize+f*(size-previousSize);
+                    }
+                    previousSize=size; previousPower=power;
+                }
+                s.label=finite(eighty)
+                    ? QStringLiteral("d %1, 80% power at n %2 per group")
+                          .arg(it.key(),0,'g',3).arg(eighty,0,'f',1)
+                    : QStringLiteral("d %1 (80% power not reached in this range)")
+                          .arg(it.key(),0,'g',3);
+                out.series.append(s);
+            }
+            if(!out.series.isEmpty()){
+                const Bounds bs=boundsOf(out.series.first().x);
+                if(bs.valid){
+                    PlotSeries level;
+                    level.label=QStringLiteral("80% power (two-sided alpha 0.05)");
+                    level.color=in.style.warning;
+                    level.lineWidth=qMax(0.9,in.style.lineWidth*0.75);
+                    level.dashPattern={5,4};
+                    level.x={bs.lo,bs.hi}; level.y={0.8,0.8};
+                    out.series.append(level);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("sample size per group"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("power"),false,unsetValue(),unsetValue()};
+        return out;
+    }
+
+    // ---------------------------------------------------- Sequential Test Boundaries
+    // The running log-likelihood ratio of the observations, against the two
+    // boundaries Wald's test stops at. The point of a sequential test is that
+    // it can stop EARLY in either direction, so the value that matters is where
+    // the walk first touches a boundary - and if it never does, the honest
+    // report is that the test is still open rather than a verdict at the end of
+    // the data.
+    if(in.engine==QLatin1String("Sequential Test Boundaries")){
+        PlotSpec out=derivedAs(in,QStringLiteral("Line Chart"));
+        if(in.series.size()>=2){
+            const QVector<double>& outcome=in.series.at(1).y;
+            // The two rates being told apart and the two error rates are the
+            // test's design, not the data's, so they are defaults - and they
+            // are on the figure, because the boundaries mean nothing without
+            // them.
+            const double nullRate=0.05,alternativeRate=0.15;
+            const double alpha=0.05,beta=0.05;
+            const double accept=std::log(beta/(1.0-alpha));
+            const double reject=std::log((1.0-beta)/alpha);
+            const double hit=std::log(alternativeRate/nullRate);
+            const double miss=std::log((1.0-alternativeRate)/(1.0-nullRate));
+            PlotSeries walk;
+            walk.color=in.series.at(1).color;
+            walk.lineWidth=qMax(1.4,in.style.lineWidth);
+            double score=0.0;
+            int stoppedAt=-1; QString verdict;
+            walk.x.append(0.0); walk.y.append(0.0);
+            for(int i=0;i<outcome.size();++i){
+                if(!finite(outcome[i])) continue;
+                score+=(outcome[i]>0.5)?hit:miss;
+                walk.x.append(double(walk.x.size()));
+                walk.y.append(score);
+                if(stoppedAt<0&&score>=reject){
+                    stoppedAt=int(walk.x.size())-1;
+                    verdict=QStringLiteral("rejected the null");
+                }else if(stoppedAt<0&&score<=accept){
+                    stoppedAt=int(walk.x.size())-1;
+                    verdict=QStringLiteral("accepted the null");
+                }
+            }
+            if(walk.x.size()>=2){
+                walk.label=(stoppedAt>=0)
+                    ? QStringLiteral("%1 at observation %2 (p0 %3, p1 %4, alpha %5, beta %6)")
+                          .arg(verdict).arg(stoppedAt).arg(nullRate,0,'g',3)
+                          .arg(alternativeRate,0,'g',3).arg(alpha,0,'g',3).arg(beta,0,'g',3)
+                    : QStringLiteral("still open after %1 observations (p0 %2, p1 %3)")
+                          .arg(walk.x.size()-1).arg(nullRate,0,'g',3).arg(alternativeRate,0,'g',3);
+                out.series.append(walk);
+                const struct { double level; const char* name; } bounds[]={
+                    {reject,"reject the null"},{accept,"accept the null"}};
+                for(const auto& edge:bounds){
+                    PlotSeries limit;
+                    limit.label=QString::fromLatin1(edge.name);
+                    limit.color=(edge.level>0.0)?in.style.danger:in.style.positive;
+                    limit.lineWidth=qMax(1.0,in.style.lineWidth*0.85);
+                    limit.dashPattern={5,4};
+                    limit.x={0.0,walk.x.last()};
+                    limit.y={edge.level,edge.level};
+                    out.series.append(limit);
+                }
+                if(stoppedAt>=0){
+                    PlotSeries mark;
+                    mark.label=QStringLiteral("stopping point");
+                    mark.color=in.style.warning;
+                    mark.drawLine=false; mark.drawMarkers=true; mark.markerSize=6.5;
+                    mark.x={double(stoppedAt)}; mark.y={walk.y[stoppedAt]};
+                    out.series.append(mark);
+                }
+            }
+        }
+        out.xAxis=PlotAxis{QStringLiteral("observations"),false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{QStringLiteral("log-likelihood ratio"),false,unsetValue(),unsetValue()};
         return out;
     }
 

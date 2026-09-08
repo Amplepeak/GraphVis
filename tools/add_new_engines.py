@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 9.
+"""Catalogue entries for the engine expansion, batches 1 to 10.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -344,6 +344,45 @@ NEW = [
      "Absolute effects against half-normal quantiles, with Lenth's pseudo standard error"),
     ("Clinical & Meta-analysis", "responsewaterfall", "Response Waterfall",
      "Best change from baseline per patient, sorted, against the RECIST thresholds"),
+
+    # ---- batch 10: open-channel and process hydraulics, power systems,
+    # imaging, radiation, exercise physiology, traffic, sequential decisions
+    ("Fluid & Field Dynamics", "specificenergy", "Specific Energy Diagram",
+     "Depth against specific energy at a fixed discharge, with the critical depth computed"),
+    ("Energy & Building Services", "ntueffectiveness", "NTU-Effectiveness Curve",
+     "Measured effectiveness against NTU, over the counterflow limit for the same capacity ratio"),
+    ("Fluid & Field Dynamics", "operatingpoint", "Pump Operating Point",
+     "Pump curve against system curve, with the duty point where they cross"),
+    ("Energy & Building Services", "duckcurve", "Duck Curve (Net Load)",
+     "Demand minus renewables through the day, with the trough, the peak and the steepest ramp"),
+    ("Energy & Building Services", "coordination", "Protection Coordination Curve",
+     "Time-current curves per device on log-log axes, with the tightest coordination interval"),
+    ("Spectral & Signal Imaging", "mtf", "MTF Curve",
+     "Contrast against spatial frequency, with MTF50 and MTF10 interpolated"),
+    ("Materials & Chemistry", "decayfit", "Radioactive Decay Fit",
+     "Activity against time on a log ordinate, with the half-life and decay constant fitted"),
+    ("Materials & Chemistry", "attenuation", "Attenuation Curve",
+     "Transmitted intensity against absorber thickness, giving mu and the half-value layer"),
+    ("Clinical & Meta-analysis", "depthdose", "Depth-Dose Curve",
+     "Dose against depth with the peak and the distal R90 and R80 depths"),
+    ("Clinical & Meta-analysis", "criticalpower", "Critical Power Curve",
+     "Power against one over duration, giving the critical power and the work above it"),
+    ("Clinical & Meta-analysis", "lactate", "Lactate Threshold Curve",
+     "Blood lactate against work rate, with the fixed 4 mmol crossing and the D-max point"),
+    ("Signals & RF", "halfpower", "Half-Power Bandwidth",
+     "A resonance with its half-power points, giving the quality factor and the damping ratio"),
+    ("Logistics & Infrastructure", "cumulativecount", "Cumulative Vehicle Count",
+     "Cumulative arrivals against departures, giving the longest queue and the total delay"),
+    ("Presentation & Comparison", "cohortretention", "Cohort Retention Curve",
+     "Retention against age rather than calendar date, so cohorts can be compared"),
+    ("Presentation & Comparison", "bassdiffusion", "Bass Diffusion Curve",
+     "Cumulative adoption with the Bass model fitted: innovation, imitation and market size"),
+    ("Quality, Process & Reliability", "pareto", "Pareto Chart",
+     "Counts by category largest first with the running share and the 80% line"),
+    ("Statistical Inference & Effect", "powercurve", "Statistical Power Curve",
+     "Power against sample size per effect size, with the size needed for 80% power"),
+    ("Quality, Process & Reliability", "sprt", "Sequential Test Boundaries",
+     "The running log-likelihood ratio against Wald's two stopping boundaries"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -383,5 +422,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-9: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-10: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

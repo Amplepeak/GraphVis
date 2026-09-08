@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 1979,
- "engine_count": 357,
+ "entry_count": 2009,
+ "engine_count": 375,
  "categories": [
   {
    "name": "Line Plots",
@@ -8591,6 +8591,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Statistical Inference & Effect",
+     "name": "powercurve",
+     "engine": "Statistical Power Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Power against sample size per effect size, with the size needed for 80% power",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -8941,6 +8952,28 @@
      "scale": null,
      "advanced": false,
      "description": "Absolute effects against half-normal quantiles, with Lenth's pseudo standard error",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "pareto",
+     "engine": "Pareto Chart",
+     "scale": null,
+     "advanced": false,
+     "description": "Counts by category largest first with the running share and the 80% line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Quality, Process & Reliability",
+     "name": "sprt",
+     "engine": "Sequential Test Boundaries",
+     "scale": null,
+     "advanced": false,
+     "description": "The running log-likelihood ratio against Wald's two stopping boundaries",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -11086,6 +11119,94 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention",
+     "engine": "Cohort Retention Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "bassdiffusion",
+     "engine": "Bass Diffusion Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative adoption with the Bass model fitted: innovation, imitation and market size",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention · Semi-Log Y",
+     "engine": "Cohort Retention Curve",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention · Logarithmic Scale",
+     "engine": "Cohort Retention Curve",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention · Semi-Log X",
+     "engine": "Cohort Retention Curve",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention · Semi-Log(1+x) Y",
+     "engine": "Cohort Retention Curve",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention · Standardised (Z-Score)",
+     "engine": "Cohort Retention Curve",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Presentation & Comparison",
+     "name": "cohortretention · Quantile X",
+     "engine": "Cohort Retention Curve",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Retention against age rather than calendar date, so cohorts can be compared — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -11708,6 +11829,94 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "specificenergy",
+     "engine": "Specific Energy Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "Depth against specific energy at a fixed discharge, with the critical depth computed",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint",
+     "engine": "Pump Operating Point",
+     "scale": null,
+     "advanced": false,
+     "description": "Pump curve against system curve, with the duty point where they cross",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint · Semi-Log Y",
+     "engine": "Pump Operating Point",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "Pump curve against system curve, with the duty point where they cross — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint · Logarithmic Scale",
+     "engine": "Pump Operating Point",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "Pump curve against system curve, with the duty point where they cross — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint · Semi-Log X",
+     "engine": "Pump Operating Point",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "Pump curve against system curve, with the duty point where they cross — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint · Semi-Log(1+x) Y",
+     "engine": "Pump Operating Point",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "Pump curve against system curve, with the duty point where they cross — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint · Standardised (Z-Score)",
+     "engine": "Pump Operating Point",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "Pump curve against system curve, with the duty point where they cross — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Fluid & Field Dynamics",
+     "name": "operatingpoint · Quantile X",
+     "engine": "Pump Operating Point",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "Pump curve against system curve, with the duty point where they cross — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -11893,6 +12102,17 @@
      "scale": null,
      "advanced": false,
      "description": "Where the frequency content sits in time, by Morlet wavelet",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Spectral & Signal Imaging",
+     "name": "mtf",
+     "engine": "MTF Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Contrast against spatial frequency, with MTF50 and MTF10 interpolated",
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
@@ -14830,6 +15050,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Logistics & Infrastructure",
+     "name": "cumulativecount",
+     "engine": "Cumulative Vehicle Count",
+     "scale": null,
+     "advanced": false,
+     "description": "Cumulative arrivals against departures, giving the longest queue and the total delay",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -16266,6 +16497,28 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "decayfit",
+     "engine": "Radioactive Decay Fit",
+     "scale": null,
+     "advanced": false,
+     "description": "Activity against time on a log ordinate, with the half-life and decay constant fitted",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Materials & Chemistry",
+     "name": "attenuation",
+     "engine": "Attenuation Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Transmitted intensity against absorber thickness, giving mu and the half-value layer",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -17666,6 +17919,39 @@
      "scale": null,
      "advanced": false,
      "description": "Best change from baseline per patient, sorted, against the RECIST thresholds",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "depthdose",
+     "engine": "Depth-Dose Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Dose against depth with the peak and the distal R90 and R80 depths",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "criticalpower",
+     "engine": "Critical Power Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Power against one over duration, giving the critical power and the work above it",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "lactate",
+     "engine": "Lactate Threshold Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Blood lactate against work rate, with the fixed 4 mmol crossing and the D-max point",
      "preview": "",
      "thumbnail": "",
      "pack": "life"
@@ -19414,6 +19700,39 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "ntueffectiveness",
+     "engine": "NTU-Effectiveness Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Measured effectiveness against NTU, over the counterflow limit for the same capacity ratio",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "duckcurve",
+     "engine": "Duck Curve (Net Load)",
+     "scale": null,
+     "advanced": false,
+     "description": "Demand minus renewables through the day, with the trough, the peak and the steepest ramp",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Energy & Building Services",
+     "name": "coordination",
+     "engine": "Protection Coordination Curve",
+     "scale": null,
+     "advanced": false,
+     "description": "Time-current curves per device on log-log axes, with the tightest coordination interval",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -20457,6 +20776,17 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "The slope of the unwrapped phase, with the mean delay and the ripple across the band — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "physics"
+    },
+    {
+     "category": "Signals & RF",
+     "name": "halfpower",
+     "engine": "Half-Power Bandwidth",
+     "scale": null,
+     "advanced": false,
+     "description": "A resonance with its half-power points, giving the quality factor and the damping ratio",
      "preview": "",
      "thumbnail": "",
      "pack": "physics"
@@ -22056,13 +22386,13 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 783
+   "entryCount": 792
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 581
+   "entryCount": 597
   },
   {
    "id": "earth",
@@ -22074,13 +22404,13 @@
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 280
+   "entryCount": 283
   },
   {
    "id": "physics",
    "name": "Physics & Signals",
    "description": "Spectral analysis, signal imaging, RF and control, and volume visualisation.",
-   "entryCount": 134
+   "entryCount": 136
   }
  ]
 }

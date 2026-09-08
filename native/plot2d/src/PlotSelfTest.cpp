@@ -1014,6 +1014,147 @@ bool runEngineSweep(){
         for(int i=0;i<5;++i){ patientIndex.append(double(patientIndex.size())); bestChange.append(-35.0-double(i)*5.0); }
     }
 
+    // Batch 10's inputs, each built from a constant the engine has to give
+    // back: a critical depth of 0.7414 for a unit discharge of 2, a duty point
+    // at the square root of 800, a half-life of 8, a critical power of 250, a
+    // Bass model with p 0.03 and q 0.38.
+    QVector<double> channelDepth,unitDischarge;
+    QVector<double> transferUnits,transferEffectiveness,capacityRatio;
+    QVector<double> pumpFlow2,pumpDelivered,systemDemanded;
+    QVector<double> dayHour,dayDemand,daySolar;
+    QVector<double> faultCurrent,operateTime,protectiveDevice;
+    QVector<double> spatialFrequency,contrastModulation;
+    QVector<double> decayTime,decayActivity;
+    QVector<double> absorberThickness,transmitted;
+    QVector<double> beamDepth,depositedDose;
+    QVector<double> effortDuration,effortPower;
+    QVector<double> workRate,bloodLactate;
+    QVector<double> sweepFrequency,sweepMagnitude;
+    QVector<double> queueTime,queueArrivals,queueDepartures;
+    QVector<double> cohortAge,cohortRetained,cohortLabel;
+    QVector<double> adoptionTime,adoptionCumulative;
+    QVector<double> faultCategory,faultCount;
+    QVector<double> designSize,designEffect;
+    QVector<double> trialIndex,trialOutcome;
+    {
+        for(int i=1;i<=30;++i){ channelDepth.append(0.15*double(i)); unitDischarge.append(2.0); }
+        // Exactly 0.05 below the counterflow limit, at a capacity ratio of a
+        // half and at one - the second being the removable singularity of the
+        // effectiveness relation rather than a special kind of exchanger.
+        {
+            const double ratios[]={0.5,1.0};
+            for(double cr:ratios)
+                for(int i=1;i<=20;++i){
+                    const double ntu=0.25*double(i);
+                    double exact;
+                    if(std::abs(1.0-cr)<1e-9) exact=ntu/(1.0+ntu);
+                    else { const double e=std::exp(-ntu*(1.0-cr));
+                           exact=(1.0-e)/(1.0-cr*e); }
+                    transferUnits.append(ntu);
+                    transferEffectiveness.append(exact-0.05);
+                    capacityRatio.append(cr);
+                }
+        }
+        for(int i=0;i<=40;++i){
+            const double q=double(i)*1.5;
+            pumpFlow2.append(q);
+            pumpDelivered.append(50.0-0.02*q*q);
+            systemDemanded.append(10.0+0.03*q*q);
+        }
+        for(int i=0;i<=24;++i){
+            const double t=double(i);
+            dayHour.append(t); dayDemand.append(40.0);
+            daySolar.append((t>=6.0&&t<=18.0)?20.0*std::sin(M_PI*(t-6.0)/12.0):0.0);
+        }
+        // Two inverse-time curves whose times differ by a constant factor of
+        // three, so the interval 2/(I/100)^2 is tightest at the largest shared
+        // current and the answer is known in closed form.
+        for(int device=1;device<=2;++device)
+            for(int i=0;i<=20;++i){
+                const double amps=200.0*std::pow(5.0,double(i)/20.0);
+                faultCurrent.append(amps);
+                operateTime.append((device==1?1.0:3.0)/std::pow(amps/100.0,2.0));
+                protectiveDevice.append(double(device));
+            }
+        {
+            const double knee=30.0/std::sqrt(std::log(2.0));   // puts MTF50 at 30
+            for(int i=0;i<=60;++i){
+                const double f=double(i)*1.5;
+                spatialFrequency.append(f);
+                contrastModulation.append(std::exp(-(f/knee)*(f/knee)));
+            }
+        }
+        for(int i=0;i<=40;++i){
+            const double t=double(i);
+            decayTime.append(t);
+            decayActivity.append(1000.0*std::exp(-std::log(2.0)*t/8.0));
+        }
+        for(int i=0;i<=30;++i){
+            const double x=double(i)*0.8;
+            absorberThickness.append(x); transmitted.append(500.0*std::exp(-0.15*x));
+        }
+        for(int i=0;i<=200;++i){
+            const double d=double(i)*0.1;
+            beamDepth.append(d);
+            depositedDose.append(std::exp(-std::pow((d-15.0)/1.5,2.0)));
+        }
+        for(int i=0;i<8;++i){
+            const double t=60.0+double(i)*120.0;
+            effortDuration.append(t); effortPower.append(250.0+20000.0/t);
+        }
+        for(int i=0;i<=12;++i){
+            const double power=120.0+double(i)*15.0;
+            workRate.append(power);
+            bloodLactate.append(1.0+0.5*std::exp((power-200.0)/30.0));
+        }
+        {
+            const double damping=0.05,natural=100.0;
+            for(int i=0;i<=400;++i){
+                const double f=50.0+double(i)*0.25;
+                const double r=f/natural;
+                sweepFrequency.append(f);
+                sweepMagnitude.append(1.0/std::sqrt((1.0-r*r)*(1.0-r*r)
+                                                    +(2.0*damping*r)*(2.0*damping*r)));
+            }
+        }
+        // Arrivals at ten a unit, departures at six, both capped at a hundred:
+        // the queue peaks at forty and the delay is a known area.
+        for(int i=0;i<=100;++i){
+            const double t=double(i)*0.25;
+            queueTime.append(t);
+            queueArrivals.append(qMin(100.0,10.0*t));
+            queueDepartures.append(qMin(100.0,6.0*t));
+        }
+        {
+            const double lives[]={2.0,3.0,4.0};
+            int which=0;
+            for(double life:lives){
+                for(int i=0;i<=12;++i){
+                    cohortAge.append(double(i));
+                    cohortRetained.append(std::exp(-double(i)/life));
+                    cohortLabel.append(double(202401+which));
+                }
+                ++which;
+            }
+        }
+        {
+            const double innovation=0.03,imitation=0.38,market=1000.0;
+            for(int i=0;i<=40;++i){
+                const double t=double(i)*0.5;
+                const double e=std::exp(-(innovation+imitation)*t);
+                adoptionTime.append(t);
+                adoptionCumulative.append(market*(1.0-e)/(1.0+(imitation/innovation)*e));
+            }
+        }
+        {
+            const double counts[]={50.0,25.0,12.0,6.0,4.0,2.0,1.0};
+            int k=0;
+            for(double c:counts){ faultCategory.append(double(++k)); faultCount.append(c); }
+        }
+        for(int i=5;i<=200;i+=5){ designSize.append(double(i)); designEffect.append(0.5); }
+        for(int i=0;i<60;++i){ trialIndex.append(double(i)); trialOutcome.append(0.0); }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1336,6 +1477,48 @@ bool runEngineSweep(){
             {column("effect",effectIndex),column("estimate",effectEstimate)}},
         {QStringLiteral("Response Waterfall"),
             {column("patient",patientIndex),column("best change",bestChange)}},
+        // Batch 10.
+        {QStringLiteral("Specific Energy Diagram"),
+            {column("depth",channelDepth),column("q",unitDischarge)}},
+        {QStringLiteral("NTU-Effectiveness Curve"),
+            {column("NTU",transferUnits),column("effectiveness",transferEffectiveness),
+             column("Cr",capacityRatio)}},
+        {QStringLiteral("Pump Operating Point"),
+            {column("flow",pumpFlow2),column("pump head",pumpDelivered),
+             column("system head",systemDemanded)}},
+        {QStringLiteral("Duck Curve (Net Load)"),
+            {column("hour",dayHour),column("demand",dayDemand),column("solar",daySolar)}},
+        {QStringLiteral("Protection Coordination Curve"),
+            {column("current",faultCurrent),column("time",operateTime),
+             column("device",protectiveDevice)}},
+        {QStringLiteral("MTF Curve"),
+            {column("cycles/mm",spatialFrequency),column("modulation",contrastModulation)}},
+        {QStringLiteral("Radioactive Decay Fit"),
+            {column("time",decayTime),column("activity",decayActivity)}},
+        {QStringLiteral("Attenuation Curve"),
+            {column("thickness",absorberThickness),column("intensity",transmitted)}},
+        {QStringLiteral("Depth-Dose Curve"),
+            {column("depth",beamDepth),column("dose",depositedDose)}},
+        {QStringLiteral("Critical Power Curve"),
+            {column("duration",effortDuration),column("power",effortPower)}},
+        {QStringLiteral("Lactate Threshold Curve"),
+            {column("work rate",workRate),column("lactate",bloodLactate)}},
+        {QStringLiteral("Half-Power Bandwidth"),
+            {column("frequency",sweepFrequency),column("magnitude",sweepMagnitude)}},
+        {QStringLiteral("Cumulative Vehicle Count"),
+            {column("time",queueTime),column("arrivals",queueArrivals),
+             column("departures",queueDepartures)}},
+        {QStringLiteral("Cohort Retention Curve"),
+            {column("age",cohortAge),column("retained",cohortRetained),
+             column("cohort",cohortLabel)}},
+        {QStringLiteral("Bass Diffusion Curve"),
+            {column("time",adoptionTime),column("adopters",adoptionCumulative)}},
+        {QStringLiteral("Pareto Chart"),
+            {column("category",faultCategory),column("count",faultCount)}},
+        {QStringLiteral("Statistical Power Curve"),
+            {column("n",designSize),column("d",designEffect)}},
+        {QStringLiteral("Sequential Test Boundaries"),
+            {column("trial",trialIndex),column("outcome",trialOutcome)}},
     };
 
     for(const QString& engine:engines){
