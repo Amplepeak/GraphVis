@@ -252,6 +252,16 @@ PlotCanvas::PlotCanvas(QQuickItem* parent):QQuickPaintedItem(parent){
     connect(&fullWatcher_,&QFutureWatcher<QImage>::finished,
             this,&PlotCanvas::handleFullRenderFinished);
 
+    // The end of a gesture, for the gestures that have no end event. See
+    // interacting_ in the header.
+    interactionIdle_.setSingleShot(true);
+    interactionIdle_.setInterval(180);
+    connect(&interactionIdle_,&QTimer::timeout,this,[this]{
+        interacting_=false;
+        update();                 // one last preview, this time antialiased
+        scheduleFullRender();
+    });
+
     // A progress bar that only moves when the work finishes is a lie. There is
     // no honest sub-render progress to report from a single QPainter pass, so
     // this reports elapsed against the measured estimate and says so in the
@@ -516,8 +526,13 @@ void PlotCanvas::resetCamera(){
 // figure has stopped somewhere.
 void PlotCanvas::cameraMoved(){
     showingFull_=false;
+    interacting_=true;
+    interactionIdle_.start();
     update();
-    if(!dragging_) scheduleFullRender();
+    // No scheduleFullRender here at all any more, for either case. A wheel zoom
+    // fires this once per notch with no press or release around it, so the old
+    // `if(!dragging_)` started - and abandoned - a full render on every notch.
+    // The idle timer above asks for exactly one, once the figure has stopped.
     emit styleChanged();
 }
 
@@ -1248,8 +1263,10 @@ void PlotCanvas::mouseReleaseEvent(QMouseEvent* e){
     const bool was=dragging_;
     dragging_=false;
     // The full-resolution render was held back for the whole drag - see
-    // cameraMoved - so this is where it is asked for.
-    if(was) scheduleFullRender();
+    // cameraMoved - so this is where it is asked for. The idle timer would
+    // reach the same place a fifth of a second later; a release is a definite
+    // end to the gesture and there is no reason to wait for it.
+    if(was){ interactionIdle_.stop(); interacting_=false; update(); scheduleFullRender(); }
     e->accept();
 }
 
@@ -1307,6 +1324,9 @@ void PlotCanvas::geometryChange(const QRectF& newGeometry,const QRectF& oldGeome
 void PlotCanvas::paint(QPainter* painter){
     rebuild();
     const QRectF target(0,0,width(),height());
+    // Draft while the figure is being moved. This is the single most valuable
+    // line in the interactive path: see QtPlotBackend::setDraft.
+    qtBackend_.setDraft(dragging_||interacting_);
 
     // The accepted full-resolution render, if there is one and it still matches
     // the current settings. Anything else falls through to the live preview.

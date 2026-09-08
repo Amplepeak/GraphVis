@@ -497,6 +497,16 @@ private:
     QImage fullImage_;
     QFutureWatcher<QImage> fullWatcher_;
     QTimer fullDebounce_;
+    // Interaction is not the same thing as a held mouse button. A wheel zoom
+    // has no press and no release, and a touch flick is over before the figure
+    // has finished moving - so `dragging_` alone left the expensive path in use
+    // for exactly the gestures that need the cheap one. This is set by every
+    // camera and view change and cleared a fifth of a second after the last
+    // one, which is also when the full-resolution render is asked for; a
+    // second wheel notch inside that window restarts it rather than starting
+    // another render nobody will see.
+    bool interacting_=false;
+    QTimer interactionIdle_;
     // Drives the progress readout, and only runs while a render is in flight.
     QTimer* progressTick_=nullptr;
     QElapsedTimer fullTimer_;

@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QtMath>
+#include <QElapsedTimer>
 #include <algorithm>
 
 namespace graphvis {
@@ -13786,15 +13787,78 @@ void QtPlotBackend::drawPie(QPainter* p,const QRectF& target,const PlotSpec& spe
     p->restore();
 }
 
+// Which engines build a cached grid out of their input. Draft mode must not
+// thin their series: the grid is keyed on a fingerprint of the data, so a spec
+// that changes every frame misses the cache every frame and the thinning costs
+// far more than it saves. They are bounded by the grid resolution anyway, which
+// is what a grid is for.
+static bool engineUsesGrid(const QString& engine){
+    if(engine==QLatin1String("3D Topography / Surface")
+       ||engine==QLatin1String("3D Mesh")) return true;
+    if(engine.startsWith(QLatin1String("3D "))) return false;
+    return QtPlotBackend::usesColourMap(engine);
+}
+
 void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec& inSpec){
     painter->save();
-    painter->setRenderHint(QPainter::Antialiasing,true);
+    // Antialiasing off while the figure is being moved. See setDraft in the
+    // header for the measurement this is here for - it is the difference
+    // between 54 ms a frame and 6,667.
+    painter->setRenderHint(QPainter::Antialiasing,!draft_);
+    // Text stays antialiased either way. Labels are a handful of glyphs, they
+    // cost nothing to smooth, and a tick that goes jagged the moment you touch
+    // the figure reads as the application breaking rather than as a preview.
     painter->setRenderHint(QPainter::TextAntialiasing,true);
     painter->fillRect(target,inSpec.style.background);
 
     // Reference, not a copy: the cache owns the prepared spec and it is stable
     // for the whole of this render.
-    const PlotSpec& spec=preparedCached(inSpec);
+    const PlotSpec& prepared=preparedCached(inSpec);
+
+    // Thinned, but only in draft, only for the engines that draw their series
+    // point by point, and only when there are more points than the frame can
+    // show anything with. First and last are always kept, so the line still
+    // starts and ends where the data does.
+    PlotSpec thinned;
+    bool useThinned=false;
+    QElapsedTimer draftClock;
+    // Moves the cap toward the target as this frame ends, however it ends -
+    // render() returns from several places and a guard cannot be forgotten at
+    // one of them the way a line before each return can.
+    struct DraftPace {
+        const bool on; const QElapsedTimer& clock; int& cap;
+        ~DraftPace(){
+            if(!on) return;
+            const double ms=double(clock.elapsed());
+            if(ms<1.0) return;                       // nothing to learn from
+            const double factor=qBound(0.4,double(kDraftTargetMs)/ms,2.0);
+            cap=qBound(kDraftCapMin,int(cap*factor),kDraftCapMax);
+        }
+    } pace{draft_,draftClock,draftCap_};
+    if(draft_) draftClock.start();
+    if(draft_&&!engineUsesGrid(prepared.engine)){
+        for(const PlotSeries& series:prepared.series)
+            if(series.y.size()>draftCap_){ useThinned=true; break; }
+        if(useThinned){
+            thinned=prepared;
+            for(PlotSeries& series:thinned.series){
+                const int n=series.y.size();
+                if(n<=draftCap_) continue;
+                const int stride=(n+draftCap_-1)/draftCap_;
+                QVector<double> xs,ys;
+                xs.reserve(n/stride+2); ys.reserve(n/stride+2);
+                for(int i=0;i<n;i+=stride){
+                    if(i<series.x.size()) xs.append(series.x[i]);
+                    ys.append(series.y[i]);
+                }
+                if(!series.x.isEmpty()&&series.x.size()==n&&xs.last()!=series.x.last())
+                    xs.append(series.x.last());
+                if(ys.last()!=series.y.last()) ys.append(series.y.last());
+                series.x=xs; series.y=ys;
+            }
+        }
+    }
+    const PlotSpec& spec=useThinned?thinned:prepared;
 
     // Pie and donut have no axes at all, so they skip the frame entirely.
     if(!engineHasAxes(spec.engine)){

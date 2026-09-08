@@ -29,6 +29,39 @@ public:
     bool supportsVectorOutput() const override { return true; }
     void render(QPainter* painter, const QRectF& target, const PlotSpec& spec) override;
 
+    // Draft mode: the picture drawn WHILE a figure is being turned, panned or
+    // zoomed, as against the one left on screen when it stops.
+    //
+    // This exists because of a measurement, not a hunch. Antialiasing a stroked
+    // line whose segments cross the whole frame is pathologically expensive in
+    // Qt's raster engine: a thousand-point 3-D line took 6,667 ms a frame, the
+    // cube and its axes took 0.6 ms of that, and the identical polyline with
+    // antialiasing off took 54 ms. So rotation had been working all along and
+    // each frame was taking most of a second, which on screen looks exactly
+    // like a figure snapping between a few fixed faces rather than turning.
+    //
+    // Draft turns antialiasing off and thins very dense series. It is for the
+    // live preview only - the full-resolution render that lands when the drag
+    // stops is never in draft, and neither is any export - so nothing that
+    // leaves this application is drawn at draft quality.
+    void setDraft(bool on){ draft_=on; }
+    bool draft() const { return draft_; }
+    // Above this many points in one series, draft mode strides over the rest.
+    // A preview is replaced within a fifth of a second by the real thing, so
+    // the honest trade is a thinner line now against a stalled one.
+    //
+    // ADAPTIVE, because a fixed cap cannot be right. What a segment costs
+    // depends on how LONG it is, not how many there are: six thousand points
+    // of a smooth curve cost about 15 ms and six thousand points of a line
+    // that crosses the whole frame between every pair cost 167. Any constant
+    // is therefore either needlessly coarse on ordinary data or still too slow
+    // on the awkward kind. So each draft frame times itself and moves the cap
+    // toward a 40 ms target, which settles within two or three frames of a
+    // drag starting - before the eye can follow it.
+    static constexpr int kDraftTargetMs=40;
+    static constexpr int kDraftCapMin=600;
+    static constexpr int kDraftCapMax=40000;
+
     // Exposed for testing and for reuse by future backends that want Qt to
     // draw the chrome over their own data layer.
     static QVector<AxisTick> linearTicks(double lo, double hi, int wanted);
@@ -255,6 +288,8 @@ private:
         QVector<QPointF> pos;
     };
     mutable NetworkLayout networkCache_;
+    bool draft_=false;
+    mutable int draftCap_=6000;
     mutable QRectF lastPlotArea_;
     mutable PreparedCache prepCache_;
     // 64-bit FNV-1a over everything prepareSpec can read. Cheap enough to run
