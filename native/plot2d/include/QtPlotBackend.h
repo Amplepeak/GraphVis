@@ -268,6 +268,10 @@ private:
     void drawTripartite(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Stacked bands on a free baseline; every mapped column is one band.
+    void drawStream(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // The same node/parent/value columns read as a tree with branch lengths.
+    void drawCladogram(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // A hierarchy as nested bars, from node/parent/own-value columns. upward
     // draws it as a profiler does - deepest at the top, siblings sorted - and
     // the two engines differ in nothing else.

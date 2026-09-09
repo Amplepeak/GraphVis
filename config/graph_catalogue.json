@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2101,
- "engine_count": 419,
+ "entry_count": 2103,
+ "engine_count": 421,
  "categories": [
   {
    "name": "Line Plots",
@@ -7762,6 +7762,17 @@
      "scale": "Quantile X",
      "advanced": true,
      "description": "One line per position in the cycle, so drift within a season is visible — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Time Series & Trend",
+     "name": "streamgraph",
+     "engine": "Streamgraph",
+     "scale": null,
+     "advanced": false,
+     "description": "Stacked bands on a free baseline, so a band's own shape survives the ones under it; thickness is the value and there is no y scale",
      "preview": "",
      "thumbnail": "",
      "pack": "base"
@@ -21929,6 +21940,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Categorical & Set Views",
+     "name": "cladogram",
+     "engine": "Cladogram",
+     "scale": null,
+     "advanced": false,
+     "description": "A tree from node, parent and branch-length columns, drawn square so the horizontal run of a branch is its length",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -23398,7 +23420,7 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 803
+   "entryCount": 805
   },
   {
    "id": "engineering",

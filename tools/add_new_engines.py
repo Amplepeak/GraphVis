@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 16.
+"""Catalogue entries for the engine expansion, batches 1 to 17.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -491,6 +491,12 @@ NEW = [
      "The Piper's six ions projected into a square, where a mixing line between two waters is straight"),
     ("Civil & Structural", "tripartite", "Tripartite Response Spectrum",
      "Period against pseudo-velocity on log-log, with constant displacement and constant acceleration as straight families - four quantities on two axes"),
+
+    # ---- batch 17
+    ("Categorical & Set Views", "cladogram", "Cladogram",
+     "A tree from node, parent and branch-length columns, drawn square so the horizontal run of a branch is its length"),
+    ("Time Series & Trend", "streamgraph", "Streamgraph",
+     "Stacked bands on a free baseline, so a band's own shape survives the ones under it; thickness is the value and there is no y scale"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -530,5 +536,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-16: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-17: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

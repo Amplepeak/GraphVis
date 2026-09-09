@@ -1496,6 +1496,35 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 17. An ULTRAMETRIC tree - every tip exactly one unit from the root,
+    // reached over branches of different lengths at different depths. All four
+    // tips must therefore line up in a single column on the right, which they
+    // can only do if each branch's horizontal run really is its own length
+    // rather than something scaled per level.
+    QVector<double> cladeNode,cladeParent,cladeLength;
+    {
+        const double table[7][3]={{1,1,0},{2,1,0.3},{3,1,0.5},
+                                  {4,2,0.7},{5,2,0.7},{6,3,0.5},{7,3,0.5}};
+        for(const auto& row:table){
+            cladeNode.append(row[0]); cladeParent.append(row[1]);
+            cladeLength.append(row[2]);
+        }
+    }
+
+    // Streamgraph bands. The first is CONSTANT, which is the test: on an
+    // ordinary stacked area a steady band riding on moving ones is bent by
+    // them, and the whole reason for a free baseline is that it need not be.
+    // Its two edges must stay parallel while the stack as a whole wanders.
+    QVector<double> streamX,streamSteady,streamRising,streamFalling,streamHump;
+    for(int i=0;i<=48;++i){
+        const double u=double(i)/48.0;
+        streamX.append(2000.0+20.0*u);
+        streamSteady.append(10.0);
+        streamRising.append(2.0+18.0*u);
+        streamFalling.append(20.0-16.0*u);
+        streamHump.append(4.0+22.0*std::exp(-40.0*(u-0.55)*(u-0.55)));
+    }
+
     // Voronoi sites: a scattered survey with two clusters and a sparse corner,
     // so the area shading has something to distinguish rather than a uniform
     // field that would look the same however it were computed.
@@ -1996,6 +2025,23 @@ bool runEngineSweep(){
         {QStringLiteral("Durov Diagram"),
             {column("Ca",waterCa),column("Mg",waterMg),column("Na+K",waterNa),
              column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},
+        // Batch 17.
+        {QStringLiteral("Cladogram"),
+            {column("node",cladeNode),column("parent",cladeParent),
+             column("length",cladeLength)}},
+        {QStringLiteral("Streamgraph"),
+            {[&]{ PlotSeries s; s.label=QStringLiteral("steady");
+                  s.x=streamX; s.y=streamSteady;
+                  s.color=QColor(0x3b,0x6e,0xa5); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("rising");
+                  s.x=streamX; s.y=streamRising;
+                  s.color=QColor(0x8a,0xb5,0x6b); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("falling");
+                  s.x=streamX; s.y=streamFalling;
+                  s.color=QColor(0xd0,0x7a,0x4a); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("hump");
+                  s.x=streamX; s.y=streamHump;
+                  s.color=QColor(0x8a,0x6b,0xa5); return s; }()}},
         {QStringLiteral("Tripartite Response Spectrum"),
             {[&]{ PlotSeries s; s.label=QStringLiteral("design spectrum");
                   s.x=spectrumPeriod; s.y=spectrumVelocity; return s; }()}},

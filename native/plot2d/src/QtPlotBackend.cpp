@@ -573,6 +573,9 @@ QStringList QtPlotBackend::supportedEngines() const {
         // Batch 16.
         QStringLiteral("Durov Diagram"),
         QStringLiteral("Tripartite Response Spectrum"),
+        // Batch 17.
+        QStringLiteral("Cladogram"),
+        QStringLiteral("Streamgraph"),
     };
     return kEngines;
 }
@@ -2044,6 +2047,10 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // A response spectrum has one curve per damping ratio and a waffle has one
     // block per category, so both widen with the columns mapped.
     if(engine==QLatin1String("Response Spectrum")) return {2,0,true};
+    // A streamgraph has one band per column and takes its x from the frame, so
+    // it widens the same way a stacked area does. asSeries stays false: these
+    // are ordinary y columns sharing one x, not roles.
+    if(engine==QLatin1String("Streamgraph")) return {2,0,false};
     // Silica and then every oxide mapped, a reference and then every
     // sample: both compare the FIRST column against all the rest, so
     // capping them at two would draw one trend out of eight.
@@ -2155,7 +2162,9 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         // Numbers, because that is what a mapped column carries - the same
         // convention as the edge list the network engines read.
         QStringLiteral("Icicle Plot"),
-        QStringLiteral("Flame Graph")};
+        QStringLiteral("Flame Graph"),
+        // The same three, with the value read as a branch length.
+        QStringLiteral("Cladogram")};
     if(kThree.contains(engine)) return {3,3,true};
 
     // The Piper's six, in milliequivalents - drawn as one shape per water by
@@ -5044,6 +5053,405 @@ void QtPlotBackend::drawArc(QPainter* p,const QRectF& target,const PlotSpec& spe
 }
 
 // ======================================================================
+// A hierarchy from three mapped columns: node identifier, parent identifier,
+// and one value per node. Identifiers are numbers because that is what a mapped
+// column carries - the same convention the edge list uses for the network
+// engines, and for the same reason.
+//
+// What the value MEANS is left to the caller: the icicle reads it as the amount
+// the node holds itself, the cladogram as the length of the branch leading to
+// it. The shape of the tree is the same object either way, and reading it twice
+// would be two chances to disagree about what a cycle or a missing parent
+// means.
+namespace {
+
+struct TreeNode { double id=0.0,value=0.0; int parent=-1,depth=0; QVector<int> kids; };
+struct Tree {
+    QVector<TreeNode> nodes;
+    QVector<int> roots;
+    QVector<int> preorder;      // parents always before their children
+    int deepest=0;
+    bool valid=false;
+};
+
+Tree treeFrom(const PlotSpec& spec){
+    Tree tree;
+    if(spec.series.size()<3) return tree;
+    const QVector<double>& nodeId=spec.series.at(0).y;
+    const QVector<double>& parentId=spec.series.at(1).y;
+    const QVector<double>& value=spec.series.at(2).y;
+    const int rows=qMin(nodeId.size(),qMin(parentId.size(),value.size()));
+
+    QVector<double> rawParent;
+    QVector<bool> hasParent;
+    QHash<double,int> index;
+    for(int i=0;i<rows;++i){
+        if(!finite(nodeId[i])||!finite(value[i])) continue;
+        if(index.contains(nodeId[i])) continue;      // the first row for an id wins
+        TreeNode node;
+        node.id=nodeId[i];
+        node.value=value[i];
+        index.insert(node.id,tree.nodes.size());
+        tree.nodes.append(node);
+        hasParent.append(finite(parentId[i]));
+        rawParent.append(finite(parentId[i])?parentId[i]:0.0);
+    }
+    if(tree.nodes.isEmpty()) return tree;
+
+    // Parents in a second pass, because a table is free to name a parent before
+    // the row that defines it.
+    for(int i=0;i<tree.nodes.size();++i){
+        if(!hasParent[i]) continue;
+        const int up=index.value(rawParent[i],-1);
+        if(up>=0&&up!=i) tree.nodes[i].parent=up;
+    }
+    // A parent column is data, and data can be wrong. A cycle in it would make
+    // the walk below run forever, so any node that cannot reach a root in as
+    // many steps as there are nodes is cut loose and made a root of its own -
+    // the picture is then odd, which is a better failure than a hung renderer.
+    for(int i=0;i<tree.nodes.size();++i){
+        int walk=tree.nodes[i].parent,steps=0;
+        while(walk>=0&&steps<=tree.nodes.size()){ walk=tree.nodes[walk].parent; ++steps; }
+        if(steps>tree.nodes.size()) tree.nodes[i].parent=-1;
+    }
+    for(int i=0;i<tree.nodes.size();++i){
+        if(tree.nodes[i].parent<0) tree.roots.append(i);
+        else tree.nodes[tree.nodes[i].parent].kids.append(i);
+    }
+    if(tree.roots.isEmpty()) return tree;
+
+    // An explicit stack rather than recursion: the depth is the user's data and
+    // a pathological table should not be able to overflow the call stack.
+    QVector<int> stack=tree.roots;
+    while(!stack.isEmpty()){
+        const int at=stack.takeLast();
+        tree.preorder.append(at);
+        tree.deepest=qMax(tree.deepest,tree.nodes[at].depth);
+        for(int kid:tree.nodes[at].kids){
+            tree.nodes[kid].depth=tree.nodes[at].depth+1;
+            stack.append(kid);
+        }
+    }
+    tree.valid=true;
+    return tree;
+}
+
+} // namespace
+
+// ======================================================================
+// Streamgraph
+//
+// A stacked area whose baseline is free. The stack is centred and then allowed
+// to wander, which sounds like decoration and is not: on an ordinary stacked
+// area every band above the first is distorted by the ones below it, so a
+// steady band sitting on a rising one appears to rise, and the eye cannot
+// separate a band's own shape from its neighbours'. Letting the baseline move
+// spends that distortion where it does least harm.
+//
+// The baseline is Byron and Wattenberg's "wiggle": the one that minimises the
+// sum of the squared slopes of the bands, weighted by thickness. It is
+//
+//     g0' = -1/(n+1) * sum_i (n - i + 1) f_i'
+//
+// integrated across the series, started at minus half the total so the figure
+// opens centred. Not simply centring at every step - that is a different and
+// worse baseline, which throws all of the movement into the outermost bands.
+//
+// There is no y axis, and that is not an omission. The vertical position of a
+// band carries nothing at all here; only its THICKNESS is the value, and an
+// axis with numbers on it would invite exactly the misreading the chart is
+// built to prevent. The x axis is drawn, because time is still time.
+void QtPlotBackend::drawStream(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+    if(spec.series.isEmpty()) return;
+
+    // Every band on the shared x of the first series. A streamgraph adds its
+    // bands at each x, so they must be sampled at the same x - bands on
+    // different grids cannot be stacked, and interpolating them onto one would
+    // invent values the data does not have.
+    const QVector<double>& xs=spec.series.at(0).x;
+    const int bands=spec.series.size();
+    int steps=xs.size();
+    for(const PlotSeries& s:spec.series) steps=qMin(steps,int(s.y.size()));
+    if(steps<2||bands<1) return;
+
+    QVector<double> x;
+    QVector<QVector<double>> value(bands);
+    for(int j=0;j<steps;++j){
+        if(!finite(xs[j])) continue;
+        bool usable=true;
+        for(int i=0;i<bands;++i) if(!finite(spec.series.at(i).y[j])) usable=false;
+        if(!usable) continue;
+        x.append(xs[j]);
+        // Negative contributions have no meaning in a stack: a band cannot be
+        // less than nothing thick. Clamped rather than dropped, so a column that
+        // dips below zero loses only the dip.
+        for(int i=0;i<bands;++i) value[i].append(qMax(0.0,spec.series.at(i).y[j]));
+    }
+    const int n=x.size();
+    if(n<2) return;
+
+    QVector<double> baseline(n,0.0);
+    {
+        double total=0.0;
+        for(int i=0;i<bands;++i) total+=value[i][0];
+        baseline[0]=-0.5*total;
+        for(int j=1;j<n;++j){
+            double move=0.0;
+            for(int i=0;i<bands;++i)
+                move+=double(bands-i)*(value[i][j]-value[i][j-1]);
+            baseline[j]=baseline[j-1]-move/double(bands+1);
+        }
+    }
+
+    double lo=baseline.first(),hi=baseline.first();
+    for(int j=0;j<n;++j){
+        double top=baseline[j];
+        for(int i=0;i<bands;++i) top+=value[i][j];
+        lo=qMin(lo,baseline[j]); hi=qMax(hi,top);
+    }
+    Bounds across=boundsOf(x);
+    if(!(across.hi>across.lo)||!(hi>lo)) return;
+
+    // Margins wide enough for the tick labels at BOTH ends, which are centred
+    // on their ticks and so need half a label of room outside the frame, and
+    // deep enough at the bottom for the axis name and the summary to sit on
+    // separate lines.
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height()*1.8,
+                       target.top()+titleRoom+fm.height()*0.4,
+                       target.width()-fm.height()*3.6,
+                       target.height()-titleRoom-fm.height()*4.8);
+    if(field.width()<40.0||field.height()<20.0) return;
+    const auto at=[&](double xv,double yv){
+        return QPointF(field.left()+(xv-across.lo)/(across.hi-across.lo)*field.width(),
+                       field.bottom()-(yv-lo)/(hi-lo)*field.height());
+    };
+
+    p->save();
+    QVector<double> running=baseline;
+    for(int i=0;i<bands;++i){
+        QPolygonF shape;
+        for(int j=0;j<n;++j) shape<<at(x[j],running[j]);
+        for(int j=n-1;j>=0;--j) shape<<at(x[j],running[j]+value[i][j]);
+        QColor fill=spec.series.at(i).color;
+        fill.setAlphaF(0.9);
+        p->setBrush(fill);
+        // Hairline in the background colour rather than no pen: two adjacent
+        // bands of similar colour otherwise merge into one shape whose middle
+        // boundary is invisible, which is the one thing that must always be
+        // readable here.
+        p->setPen(QPen(spec.style.background,0.8));
+        p->drawPolygon(shape);
+        // Named inside the band, at its thickest point. A legend beside the
+        // figure would make the reader carry a colour across the page and back
+        // for every band, and a streamgraph has more bands than that survives.
+        // The MIDDLE of where the band is thickest, not the first such point.
+        // A band that is constant is thickest everywhere, and taking the first
+        // index put its name hard against the left edge of the figure with half
+        // of it outside.
+        double peak=0.0;
+        for(int j=0;j<n;++j) peak=qMax(peak,value[i][j]);
+        int firstWide=-1,lastWide=-1;
+        for(int j=0;j<n;++j)
+            if(value[i][j]>=peak*0.99){ if(firstWide<0) firstWide=j; lastWide=j; }
+        const int fattest=(firstWide<0)?0:(firstWide+lastWide)/2;
+        const QPointF middle=at(x[fattest],running[fattest]+value[i][fattest]*0.5);
+        const double thickness=std::abs(at(x[fattest],0.0).y()
+                                        -at(x[fattest],value[i][fattest]).y());
+        const QString name=spec.series.at(i).label;
+        if(!name.isEmpty()&&thickness>fm.height()*1.1
+           &&fm.horizontalAdvance(name)<field.width()*0.4){
+            p->setPen(fill.lightness()<128?Qt::white:QColor(0x18,0x18,0x18));
+            const double half=fm.horizontalAdvance(name)*0.5+2.0;
+            const double cx=qBound(field.left()+half,middle.x(),field.right()-half);
+            p->drawText(QRectF(cx-60.0,middle.y()-fm.height()*0.5,120.0,fm.height()),
+                        Qt::AlignCenter,name);
+        }
+        for(int j=0;j<n;++j) running[j]+=value[i][j];
+    }
+    p->restore();
+
+    // The x axis, and only the x axis.
+    p->save();
+    p->setPen(QPen(spec.style.foreground,0.9));
+    const double axisY=field.bottom()+fm.height()*0.5;
+    p->drawLine(QPointF(field.left(),axisY),QPointF(field.right(),axisY));
+    for(const AxisTick& tick:linearTicks(across.lo,across.hi,6)){
+        if(tick.minor) continue;
+        if(tick.value<across.lo||tick.value>across.hi) continue;
+        const double px=at(tick.value,lo).x();
+        p->drawLine(QPointF(px,axisY),QPointF(px,axisY+4.0));
+        p->drawText(QRectF(px-40.0,axisY+5.0,80.0,fm.height()),
+                    Qt::AlignHCenter|Qt::AlignTop,tick.label);
+    }
+    if(!spec.xAxis.label.isEmpty())
+        p->drawText(QRectF(field.left(),axisY+fm.height()*1.4,field.width(),fm.height()),
+                    Qt::AlignHCenter|Qt::AlignTop,spec.xAxis.label);
+
+    // The thickest each band ever gets, which is the number the picture cannot
+    // be measured for: there is no scale to measure it against, by design.
+    QStringList widest;
+    for(int i=0;i<bands&&i<6;++i){
+        double top=0.0;
+        for(int j=0;j<n;++j) top=qMax(top,value[i][j]);
+        widest.append(QStringLiteral("%1 peaks at %2")
+                          .arg(spec.series.at(i).label.isEmpty()
+                                   ?QStringLiteral("band %1").arg(i+1)
+                                   :spec.series.at(i).label)
+                          .arg(top,0,'g',4));
+    }
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("thickness is the value; there is no y scale.   ")
+                    +widest.join(QStringLiteral("   ")));
+    p->restore();
+}
+
+// ======================================================================
+// Cladogram
+//
+// The same three columns as the icicle, read as a tree rather than as a
+// division of a whole: node, parent, and the LENGTH of the branch leading to
+// that node. Tips stack down the page and a node's horizontal position is its
+// distance from the root, so the picture is a statement about how far apart two
+// tips are - which is what a tree is for, and what a dendrogram built from a
+// distance matrix cannot say in the same way because its heights come from the
+// clustering rather than from the data.
+//
+// Drawn square rather than as slanted vees. On a slanted tree the length of the
+// drawn line depends on how far apart its two children happen to fall on the
+// page, so two equal branches look different and two unequal ones can look the
+// same. With square corners the horizontal run IS the branch length and nothing
+// else is.
+void QtPlotBackend::drawCladogram(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    Tree tree=treeFrom(spec);
+    if(!tree.valid){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs three columns: node, parent, and the "
+                                   "length of the branch leading to it"));
+        p->restore();
+        return;
+    }
+    const QVector<TreeNode>& nodes=tree.nodes;
+    const int n=nodes.size();
+
+    // Distance from the root, parents first - which is the order the pre-order
+    // walk gives. A negative length is taken as zero rather than allowed to walk
+    // backwards: a negative branch is a data error, and drawing it would put a
+    // child to the LEFT of its parent, which on this diagram means the child is
+    // closer to the root than the thing it descends from.
+    QVector<double> distance(n,0.0);
+    for(int at:tree.preorder)
+        distance[at]=(nodes[at].parent<0)?0.0
+                    :distance[nodes[at].parent]+qMax(0.0,nodes[at].value);
+    double furthest=0.0;
+    for(double d:distance) furthest=qMax(furthest,d);
+
+    // Tips down the page in the order the walk reaches them, then internal
+    // nodes at the midpoint of their children: the standard layout, and the one
+    // that keeps a subtree contiguous so a clade reads as a block.
+    QVector<double> row(n,-1.0);
+    int tips=0;
+    for(int i=tree.preorder.size()-1;i>=0;--i){
+        const int at=tree.preorder[i];
+        if(nodes[at].kids.isEmpty()){ row[at]=double(tips++); continue; }
+        double lo=row[nodes[at].kids.first()],hi=lo;
+        for(int kid:nodes[at].kids){ lo=qMin(lo,row[kid]); hi=qMax(hi,row[kid]); }
+        row[at]=0.5*(lo+hi);
+    }
+    if(tips<1) return;
+    // No flip. The stack reverses siblings once on the way down and reading the
+    // walk backwards reverses them again, so tips come out top to bottom in the
+    // order the table gave them - which is the order somebody chose. The first
+    // version turned them upside down to "correct" a reversal that had already
+    // cancelled itself out.
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    // Room on the right for the tip labels, which are the point of the figure: a
+    // tree whose tips are cut off names nothing.
+    double widestTip=0.0;
+    for(int i=0;i<n;++i)
+        if(nodes[i].kids.isEmpty())
+            widestTip=qMax(widestTip,
+                           fm.horizontalAdvance(QString::number(nodes[i].id,'g',6)));
+    const QRectF field(target.left()+fm.height()*0.6,
+                       target.top()+titleRoom+fm.height()*0.4,
+                       target.width()-fm.height()*1.2-widestTip-12.0,
+                       target.height()-titleRoom-fm.height()*4.0);
+    if(field.width()<40.0||field.height()<20.0) return;
+    const double rowGap=field.height()/double(tips);
+    const auto at=[&](double d,double r){
+        return QPointF(field.left()+(furthest>0.0?d/furthest:0.0)*field.width(),
+                       field.top()+rowGap*(r+0.5));
+    };
+
+    p->save();
+    QPen branch(spec.series.at(0).color);
+    branch.setWidthF(qMax(1.0,spec.style.lineWidth));
+    branch.setCapStyle(Qt::FlatCap);
+    p->setPen(branch);
+    for(int i=0;i<n;++i){
+        if(nodes[i].parent<0) continue;
+        const int up=nodes[i].parent;
+        // Two strokes: down the parent's column to this child's row, then out
+        // along the row by the branch length. The horizontal run is the length;
+        // the vertical one carries no meaning at all, which is exactly why the
+        // two are kept separate.
+        p->drawLine(at(distance[up],row[up]),at(distance[up],row[i]));
+        p->drawLine(at(distance[up],row[i]),at(distance[i],row[i]));
+    }
+
+    p->setPen(spec.style.foreground);
+    if(rowGap>fm.height()*0.95){
+        for(int i=0;i<n;++i){
+            if(!nodes[i].kids.isEmpty()) continue;
+            const QPointF tip=at(distance[i],row[i]);
+            p->drawText(QRectF(tip.x()+4.0,tip.y()-fm.height()*0.5,
+                               widestTip+8.0,fm.height()),
+                        Qt::AlignLeft|Qt::AlignVCenter,
+                        QString::number(nodes[i].id,'g',6));
+        }
+    }
+    p->restore();
+
+    // A distance scale along the bottom. Without one the horizontal direction is
+    // a picture of nothing - the whole difference between this and a bare
+    // topology is that the run means something, and it cannot mean something
+    // unnamed.
+    p->save();
+    p->setPen(QPen(spec.style.foreground,0.9));
+    const double axisY=field.bottom()+fm.height()*0.7;
+    p->drawLine(QPointF(field.left(),axisY),QPointF(field.right(),axisY));
+    const double step=niceStep(furthest/5.0);
+    if(step>0.0&&furthest>0.0)
+        for(double d=0.0;d<=furthest+step*0.5;d+=step){
+            const double x=at(qMin(d,furthest),0.0).x();
+            p->drawLine(QPointF(x,axisY),QPointF(x,axisY+4.0));
+            p->drawText(QRectF(x-30.0,axisY+5.0,60.0,fm.height()),
+                        Qt::AlignHCenter|Qt::AlignTop,QString::number(d,'g',4));
+        }
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 tips over %2 nodes, deepest %3 branches from "
+                               "the root, furthest tip at %4")
+                    .arg(tips).arg(n).arg(tree.deepest).arg(furthest,0,'g',4));
+    p->restore();
+}
+
+// ======================================================================
 // Icicle plot and flame graph
 //
 // A hierarchy drawn as nested bars: one row per level, each parent exactly as
@@ -5077,83 +5485,28 @@ void QtPlotBackend::drawIcicle(QPainter* p,const QRectF& target,const PlotSpec& 
         p->restore();
         return;
     }
-    const QVector<double>& nodeId=spec.series.at(0).y;
-    const QVector<double>& parentId=spec.series.at(1).y;
-    const QVector<double>& selfValue=spec.series.at(2).y;
-    const int rows=qMin(nodeId.size(),qMin(parentId.size(),selfValue.size()));
-
-    struct Node { double id=0.0,own=0.0,total=0.0,rawParent=0.0;
-                  bool hasParent=false; int parent=-1,depth=0; QVector<int> kids; };
-    QVector<Node> nodes;
-    QHash<double,int> index;
-    for(int i=0;i<rows;++i){
-        if(!finite(nodeId[i])||!finite(selfValue[i])) continue;
-        if(index.contains(nodeId[i])) continue;         // the first row for an id wins
-        Node node;
-        node.id=nodeId[i];
-        node.own=qMax(0.0,selfValue[i]);
-        node.hasParent=finite(parentId[i]);
-        node.rawParent=node.hasParent?parentId[i]:0.0;
-        index.insert(node.id,nodes.size());
-        nodes.append(node);
+    Tree tree=treeFrom(spec);
+    if(!tree.valid) return;
+    QVector<TreeNode>& nodes=tree.nodes;
+    QVector<double> total(nodes.size(),0.0);
+    // Subtree totals, deepest first - which the pre-order walk gives when read
+    // backwards, since a node is always appended before any of its children.
+    for(int i=tree.preorder.size()-1;i>=0;--i){
+        const int at=tree.preorder[i];
+        double sum=qMax(0.0,nodes[at].value);
+        for(int kid:nodes[at].kids) sum+=total[kid];
+        total[at]=sum;
     }
-    if(nodes.isEmpty()) return;
-    // Parents resolved in a second pass, because a table is free to name a
-    // parent before the row that defines it.
-    for(int i=0;i<nodes.size();++i){
-        if(!nodes[i].hasParent) continue;
-        const int up=index.value(nodes[i].rawParent,-1);
-        if(up>=0&&up!=i) nodes[i].parent=up;
-    }
-    // Cycles. A parent column is data and data can be wrong, and a cycle in it
-    // would make the depth walk below run forever - so any node that cannot
-    // reach a root in as many steps as there are nodes is cut loose and made a
-    // root of its own rather than allowed to hang the renderer.
-    for(int i=0;i<nodes.size();++i){
-        int walk=nodes[i].parent,steps=0;
-        while(walk>=0&&steps<=nodes.size()){ walk=nodes[walk].parent; ++steps; }
-        if(steps>nodes.size()) nodes[i].parent=-1;
-    }
-    QVector<int> roots;
-    for(int i=0;i<nodes.size();++i){
-        if(nodes[i].parent<0) roots.append(i);
-        else nodes[nodes[i].parent].kids.append(i);
-    }
-    if(roots.isEmpty()) return;
-
-    // Totals, deepest first. An explicit stack rather than recursion: the depth
-    // is the user's data, and a pathological table should not be able to
-    // overflow the call stack.
-    QVector<int> visitOrder;
-    {
-        QVector<int> stack=roots;
-        while(!stack.isEmpty()){
-            const int at=stack.takeLast();
-            visitOrder.append(at);
-            for(int kid:nodes[at].kids){
-                nodes[kid].depth=nodes[at].depth+1;
-                stack.append(kid);
-            }
-        }
-    }
-    // Deepest first, which the pre-order walk above guarantees when read
-    // backwards: a node is always appended before any of its children.
-    for(int i=visitOrder.size()-1;i>=0;--i){
-        const int at=visitOrder[i];
-        double total=nodes[at].own;
-        for(int kid:nodes[at].kids) total+=nodes[kid].total;
-        nodes[at].total=total;
-    }
-    double grand=0.0; int deepest=0;
-    for(int root:roots) grand+=nodes[root].total;
-    for(const Node& node:nodes) deepest=qMax(deepest,node.depth);
+    double grand=0.0;
+    for(int root:tree.roots) grand+=total[root];
+    const int deepest=tree.deepest;
     if(!(grand>0.0)) return;
 
     // A flame graph sorts siblings by name so that two profiles of the same
     // program line up; an icicle keeps the order the table gave, because that
     // order is often the thing being shown.
     if(upward)
-        for(Node& node:nodes)
+        for(TreeNode& node:nodes)
             std::sort(node.kids.begin(),node.kids.end(),
                       [&nodes](int a,int b){ return nodes[a].id<nodes[b].id; });
 
@@ -5171,15 +5524,15 @@ void QtPlotBackend::drawIcicle(QPainter* p,const QRectF& target,const PlotSpec& 
     struct Job { int node; double x,width; };
     QVector<Job> queue;
     { double x=field.left();
-      for(int root:roots){
-          const double w=field.width()*nodes[root].total/grand;
+      for(int root:tree.roots){
+          const double w=field.width()*total[root]/grand;
           queue.append({root,x,w});
           x+=w;
       } }
     int drawn=0;
     while(!queue.isEmpty()){
         const Job job=queue.takeLast();
-        const Node& node=nodes[job.node];
+        const TreeNode& node=nodes[job.node];
         const double top=upward
             ?field.bottom()-levelH*double(node.depth+1)
             :field.top()+levelH*double(node.depth);
@@ -5202,7 +5555,7 @@ void QtPlotBackend::drawIcicle(QPainter* p,const QRectF& target,const PlotSpec& 
         }
         double at=job.x;
         for(int kid:node.kids){
-            const double w=job.width*nodes[kid].total/qMax(1e-12,node.total);
+            const double w=job.width*total[kid]/qMax(1e-12,total[job.node]);
             queue.append({kid,at,w});
             at+=w;
         }
@@ -6089,6 +6442,13 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Arc Diagram")
         && engine!=QLatin1String("Icicle Plot")
         && engine!=QLatin1String("Flame Graph")
+        // A tree: its horizontal direction is a distance and its vertical one
+        // is only an ordering, so a y axis with numbers on it would be a
+        // measurement of nothing.
+        && engine!=QLatin1String("Cladogram")
+        // Thickness is the value and vertical position is nothing, so a y axis
+        // would be numbers against a quantity that does not exist.
+        && engine!=QLatin1String("Streamgraph")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -24868,6 +25228,16 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Streamgraph")){
+            drawStream(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Cladogram")){
+            drawCladogram(painter,target,spec);
             painter->restore();
             return;
         }
