@@ -578,6 +578,9 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Streamgraph"),
         // Batch 18.
         QStringLiteral("Ternary Contour"),
+        // Batch 19.
+        QStringLiteral("Alluvial Diagram"),
+        QStringLiteral("Hive Plot"),
     };
     return kEngines;
 }
@@ -2174,7 +2177,9 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     if(engine==QLatin1String("Stiff Diagram")
        ||engine==QLatin1String("Durov Diagram")) return {6,6,true};
     // An edge list: source, target, and an optional weight.
-    if(engine==QLatin1String("Arc Diagram")) return {2,3,true};
+    if(engine==QLatin1String("Arc Diagram")
+       ||engine==QLatin1String("Alluvial Diagram")
+       ||engine==QLatin1String("Hive Plot")) return {2,3,true};
 
     // Contingency: the two categories, and a count column if there is one.
     if(engine==QLatin1String("Mosaic Plot")) return {2,3,true};
@@ -5143,6 +5148,368 @@ Tree treeFrom(const PlotSpec& spec){
 } // namespace
 
 // ======================================================================
+// Alluvial diagram
+//
+// A flow through stages, from the same edge list the network engines read. The
+// catalogue had a Sankey, and it drew ONE split - a flat list of magnitudes
+// fanning out from a single source - which is a third of what a Sankey is for.
+// A budget that passes through three departments, a cohort that moves between
+// four states, a material that goes through five processes: all of those are
+// edge lists, and none of them could be drawn.
+//
+// The stages are computed rather than asked for, as the LONGEST path from any
+// node with nothing flowing into it. Longest and not shortest: a node fed by
+// both a one-step and a three-step path belongs after both of them, and placing
+// it by the shortest would make one of its inputs run backwards - which on a
+// flow diagram means the opposite of what the data says.
+//
+// Three mapped columns: source, target, and an optional weight.
+void QtPlotBackend::drawAlluvial(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    const EdgeList e=edgesFrom(spec);
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+    if(!e.valid){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs an edge list: source, target, and an optional weight"));
+        p->restore();
+        return;
+    }
+    const int n=e.ids.size();
+
+    // Stage by longest path, relaxed until it settles. A cycle cannot settle,
+    // so the number of passes is capped at the node count and whatever is left
+    // over is reported rather than drawn as if it were a flow - a cyclic
+    // alluvial is not a thing, and silently laying one out would put edges
+    // running backwards among edges running forwards with nothing to tell them
+    // apart.
+    QVector<int> stage(n,0);
+    bool settled=false;
+    for(int pass=0;pass<n&&!settled;++pass){
+        settled=true;
+        for(int k=0;k<e.from.size();++k)
+            if(stage[e.to[k]]<stage[e.from[k]]+1){
+                stage[e.to[k]]=stage[e.from[k]]+1;
+                settled=false;
+            }
+    }
+    int stages=1;
+    for(int i=0;i<n;++i) stages=qMax(stages,stage[i]+1);
+
+    // A node is as tall as the larger of what enters and what leaves it: the
+    // two differ wherever a flow is created or consumed, and sizing by only one
+    // of them would hide exactly that.
+    QVector<double> inflow(n,0.0),outflow(n,0.0);
+    for(int k=0;k<e.from.size();++k){
+        outflow[e.from[k]]+=e.weight[k];
+        inflow[e.to[k]]+=e.weight[k];
+    }
+    QVector<double> weightOf(n,0.0);
+    for(int i=0;i<n;++i) weightOf[i]=qMax(inflow[i],outflow[i]);
+
+    QVector<QVector<int>> column(stages);
+    for(int i=0;i<n;++i) column[stage[i]].append(i);
+    for(QVector<int>& members:column)
+        std::sort(members.begin(),members.end(),
+                  [&e](int a,int b){ return e.ids[a]<e.ids[b]; });
+
+    double heaviestColumn=0.0;
+    for(const QVector<int>& members:column){
+        double sum=0.0;
+        for(int i:members) sum+=weightOf[i];
+        heaviestColumn=qMax(heaviestColumn,sum);
+    }
+    if(!(heaviestColumn>0.0)) return;
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height()*1.4,target.top()+titleRoom+fm.height()*0.4,
+                       target.width()-fm.height()*2.8,
+                       target.height()-titleRoom-fm.height()*2.6);
+    if(field.width()<60.0||field.height()<40.0) return;
+    const double barW=qMax(6.0,qMin(18.0,field.width()/double(qMax(1,stages))*0.12));
+    const double columnX=(stages>1)?(field.width()-barW)/double(stages-1):0.0;
+
+    // The tallest column fills the field less the gaps between its nodes, so
+    // every column is drawn to the same scale and two columns can be compared
+    // by eye - which is the one comparison an alluvial exists to support.
+    int mostNodes=1;
+    for(const QVector<int>& members:column) mostNodes=qMax(mostNodes,members.size());
+    const double gap=qMin(12.0,field.height()*0.35/double(mostNodes));
+    const double scale=(field.height()-gap*double(mostNodes-1))/heaviestColumn;
+
+    QVector<double> nodeTop(n,0.0),nodeBottom(n,0.0),nodeX(n,0.0);
+    for(int s=0;s<stages;++s){
+        double sum=0.0;
+        for(int i:column[s]) sum+=weightOf[i];
+        // Each column centred on the field, so a stage that carries less than
+        // the busiest one is short at both ends rather than hanging from the top.
+        double y=field.top()+(field.height()-sum*scale
+                              -gap*double(column[s].size()-1))*0.5;
+        for(int i:column[s]){
+            nodeX[i]=field.left()+columnX*double(s);
+            nodeTop[i]=y;
+            nodeBottom[i]=y+weightOf[i]*scale;
+            y=nodeBottom[i]+gap;
+        }
+    }
+
+    // ---- The ribbons, heaviest first so a thin flow is never buried under a
+    // thick one drawn later.
+    QVector<int> order(e.from.size());
+    for(int k=0;k<order.size();++k) order[k]=k;
+    std::sort(order.begin(),order.end(),
+              [&e](int a,int b){ return e.weight[a]>e.weight[b]; });
+
+    QVector<double> usedOut(n,0.0),usedIn(n,0.0);
+    p->save();
+    p->setPen(Qt::NoPen);
+    for(int k:order){
+        const int u=e.from[k],v=e.to[k];
+        if(stage[v]<=stage[u]) continue;              // a backward edge is a cycle's leftover
+        const double thickness=e.weight[k]*scale;
+        const double y0=nodeTop[u]+usedOut[u],y1=nodeTop[v]+usedIn[v];
+        usedOut[u]+=thickness; usedIn[v]+=thickness;
+        const double x0=nodeX[u]+barW,x1=nodeX[v];
+        if(!(x1>x0)) continue;
+        const double bend=(x1-x0)*0.5;
+        QPainterPath ribbon;
+        ribbon.moveTo(x0,y0);
+        ribbon.cubicTo(QPointF(x0+bend,y0),QPointF(x1-bend,y1),QPointF(x1,y1));
+        ribbon.lineTo(x1,y1+thickness);
+        ribbon.cubicTo(QPointF(x1-bend,y1+thickness),QPointF(x0+bend,y0+thickness),
+                       QPointF(x0,y0+thickness));
+        ribbon.closeSubpath();
+        // Coloured by where the flow comes FROM, which is what a reader traces.
+        QColor fill=QColor::fromHsvF(std::fmod(0.07+0.618034*double(u),1.0),0.45,0.85);
+        fill.setAlphaF(0.55);
+        p->setBrush(fill);
+        p->drawPath(ribbon);
+    }
+    p->restore();
+
+    // ---- The nodes over the ribbons.
+    p->save();
+    p->setPen(Qt::NoPen);
+    p->setBrush(spec.style.foreground);
+    for(int i=0;i<n;++i)
+        p->drawRect(QRectF(nodeX[i],nodeTop[i],barW,qMax(1.0,nodeBottom[i]-nodeTop[i])));
+    p->setPen(spec.style.foreground);
+    for(int i=0;i<n;++i){
+        if(nodeBottom[i]-nodeTop[i]<fm.height()*0.8) continue;
+        const QString name=QStringLiteral("%1").arg(e.ids[i],0,'g',6);
+        const bool onLeft=(stage[i]==stages-1);
+        const QRectF box=onLeft
+            ?QRectF(nodeX[i]-90.0-4.0,nodeTop[i],90.0,nodeBottom[i]-nodeTop[i])
+            :QRectF(nodeX[i]+barW+4.0,nodeTop[i],90.0,nodeBottom[i]-nodeTop[i]);
+        p->drawText(box,(onLeft?Qt::AlignRight:Qt::AlignLeft)|Qt::AlignVCenter,name);
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    int backward=0;
+    for(int k=0;k<e.from.size();++k) if(stage[e.to[k]]<=stage[e.from[k]]) ++backward;
+    double carried=0.0;
+    for(double w:e.weight) carried+=w;
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                backward>0
+                ?QStringLiteral("%1 nodes over %2 stages, %3 flows totalling %4; "
+                                "%5 edge(s) run backwards and are not drawn - "
+                                "the graph has a cycle")
+                     .arg(n).arg(stages).arg(e.from.size()).arg(carried,0,'g',5)
+                     .arg(backward)
+                :QStringLiteral("%1 nodes over %2 stages, %3 flows totalling %4; "
+                                "a node is as tall as the larger of what enters "
+                                "and what leaves it")
+                     .arg(n).arg(stages).arg(e.from.size()).arg(carried,0,'g',5));
+    p->restore();
+}
+
+// ======================================================================
+// Hive plot
+//
+// The third thing to do with the edge list, and the one that exists because the
+// first is untrustworthy. A force-directed network graph places nodes wherever
+// the springs settle, so the eye reads clusters and distances that are
+// properties of the LAYOUT rather than of the graph - run it twice and the
+// picture changes. A hive plot fixes every node by a rule: which axis it sits
+// on and how far out it sits are both read off the graph itself, so the same
+// edge list always draws the same figure and two graphs can be compared.
+//
+// The rule here is degree. Nodes are split into three groups by degree and each
+// group gets an axis, with radial position set by degree within that group. So
+// the middle of the figure is the sparsely connected part of the graph and the
+// rim is the hubs, and a link running from rim to rim is a hub talking to a hub.
+// Degree rather than an assignment column: a mapped column carries numbers, and
+// a number that happened to be a group label would be indistinguishable from
+// one that was a measurement.
+//
+// Three mapped columns: source, target, and an optional weight.
+void QtPlotBackend::drawHive(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    const EdgeList e=edgesFrom(spec);
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+    if(!e.valid){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs an edge list: source, target, and an optional weight"));
+        p->restore();
+        return;
+    }
+    const int n=e.ids.size();
+
+    QVector<int> degree(n,0);
+    for(int k=0;k<e.from.size();++k){ ++degree[e.from[k]]; ++degree[e.to[k]]; }
+
+    QVector<int> byDegree(n);
+    for(int i=0;i<n;++i) byDegree[i]=i;
+    std::sort(byDegree.begin(),byDegree.end(),[&](int a,int b){
+        if(degree[a]!=degree[b]) return degree[a]<degree[b];
+        return e.ids[a]<e.ids[b];               // ties by identifier, so it is repeatable
+    });
+    QVector<int> axisOf(n,0);
+    for(int r=0;r<n;++r) axisOf[byDegree[r]]=qMin(2,r*3/qMax(1,n));
+
+    // Radial position by RANK in degree order within the axis, not by the
+    // degree itself. Degree proportionally is the obvious thing and it hides
+    // most of the graph: degree is a small integer, so ties are the rule rather
+    // than the exception, and every node of the same degree lands on the same
+    // point. On the test graph that put four leaves under one dot and left two
+    // of the three axes looking almost empty. Rank keeps the ORDER - further
+    // out is still better connected - and spreads every node so it can be seen
+    // and its links followed, which is the whole purpose of fixing positions by
+    // a rule in the first place.
+    QVector<double> radius(n,0.5);
+    for(int axis=0;axis<3;++axis){
+        QVector<int> members;
+        for(int i=0;i<n;++i) if(axisOf[i]==axis) members.append(i);
+        if(members.isEmpty()) continue;
+        std::sort(members.begin(),members.end(),[&](int a,int b){
+            if(degree[a]!=degree[b]) return degree[a]<degree[b];
+            return e.ids[a]<e.ids[b];               // ties broken repeatably
+        });
+        for(int slot=0;slot<members.size();++slot)
+            radius[members[slot]]=(members.size()>1)
+                ?double(slot)/double(members.size()-1):0.5;
+    }
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left(),target.top()+titleRoom,target.width(),
+                       target.height()-titleRoom-fm.height()*1.6);
+    const double outer=qMin(field.width(),field.height())*0.38;
+    // Nudged DOWN by a quarter of the radius. Three axes at a hundred and
+    // twenty degrees with one pointing up reach a full radius above the centre
+    // and only half a radius below it, so a figure centred on its own centre
+    // sits in the top two thirds of the page with a band of nothing under it.
+    const QPointF centre=field.center()+QPointF(0.0,outer*0.25);
+    const double inner=outer*0.16;
+    const double angles[3]={-M_PI/2.0,-M_PI/2.0+2.0*M_PI/3.0,-M_PI/2.0+4.0*M_PI/3.0};
+    const auto seat=[&](int node){
+        const double r=inner+(outer-inner)*radius[node];
+        const double a=angles[axisOf[node]];
+        return QPointF(centre.x()+r*std::cos(a),centre.y()+r*std::sin(a));
+    };
+
+    // ---- The three axes.
+    p->save();
+    p->setPen(QPen(spec.style.gridColor,1.2));
+    for(int axis=0;axis<3;++axis){
+        const double a=angles[axis];
+        p->drawLine(QPointF(centre.x()+inner*std::cos(a),centre.y()+inner*std::sin(a)),
+                    QPointF(centre.x()+outer*std::cos(a),centre.y()+outer*std::sin(a)));
+    }
+    p->setPen(spec.style.foreground);
+    static const char* kNames[3]={"fewest links","middle","most links"};
+    for(int axis=0;axis<3;++axis){
+        const double a=angles[axis];
+        const double r=outer+fm.height()*1.6;
+        const QPointF where(centre.x()+r*std::cos(a),centre.y()+r*std::sin(a));
+        p->drawText(QRectF(where.x()-70.0,where.y()-fm.height()*0.5,140.0,fm.height()),
+                    Qt::AlignCenter,QString::fromLatin1(kNames[axis]));
+    }
+    p->restore();
+
+    // ---- The links. Curved by rotating each end's control point toward the
+    // other axis, which is what gives a hive plot its readable bundles: two
+    // links between the same pair of axes bow the same way and can be counted,
+    // where two straight chords crossing the middle cannot.
+    double heaviest=0.0;
+    for(double w:e.weight) heaviest=qMax(heaviest,w);
+    p->save();
+    p->setBrush(Qt::NoBrush);
+    for(int k=0;k<e.from.size();++k){
+        const int u=e.from[k],v=e.to[k];
+        if(u==v) continue;
+        const QPointF a=seat(u),b=seat(v);
+        double turn=angles[axisOf[v]]-angles[axisOf[u]];
+        while(turn>M_PI) turn-=2.0*M_PI;
+        while(turn<-M_PI) turn+=2.0*M_PI;
+        // Two nodes on the SAME axis have no angle between them, so the curve
+        // would be a straight line lying along the axis and invisible. Given a
+        // fixed bow instead, on the side the identifiers order them.
+        if(std::abs(turn)<1e-9) turn=(e.ids[u]<e.ids[v])?0.5:-0.5;
+        // The control point is rotated toward the other axis AND pulled in
+        // toward the middle. Rotating alone leaves it on the same circle as its
+        // endpoint, and a cubic whose control points sit on a circle bulges
+        // OUTSIDE it - which sent every link on a long sweep out past the ends
+        // of the axes and through the space where the labels are. Pulled in,
+        // the links curve through the interior, which is the shape that lets
+        // two bundles between the same pair of axes be told apart.
+        const auto swing=[&](const QPointF& from,double by){
+            const double dx=from.x()-centre.x(),dy=from.y()-centre.y();
+            const double rx=dx*std::cos(by)-dy*std::sin(by);
+            const double ry=dx*std::sin(by)+dy*std::cos(by);
+            return QPointF(centre.x()+rx*0.62,centre.y()+ry*0.62);
+        };
+        QPainterPath link;
+        link.moveTo(a);
+        link.cubicTo(swing(a,turn*0.35),swing(b,-turn*0.35),b);
+        QColor colour=QColor::fromHsvF(std::fmod(0.55+0.11*double(axisOf[u]),1.0),
+                                       0.55,0.75);
+        colour.setAlphaF(0.5);
+        QPen pen(colour);
+        pen.setWidthF(heaviest>0.0?qBound(0.6,0.6+2.0*e.weight[k]/heaviest,2.6):1.0);
+        p->setPen(pen);
+        p->drawPath(link);
+    }
+    p->restore();
+
+    // ---- The nodes on top of the links.
+    p->save();
+    p->setPen(Qt::NoPen);
+    p->setBrush(spec.style.foreground);
+    int busiest=0;
+    for(int d:degree) busiest=qMax(busiest,d);
+    for(int i=0;i<n;++i){
+        const double size=(busiest>0)
+            ?qBound(2.0,2.0+3.0*std::sqrt(double(degree[i])/double(busiest)),5.5):3.0;
+        p->drawEllipse(seat(i),size,size);
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 nodes, %2 edges; axis by degree group, radius "
+                               "by rank in degree order within it, %3 to %4 "
+                               "links a node")
+                    .arg(n).arg(e.from.size())
+                    .arg(degree.isEmpty()?0:*std::min_element(degree.begin(),degree.end()))
+                    .arg(busiest));
+    p->restore();
+}
+
+// ======================================================================
 // Ternary contour
 //
 // Three components summing to a whole, and a fourth quantity measured over
@@ -6677,6 +7044,10 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Streamgraph")
         // A triangle, like the ternary scatter it shares its projection with.
         && engine!=QLatin1String("Ternary Contour")
+        // Stages across and flow down: neither direction is a coordinate.
+        && engine!=QLatin1String("Alluvial Diagram")
+        // Three radial axes, so a rectangular frame would measure nothing.
+        && engine!=QLatin1String("Hive Plot")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -25456,6 +25827,16 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Hive Plot")){
+            drawHive(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Alluvial Diagram")){
+            drawAlluvial(painter,target,spec);
             painter->restore();
             return;
         }

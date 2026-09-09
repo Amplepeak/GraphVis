@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2104,
- "engine_count": 422,
+ "entry_count": 2106,
+ "engine_count": 424,
  "categories": [
   {
    "name": "Line Plots",
@@ -9434,6 +9434,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "alluvial",
+     "engine": "Alluvial Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "An edge list as a flow through stages, the stages computed by longest path; a node is as tall as the larger of what enters and what leaves it",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -15520,6 +15531,17 @@
      "scale": null,
      "advanced": false,
      "description": "An edge list on a line with the edges as arcs above it - for a graph whose node order already means something",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
+    },
+    {
+     "category": "Logistics & Infrastructure",
+     "name": "hive",
+     "engine": "Hive Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A network on three radial axes, every node placed by degree - so the same edge list always draws the same figure and two graphs can be compared",
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
@@ -23431,13 +23453,13 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 806
+   "entryCount": 807
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 626
+   "entryCount": 627
   },
   {
    "id": "earth",

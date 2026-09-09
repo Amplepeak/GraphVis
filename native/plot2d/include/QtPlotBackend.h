@@ -266,6 +266,10 @@ private:
     // and constant acceleration families drawn over it. An axis engine: the two
     // plotted quantities are ordinary coordinates.
     void drawTripartite(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The same edge list on three radial axes, placed by degree.
+    void drawHive(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // The same edge list as a flow through computed stages.
+    void drawAlluvial(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Three components and a value over them, contoured on the Delaunay

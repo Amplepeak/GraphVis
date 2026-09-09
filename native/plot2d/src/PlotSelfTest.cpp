@@ -2030,6 +2030,16 @@ bool runEngineSweep(){
              column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},
         {QStringLiteral("Arc Diagram"),{column("from",edgeFrom),column("to",edgeTo),
                                         column("weight",edgeWeight)}},
+        // Batch 19: the same edge list a third and a fourth way. Sharing it is
+        // the point - a network graph, an arc diagram, an alluvial and a hive
+        // plot are four readings of one object, and any disagreement between
+        // them about how many nodes or edges there are is a bug in one of them.
+        {QStringLiteral("Alluvial Diagram"),
+            {column("from",edgeFrom),column("to",edgeTo),
+             column("weight",edgeWeight)}},
+        {QStringLiteral("Hive Plot"),
+            {column("from",edgeFrom),column("to",edgeTo),
+             column("weight",edgeWeight)}},
         {QStringLiteral("Icicle Plot"),
             {column("node",treeNode),column("parent",treeParent),
              column("own",treeOwn)}},
