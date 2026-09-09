@@ -258,6 +258,19 @@ private:
                       int chartKind) const;
     // Two ternary triangles and the diamond both project into.
     void drawPiper(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // The Piper's six columns again, drawn so one water is one shape.
+    void drawStiff(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // The network graph's edge list, laid out on a line.
+    void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // A hierarchy as nested bars, from node/parent/own-value columns. upward
+    // draws it as a profiler does - deepest at the top, siblings sorted - and
+    // the two engines differ in nothing else.
+    void drawIcicle(QPainter* p, const QRectF& target, const PlotSpec& spec,
+                    bool upward) const;
+    // Nearest-site regions. Takes a Frame rather than the target rectangle:
+    // unlike the painters above it is drawn against ordinary axes, because the
+    // positions are the data and a reader needs to know what they are.
+    void drawVoronoi(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawMosaic(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     void drawUpSet(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Quiver, cones, stream tubes and ribbons, tensor glyphs and the volume

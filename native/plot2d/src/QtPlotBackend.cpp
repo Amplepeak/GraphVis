@@ -564,6 +564,12 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Emagram"),
         QStringLiteral("Stuve Diagram"),
         QStringLiteral("Tephigram"),
+        // Batch 15: four more that needed geometry of their own.
+        QStringLiteral("Stiff Diagram"),
+        QStringLiteral("Arc Diagram"),
+        QStringLiteral("Icicle Plot"),
+        QStringLiteral("Flame Graph"),
+        QStringLiteral("Voronoi Diagram"),
     };
     return kEngines;
 }
@@ -1660,6 +1666,8 @@ bool QtPlotBackend::usesColourMap(const QString& preparedEngine){
         QStringLiteral("Hexbin Density"),QStringLiteral("Correlation Matrix"),
         QStringLiteral("Covariance Matrix"),QStringLiteral("Spy Matrix"),
         QStringLiteral("2D Contour"),
+        // Cells shaded by their own area, through the same ramp as a field.
+        QStringLiteral("Voronoi Diagram"),
         // Vector fields.
         QStringLiteral("Quiver Field"),QStringLiteral("Feather"),
         QStringLiteral("Stream Field"),QStringLiteral("Stream Particles"),
@@ -2004,7 +2012,11 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Recession Curve Analysis"),
         QStringLiteral("Step Response Metrics"),
         QStringLiteral("Jitter Bathtub"),
-        QStringLiteral("Pressure Derivative Plot")};
+        QStringLiteral("Pressure Derivative Plot"),
+        // Two positions and nothing else. The cells are shaded by their own
+        // area, so a third column would be a second thing competing to colour
+        // them.
+        QStringLiteral("Voronoi Diagram")};
     if(kPairs.contains(engine)) return {2,2,true};
 
     // ---- Every column mapped, read as one series each. These get WIDER with
@@ -2132,8 +2144,18 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Skew-T Log-P"),
         QStringLiteral("Emagram"),
         QStringLiteral("Stuve Diagram"),
-        QStringLiteral("Tephigram")};
+        QStringLiteral("Tephigram"),
+        // A hierarchy as node, parent, and the value the node holds itself.
+        // Numbers, because that is what a mapped column carries - the same
+        // convention as the edge list the network engines read.
+        QStringLiteral("Icicle Plot"),
+        QStringLiteral("Flame Graph")};
     if(kThree.contains(engine)) return {3,3,true};
+
+    // The Piper's six, in milliequivalents, drawn as one shape per water.
+    if(engine==QLatin1String("Stiff Diagram")) return {6,6,true};
+    // An edge list: source, target, and an optional weight.
+    if(engine==QLatin1String("Arc Diagram")) return {2,3,true};
 
     // Contingency: the two categories, and a count column if there is one.
     if(engine==QLatin1String("Mosaic Plot")) return {2,3,true};
@@ -4523,6 +4545,648 @@ void QtPlotBackend::drawPiper(QPainter* p,const QRectF& target,const PlotSpec& s
     p->restore();
 }
 
+// ======================================================================
+// Stiff diagram
+//
+// The same six columns as the Piper, drawn so that one water is one SHAPE. A
+// Piper tells you what type a water is; a Stiff tells you them apart at a
+// glance and, laid out in a row, shows a trend along a flow path or down a
+// well. They are complementary rather than alternatives, which is why the six
+// columns feed both.
+//
+// Cations left of the centre line and anions right, three rows: sodium plus
+// potassium, calcium, magnesium against chloride, bicarbonate, sulphate. In
+// milliequivalents, and unlike the Piper the LENGTHS are absolute rather than
+// normalised - a dilute water is a narrow shape and a concentrated one is a
+// wide shape of the same form, and losing that would throw away half of what
+// the diagram is for.
+void QtPlotBackend::drawStiff(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    if(spec.series.size()<6){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs six columns in meq: Ca, Mg, Na+K, HCO3, SO4, Cl"));
+        p->restore();
+        return;
+    }
+
+    const QVector<double>& ca=spec.series.at(0).y;
+    const QVector<double>& mg=spec.series.at(1).y;
+    const QVector<double>& na=spec.series.at(2).y;
+    const QVector<double>& hco3=spec.series.at(3).y;
+    const QVector<double>& so4=spec.series.at(4).y;
+    const QVector<double>& cl=spec.series.at(5).y;
+    int rows=ca.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+    if(rows<1) return;
+
+    // One scale for every shape on the page. Drawing each to its own width
+    // would make them all the same size, which is precisely the comparison the
+    // diagram exists to support - so the widest single ion sets the scale and
+    // the rest are drawn against it.
+    double widest=0.0;
+    for(int i=0;i<rows;++i){
+        for(const PlotSeries& s:spec.series)
+            if(i<s.y.size()&&finite(s.y[i])) widest=qMax(widest,std::abs(s.y[i]));
+    }
+    if(!(widest>0.0)) return;
+
+    // Laid out in a grid, as near square as the count allows, and read across
+    // the rows. Small multiples rather than one shape per figure: a single
+    // Stiff diagram is a picture of one sample, and nobody has ever wanted only
+    // one.
+    const int across=qMax(1,int(std::ceil(std::sqrt(double(rows)))));
+    const int down=(rows+across-1)/across;
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height()*0.5,target.top()+titleRoom,
+                       target.width()-fm.height(),
+                       target.height()-titleRoom-fm.height()*2.4);
+    if(field.width()<20.0||field.height()<20.0) return;
+    const double cellW=field.width()/double(across);
+    const double cellH=field.height()/double(down);
+
+    const QStringList leftNames{QStringLiteral("Na+K"),QStringLiteral("Ca"),
+                                QStringLiteral("Mg")};
+    const QStringList rightNames{QStringLiteral("Cl"),QStringLiteral("HCO3"),
+                                 QStringLiteral("SO4")};
+    // Whether there is room to name the ions on every shape. On a grid of
+    // twenty they would overlap into a grey smear, so they go on the first
+    // cell only and the rest are read against it.
+    const double nameWidth=fm.horizontalAdvance(QStringLiteral("HCO3"))+6.0;
+
+    for(int i=0;i<rows;++i){
+        const double values[3][2]={{na[i],cl[i]},{ca[i],hco3[i]},{mg[i],so4[i]}};
+        bool usable=true;
+        for(int r=0;r<3;++r)
+            for(int c=0;c<2;++c) if(!finite(values[r][c])) usable=false;
+        if(!usable) continue;
+
+        const QRectF cell(field.left()+cellW*double(i%across),
+                          field.top()+cellH*double(i/across),cellW,cellH);
+        const QRectF inner=cell.adjusted(nameWidth,fm.height()*0.9,
+                                         -nameWidth,-fm.height()*1.1);
+        if(inner.width()<12.0||inner.height()<12.0) continue;
+        const double centre=inner.center().x();
+        const double half=inner.width()*0.5;
+        const double rowGap=inner.height()/3.0;
+        const auto atRow=[&](int r){ return inner.top()+rowGap*(double(r)+0.5); };
+
+        // The axis: the centre line the two halves are measured from, and the
+        // three rows it crosses. Without it the polygon is a shape with no
+        // origin and its width cannot be read.
+        p->save();
+        p->setPen(QPen(spec.style.gridColor,0.7));
+        for(int r=0;r<3;++r)
+            p->drawLine(QPointF(inner.left(),atRow(r)),QPointF(inner.right(),atRow(r)));
+        p->setPen(QPen(spec.style.foreground,0.9));
+        p->drawLine(QPointF(centre,atRow(0)),QPointF(centre,atRow(2)));
+
+        QPolygonF shape;
+        for(int r=0;r<3;++r)
+            shape<<QPointF(centre-half*std::abs(values[r][0])/widest,atRow(r));
+        for(int r=2;r>=0;--r)
+            shape<<QPointF(centre+half*std::abs(values[r][1])/widest,atRow(r));
+        const QColor colour=spec.series.at(0).color;
+        p->setPen(QPen(colour,qMax(1.0,spec.style.lineWidth)));
+        p->setBrush(QColor(colour.red(),colour.green(),colour.blue(),110));
+        p->drawPolygon(shape);
+
+        // The total, which is the one number the shape's width stands for and
+        // the thing a reader would otherwise measure off the page.
+        double total=0.0;
+        for(int r=0;r<3;++r) total+=std::abs(values[r][0])+std::abs(values[r][1]);
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(cell.left(),cell.bottom()-fm.height(),cell.width(),fm.height()),
+                    Qt::AlignHCenter|Qt::AlignVCenter,
+                    QStringLiteral("%1  %2 meq")
+                        .arg(i+1).arg(total,0,'g',3));
+        if(i==0&&nameWidth*2.0<cellW*0.7){
+            p->setPen(spec.style.gridColor.darker(160));
+            for(int r=0;r<3;++r){
+                p->drawText(QRectF(cell.left(),atRow(r)-fm.height()*0.5,
+                                   nameWidth-3.0,fm.height()),
+                            Qt::AlignRight|Qt::AlignVCenter,leftNames.at(r));
+                p->drawText(QRectF(inner.right()+3.0,atRow(r)-fm.height()*0.5,
+                                   nameWidth-3.0,fm.height()),
+                            Qt::AlignLeft|Qt::AlignVCenter,rightNames.at(r));
+            }
+        }
+        p->restore();
+    }
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("cations left, anions right; one scale for all "
+                               "shapes, widest ion %1 meq")
+                    .arg(widest,0,'g',3));
+    p->restore();
+}
+
+// ======================================================================
+// Arc diagram
+//
+// The same edge list as the network graph, laid out on a line instead of in a
+// plane. A force-directed layout puts nodes wherever the springs settle, which
+// is unrepeatable across data sets and impossible to align with anything else;
+// an arc diagram fixes the nodes in an order the reader chooses and spends the
+// second dimension on the edges. That makes it the right picture when the order
+// MEANS something - position along a sequence, time, rank - and when two graphs
+// have to be compared node for node.
+//
+// Three mapped columns: source, target and an optional weight, exactly as the
+// network graph reads them. Node identifiers are numbers, and they are sorted
+// by identifier rather than by degree, because a number the user supplied is an
+// order they chose and reordering it would discard it.
+void QtPlotBackend::drawArc(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    const EdgeList e=edgesFrom(spec);
+    drawFloatingTitle(p,target,spec);
+    if(!e.valid){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs an edge list: source, target, and an optional weight"));
+        p->restore();
+        return;
+    }
+
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+    const int n=e.ids.size();
+
+    QVector<int> order(n);
+    for(int i=0;i<n;++i) order[i]=i;
+    std::sort(order.begin(),order.end(),
+              [&e](int a,int b){ return e.ids[a]<e.ids[b]; });
+    QVector<int> slot(n,0);
+    for(int i=0;i<n;++i) slot[order[i]]=i;
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height(),target.top()+titleRoom,
+                       target.width()-fm.height()*2.0,
+                       target.height()-titleRoom-fm.height()*1.6);
+    if(field.width()<40.0||field.height()<40.0) return;
+    // The baseline sits low, because the arcs go above it and the tallest is
+    // half the width of the longest edge - so the space above is what the
+    // picture needs and the space below is only labels.
+    const double baseline=field.bottom()-fm.height()*1.4;
+    const double step=(n>1)?field.width()/double(n-1):0.0;
+    const auto seatX=[&](int node){
+        return (n>1)?field.left()+step*double(slot[node])
+                    :field.center().x();
+    };
+
+    double heaviest=0.0;
+    for(double w:e.weight) heaviest=qMax(heaviest,w);
+
+    // Arcs first, so the nodes sit on top of them and a node is never hidden
+    // under the bundle of edges arriving at it.
+    p->save();
+    p->setBrush(Qt::NoBrush);
+    const double ceiling=baseline-field.top();
+    // One height scale for the whole picture, set so the longest edge just
+    // reaches the top. Capping each arc at the ceiling instead - the obvious
+    // thing, and the first thing here - flattens every long edge to the SAME
+    // height and destroys the ordering that the heights carry; scaling them
+    // together keeps every ratio and uses the page, which on a graph whose
+    // longest edge is short is most of the page.
+    double longest=0.0;
+    for(int k=0;k<e.from.size();++k)
+        longest=qMax(longest,std::abs(seatX(e.to[k])-seatX(e.from[k]))*0.5);
+    const double heightScale=(longest>0.0)?ceiling*0.98/longest:1.0;
+    for(int k=0;k<e.from.size();++k){
+        const double x0=seatX(e.from[k]),x1=seatX(e.to[k]);
+        if(qFuzzyCompare(x0,x1)) continue;              // a self-loop has no arc
+        const double lo=qMin(x0,x1),hi=qMax(x0,x1);
+        const double rise=(hi-lo)*0.5*heightScale;
+        QPainterPath arc;
+        arc.moveTo(lo,baseline);
+        // A cubic whose control points are pushed out by 4/3, which is the
+        // standard approximation to a half ellipse and is within a thousandth
+        // of it - close enough that no eye distinguishes it from the circle.
+        arc.cubicTo(QPointF(lo,baseline-rise*4.0/3.0),
+                    QPointF(hi,baseline-rise*4.0/3.0),
+                    QPointF(hi,baseline));
+        QColor colour=spec.series.at(0).color;
+        colour.setAlphaF(0.55);
+        QPen pen(colour);
+        pen.setWidthF(heaviest>0.0
+            ?qBound(0.6,0.6+2.4*e.weight[k]/heaviest,3.0)
+            :1.0);
+        pen.setCapStyle(Qt::RoundCap);
+        p->setPen(pen);
+        p->drawPath(arc);
+    }
+    p->restore();
+
+    // The baseline and the nodes. Node size is degree-weighted, which is the
+    // one property of a node that an arc diagram cannot show by position.
+    p->save();
+    p->setPen(QPen(spec.style.foreground,0.9));
+    p->drawLine(QPointF(field.left(),baseline),QPointF(field.right(),baseline));
+    double busiest=0.0;
+    for(double s:e.strength) busiest=qMax(busiest,s);
+    for(int i=0;i<n;++i){
+        const double size=(busiest>0.0)
+            ?qBound(2.0,2.0+3.5*std::sqrt(e.strength[i]/busiest),6.0):3.0;
+        p->setPen(Qt::NoPen);
+        p->setBrush(spec.style.foreground);
+        p->drawEllipse(QPointF(seatX(i),baseline),size,size);
+    }
+    // Identifiers only where they fit. Labelling every node of a hundred-node
+    // graph produces a black band, and a band is not a label.
+    if(step>fm.horizontalAdvance(QStringLiteral("0000"))+4.0){
+        p->setPen(spec.style.foreground);
+        for(int i=0;i<n;++i)
+            p->drawText(QRectF(seatX(i)-step*0.5,baseline+6.0,step,fm.height()),
+                        Qt::AlignHCenter|Qt::AlignTop,
+                        QString::number(e.ids[i],'g',6));
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 nodes, %2 edges, in order of identifier; "
+                               "arc height is proportional to span, thickness "
+                               "to weight")
+                    .arg(n).arg(e.from.size()));
+    p->restore();
+}
+
+// ======================================================================
+// Icicle plot and flame graph
+//
+// A hierarchy drawn as nested bars: one row per level, each parent exactly as
+// wide as its children put together. A treemap divides the same total by area
+// and reads better for one level; an icicle keeps DEPTH on its own axis, so the
+// shape of the tree - deep and narrow against broad and shallow - is the thing
+// you see first. A flame graph is the same picture drawn upward and sorted by
+// name, which is the form a profiler prints.
+//
+// Three mapped columns: node identifier, parent identifier, and the value the
+// node holds ITSELF, not counting its children. A node whose parent is not in
+// the identifier column, or is its own parent, is a root. Identifiers are
+// numbers because that is what a mapped column can carry - the same convention
+// as the network engines, and for the same reason.
+//
+// Self value rather than total, because the total is derivable and the self
+// value is not: given totals, a parent whose children do not account for all of
+// it cannot be told from one whose data is inconsistent.
+void QtPlotBackend::drawIcicle(QPainter* p,const QRectF& target,const PlotSpec& spec,
+                               bool upward) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    if(spec.series.size()<3){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs three columns: node, parent, and the node's own value"));
+        p->restore();
+        return;
+    }
+    const QVector<double>& nodeId=spec.series.at(0).y;
+    const QVector<double>& parentId=spec.series.at(1).y;
+    const QVector<double>& selfValue=spec.series.at(2).y;
+    const int rows=qMin(nodeId.size(),qMin(parentId.size(),selfValue.size()));
+
+    struct Node { double id=0.0,own=0.0,total=0.0,rawParent=0.0;
+                  bool hasParent=false; int parent=-1,depth=0; QVector<int> kids; };
+    QVector<Node> nodes;
+    QHash<double,int> index;
+    for(int i=0;i<rows;++i){
+        if(!finite(nodeId[i])||!finite(selfValue[i])) continue;
+        if(index.contains(nodeId[i])) continue;         // the first row for an id wins
+        Node node;
+        node.id=nodeId[i];
+        node.own=qMax(0.0,selfValue[i]);
+        node.hasParent=finite(parentId[i]);
+        node.rawParent=node.hasParent?parentId[i]:0.0;
+        index.insert(node.id,nodes.size());
+        nodes.append(node);
+    }
+    if(nodes.isEmpty()) return;
+    // Parents resolved in a second pass, because a table is free to name a
+    // parent before the row that defines it.
+    for(int i=0;i<nodes.size();++i){
+        if(!nodes[i].hasParent) continue;
+        const int up=index.value(nodes[i].rawParent,-1);
+        if(up>=0&&up!=i) nodes[i].parent=up;
+    }
+    // Cycles. A parent column is data and data can be wrong, and a cycle in it
+    // would make the depth walk below run forever - so any node that cannot
+    // reach a root in as many steps as there are nodes is cut loose and made a
+    // root of its own rather than allowed to hang the renderer.
+    for(int i=0;i<nodes.size();++i){
+        int walk=nodes[i].parent,steps=0;
+        while(walk>=0&&steps<=nodes.size()){ walk=nodes[walk].parent; ++steps; }
+        if(steps>nodes.size()) nodes[i].parent=-1;
+    }
+    QVector<int> roots;
+    for(int i=0;i<nodes.size();++i){
+        if(nodes[i].parent<0) roots.append(i);
+        else nodes[nodes[i].parent].kids.append(i);
+    }
+    if(roots.isEmpty()) return;
+
+    // Totals, deepest first. An explicit stack rather than recursion: the depth
+    // is the user's data, and a pathological table should not be able to
+    // overflow the call stack.
+    QVector<int> visitOrder;
+    {
+        QVector<int> stack=roots;
+        while(!stack.isEmpty()){
+            const int at=stack.takeLast();
+            visitOrder.append(at);
+            for(int kid:nodes[at].kids){
+                nodes[kid].depth=nodes[at].depth+1;
+                stack.append(kid);
+            }
+        }
+    }
+    // Deepest first, which the pre-order walk above guarantees when read
+    // backwards: a node is always appended before any of its children.
+    for(int i=visitOrder.size()-1;i>=0;--i){
+        const int at=visitOrder[i];
+        double total=nodes[at].own;
+        for(int kid:nodes[at].kids) total+=nodes[kid].total;
+        nodes[at].total=total;
+    }
+    double grand=0.0; int deepest=0;
+    for(int root:roots) grand+=nodes[root].total;
+    for(const Node& node:nodes) deepest=qMax(deepest,node.depth);
+    if(!(grand>0.0)) return;
+
+    // A flame graph sorts siblings by name so that two profiles of the same
+    // program line up; an icicle keeps the order the table gave, because that
+    // order is often the thing being shown.
+    if(upward)
+        for(Node& node:nodes)
+            std::sort(node.kids.begin(),node.kids.end(),
+                      [&nodes](int a,int b){ return nodes[a].id<nodes[b].id; });
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height()*0.5,target.top()+titleRoom,
+                       target.width()-fm.height(),
+                       target.height()-titleRoom-fm.height()*1.6);
+    if(field.width()<40.0||field.height()<20.0) return;
+    const double levelH=field.height()/double(deepest+1);
+
+    p->save();
+    // Laid out left to right in one walk: each node is given the slice of its
+    // parent's width that its total is of the parent's total, and its children
+    // divide what is left after the parent's own value.
+    struct Job { int node; double x,width; };
+    QVector<Job> queue;
+    { double x=field.left();
+      for(int root:roots){
+          const double w=field.width()*nodes[root].total/grand;
+          queue.append({root,x,w});
+          x+=w;
+      } }
+    int drawn=0;
+    while(!queue.isEmpty()){
+        const Job job=queue.takeLast();
+        const Node& node=nodes[job.node];
+        const double top=upward
+            ?field.bottom()-levelH*double(node.depth+1)
+            :field.top()+levelH*double(node.depth);
+        const QRectF block(job.x,top+0.5,qMax(0.0,job.width-0.5),levelH-1.0);
+        // Hue by depth, so a level is a colour band and the eye can follow one
+        // row across; lightness by share, so the heavy blocks are the solid
+        // ones. Not hue by identifier: adjacent identifiers are usually
+        // unrelated and that would be a rainbow carrying nothing.
+        const double hue=std::fmod(0.08+0.13*double(node.depth),1.0);
+        p->setBrush(QColor::fromHsvF(hue,upward?0.62:0.45,
+                                     upward?0.95:0.88,0.92));
+        p->setPen(QPen(spec.style.background,1.0));
+        p->drawRect(block);
+        ++drawn;
+        if(block.width()>fm.horizontalAdvance(QStringLiteral("000"))+6.0
+           &&block.height()>fm.height()){
+            p->setPen(QColor(0x20,0x20,0x20));
+            p->drawText(block.adjusted(3,0,-3,0),Qt::AlignVCenter|Qt::AlignLeft,
+                        QString::number(node.id,'g',6));
+        }
+        double at=job.x;
+        for(int kid:node.kids){
+            const double w=job.width*nodes[kid].total/qMax(1e-12,node.total);
+            queue.append({kid,at,w});
+            at+=w;
+        }
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 nodes over %2 levels, total %3; "
+                               "width is the subtree total, %4")
+                    .arg(drawn).arg(deepest+1).arg(grand,0,'g',6)
+                    .arg(upward?QStringLiteral("deepest at the top")
+                               :QStringLiteral("roots at the top")));
+    p->restore();
+}
+
+// ======================================================================
+// Voronoi diagram
+//
+// The region nearer to each site than to any other. It is the picture behind
+// nearest-neighbour interpolation, service-area and catchment questions, and
+// the sampling density of a scattered survey - and the port had none, so a set
+// of scattered points could be shown as dots and nothing else.
+//
+// Built by half-plane clipping rather than as the dual of the Delaunay
+// triangulation, which the estimators already compute. The dual is faster and
+// is the wrong tool here: its unbounded cells have to be closed against the
+// frame as a special case, degenerate (cocircular) inputs need the
+// triangulation to be perturbed, and both failure modes produce a plausible
+// picture rather than an obvious one. Clipping the frame rectangle by each
+// bisector in turn is O(n^2) and cannot go wrong: every cell is bounded by
+// construction and duplicate or cocircular sites are ordinary cases.
+//
+// Two mapped columns, the positions. Cells are shaded by their own AREA rather
+// than by an index or a third column: a large cell is a place where the survey
+// sampled thinly, which is a real question about scattered data and the one a
+// Voronoi diagram answers without being asked. Hue by identifier would have
+// been a rainbow carrying nothing.
+void QtPlotBackend::drawVoronoi(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    QVector<double> sx,sy;
+    for(const PlotSeries& s:spec.series){
+        const int n=qMin(s.x.size(),s.y.size());
+        for(int i=0;i<n;++i){
+            if(!finite(s.x[i])||!finite(s.y[i])) continue;
+            if(f.xLog&&s.x[i]<=0.0) continue;
+            if(f.yLog&&s.y[i]<=0.0) continue;
+            // In the space the axes are drawn in, so a logarithmic axis
+            // tessellates log positions - which is what the picture shows and
+            // therefore what a reader will measure off it.
+            const double px=f.xLog?std::log10(s.x[i]):s.x[i];
+            const double py=f.yLog?std::log10(s.y[i]):s.y[i];
+            // Coincident sites share one region rather than owning one each.
+            // Kept out here rather than handled in the clipping, because a
+            // duplicate that reaches the loop below produces the same cell
+            // twice - drawn twice, and counted twice in the areas, so the
+            // reported total came out larger than the frame it tiles.
+            bool seen=false;
+            for(int k=0;k<sx.size()&&!seen;++k)
+                seen=(sx[k]==px&&sy[k]==py);
+            if(seen) continue;
+            sx.append(px);
+            sy.append(py);
+        }
+    }
+    const int n=sx.size();
+    if(n<1) return;
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
+
+    // The frame in data space, which is what the cells are clipped to.
+    QVector<QPointF> frame;
+    frame<<QPointF(f.xLo,f.yLo)<<QPointF(f.xHi,f.yLo)
+         <<QPointF(f.xHi,f.yHi)<<QPointF(f.xLo,f.yHi);
+
+    // Sutherland-Hodgman against one half plane: keep the part of the polygon
+    // where normal . point <= offset, cutting each crossing edge exactly on the
+    // line so that neighbouring cells share their boundary to the last bit.
+    const auto clip=[](const QVector<QPointF>& poly,double nx,double ny,double offset){
+        QVector<QPointF> out;
+        const int m=poly.size();
+        for(int i=0;i<m;++i){
+            const QPointF& a=poly[i];
+            const QPointF& b=poly[(i+1)%m];
+            const double da=nx*a.x()+ny*a.y()-offset;
+            const double db=nx*b.x()+ny*b.y()-offset;
+            if(da<=0.0) out.append(a);
+            if((da<0.0&&db>0.0)||(da>0.0&&db<0.0)){
+                const double t=da/(da-db);
+                out.append(QPointF(a.x()+t*(b.x()-a.x()),a.y()+t*(b.y()-a.y())));
+            }
+        }
+        return out;
+    };
+
+    // Both passes need every cell, and the areas have to be known before the
+    // first one can be given its colour, so the tessellation is built once and
+    // kept rather than walked twice.
+    QVector<QPolygonF> shapes(n);
+    QVector<double> areas(n,0.0);
+    for(int i=0;i<n;++i){
+        QVector<QPointF> cell=frame;
+        for(int j=0;j<n&&!cell.isEmpty();++j){
+            if(j==i) continue;
+            const double nx=sx[j]-sx[i],ny=sy[j]-sy[i];
+            const double offset=0.5*((sx[j]*sx[j]+sy[j]*sy[j])
+                                    -(sx[i]*sx[i]+sy[i]*sy[i]));
+            cell=clip(cell,nx,ny,offset);
+        }
+        if(cell.size()<3) continue;
+        // The shoelace area, in data units, before the cell is put on the page:
+        // the answer must not depend on the size of the window.
+        double twice=0.0;
+        for(int k=0;k<cell.size();++k){
+            const QPointF& a=cell[k];
+            const QPointF& b=cell[(k+1)%cell.size()];
+            twice+=a.x()*b.y()-b.x()*a.y();
+        }
+        areas[i]=std::abs(twice)*0.5;
+        QPolygonF onPage;
+        for(const QPointF& v:cell)
+            onPage<<QPointF(f.plotArea.left()
+                            +(v.x()-f.xLo)/qMax(1e-300,f.xHi-f.xLo)*f.plotArea.width(),
+                            f.plotArea.bottom()
+                            -(v.y()-f.yLo)/qMax(1e-300,f.yHi-f.yLo)*f.plotArea.height());
+        shapes[i]=onPage;
+    }
+
+    double smallest=std::numeric_limits<double>::infinity(),largest=0.0,total=0.0;
+    for(int i=0;i<n;++i){
+        if(shapes[i].size()<3) continue;
+        smallest=qMin(smallest,areas[i]);
+        largest=qMax(largest,areas[i]);
+        total+=areas[i];
+    }
+    if(!finite(smallest)) return;
+
+    // On the square root of the area, so the ramp reads as a length rather than
+    // an area: a cell four times the size of another is twice as far along the
+    // scale, which is how the eye compares two regions anyway.
+    //
+    // The roots are taken ONCE and the spread tested against a tolerance rather
+    // than against zero. Sites on a regular lattice - a survey grid, which is a
+    // common input - give cells that are equal to the last bit, and there
+    // largest is a rounding step above smallest while their square roots are
+    // identical: the difference survives the comparison and dies in the
+    // division, and every cell came out 0/0. NaN then landed at the bottom of
+    // the map, so a perfectly regular grid rendered as one flat colour that
+    // looked deliberate. Found by putting four sites on the corners of a square
+    // and asking for four equal cells.
+    const double lowRoot=std::sqrt(smallest),highRoot=std::sqrt(largest);
+    const bool graded=(highRoot-lowRoot)>1e-9*qMax(1.0,highRoot);
+
+    p->save();
+    for(int i=0;i<n;++i){
+        if(shapes[i].size()<3) continue;
+        const double t=graded?(std::sqrt(areas[i])-lowRoot)/(highRoot-lowRoot)
+                             :0.5;
+        QColor fill=colourMap(cmap,t);
+        fill.setAlphaF(0.88);
+        p->setBrush(fill);
+        p->setPen(QPen(spec.style.foreground,0.7));
+        p->drawPolygon(shapes[i]);
+    }
+    // Sites on top of every cell, not just their own: a boundary that does not
+    // sit halfway between two dots is the one visible sign that the
+    // tessellation is wrong, and it can only be checked if the dots are
+    // visible over the fills.
+    p->setPen(Qt::NoPen);
+    p->setBrush(spec.style.foreground);
+    for(int i=0;i<n;++i){
+        const QPointF at(f.plotArea.left()
+                         +(sx[i]-f.xLo)/qMax(1e-300,f.xHi-f.xLo)*f.plotArea.width(),
+                         f.plotArea.bottom()
+                         -(sy[i]-f.yLo)/qMax(1e-300,f.yHi-f.yLo)*f.plotArea.height());
+        p->drawEllipse(at,2.0,2.0);
+    }
+    p->restore();
+
+    // What the shading stands for, in the axes' own units. Without it the ramp
+    // is a decoration - and the ratio is the number a sampling question is
+    // actually asking for.
+    p->save();
+    p->setFont(font(spec,spec.style.tickSize));
+    p->setPen(spec.style.foreground);
+    const QFontMetricsF fm(p->font(),p->device());
+    const QString note=QStringLiteral("%1 cells, area %2 to %3 axis units "
+                                      "(%4x), mean %5")
+        .arg(n).arg(smallest,0,'g',3).arg(largest,0,'g',3)
+        .arg(smallest>0.0?largest/smallest:0.0,0,'f',1)
+        .arg(total/double(n),0,'g',3);
+    // Cleared behind: it sits inside the frame, and whether the cell under it
+    // is the pale end of the ramp or the dark end is decided by the data.
+    const QRectF strip(f.plotArea.right()-fm.horizontalAdvance(note)-6.0,
+                       f.plotArea.top()+2.0,
+                       fm.horizontalAdvance(note)+5.0,fm.height());
+    p->fillRect(strip,spec.style.background);
+    p->drawText(strip,Qt::AlignRight|Qt::AlignVCenter,note);
+    p->restore();
+}
+
 // A mosaic plot: a contingency table drawn to scale. Column widths are the
 // column totals and each column is divided by its own proportions, so an
 // association shows as tiles that fail to line up across columns - which is
@@ -5079,6 +5743,15 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // rectangular frame around them would put numbers on axes that
         // nothing in the diagram is measured against.
         && engine!=QLatin1String("Piper Diagram")
+        // A grid of shapes measured from their own centre lines, a line of
+        // nodes with the arcs above it, and a hierarchy whose two directions
+        // are share and depth. None of the three has a coordinate to put on an
+        // axis, and Voronoi is deliberately not in this list: its positions
+        // ARE the data.
+        && engine!=QLatin1String("Stiff Diagram")
+        && engine!=QLatin1String("Arc Diagram")
+        && engine!=QLatin1String("Icicle Plot")
+        && engine!=QLatin1String("Flame Graph")
         // 3-D draws its own projected cube; a 2-D frame around it would be
         // chrome that means nothing.
         && engine!=QLatin1String("3D Line")
@@ -23820,6 +24493,23 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             painter->restore();
             return;
         }
+        if(spec.engine==QLatin1String("Stiff Diagram")){
+            drawStiff(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Arc Diagram")){
+            drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Icicle Plot")
+           ||spec.engine==QLatin1String("Flame Graph")){
+            drawIcicle(painter,target,spec,
+                       spec.engine==QLatin1String("Flame Graph"));
+            painter->restore();
+            return;
+        }
         if(spec.engine==QLatin1String("Skew-T Log-P")
            ||spec.engine==QLatin1String("Emagram")
            ||spec.engine==QLatin1String("Stuve Diagram")
@@ -23907,6 +24597,7 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             ||spec.engine==QLatin1String("Divergence Map")
             ||spec.engine==QLatin1String("Vorticity Map"))    drawVectorField(painter,f,spec);
     else if(spec.engine==QLatin1String("2D Contour"))        drawContour(painter,f,spec);
+    else if(spec.engine==QLatin1String("Voronoi Diagram"))   drawVoronoi(painter,f,spec);
     else if(spec.engine==QLatin1String("Violin Plot"))       drawViolin(painter,f,spec);
     else if(spec.engine==QLatin1String("Raincloud"))         drawViolin(painter,f,spec);
     else if(spec.engine==QLatin1String("Forest Plot"))       drawForest(painter,f,spec);

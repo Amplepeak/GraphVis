@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2088,
- "engine_count": 412,
+ "entry_count": 2099,
+ "engine_count": 417,
  "categories": [
   {
    "name": "Line Plots",
@@ -7165,6 +7165,83 @@
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi",
+     "engine": "Voronoi Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi · Semi-Log Y",
+     "engine": "Voronoi Diagram",
+     "scale": "Semi-Log Y",
+     "advanced": true,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out — logarithmic y, original units on the axis; for a response spanning decades",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi · Logarithmic Scale",
+     "engine": "Voronoi Diagram",
+     "scale": "Logarithmic Scale",
+     "advanced": true,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out — logarithmic on both axes; for a power law, which is then a straight line",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi · Semi-Log X",
+     "engine": "Voronoi Diagram",
+     "scale": "Semi-Log X",
+     "advanced": true,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out — logarithmic x, original units on the axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi · Semi-Log(1+x) Y",
+     "engine": "Voronoi Diagram",
+     "scale": "Semi-Log(1+x) Y",
+     "advanced": true,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out — log10(1 + y); the log axis for a column that legitimately reaches zero",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi · Standardised (Z-Score)",
+     "engine": "Voronoi Diagram",
+     "scale": "Standardised (Z-Score)",
+     "advanced": true,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out — both axes in standard deviations from their own mean, for columns in different units",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Spatial & Specialized",
+     "name": "voronoi · Quantile X",
+     "engine": "Voronoi Diagram",
+     "scale": "Quantile X",
+     "advanced": true,
+     "description": "The region nearer to each site than to any other, shaded by cell area so thinly sampled ground stands out — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
     }
    ],
    "pack": "earth"
@@ -9301,6 +9378,28 @@
      "description": "Word-frequency cloud",
      "preview": "Aa Bb",
      "thumbnail": "word_frequency_e9920c3763.png",
+     "pack": "base"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "icicle",
+     "engine": "Icicle Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "A hierarchy as nested bars from node, parent and own-value columns, with depth on its own axis",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "flamegraph",
+     "engine": "Flame Graph",
+     "scale": null,
+     "advanced": false,
+     "description": "The same nested bars drawn upward with siblings sorted, the form a profiler prints",
+     "preview": "",
+     "thumbnail": "",
      "pack": "base"
     }
    ],
@@ -15380,6 +15479,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "engineering"
+    },
+    {
+     "category": "Logistics & Infrastructure",
+     "name": "arcdiagram",
+     "engine": "Arc Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "An edge list on a line with the edges as arcs above it - for a graph whose node order already means something",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "engineering"
     }
    ],
    "pack": "engineering"
@@ -19958,6 +20068,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "stiff",
+     "engine": "Stiff Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "One water is one shape: six major ions in milliequivalents, cations left and anions right, on one scale so shapes can be compared",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
     }
    ],
    "pack": "earth"
@@ -23255,19 +23376,19 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 801
+   "entryCount": 803
   },
   {
    "id": "engineering",
    "name": "Engineering",
    "description": "Mechanical, materials, fatigue, fluids, reliability, process control, aviation, civil and power.",
-   "entryCount": 624
+   "entryCount": 625
   },
   {
    "id": "earth",
    "name": "Earth & Environment",
    "description": "Map projections, GIS, terrain, hydrology, geology and oceanography.",
-   "entryCount": 202
+   "entryCount": 210
   },
   {
    "id": "life",

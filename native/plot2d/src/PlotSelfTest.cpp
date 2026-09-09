@@ -1463,6 +1463,34 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 15. A hierarchy as node, parent and the value the node holds
+    // itself: two branches under one root, with the right-hand branch carrying
+    // some of its own so the exposed part of a parent - which is what "self"
+    // means on an icicle - appears rather than being covered by its children.
+    QVector<double> treeNode,treeParent,treeOwn;
+    {
+        const double table[7][3]={{1,1,0},{10,1,0},{20,1,20},
+                                  {11,10,30},{12,10,30},{21,20,10},{22,20,10}};
+        for(const auto& row:table){
+            treeNode.append(row[0]); treeParent.append(row[1]); treeOwn.append(row[2]);
+        }
+    }
+
+    // Voronoi sites: a scattered survey with two clusters and a sparse corner,
+    // so the area shading has something to distinguish rather than a uniform
+    // field that would look the same however it were computed.
+    QVector<double> siteX,siteY;
+    {
+        quint32 grain=97531u;
+        const auto next=[&grain]{
+            grain^=grain<<13; grain^=grain>>17; grain^=grain<<5;
+            return double(grain)/4294967296.0;
+        };
+        for(int i=0;i<18;++i){ siteX.append(next()*3.0);      siteY.append(next()*3.0); }
+        for(int i=0;i<12;++i){ siteX.append(7.0+next()*2.0);  siteY.append(1.0+next()*2.0); }
+        for(int i=0;i<6;++i){  siteX.append(next()*10.0);     siteY.append(5.0+next()*3.0); }
+    }
+
     const QHash<QString,QVector<PlotSeries>> shaped{
         {QStringLiteral("Network Graph"),{column("from",edgeFrom),column("to",edgeTo),
                                           column("weight",edgeWeight)}},
@@ -1925,6 +1953,23 @@ bool runEngineSweep(){
         {QStringLiteral("Piper Diagram"),
             {column("Ca",waterCa),column("Mg",waterMg),column("Na+K",waterNa),
              column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},
+        // Batch 15. The Stiff diagram takes the Piper's six columns unchanged,
+        // which is the point of it: the same six ions, read as shapes rather
+        // than as positions, so the two figures can be put side by side.
+        {QStringLiteral("Stiff Diagram"),
+            {column("Ca",waterCa),column("Mg",waterMg),column("Na+K",waterNa),
+             column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},
+        {QStringLiteral("Arc Diagram"),{column("from",edgeFrom),column("to",edgeTo),
+                                        column("weight",edgeWeight)}},
+        {QStringLiteral("Icicle Plot"),
+            {column("node",treeNode),column("parent",treeParent),
+             column("own",treeOwn)}},
+        {QStringLiteral("Flame Graph"),
+            {column("node",treeNode),column("parent",treeParent),
+             column("own",treeOwn)}},
+        {QStringLiteral("Voronoi Diagram"),
+            {[&]{ PlotSeries s; s.label=QStringLiteral("site");
+                  s.x=siteX; s.y=siteY; return s; }()}},
     };
 
     for(const QString& engine:engines){
