@@ -182,7 +182,30 @@ PanelScroll {
     GvGroupBox {
         title:smart.checked?"5th axis / point cloud · AUTO":"5th axis / point cloud · MANUAL";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout {anchors.fill:parent
-            Label{visible:smart.checked;text:"Smart Render is controlling point size, base opacity and LOD. Turn Smart Render off for strict manual values.";color:Theme.textSecondary;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+            Label{visible:smart.checked;text:"Smart Render is controlling point size, base opacity and LOD.";color:Theme.textSecondary;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+            // The switch that owns these fields lives at the top of the panel,
+            // several groups up and usually scrolled off. So the message here
+            // said "turn Smart Render off" and pointed at a control that was
+            // not on screen - which reads as the greyed-out fields being
+            // broken. This is the same switch, offered where the fields it
+            // disables actually are.
+            //
+            // The binding is restored explicitly after the click. A CheckBox
+            // breaks its own `checked` binding the moment a person toggles it,
+            // so without the Qt.binding below this box would agree with the
+            // switch once and then drift from it for the rest of the session.
+            CheckBox{
+                id:manualPoints
+                text:"Set these by hand"
+                checked:!smart.checked
+                onToggled:{
+                    smart.checked=!checked
+                    checked=Qt.binding(function(){ return !smart.checked })
+                    root.apply()
+                }
+                ToolTip.visible:manualPoints.hovered
+                ToolTip.text:"Turns Smart Render off for the whole figure, not just this group - it is one setting, and these fields are what it was choosing for you."
+            }
             RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Point size";Layout.preferredWidth:96;elide:Text.ElideRight}SpinBox{id:size;from:1;to:30;value:5;editable:true;enabled:!smart.checked;Layout.fillWidth:true;onValueChanged:root.applySoon()}}
             RowLayout{Layout.fillWidth:true;spacing:8;Label{text:"Opacity %";Layout.preferredWidth:96;elide:Text.ElideRight}SpinBox{id:alpha;from:2;to:100;value:85;editable:true;enabled:!smart.checked;Layout.fillWidth:true;onValueChanged:root.applySoon()}}
             // Was calling app.setPointStyle() directly with the MANUAL spin
@@ -207,10 +230,37 @@ PanelScroll {
     GvGroupBox {
         title:"VTK C++ / PBR";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout{anchors.fill:parent
-            RowLayout{Label{text:"Mode";Layout.fillWidth:true}ComboBox{id:vtkModeBox;model:["Surface","Points"];onActivated:root.apply()}}
-            RowLayout{Label{text:"Roughness";Layout.fillWidth:true}Slider{id:rough;from:0;to:1;value:.35;Layout.preferredWidth:150;onMoved:root.applySoon()}}
-            RowLayout{Label{text:"Metallic";Layout.fillWidth:true}Slider{id:metal;from:0;to:1;value:0;Layout.preferredWidth:150;onMoved:root.applySoon()}}
-            RowLayout{Label{text:"Specular";Layout.fillWidth:true}Slider{id:spec;from:0;to:1;value:.45;Layout.preferredWidth:150;onMoved:root.applySoon()}}
+            // The LABEL used to be the one filling the width and each slider was
+            // pinned at 150. In a narrow sidebar that pushes the slider off the
+            // right edge - and it happened to the LONGEST label first, so
+            // Roughness lost its slider entirely while Metallic and Specular
+            // kept theirs, which looks exactly like one broken control rather
+            // than like a layout that does not fit. The label is fixed and
+            // elided now and the slider takes what is left, so every row
+            // narrows together and none of them disappears.
+            //
+            // The value is printed beside each one as well. A slider with no
+            // number cannot be set to anything in particular, and these three
+            // are material constants people copy between figures.
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Mode";Layout.preferredWidth:76;elide:Text.ElideRight}
+                ComboBox{id:vtkModeBox;model:["Surface","Points"];Layout.fillWidth:true;onActivated:root.apply()}
+            }
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Roughness";Layout.preferredWidth:76;elide:Text.ElideRight}
+                Slider{id:rough;from:0;to:1;value:.35;Layout.fillWidth:true;Layout.minimumWidth:60;onMoved:root.applySoon()}
+                Label{text:rough.value.toFixed(2);Layout.preferredWidth:30;color:Theme.textSecondary}
+            }
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Metallic";Layout.preferredWidth:76;elide:Text.ElideRight}
+                Slider{id:metal;from:0;to:1;value:0;Layout.fillWidth:true;Layout.minimumWidth:60;onMoved:root.applySoon()}
+                Label{text:metal.value.toFixed(2);Layout.preferredWidth:30;color:Theme.textSecondary}
+            }
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Specular";Layout.preferredWidth:76;elide:Text.ElideRight}
+                Slider{id:spec;from:0;to:1;value:.45;Layout.fillWidth:true;Layout.minimumWidth:60;onMoved:root.applySoon()}
+                Label{text:spec.value.toFixed(2);Layout.preferredWidth:30;color:Theme.textSecondary}
+            }
         }
     }
 }

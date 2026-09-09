@@ -1558,6 +1558,23 @@ bool runEngineSweep(){
             nomoW.append(double(a+b)*double(a+b));
         }
 
+    // Batch 23. A three-body decay with three MASSLESS daughters, where the
+    // kinematic boundary collapses to the triangle s12 + s23 <= M^2 - an answer
+    // that can be written down without any of the machinery the engine uses.
+    // Points on a lattice of fourteenths, so thirteen of them land exactly on
+    // the boundary and the engine has to count those as inside.
+    QVector<double> dalitzA,dalitzB,dalitzM,dalitz1,dalitz2,dalitz3;
+    for(int i=1;i<14;++i)
+        for(int j=1;j<14;++j){
+            dalitzA.append(double(i)/14.0);
+            dalitzB.append(double(j)/14.0);
+            // Four constant columns, because a parent mass and three daughter
+            // masses are parameters and a mapped column is the only way this
+            // program has of carrying one.
+            dalitzM.append(1.0);
+            dalitz1.append(0.0); dalitz2.append(0.0); dalitz3.append(0.0);
+        }
+
     // Batch 21 inputs.
     QVector<double> karyoChrom,karyoFrom,karyoTo,karyoStain;
     {
@@ -2166,6 +2183,10 @@ bool runEngineSweep(){
             {column("from",circosFromSeg),column("from pos",circosFromPos),
              column("to",circosToSeg),column("to pos",circosToPos),
              column("weight",circosWeight)}},
+        {QStringLiteral("Dalitz Plot"),
+            {column("m2(12)",dalitzA),column("m2(23)",dalitzB),
+             column("M",dalitzM),column("m1",dalitz1),
+             column("m2",dalitz2),column("m3",dalitz3)}},
         {QStringLiteral("Alignment Nomogram"),
             {column("u",nomoU),column("v",nomoV),column("w",nomoW)}},
         // Batch 18.

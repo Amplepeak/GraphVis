@@ -175,6 +175,11 @@ NO_SCALE = {
     # that is the ceiling on what a position can carry, so a scale variant of it
     # would be overridden by the rewrite.
     "Pourbaix Diagram", "Sequence Logo",
+    # Batch 23. A Dalitz plot's two axes are invariant masses SQUARED, and the
+    # kinematic boundary drawn over them is straight-line arithmetic in exactly
+    # those variables. On a log axis the boundary is a curve the formula does
+    # not describe, and the whole figure is the boundary.
+    "Dalitz Plot",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

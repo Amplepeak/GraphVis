@@ -340,6 +340,8 @@ QVariantList PlotCanvas::annotations() const {
 void PlotCanvas::setAnnotating(bool on){
     if(annotating_==on) return;
     annotating_=on;
+    noteDrag_=-1;
+    noteMoved_=false;
     // A drag half-finished when the mode changed would otherwise pan on the
     // next move event, after the press that started it has been reinterpreted.
     dragging_=false;
@@ -374,6 +376,21 @@ void PlotCanvas::updateAnnotation(int index,const QString& text){
     update();
     emit annotationsChanged();
     scheduleFullRender();
+}
+
+int PlotCanvas::annotationAt(double px,double py) const {
+    // Against the rectangles the LAST RENDER recorded, not against a repeat of
+    // the placement rules. Those rules clip on the anchor, nudge a label back
+    // inside the frame and pin the leading edge of one too wide to fit; a
+    // second copy of them here would be free to drift, and the symptom would be
+    // notes that cannot be clicked.
+    const QVector<QRectF>& boxes=qtBackend_.annotationBoxes();
+    const QPointF where(px,py);
+    // Backwards, so the note drawn last - the one on top where two overlap - is
+    // the one picked.
+    for(int i=qMin(boxes.size(),int(spec_.annotations.size()))-1;i>=0;--i)
+        if(!boxes[i].isNull()&&boxes[i].contains(where)) return i;
+    return -1;
 }
 
 void PlotCanvas::moveAnnotation(int index,double offsetX,double offsetY){
@@ -1388,6 +1405,21 @@ void PlotCanvas::mousePressEvent(QMouseEvent* e){
     // readout uses - so the note lands exactly where the readout said it would,
     // and there is only one place for that arithmetic to be wrong.
     if(annotating_){
+        // A press on an EXISTING note picks it up instead of placing a new one
+        // beside it. Until this existed, a note could be added and the whole
+        // lot cleared, and nothing in between: PlotCanvas has had
+        // removeAnnotation and moveAnnotation all along, and no path in the
+        // interface reached either of them.
+        const int hit=annotationAt(e->position().x(),e->position().y());
+        if(hit>=0){
+            noteDrag_=hit;
+            noteMoved_=false;
+            notePress_=e->position();
+            noteStart_=QPointF(spec_.annotations[hit].offsetX,
+                               spec_.annotations[hit].offsetY);
+            e->accept();
+            return;
+        }
         updateCursor(e->position());
         if(cursorOnPlot_) emit annotationRequested(cursorX_,cursorY_);
         e->accept();
@@ -1399,6 +1431,22 @@ void PlotCanvas::mousePressEvent(QMouseEvent* e){
 }
 
 void PlotCanvas::mouseMoveEvent(QMouseEvent* e){
+    if(noteDrag_>=0){
+        const QPointF delta=e->position()-notePress_;
+        // A few pixels of slack before a press becomes a drag, or every click
+        // meant to open a note nudges it first - which on a careful hand is
+        // invisible and on a trackpad is not.
+        if(!noteMoved_&&std::hypot(delta.x(),delta.y())<4.0){ e->accept(); return; }
+        noteMoved_=true;
+        // Offsets are in typographic points, the same units drawAnnotations
+        // scales by dpi/72 - so the note follows the pointer at any figure
+        // resolution rather than drifting from it.
+        const double toPoints=72.0/double(qMax(1,spec_.style.dpi));
+        moveAnnotation(noteDrag_,noteStart_.x()+delta.x()*toPoints,
+                                 noteStart_.y()+delta.y()*toPoints);
+        e->accept();
+        return;
+    }
     if(!dragging_){ e->ignore(); return; }
     const QPointF delta=e->position()-lastPointer_;
     lastPointer_=e->position();
@@ -1408,6 +1456,17 @@ void PlotCanvas::mouseMoveEvent(QMouseEvent* e){
 }
 
 void PlotCanvas::mouseReleaseEvent(QMouseEvent* e){
+    if(noteDrag_>=0){
+        const int picked=noteDrag_;
+        const bool moved=noteMoved_;
+        noteDrag_=-1;
+        noteMoved_=false;
+        // A press that did not travel is a click, and a click on a note means
+        // "open this one" - which is where deleting and re-wording it live.
+        if(!moved) emit annotationPicked(picked);
+        e->accept();
+        return;
+    }
     const bool was=dragging_;
     dragging_=false;
     // The full-resolution render was held back for the whole drag - see

@@ -294,6 +294,10 @@ public:
     Q_INVOKABLE int addAnnotation(double x,double y,const QString& text);
     Q_INVOKABLE void updateAnnotation(int index,const QString& text);
     Q_INVOKABLE void moveAnnotation(int index,double offsetX,double offsetY);
+    // Which note is under this point in the canvas's own coordinates, or -1.
+    // Matched against the rectangles the last render recorded rather than
+    // against a second copy of the placement rules.
+    Q_INVOKABLE int annotationAt(double px,double py) const;
     Q_INVOKABLE void removeAnnotation(int index);
     Q_INVOKABLE void clearAnnotations();
     // Back to fitting the data. Also what a double-click and a double-tap do.
@@ -491,6 +495,10 @@ signals:
     // does not put up a dialog of its own, because a renderer that opens
     // windows is a renderer that cannot be used headless.
     void annotationRequested(double x,double y);
+    // A click landed on an existing note while annotating. QML opens its editor,
+    // where it can be re-worded or deleted. A DRAG on a note moves it instead
+    // and emits nothing, because moving is finished when the button comes up.
+    void annotationPicked(int index);
 
 private:
     // Seed the view from what is currently drawn, so the first drag or pinch
@@ -526,6 +534,11 @@ private:
     void renderTo(QPainter* painter,const QRectF& target);
 
     QtPlotBackend qtBackend_;
+    // A note being dragged, and where the press started. -1 when none is.
+    int noteDrag_=-1;
+    bool noteMoved_=false;
+    QPointF notePress_;
+    QPointF noteStart_;
     PlotSpec spec_;
     QString arrowPath_;
     QString xColumn_;

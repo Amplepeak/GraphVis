@@ -41,6 +41,14 @@ Item {
             root.editingIndex = -1
             editor.open()
         }
+        // A click on a note that is already there. This is the only way into
+        // the Edit and Delete paths below: editingIndex was never set to
+        // anything but -1 before, so both were unreachable and a note could be
+        // added or every note cleared, with nothing in between.
+        function onAnnotationPicked(index) {
+            root.editingIndex = index
+            editor.open()
+        }
     }
 
     // A hint while armed and nothing is being typed, because "Annotate is on"
@@ -59,7 +67,9 @@ Item {
             id: hint
             anchors.centerIn: parent
             color: Theme.text
-            text: "Click a point on the figure to add a note. Esc to stop."
+            text: root.canvas.annotationCount > 0
+                  ? "Click a point to add a note. Click a note to edit or delete it, drag it to move it. Esc to stop."
+                  : "Click a point on the figure to add a note. Esc to stop."
         }
     }
 

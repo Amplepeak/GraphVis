@@ -588,6 +588,8 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Karyotype Ideogram"),
         QStringLiteral("Circos Plot"),
         QStringLiteral("Alignment Nomogram"),
+        // Batch 23.
+        QStringLiteral("Dalitz Plot"),
     };
     return kEngines;
 }
@@ -758,10 +760,22 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
     for(const AxisTick& t:yTicks) if(!t.minor) widest=qMax(widest,fm.horizontalAdvance(t.label));
     const double left=qMax(kMarginLeft,widest+kTickLen+14.0+fm.height());
 
+    // Room on the right for the colour bar, when the engine is one that paints
+    // a quantity as colour. Reserved here rather than taken out of the plot
+    // area later, because a bar drawn over the frame is a bar drawn over data.
+    double right=kMarginRight;
+    if(usesColourMap(spec.engine)){
+        right+=fm.height()*0.9                                        // gap
+              +qMax(8.0,fm.height()*0.85)                             // the bar
+              +3.0+5.0
+              +fm.horizontalAdvance(QStringLiteral("-0.00e+00"))+4.0  // its numbers
+              +fm.height()*1.4;                                       // the caption
+    }
     f.plotArea=QRectF(target.left()+left,target.top()+kMarginTop,
-                      qMax(10.0,target.width()-left-kMarginRight),
+                      qMax(10.0,target.width()-left-right),
                       qMax(10.0,target.height()-kMarginTop-kMarginBottom));
     lastPlotArea_=f.plotArea;
+    lastTarget_=target;
     return f;
 }
 
@@ -1720,6 +1734,19 @@ bool QtPlotBackend::usesColourMap(const QString& preparedEngine){
 // figure size - a note placed at 900x650 and exported at 89 mm must not end up
 // half a plot away from the thing it is pointing at.
 void QtPlotBackend::drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    // Where each note ended up, so that a click can be matched back to it.
+    //
+    // RECORDED rather than recomputed. The placement below is not a formula a
+    // caller could repeat: it clips on the anchor, nudges the label back inside
+    // the frame, and pins the leading edge when the text is wider than the plot.
+    // A hit test that reimplemented all of that would be a second copy free to
+    // drift from the first, and the symptom of the drift would be notes that
+    // cannot be clicked - which reads as the feature being broken rather than
+    // as two functions disagreeing.
+    //
+    // Index-aligned with spec.annotations; a null rectangle means that note was
+    // not drawn, and an undrawn note cannot be picked.
+    annotationBoxes_.fill(QRectF(),int(spec.annotations.size()));
     if(spec.annotations.isEmpty()) return;
     p->save();
     // Clipped to the plot area. A note whose anchor has been zoomed out of view
@@ -1734,7 +1761,9 @@ void QtPlotBackend::drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& s
     // font size given in points.
     const double scale=double(qMax(1,spec.style.dpi))/72.0;
 
+    int noteIndex=-1;
     for(const PlotAnnotation& note:spec.annotations){
+        ++noteIndex;
         if(note.text.isEmpty()) continue;
         if(!finite(note.x)||!finite(note.y)) continue;
         if(f.xLog&&note.x<=0) continue;
@@ -1779,6 +1808,11 @@ void QtPlotBackend::drawAnnotations(QPainter* p,const Frame& f,const PlotSpec& s
             text.translate(nudge);
             plate.translate(nudge);
         }
+        // The plate, widened a little so a small note is not a pixel-hunt, and
+        // united with the anchor so the leader line's own end is clickable too.
+        annotationBoxes_[noteIndex]=plate.adjusted(-3,-3,3,3)
+                                        .united(QRectF(anchor-QPointF(5,5),
+                                                       QSizeF(10,10)));
 
         // A backing plate, because a note over a dense plot is unreadable
         // otherwise, and because "put it somewhere empty" is not available when
@@ -2201,6 +2235,11 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     if(engine==QLatin1String("Gantt Schedule")
        ||engine==QLatin1String("Availability Timeline")
        ||engine==QLatin1String("Borehole Log")) return {3,4,true};
+    // The two plotted invariant masses, then the parent and the three daughter
+    // masses as constant columns. Six for what is really a two-column scatter,
+    // because four of them are parameters and this program has no other way to
+    // carry one.
+    if(engine==QLatin1String("Dalitz Plot")) return {6,6,true};
     // Source segment and position, target segment and position, and a weight
     // if one is mapped.
     if(engine==QLatin1String("Circos Plot")) return {4,5,true};
@@ -2461,6 +2500,86 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
     return QString();
 }
 
+// The key to a colour-mapped figure.
+//
+// Every field engine in this catalogue - heat maps, contours, vector fields,
+// the Voronoi cells - paints a quantity as colour, and until now not one of
+// them said what the colours meant. A field plot without a scale is not a
+// weaker figure than one with a scale; it is a picture from which the quantity
+// cannot be recovered at all, which is the whole reason the quantity was
+// plotted. Reported from the built application, and correctly.
+//
+// Drawn by the backend rather than by the interface, so it is in the PDF and
+// the SVG as well as on the screen - an exported figure that has lost its scale
+// is exactly as unreadable as one that never had it.
+void QtPlotBackend::drawColourBar(QPainter* p,const Frame& f,const PlotSpec& spec,
+                                  double lo,double hi,const QString& caption) const {
+    if(!finite(lo)||!finite(hi)) return;
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    const double barW=qMax(8.0,fm.height()*0.85);
+    const QRectF bar(f.plotArea.right()+fm.height()*0.9,f.plotArea.top(),
+                     barW,f.plotArea.height());
+    if(bar.right()>lastTarget_.right()-2.0&&lastTarget_.isValid()) return;
+
+    p->save();
+    // The field painters all run inside a clip to the plot area - which is
+    // right, since a cell that overhangs the frame would be data drawn outside
+    // its own axes. The bar lives OUTSIDE that frame by construction, so the
+    // first version of it was drawn correctly and then clipped away entirely:
+    // margin reserved, nothing in it. Clipping is turned off for the bar alone
+    // and restored with the rest of the painter state.
+    p->setClipping(false);
+    p->setFont(tickFont);
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
+    // Painted a row of device pixels at a time rather than with a QGradient:
+    // the map is a table of sixty-four stops with its own interpolation, and a
+    // linear gradient between two endpoint colours would be a DIFFERENT ramp
+    // that happened to start and end in the same place. On viridis the middle
+    // would come out grey-brown instead of teal.
+    const int rows=qMax(2,int(bar.height()));
+    for(int i=0;i<rows;++i){
+        const double t=1.0-double(i)/double(rows-1);
+        p->fillRect(QRectF(bar.left(),bar.top()+double(i)*bar.height()/double(rows),
+                           bar.width(),bar.height()/double(rows)+0.6),
+                    colourMap(cmap,t));
+    }
+    p->setBrush(Qt::NoBrush);
+    p->setPen(QPen(spec.style.foreground,0.9));
+    p->drawRect(bar);
+
+    // Ticks on the same generator the axes use, so the numbers on the bar are
+    // rounded the same way as the numbers on the frame.
+    const QVector<AxisTick> ticks=linearTicks(qMin(lo,hi),qMax(lo,hi),5);
+    const double span=hi-lo;
+    for(const AxisTick& tick:ticks){
+        if(tick.minor) continue;
+        if(tick.value<qMin(lo,hi)-1e-12||tick.value>qMax(lo,hi)+1e-12) continue;
+        const double frac=(std::abs(span)>1e-300)?(tick.value-lo)/span:0.5;
+        const double y=bar.bottom()-frac*bar.height();
+        p->drawLine(QPointF(bar.right(),y),QPointF(bar.right()+3.0,y));
+        p->drawText(QRectF(bar.right()+5.0,y-fm.height()*0.5,
+                           fm.horizontalAdvance(QStringLiteral("-0.00e+00"))+4.0,
+                           fm.height()),
+                    Qt::AlignLeft|Qt::AlignVCenter,tick.label);
+    }
+    // The caption runs up the bar, because across the top there is no room for
+    // it without either clipping it or stealing width from the plot.
+    if(!caption.isEmpty()){
+        p->save();
+        p->translate(bar.right()+5.0
+                     +fm.horizontalAdvance(QStringLiteral("-0.00e+00"))+8.0
+                     +fm.height(),
+                     bar.center().y());
+        p->rotate(-90.0);
+        p->drawText(QRectF(-bar.height()*0.5,-fm.height()*0.5,
+                           bar.height(),fm.height()),
+                    Qt::AlignCenter,caption);
+        p->restore();
+    }
+    p->restore();
+}
+
 void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec) const {
     // The field colour map, read once. Viridis unless the style asks for
     // another - see PlotStyle::colourMap.
@@ -2487,6 +2606,9 @@ void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec)
         }
     }
     p->restore();
+    drawColourBar(p,f,spec,g.vLo,g.vHi,
+                  density?QStringLiteral("count")
+                         :(spec.series.size()>=3?spec.series.at(2).label:QString()));
 }
 
 void QtPlotBackend::drawContour(QPainter* p,const Frame& f,const PlotSpec& spec) const {
@@ -2546,6 +2668,8 @@ void QtPlotBackend::drawContour(QPainter* p,const Frame& f,const PlotSpec& spec)
         }
     }
     p->restore();
+    drawColourBar(p,f,spec,g.vLo,g.vHi,
+                  spec.series.size()>=3?spec.series.at(2).label:QString());
 }
 
 // A violin is the kernel density of a distribution, mirrored about its slot.
@@ -3124,6 +3248,9 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
             }
         }
         p->restore();
+        drawColourBar(p,f,spec,out.vLo,out.vHi,
+                      vorticity?QStringLiteral("vorticity")
+                               :QStringLiteral("divergence"));
         return;
     }
 
@@ -3208,6 +3335,10 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
         }
     }
     p->restore();
+    // The arrows and the streamlines are both coloured by SPEED, so that is
+    // what the bar is a scale of - not the two vector components, which are
+    // what was mapped.
+    drawColourBar(p,f,spec,0.0,magMax,QStringLiteral("speed"));
 }
 
 // Radix-2 FFT, iterative, in place. Written here rather than pulled in because
@@ -6254,6 +6385,212 @@ void QtPlotBackend::drawNomogram(QPainter* p,const QRectF& target,const PlotSpec
 }
 
 // ======================================================================
+// Dalitz plot
+//
+// Two of the three pairwise invariant masses of a three-body decay, plotted
+// against each other. What makes it a Dalitz plot rather than a scatter of two
+// numbers is the KINEMATIC BOUNDARY: energy and momentum conservation confine
+// every possible event to one closed region, and phase space is UNIFORM inside
+// it. So structure in the picture is physics - a resonance is a band, an
+// interference is a hole - and structure that would be there anyway is not,
+// because the flat background has already been removed by the choice of
+// variables. Without the boundary drawn, none of that is readable and the
+// figure is a two-dimensional histogram wearing a physicist's name.
+//
+// The boundary needs the parent mass and the three daughter masses, and those
+// are CONSTANTS rather than per-row measurements. There is no mechanism in this
+// program for handing an engine a scalar, so they arrive as four more mapped
+// columns holding the same value in every row. That is clumsy to set up and it
+// is honest: the engine checks that they really are constant and says so when
+// they are not, rather than quietly using whatever happened to be in the first
+// row.
+//
+// Six mapped columns: m2(12), m2(23), then M, m1, m2, m3.
+//
+// The boundary is the standard one (PDG, Kinematics). At fixed s12, work in the
+// rest frame of the (12) system, where
+//
+//     E2* = (s12 - m1^2 + m2^2) / (2 sqrt(s12))
+//     E3* = (M^2  - s12  - m3^2) / (2 sqrt(s12))
+//
+// and s23 runs between the values taken when 2 and 3 are back to back and when
+// they are aligned:
+//
+//     s23 max/min = (E2* + E3*)^2 - ( sqrt(E2*^2 - m2^2) -/+ sqrt(E3*^2 - m3^2) )^2
+//
+// which for three massless daughters collapses to the triangle s12 + s23 <= M^2
+// - a case with an exact answer, and the one this is checked against.
+void QtPlotBackend::drawDalitz(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    const QFont tickFont=font(spec,qMax(6.0,spec.style.tickSize-0.5));
+    const QFontMetricsF fm(tickFont,p->device());
+
+    if(spec.series.size()<6){
+        p->save();
+        p->setFont(tickFont);
+        p->setPen(spec.style.danger);
+        p->drawText(f.plotArea.adjusted(8,8,-8,-8),Qt::AlignLeft|Qt::AlignTop,
+                    QStringLiteral("needs six columns: m2(12), m2(23), then the "
+                                   "parent mass and the three daughter masses, "
+                                   "each constant down its column"));
+        p->restore();
+        return;
+    }
+
+    const QVector<double>& s12=spec.series.at(0).y;
+    const QVector<double>& s23=spec.series.at(1).y;
+    int rows=s12.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+    if(rows<1) return;
+
+    // The four constants, and the check that they are constants. A column that
+    // varies is not a parameter, and using its first row would be inventing one.
+    double mass[4]={0,0,0,0};
+    bool steady[4]={true,true,true,true};
+    double drift[4]={0,0,0,0};
+    for(int c=0;c<4;++c){
+        const QVector<double>& column=spec.series.at(2+c).y;
+        double lo=std::numeric_limits<double>::infinity(),hi=-lo;
+        for(int i=0;i<rows;++i){
+            if(!finite(column[i])) continue;
+            lo=qMin(lo,column[i]); hi=qMax(hi,column[i]);
+        }
+        if(!finite(lo)){ steady[c]=false; continue; }
+        mass[c]=0.5*(lo+hi);
+        drift[c]=hi-lo;
+        // A tolerance rather than exact equality, because these will have come
+        // through a spreadsheet and a text file.
+        steady[c]=(hi-lo)<=1e-9*qMax(1.0,std::abs(mass[c]));
+    }
+    const double parent=mass[0],m1=mass[1],m2=mass[2],m3=mass[3];
+    bool constantsOk=steady[0]&&steady[1]&&steady[2]&&steady[3];
+    const bool massesUsable=(parent>m1+m2+m3)&&(m1>=0.0)&&(m2>=0.0)&&(m3>=0.0);
+
+    // Where the two edges of the region sit at one value of s12. Used for BOTH
+    // the drawing and the containment test, and evaluated at each event's own
+    // s12 rather than interpolated between drawn samples.
+    //
+    // That distinction is not pedantic. The first version sampled the boundary
+    // four hundred times and interpolated the test between those samples, which
+    // on a curve that bulges outward puts every chord INSIDE the true edge - so
+    // sixteen of three thousand simulated events, all of them legitimately near
+    // the rim, were reported as impossible. The closed form costs two square
+    // roots per event and is exact.
+    const auto edgesAt=[&](double s,double& lo,double& hi){
+        if(!(s>0.0)) return false;
+        const double root=std::sqrt(s);
+        const double e2=(s-m1*m1+m2*m2)/(2.0*root);
+        const double e3=(parent*parent-s-m3*m3)/(2.0*root);
+        const double p2sq=e2*e2-m2*m2,p3sq=e3*e3-m3*m3;
+        if(!(p2sq>=0.0)||!(p3sq>=0.0)) return false;
+        const double p2=std::sqrt(p2sq),p3=std::sqrt(p3sq);
+        const double sum=(e2+e3)*(e2+e3);
+        hi=sum-(p2-p3)*(p2-p3);
+        lo=sum-(p2+p3)*(p2+p3);
+        return true;
+    };
+
+    // ---- The boundary, when the masses allow one at all.
+    QPolygonF upper,lower;
+    double sFrom=0.0,sTo=0.0;
+    if(massesUsable){
+        sFrom=(m1+m2)*(m1+m2);
+        sTo=(parent-m3)*(parent-m3);
+        const int steps=600;
+        for(int i=0;i<=steps;++i){
+            const double s=sFrom+(sTo-sFrom)*double(i)/double(steps);
+            double lo=0.0,hi=0.0;
+            if(!edgesAt(s,lo,hi)) continue;
+            upper.append(QPointF(s,hi));
+            lower.append(QPointF(s,lo));
+        }
+    }
+
+    // How many events fall outside it. This is the number that says whether the
+    // masses supplied are the masses the data came from: with the right ones it
+    // is zero, and with the wrong ones it is large. A picture alone cannot be
+    // read that precisely near an edge, which is exactly where the interesting
+    // events are.
+    int outside=0;
+    if(massesUsable&&!upper.isEmpty()){
+        for(int i=0;i<rows;++i){
+            if(!finite(s12[i])||!finite(s23[i])) continue;
+            const double slack=1e-9*qMax(1.0,std::abs(s23[i]));
+            if(s12[i]<sFrom-slack||s12[i]>sTo+slack){ ++outside; continue; }
+            double lo=0.0,hi=0.0;
+            if(!edgesAt(qBound(sFrom,s12[i],sTo),lo,hi)){ ++outside; continue; }
+            if(s23[i]>hi+slack||s23[i]<lo-slack) ++outside;
+        }
+    }
+
+    p->save();
+    if(!upper.isEmpty()){
+        QPainterPath region;
+        region.moveTo(toDevice(f,upper.first().x(),upper.first().y()));
+        for(const QPointF& pt:upper) region.lineTo(toDevice(f,pt.x(),pt.y()));
+        for(int i=lower.size()-1;i>=0;--i)
+            region.lineTo(toDevice(f,lower[i].x(),lower[i].y()));
+        region.closeSubpath();
+        // Filled faintly as well as outlined. Phase space is uniform inside it,
+        // so the region is a statement about where events CAN be - a bare
+        // outline reads as a curve drawn through the data rather than as a
+        // limit imposed on it.
+        QColor wash=spec.style.foreground;
+        wash.setAlphaF(0.05);
+        p->setPen(QPen(spec.style.foreground,1.1));
+        p->setBrush(wash);
+        p->drawPath(region);
+    }
+
+    // ---- The events. Small and translucent, because the density is the
+    // reading and a filled marker large enough to see individually saturates
+    // wherever there is anything to see.
+    p->setPen(Qt::NoPen);
+    QColor dot=spec.series.at(0).color;
+    dot.setAlphaF(rows>4000?0.25:(rows>800?0.45:0.75));
+    p->setBrush(dot);
+    const double size=qMax(1.0,qMin(2.6,spec.style.lineWidth*1.4));
+    for(int i=0;i<rows;++i){
+        if(!finite(s12[i])||!finite(s23[i])) continue;
+        p->drawEllipse(toDevice(f,s12[i],s23[i]),size,size);
+    }
+    p->restore();
+
+    p->save();
+    p->setFont(tickFont);
+    QStringList notes;
+    if(!constantsOk){
+        QStringList named;
+        static const char* kWhich[4]={"parent mass","m1","m2","m3"};
+        for(int c=0;c<4;++c)
+            if(!steady[c])
+                named.append(QStringLiteral("%1 varies by %2")
+                                 .arg(QString::fromLatin1(kWhich[c]))
+                                 .arg(drift[c],0,'g',3));
+        notes.append(QStringLiteral("NOT constant: %1 - these are parameters, "
+                                    "so no boundary is drawn")
+                         .arg(named.join(QStringLiteral(", "))));
+    }else if(!massesUsable){
+        notes.append(QStringLiteral("the parent mass must exceed the three "
+                                    "daughters together; no boundary is drawn"));
+    }else{
+        notes.append(QStringLiteral("M %1, daughters %2 %3 %4")
+                         .arg(parent,0,'g',5).arg(m1,0,'g',4)
+                         .arg(m2,0,'g',4).arg(m3,0,'g',4));
+        notes.append(outside==0
+            ?QStringLiteral("all %1 events inside the boundary").arg(rows)
+            :QStringLiteral("%1 of %2 events OUTSIDE the boundary - the masses "
+                            "or the variables do not match the data")
+                 .arg(outside).arg(rows));
+    }
+    p->setPen((!constantsOk||!massesUsable||outside>0)?spec.style.danger
+                                                     :spec.style.foreground);
+    p->drawText(QRectF(f.plotArea.left()+4.0,f.plotArea.top()+2.0,
+                       f.plotArea.width()-8.0,fm.height()),
+                Qt::AlignLeft|Qt::AlignTop,notes.join(QStringLiteral("   ")));
+    p->restore();
+}
+
+// ======================================================================
 // Ternary contour
 //
 // Three components summing to a whole, and a fourth quantity measured over
@@ -7191,6 +7528,8 @@ void QtPlotBackend::drawVoronoi(QPainter* p,const Frame& f,const PlotSpec& spec)
         p->drawEllipse(at,2.0,2.0);
     }
     p->restore();
+
+    drawColourBar(p,f,spec,smallest,largest,QStringLiteral("cell area"));
 
     // What the shading stands for, in the axes' own units. Without it the ramp
     // is a decoration - and the ratio is the number a sampling question is
@@ -14494,6 +14833,38 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
                            false,lo,hi};
         out.yAxis=PlotAxis{QStringLiteral("information (bits)"),false,
                            0.0,std::log2(double(symbols))};
+        return out;
+    }
+
+    // -------------------------------------------------------- Dalitz Plot
+    // The columns pass through untouched - the painter needs all six - but the
+    // axes have to be set here. The frame is built from every series, and four
+    // of these are masses: left to itself it would size the picture to include
+    // a column of 1.865s alongside invariant masses of a few tenths, and the
+    // events would occupy a corner of it.
+    if(in.engine==QLatin1String("Dalitz Plot")){
+        PlotSpec out=in;
+        for(PlotSeries& s:out.series){ s.drawLine=false; s.drawMarkers=false; }
+        out.legendVisible=false;
+        double xLo=unsetValue(),xHi=unsetValue(),yLo=unsetValue(),yHi=unsetValue();
+        if(in.series.size()>=2){
+            const Bounds across=boundsOf(in.series.at(0).y);
+            const Bounds up=boundsOf(in.series.at(1).y);
+            // Padded by a twentieth, so the boundary the painter draws is not
+            // pressed against the frame - it usually reaches further than the
+            // events do, since the corners of the region are the least
+            // populated part of phase space.
+            const double padX=qMax(1e-12,(across.hi-across.lo)*0.05);
+            const double padY=qMax(1e-12,(up.hi-up.lo)*0.05);
+            xLo=across.lo-padX; xHi=across.hi+padX;
+            yLo=up.lo-padY;     yHi=up.hi+padY;
+        }
+        out.xAxis=PlotAxis{in.xAxis.label.isEmpty()?QStringLiteral("m2(12)")
+                                                   :in.xAxis.label,
+                           false,xLo,xHi};
+        out.yAxis=PlotAxis{in.yAxis.label.isEmpty()?QStringLiteral("m2(23)")
+                                                   :in.yAxis.label,
+                           false,yLo,yHi};
         return out;
     }
 
@@ -26775,6 +27146,7 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
     else if(spec.engine==QLatin1String("2D Contour"))        drawContour(painter,f,spec);
     else if(spec.engine==QLatin1String("Voronoi Diagram"))   drawVoronoi(painter,f,spec);
     else if(spec.engine==QLatin1String("Pourbaix Diagram"))  drawPourbaix(painter,f,spec);
+    else if(spec.engine==QLatin1String("Dalitz Plot"))       drawDalitz(painter,f,spec);
     else if(spec.engine==QLatin1String("Sequence Logo"))     drawSequenceLogo(painter,f,spec);
     else if(spec.engine==QLatin1String("Tripartite Response Spectrum"))
                                                              drawTripartite(painter,f,spec);

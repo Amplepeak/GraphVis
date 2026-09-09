@@ -86,6 +86,12 @@ public:
     // the answer must be the same one render() acts on.
     static bool engineHasAxes(const QString& engine);
 
+    // Where the last render put each annotation. Index-aligned with the spec's
+    // annotations; a null rectangle means that note was not drawn, because its
+    // anchor is off the plot or its text is empty. The canvas uses this to turn
+    // a click into a note rather than repeating the placement rules.
+    const QVector<QRectF>& annotationBoxes() const { return annotationBoxes_; }
+
     // Why did this engine draw nothing? Empty when it drew, or when the reason
     // is not one of the understood ones.
     //
@@ -145,6 +151,10 @@ private:
     void drawChrome(QPainter* p, const Frame& f, const PlotSpec& spec,
                     const QVector<AxisTick>& xTicks, const QVector<AxisTick>& yTicks) const;
     void drawLegend(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The key to a colour-mapped figure: a strip of the map with the value
+    // range on it. Drawn in the backend so it reaches the PDF and the SVG too.
+    void drawColourBar(QPainter* p, const Frame& f, const PlotSpec& spec,
+                       double lo, double hi, const QString& caption) const;
     // The title, for the engines that have no axis frame to hang it on: pie,
     // donut, the composition family and both 3-D paths. Written out four times
     // identically before this.
@@ -292,6 +302,8 @@ private:
     // the two engines differ in nothing else.
     void drawIcicle(QPainter* p, const QRectF& target, const PlotSpec& spec,
                     bool upward) const;
+    // Two invariant masses with the kinematic boundary that confines them.
+    void drawDalitz(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // Potential against pH, with water's own stability field over the top.
     void drawPourbaix(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // One stack of letters per position, the stack height in bits.
@@ -341,6 +353,13 @@ private:
     bool draft_=false;
     mutable int draftCap_=6000;
     mutable QRectF lastPlotArea_;
+    // The rectangle the last frame was fitted to, so the colour bar can tell
+    // whether it would fall off the edge of a very narrow figure.
+    mutable QRectF lastTarget_;
+    // Where the last render put each annotation, index-aligned with
+    // spec.annotations and null for one that was not drawn. Filled by
+    // drawAnnotations; read by the canvas to turn a click into a note.
+    mutable QVector<QRectF> annotationBoxes_;
     mutable PreparedCache prepCache_;
     // 64-bit FNV-1a over everything prepareSpec can read. Cheap enough to run
     // per repaint (it is a linear pass over data that render already copies)

@@ -130,13 +130,58 @@ Item {
                     // end: a button that has been shoved past the edge cannot be
                     // clicked, and a title that has been elided can still be
                     // read from what is left of it.
-                    Layout.maximumWidth: Math.max(120, root.width * 0.34)
+                    // Narrower still once there are controls to make room for.
+                    Layout.maximumWidth: Math.max(90, root.width
+                        * (headerActionRow.children.length > 0 ? 0.22 : 0.34))
                 }
-                Item { Layout.fillWidth: true }
-                RowLayout {
-                    id: headerActionRow
-                    spacing: 6
-                    Layout.alignment: Qt.AlignVCenter
+
+                // The actions, in something that can be scrolled when they do
+                // not all fit.
+                //
+                // They used to sit in a bare row after a stretching spacer, so
+                // on a narrow canvas the ones at the far end were simply not on
+                // screen - no scroll bar, no overflow, no indication that
+                // anything was missing. Export PDF and Annotate disappeared and
+                // the header looked complete without them.
+                //
+                // Scrolled rather than folded into an overflow menu, because
+                // headerActions takes arbitrary items - a status pill, three
+                // selectors, some buttons - and arbitrary items cannot be moved
+                // into a Menu. The arrows below say when there is more.
+                Flickable {
+                    id: actionScroll
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    contentWidth: headerActionRow.implicitWidth
+                    contentHeight: height
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    flickableDirection: Flickable.HorizontalFlick
+                    readonly property bool overflowing: contentWidth > width + 1
+
+                    RowLayout {
+                        id: headerActionRow
+                        spacing: 6
+                        height: actionScroll.height
+                        // Hard right while everything fits, which is where these
+                        // have always been; pinned left once they do not, so
+                        // scrolling starts at the beginning of the row.
+                        x: Math.max(0, actionScroll.width - implicitWidth)
+                    }
+                }
+                // Nothing may be hidden silently. These appear only when there
+                // is something past the edge, and point at where it is.
+                Label {
+                    visible: actionScroll.overflowing && actionScroll.contentX > 1
+                    text: "‹"
+                    color: Theme.textSecondary
+                }
+                Label {
+                    visible: actionScroll.overflowing
+                             && actionScroll.contentX < actionScroll.contentWidth
+                                                        - actionScroll.width - 1
+                    text: "›"
+                    color: Theme.textSecondary
                 }
                 ToolButton {
                     visible: root.floatable
