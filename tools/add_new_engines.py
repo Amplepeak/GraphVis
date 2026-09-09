@@ -539,6 +539,10 @@ NEW = [
     # ---- batch 25
     ("Earth & Ocean Science", "qapf", "QAPF Diagram (Plutonic)",
      "The IUGS double triangle: quartz, alkali feldspar, plagioclase and feldspathoid against the named igneous rock fields, after Streckeisen"),
+
+    # ---- batch 26
+    ("Earth & Ocean Science", "qapfvolcanic", "QAPF Diagram (Volcanic)",
+     "The same four columns against the fine-grained rock names - rhyolite, trachyte, phonolite, basalt - on the identical field boundaries"),
 ]
 
 by_name = {c["name"]: c for c in cats}

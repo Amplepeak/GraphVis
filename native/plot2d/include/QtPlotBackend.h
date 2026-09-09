@@ -283,7 +283,8 @@ private:
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Q, A, P and F against the IUGS igneous rock fields.
-    void drawQapf(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawQapf(QPainter* p, const QRectF& target, const PlotSpec& spec,
+                  bool volcanic) const;
     // Sand, silt and clay against the named texture classes. uk selects the
     // Soil Survey of England and Wales regions rather than the USDA ones.
     void drawSoilTexture(QPainter* p, const QRectF& target, const PlotSpec& spec,

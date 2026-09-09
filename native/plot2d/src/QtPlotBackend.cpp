@@ -594,6 +594,8 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Soil Texture Triangle (UK)"),
         QStringLiteral("Soil Texture Triangle (USDA)"),
         QStringLiteral("QAPF Diagram (Plutonic)"),
+        // Batch 26. The same construction for fine-grained rocks.
+        QStringLiteral("QAPF Diagram (Volcanic)"),
     };
     return kEngines;
 }
@@ -2248,7 +2250,8 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // if one is mapped.
     if(engine==QLatin1String("Circos Plot")) return {4,5,true};
     // Modal per cent quartz, alkali feldspar, plagioclase and feldspathoid.
-    if(engine==QLatin1String("QAPF Diagram (Plutonic)")) return {4,4,true};
+    if(engine==QLatin1String("QAPF Diagram (Plutonic)")
+       ||engine==QLatin1String("QAPF Diagram (Volcanic)")) return {4,4,true};
     // Per cent sand, silt and clay, in the order an analysis reports them.
     if(engine==QLatin1String("Soil Texture Triangle (UK)")
        ||engine==QLatin1String("Soil Texture Triangle (USDA)")) return {3,3,true};
@@ -6947,15 +6950,86 @@ const QapfField kQapfPlutonic[]={
     {true,  10, 60,  90,100, "14", "foid diorite / foid gabbro"},
     {true,  60,100,   0,100, "15", "foidolite"}};
 
+// The same construction for fine-grained rocks: identical boundaries, different
+// names, read from Figure 19 of the same report ("Classification and
+// nomenclature of fine-grained crystalline rocks according to their modal
+// mineral contents using the QAPF diagram", after Streckeisen 1978).
+//
+// Three things differ from the coarse-grained table above, and all three are
+// differences in the FIGURE rather than simplifications made here:
+//
+//   - fields 3a and 3b are one field in the volcanic diagram: rhyolite runs the
+//     whole way from 10 to 65, where the plutonic diagram splits that same span
+//     into syenogranite and monzogranite;
+//   - fields 9 and 10 - and their starred and primed forms - carry one name
+//     between them. QAPF does not separate basalt from andesite; that is done
+//     on colour index and silica (the report's Figure 21), neither of which is
+//     a modal mineral and so neither of which this engine is given. Naming a
+//     field 9 rock "andesite" from its position alone would be an answer the
+//     data does not support, so both fields say what the figure says;
+//   - fields 1a and 1b have no approved volcanic name at all. Rocks that
+//     silica-rich and that poor in feldspar are vanishingly rare as lavas and
+//     the scheme leaves the region unnamed rather than inventing one. The
+//     engine reports the field number and says so.
+//
+// Field 15 is left whole. The figure divides it into phonolitic foidite,
+// tephritic (basanitic) foidite and foidite, but the dividing ratios were not
+// legible in the source, and a boundary guessed from the shape of the picture
+// would be a boundary invented here. An unsubdivided field 15 names a rock
+// "foidite", which is true of everything in it.
+const QapfField kQapfVolcanic[]={
+    // Q, upper triangle.
+    {false, 90,100,   0,100, "1a", ""},
+    {false, 60, 90,   0,100, "1b", ""},
+    {false, 20, 60,   0, 10, "2", "alkali feldspar rhyolite"},
+    {false, 20, 60,  10, 65, "3", "rhyolite"},
+    {false, 20, 60,  65, 90, "4", "dacite"},
+    {false, 20, 60,  90,100, "5", "dacite"},
+    {false,  5, 20,   0, 10, "6*", "quartz alkali feldspar trachyte"},
+    {false,  5, 20,  10, 35, "7*", "quartz trachyte"},
+    {false,  5, 20,  35, 65, "8*", "quartz latite"},
+    {false,  5, 20,  65, 90, "9*", "quartz-bearing basalt / andesite"},
+    {false,  5, 20,  90,100, "10*", "quartz-bearing basalt / andesite"},
+    {false,  0,  5,   0, 10, "6", "alkali feldspar trachyte"},
+    {false,  0,  5,  10, 35, "7", "trachyte"},
+    {false,  0,  5,  35, 65, "8", "latite"},
+    {false,  0,  5,  65, 90, "9", "basalt / andesite"},
+    {false,  0,  5,  90,100, "10", "basalt / andesite"},
+    // F, lower triangle.
+    {true,   0, 10,   0, 10, "6'", "foid-bearing alkali feldspar trachyte"},
+    {true,   0, 10,  10, 35, "7'", "foid-bearing trachyte"},
+    {true,   0, 10,  35, 65, "8'", "foid-bearing latite"},
+    {true,   0, 10,  65, 90, "9'", "foid-bearing basalt / andesite"},
+    {true,   0, 10,  90,100, "10'", "foid-bearing basalt / andesite"},
+    {true,  10, 60,   0, 10, "11", "phonolite"},
+    {true,  10, 60,  10, 50, "12", "tephritic phonolite"},
+    {true,  10, 60,  50, 90, "13", "phonolitic tephrite / phonolitic basanite"},
+    // Olivine, not feldspar, is what separates these two: over about ten per
+    // cent of it and the rock is a basanite. QAPF does not carry olivine.
+    {true,  10, 60,  90,100, "14", "tephrite / basanite"},
+    {true,  60,100,   0,100, "15", "foidite"}};
+
 } // namespace
 
-void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& spec,
+                             bool volcanic) const {
     drawFloatingTitle(p,target,spec);
     const QFont tickFont=font(spec,qMax(6.0,spec.style.tickSize-0.5));
     const QFontMetricsF fm(tickFont,p->device());
     p->setFont(tickFont);
 
-    const int fieldCount=int(sizeof(kQapfPlutonic)/sizeof(kQapfPlutonic[0]));
+    const QapfField* fields=volcanic?kQapfVolcanic:kQapfPlutonic;
+    const int fieldCount=volcanic
+        ?int(sizeof(kQapfVolcanic)/sizeof(kQapfVolcanic[0]))
+        :int(sizeof(kQapfPlutonic)/sizeof(kQapfPlutonic[0]));
+    // What a field is called when the scheme does not name it. The number is
+    // the answer in that case, and saying so is better than a blank.
+    const auto nameOf=[&](int k){
+        return (fields[k].name[0]!='\0')
+            ?QString::fromLatin1(fields[k].name)
+            :QStringLiteral("field %1 (no approved volcanic name)")
+                 .arg(QString::fromLatin1(fields[k].number));
+    };
     const double height=std::sqrt(3.0)/2.0;
     const double margin=fm.height()*2.2;
     const double usableW=qMax(20.0,target.width()-2.0*margin);
@@ -6978,7 +7052,7 @@ void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& sp
     // ---- The fields.
     p->save();
     for(int i=0;i<fieldCount;++i){
-        const QapfField& f=kQapfPlutonic[i];
+        const QapfField& f=fields[i];
         QPolygonF shape;
         shape<<at(f.lo,f.p0,f.foid)<<at(f.lo,f.p1,f.foid)
              <<at(f.hi,f.p1,f.foid)<<at(f.hi,f.p0,f.foid);
@@ -7060,7 +7134,7 @@ void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& sp
 
         int found=-1;
         for(int k=0;k<fieldCount&&found<0;++k){
-            const QapfField& f=kQapfPlutonic[k];
+            const QapfField& f=fields[k];
             if(f.foid!=foid) continue;
             if(apexPct<f.lo||apexPct>f.hi) continue;
             if(ratio<f.p0||ratio>f.p1) continue;
@@ -7083,9 +7157,7 @@ void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& sp
     for(int k=0;k<fieldCount;++k){
         if(tally[k]<=0) continue;
         ++occupied;
-        named.append(QStringLiteral("%1 %2")
-                         .arg(QString::fromLatin1(kQapfPlutonic[k].name))
-                         .arg(tally[k]));
+        named.append(QStringLiteral("%1 %2").arg(nameOf(k)).arg(tally[k]));
     }
     // The names when there are few enough to read, the count of fields when
     // there are not - and the trouble ALONGSIDE either, never instead of it.
@@ -7111,9 +7183,13 @@ void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& sp
     p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
                        target.width(),fm.height()),
                 Qt::AlignHCenter|Qt::AlignVCenter,
-                QStringLiteral("plutonic; IUGS after Streckeisen (1976), fields as "
-                               "BGS RR 99-06 figures 11 and 12; M excluded, QAPF "
-                               "normalised to 100"));
+                volcanic
+                    ?QStringLiteral("volcanic; IUGS after Streckeisen (1978), fields "
+                                    "as BGS RR 99-06 figure 19; M excluded, QAPF "
+                                    "normalised to 100")
+                    :QStringLiteral("plutonic; IUGS after Streckeisen (1976), fields as "
+                                    "BGS RR 99-06 figures 11 and 12; M excluded, QAPF "
+                                    "normalised to 100"));
     p->restore();
 }
 
@@ -8673,6 +8749,7 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Soil Texture Triangle (USDA)")
         // A double triangle of named fields, like the Piper's construction.
         && engine!=QLatin1String("QAPF Diagram (Plutonic)")
+        && engine!=QLatin1String("QAPF Diagram (Volcanic)")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -27543,8 +27620,10 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             painter->restore();
             return;
         }
-        if(spec.engine==QLatin1String("QAPF Diagram (Plutonic)")){
-            drawQapf(painter,target,spec);
+        if(spec.engine==QLatin1String("QAPF Diagram (Plutonic)")
+           ||spec.engine==QLatin1String("QAPF Diagram (Volcanic)")){
+            drawQapf(painter,target,spec,
+                     spec.engine.endsWith(QLatin1String("(Volcanic)")));
             painter->restore();
             return;
         }
