@@ -24,6 +24,42 @@ $Preset=if($Fast){'windows-fast'}else{'windows-release'}
 $Build=Join-Path $Root $(if($Fast){'build/windows-fast'}else{'build/windows-release'})
 $Stage=Join-Path $Root $(if($Fast){'build/stage-fast'}else{'build/stage'})
 function Require($name){ if(-not (Get-Command $name -ErrorAction SilentlyContinue)){throw "Missing required developer tool: $name"} }
+
+# Emptying a folder that something else is using.
+#
+# The staging tree is deleted and rebuilt on every release build, and a plain
+# Remove-Item on it fails with "Access to the path 'qgif.dll' is denied" the
+# moment anything holds a file inside it open. That is a twenty-minute build
+# thrown away at the last step, reported as a permissions error - which sends
+# people to file properties and administrator prompts, when the cause is almost
+# always that they are running the copy of GraphVis they just built.
+#
+# So: name the process holding it, because closing that is the entire fix. A
+# DLL loaded into a running executable cannot be deleted by anyone at any
+# privilege level, and no amount of -Force changes that.
+function Clear-BuildTree {
+  param([Parameter(Mandatory=$true)][string]$Path,[string]$What='staging folder')
+  if(-not (Test-Path $Path)){ return }
+  $full=(Resolve-Path $Path).Path
+  # Anything running FROM inside the folder about to be deleted.
+  $holders=@(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Path -and $_.Path.StartsWith($full,[System.StringComparison]::OrdinalIgnoreCase) })
+  if($holders.Count -gt 0){
+    $names=($holders | ForEach-Object { "$($_.ProcessName) (pid $($_.Id))" }) -join ', '
+    throw "The $What is in use by $names. Close it and run the build again - a file loaded into a running program cannot be deleted by anything, an administrator included."
+  }
+  # A few tries anyway: an antivirus scan or an Explorer window on the folder
+  # takes a handle for a moment and gives it back.
+  for($attempt=1;$attempt -le 5;$attempt++){
+    try { Remove-Item $Path -Recurse -Force -ErrorAction Stop; return }
+    catch {
+      if($attempt -eq 5){
+        throw "Could not empty the $What at $full : $($_.Exception.Message). Something has a file in there open - usually GraphVis still running, an Explorer window showing the folder, or an unfinished antivirus scan."
+      }
+      Start-Sleep -Milliseconds (250*$attempt)
+    }
+  }
+}
 Require cmake; Require ninja; Require cargo
 
 # This script itself could not be parsed for months, and the only way anyone
@@ -48,7 +84,7 @@ cmake --preset $Preset
 if($LASTEXITCODE -ne 0){throw 'CMake configure failed'}
 cmake --build --preset $Preset --parallel
 if($LASTEXITCODE -ne 0){throw 'CMake build failed'}
-if(Test-Path $Stage){Remove-Item $Stage -Recurse -Force}
+Clear-BuildTree -Path $Stage -What 'staging folder'
 cmake --install $Build --prefix $Stage
 if($LASTEXITCODE -ne 0){throw 'CMake install/stage failed'}
 
@@ -68,7 +104,7 @@ if(-not $Fast -and -not $SkipInstaller){
   $name="GraphVis-$Version-Windows"
   $out=Join-Path $dist $name
   $zip=Join-Path $dist "$name.zip"
-  if(Test-Path $out){Remove-Item $out -Recurse -Force}
+  Clear-BuildTree -Path $out -What 'release folder'
   if(Test-Path $zip){Remove-Item $zip -Force}
   New-Item -ItemType Directory -Force -Path (Join-Path $out 'Support')|Out-Null
 
