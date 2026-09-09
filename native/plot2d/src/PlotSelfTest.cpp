@@ -1525,6 +1525,26 @@ bool runEngineSweep(){
         streamHump.append(4.0+22.0*std::exp(-40.0*(u-0.55)*(u-0.55)));
     }
 
+    // Batch 18. A ternary lattice at tenths, with the measured value set to
+    // exactly a hundred times the FIRST component. Every contour of that field
+    // is a line of constant first component - and those are the ten per cent
+    // grid lines the frame draws independently of the data, so the contours
+    // must lie ON them rather than near them. The interpolant is linear inside
+    // each triangle and the field is globally linear, so the agreement is
+    // exact; a transposed projection, a wrong normalisation or a triangulation
+    // built in a different space from the one it is drawn in all break it.
+    QVector<double> mixA,mixB,mixC,mixValue;
+    {
+        const int side=10;
+        for(int i=0;i<=side;++i)
+            for(int j=0;j<=side-i;++j){
+                const double pa=double(i)/side,pb=double(j)/side;
+                mixA.append(pa); mixB.append(pb);
+                mixC.append(1.0-pa-pb);
+                mixValue.append(100.0*pa);
+            }
+    }
+
     // Voronoi sites: a scattered survey with two clusters and a sparse corner,
     // so the area shading has something to distinguish rather than a uniform
     // field that would look the same however it were computed.
@@ -2042,6 +2062,10 @@ bool runEngineSweep(){
              [&]{ PlotSeries s; s.label=QStringLiteral("hump");
                   s.x=streamX; s.y=streamHump;
                   s.color=QColor(0x8a,0x6b,0xa5); return s; }()}},
+        // Batch 18.
+        {QStringLiteral("Ternary Contour"),
+            {column("A",mixA),column("B",mixB),column("C",mixC),
+             column("value",mixValue)}},
         {QStringLiteral("Tripartite Response Spectrum"),
             {[&]{ PlotSeries s; s.label=QStringLiteral("design spectrum");
                   s.x=spectrumPeriod; s.y=spectrumVelocity; return s; }()}},

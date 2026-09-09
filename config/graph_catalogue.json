@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2103,
- "engine_count": 421,
+ "entry_count": 2104,
+ "engine_count": 422,
  "categories": [
   {
    "name": "Line Plots",
@@ -2297,6 +2297,17 @@
      "description": "Contour a symbolic f(x,y) expression — x replaced by its position in the sorted sample, which spreads a skewed column evenly",
      "preview": "f≋",
      "thumbnail": "fcontour_9871b0b10e.png",
+     "pack": "base"
+    },
+    {
+     "category": "Contour Plots",
+     "name": "ternarycontour",
+     "engine": "Ternary Contour",
+     "scale": null,
+     "advanced": false,
+     "description": "A quantity measured over three components, contoured on the Delaunay triangulation of the samples themselves - linear in each triangle and nothing outside the hull",
+     "preview": "",
+     "thumbnail": "",
      "pack": "base"
     }
    ],
@@ -23420,7 +23431,7 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 805
+   "entryCount": 806
   },
   {
    "id": "engineering",

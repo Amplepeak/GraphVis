@@ -268,6 +268,10 @@ private:
     void drawTripartite(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Three components and a value over them, contoured on the Delaunay
+    // triangulation of the samples themselves.
+    void drawTernaryContour(QPainter* p, const QRectF& target,
+                            const PlotSpec& spec) const;
     // Stacked bands on a free baseline; every mapped column is one band.
     void drawStream(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The same node/parent/value columns read as a tree with branch lengths.

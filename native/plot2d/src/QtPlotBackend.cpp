@@ -576,6 +576,8 @@ QStringList QtPlotBackend::supportedEngines() const {
         // Batch 17.
         QStringLiteral("Cladogram"),
         QStringLiteral("Streamgraph"),
+        // Batch 18.
+        QStringLiteral("Ternary Contour"),
     };
     return kEngines;
 }
@@ -2180,6 +2182,8 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     if(engine==QLatin1String("Gantt Schedule")
        ||engine==QLatin1String("Availability Timeline")
        ||engine==QLatin1String("Borehole Log")) return {3,4,true};
+    // Three components and the value measured over them.
+    if(engine==QLatin1String("Ternary Contour")) return {4,4,true};
     // Open, high, low, close. The period comes from the x mapping.
     if(engine==QLatin1String("OHLC Candlestick")) return {4,4,true};
 
@@ -5139,6 +5143,228 @@ Tree treeFrom(const PlotSpec& spec){
 } // namespace
 
 // ======================================================================
+// Ternary contour
+//
+// Three components summing to a whole, and a fourth quantity measured over
+// them: a phase field, a yield surface, a property of a mixture. The catalogue
+// could scatter compositions and could contour a rectangular field, and had no
+// way to do both at once - so a ternary experiment could show WHERE it was
+// sampled or WHAT it found, but not both.
+//
+// The contours are of the piecewise-linear interpolant over the Delaunay
+// triangulation of the samples, which is the choice that adds nothing. Inside
+// each triangle the surface is the plane through its three measured corners, so
+// a contour there is one straight segment and the arithmetic is exact; there is
+// no smoothing parameter, no radius, and no kernel to pick - and nothing is
+// drawn outside the hull, because a value at a composition that no three
+// measurements surround would be an extrapolation wearing the same ink as a
+// measurement.
+//
+// Four mapped columns: the three components and the value. Rows are normalised
+// first - compositions that do not sum to one are the normal case, not an
+// error - and the projection is the one Ternary Scatter uses, so a scatter and
+// a contour of the same experiment lie on top of each other.
+void QtPlotBackend::drawTernaryContour(QPainter* p,const QRectF& target,
+                                       const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    const double height=std::sqrt(3.0)/2.0;
+    const double margin=fm.height()*2.4;
+    const double usableW=qMax(20.0,target.width()-2.0*margin);
+    const double usableH=qMax(20.0,target.height()-2.0*margin
+                              -(spec.title.isEmpty()?0.0:fm.height()*2.0));
+    const double scale=qMin(usableW,usableH/height);
+    const double originX=target.center().x()-scale*0.5;
+    const double originY=target.bottom()-margin*0.8;
+    const auto at=[&](double x,double y){
+        return QPointF(originX+x*scale,originY-y*scale);
+    };
+    // The same placement as Ternary Scatter: the first component at the bottom
+    // right, the second at the bottom left, the third at the apex.
+    const auto place=[&](double pa,double pc){
+        return QPointF(pa+pc*0.5,pc*height);
+    };
+
+    // ---- The triangle and its ten per cent grid.
+    p->save();
+    p->setPen(QPen(spec.style.gridColor,0.6));
+    for(int step=1;step<10;++step){
+        const double f=double(step)/10.0;
+        const QPointF a1=place(f,0.0),a2=place(f,1.0-f);       // constant first
+        const QPointF b1=place(0.0,f),b2=place(1.0-f,f);       // constant third
+        const QPointF c1=place(1.0-f,0.0),c2=place(0.0,1.0-f); // constant second
+        p->drawLine(at(a1.x(),a1.y()),at(a2.x(),a2.y()));
+        p->drawLine(at(b1.x(),b1.y()),at(b2.x(),b2.y()));
+        p->drawLine(at(c1.x(),c1.y()),at(c2.x(),c2.y()));
+    }
+    p->setPen(QPen(spec.style.foreground,1.0));
+    p->drawPolyline(QPolygonF()<<at(0,0)<<at(1,0)<<at(0.5,height)<<at(0,0));
+    p->restore();
+
+    if(spec.series.size()<4){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignHCenter|Qt::AlignBottom,
+                    QStringLiteral("needs four columns: three components and the value over them"));
+        p->restore();
+        return;
+    }
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    const double pad=fm.height()*0.7;
+    const auto corner=[&](const QPointF& where,const QString& text,int flags,
+                          double dx,double dy){
+        const QPointF screen=at(where.x(),where.y());
+        const double width=140.0;
+        double left=screen.x()-width*0.5+dx;
+        if(flags&Qt::AlignRight)     left=screen.x()-width+dx;
+        else if(flags&Qt::AlignLeft) left=screen.x()+dx;
+        p->drawText(QRectF(left,screen.y()-fm.height()*0.5+dy,width,fm.height()),
+                    flags,text);
+    };
+    corner(QPointF(1,0),spec.series.at(0).label.isEmpty()
+               ?QStringLiteral("A"):spec.series.at(0).label,
+           Qt::AlignLeft|Qt::AlignVCenter,6.0,pad*0.6);
+    corner(QPointF(0,0),spec.series.at(1).label.isEmpty()
+               ?QStringLiteral("B"):spec.series.at(1).label,
+           Qt::AlignRight|Qt::AlignVCenter,-6.0,pad*0.6);
+    corner(QPointF(0.5,height),spec.series.at(2).label.isEmpty()
+               ?QStringLiteral("C"):spec.series.at(2).label,
+           Qt::AlignHCenter|Qt::AlignVCenter,0.0,-pad);
+    p->restore();
+
+    // ---- The samples, in the projected plane, with their value attached.
+    const QVector<double>& ca=spec.series.at(0).y;
+    const QVector<double>& cb=spec.series.at(1).y;
+    const QVector<double>& cc=spec.series.at(2).y;
+    const QVector<double>& cv=spec.series.at(3).y;
+    int rows=ca.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    QVector<ScatterPoint> points;
+    for(int i=0;i<rows;++i){
+        if(!finite(ca[i])||!finite(cb[i])||!finite(cc[i])||!finite(cv[i])) continue;
+        const double total=std::abs(ca[i])+std::abs(cb[i])+std::abs(cc[i]);
+        if(!(total>0.0)) continue;
+        const QPointF where=place(std::abs(ca[i])/total,std::abs(cc[i])/total);
+        ScatterPoint point;
+        point.x=where.x(); point.y=where.y(); point.v=cv[i];
+        points.append(point);
+    }
+    if(points.size()<3){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                           target.width(),fm.height()),
+                    Qt::AlignHCenter|Qt::AlignVCenter,
+                    QStringLiteral("three compositions at least are needed to contour between them"));
+        p->restore();
+        return;
+    }
+
+    double lowValue=points.first().v,highValue=lowValue;
+    for(const ScatterPoint& point:points){
+        lowValue=qMin(lowValue,point.v); highValue=qMax(highValue,point.v);
+    }
+
+    const QVector<Triangle> mesh=delaunay(points);
+    const ColourMapKind cmap=colourMapFor(spec.style.colourMap);
+
+    // Levels on a round step through the range, so the numbers on the figure
+    // are ones somebody would have chosen.
+    QVector<double> levels;
+    const double step=niceStep((highValue-lowValue)/7.0);
+    if(step>0.0)
+        for(double level=std::ceil(lowValue/step)*step;level<=highValue;level+=step)
+            levels.append(level);
+    if(levels.isEmpty()) levels.append(0.5*(lowValue+highValue));
+
+    p->save();
+    int segments=0;
+    struct Label { QPointF where; QString text; QColor colour; };
+    QVector<Label> labels;
+    for(double level:levels){
+        const double t=(highValue>lowValue)?(level-lowValue)/(highValue-lowValue):0.5;
+        QPen pen(colourMap(cmap,t));
+        pen.setWidthF(qMax(1.1,spec.style.lineWidth));
+        pen.setCapStyle(Qt::RoundCap);
+        p->setPen(pen);
+        QVector<QPointF> midpoints;
+        for(const Triangle& tri:mesh){
+            const ScatterPoint* corners[3]={&points[tri.a],&points[tri.b],&points[tri.c]};
+            // Where the plane through the three measured corners crosses this
+            // level: at most two of the triangle's three edges, and exactly two
+            // whenever the level passes through it at all.
+            QPointF crossing[3]; int found=0;
+            for(int e=0;e<3;++e){
+                const ScatterPoint& u=*corners[e];
+                const ScatterPoint& v=*corners[(e+1)%3];
+                const double du=u.v-level,dv=v.v-level;
+                if((du<0.0)==(dv<0.0)) continue;      // no crossing on this edge
+                if(std::abs(dv-du)<1e-300) continue;
+                const double f=du/(du-dv);
+                if(found<3)
+                    crossing[found++]=QPointF(u.x+f*(v.x-u.x),u.y+f*(v.y-u.y));
+            }
+            if(found!=2) continue;
+            p->drawLine(at(crossing[0].x(),crossing[0].y()),
+                        at(crossing[1].x(),crossing[1].y()));
+            ++segments;
+            midpoints.append(at(0.5*(crossing[0].x()+crossing[1].x()),
+                                0.5*(crossing[0].y()+crossing[1].y())));
+        }
+        // The MIDDLE segment of the contour, not the first one. The first is
+        // wherever the triangulation happens to start, which for a level that
+        // runs to the edge of the triangle is on the edge - so every label sat
+        // half outside the frame, on top of the sample point that put it there.
+        if(!midpoints.isEmpty())
+            labels.append({midpoints.at(midpoints.size()/2),
+                           QString::number(level,'g',4),p->pen().color()});
+    }
+
+    // The samples over the contours. A contour map without its measurements
+    // cannot be told from a smooth invention, and here the triangulation makes
+    // the difference visible: the lines bend at the sample points and only
+    // there.
+    p->setPen(Qt::NoPen);
+    p->setBrush(spec.style.foreground);
+    for(const ScatterPoint& point:points)
+        p->drawEllipse(at(point.x,point.y),2.0,2.0);
+
+    // Labels last of all, over both the contours and the samples: a number
+    // hidden under the dot that produced it is not a label.
+    p->setBrush(Qt::NoBrush);
+    for(const Label& label:labels){
+        const QRectF chip(label.where.x()-fm.horizontalAdvance(label.text)*0.5-2.0,
+                          label.where.y()-fm.height()*0.5,
+                          fm.horizontalAdvance(label.text)+4.0,fm.height());
+        p->fillRect(chip,spec.style.background);
+        p->setPen(label.colour);
+        p->drawText(chip,Qt::AlignCenter,label.text);
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 compositions, %2 triangles, %3 to %4 in steps "
+                               "of %5; linear within each triangle, nothing "
+                               "outside the hull")
+                    .arg(points.size()).arg(mesh.size())
+                    .arg(lowValue,0,'g',4).arg(highValue,0,'g',4)
+                    .arg(step>0.0?QString::number(step,'g',3)
+                                 :QStringLiteral("-")));
+    Q_UNUSED(segments);
+    p->restore();
+}
+
+// ======================================================================
 // Streamgraph
 //
 // A stacked area whose baseline is free. The stack is centred and then allowed
@@ -6449,6 +6675,8 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // Thickness is the value and vertical position is nothing, so a y axis
         // would be numbers against a quantity that does not exist.
         && engine!=QLatin1String("Streamgraph")
+        // A triangle, like the ternary scatter it shares its projection with.
+        && engine!=QLatin1String("Ternary Contour")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -25228,6 +25456,11 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Ternary Contour")){
+            drawTernaryContour(painter,target,spec);
             painter->restore();
             return;
         }
