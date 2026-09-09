@@ -1545,6 +1545,38 @@ bool runEngineSweep(){
             }
     }
 
+    // Batch 21 inputs.
+    QVector<double> karyoChrom,karyoFrom,karyoTo,karyoStain;
+    {
+        const double length[6]={100,80,80,60,40,20};
+        const double centromere[6]={0.30,0.50,0.10,0.50,0.50,0.50};
+        for(int c=0;c<6;++c){
+            const double step=length[c]/10.0;
+            const double at=centromere[c]*length[c];
+            for(int i=0;i<10;++i){
+                const double lo=step*double(i),hi=step*double(i+1);
+                karyoChrom.append(double(c+1));
+                karyoFrom.append(lo); karyoTo.append(hi);
+                // The band holding the centromere is marked with a negative
+                // stain; the rest alternate between clear and full black so the
+                // grey ramp is exercised at both ends.
+                karyoStain.append((at>=lo&&at<hi)?-1.0
+                                  :((i%2==0)?100.0:8.0));
+            }
+        }
+    }
+    QVector<double> circosFromSeg,circosFromPos,circosToSeg,circosToPos,circosWeight;
+    {
+        const double table[8][5]={{1,0,3,0,3},{1,400,3,200,3},{1,200,2,100,1},
+                                  {2,50,4,90,1},{2,150,4,10,1},{3,100,1,100,1},
+                                  {4,50,1,300,1},{1,100,1,350,2}};
+        for(const auto& row:table){
+            circosFromSeg.append(row[0]); circosFromPos.append(row[1]);
+            circosToSeg.append(row[2]);   circosToPos.append(row[3]);
+            circosWeight.append(row[4]);
+        }
+    }
+
     // Voronoi sites: a scattered survey with two clusters and a sparse corner,
     // so the area shading has something to distinguish rather than a uniform
     // field that would look the same however it were computed.
@@ -2105,6 +2137,22 @@ bool runEngineSweep(){
                       s.y.append(-0.44-0.1184*qMax(0.0,double(i)-9.5));
                   }
                   s.color=QColor(0x30,0x60,0xc0); return s; }()}},
+        // Batch 21. Six chromosomes of lengths 100 down to 20, so the first
+        // must be exactly five times the height of the last; numbers 2 and 3
+        // are the same length pinched at 50% and 10%, so the constriction is
+        // visibly read from the data rather than placed at a fixed fraction.
+        {QStringLiteral("Karyotype Ideogram"),
+            {column("chromosome",karyoChrom),column("start",karyoFrom),
+             column("end",karyoTo),column("stain",karyoStain)}},
+        // Four segments of extent 400, 200, 200 and 100, and two heavy links
+        // placed start-to-start and end-to-end between the first and the third:
+        // they must attach at OPPOSITE ends of both arcs, which a plot that
+        // ignored position and attached to the segment would draw as two
+        // identical chords.
+        {QStringLiteral("Circos Plot"),
+            {column("from",circosFromSeg),column("from pos",circosFromPos),
+             column("to",circosToSeg),column("to pos",circosToPos),
+             column("weight",circosWeight)}},
         // Batch 18.
         {QStringLiteral("Ternary Contour"),
             {column("A",mixA),column("B",mixB),column("C",mixC),

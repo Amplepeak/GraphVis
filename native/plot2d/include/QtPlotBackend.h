@@ -272,6 +272,11 @@ private:
     void drawAlluvial(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Segments of different lengths around a ring, linked at positions inside
+    // them rather than at the segments themselves.
+    void drawCircos(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Chromosomes to one scale, with their banding and their centromeres.
+    void drawKaryotype(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Three components and a value over them, contoured on the Delaunay
     // triangulation of the samples themselves.
     void drawTernaryContour(QPainter* p, const QRectF& target,

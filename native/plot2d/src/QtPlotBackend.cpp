@@ -584,6 +584,9 @@ QStringList QtPlotBackend::supportedEngines() const {
         // Batch 20.
         QStringLiteral("Pourbaix Diagram"),
         QStringLiteral("Sequence Logo"),
+        // Batch 21.
+        QStringLiteral("Karyotype Ideogram"),
+        QStringLiteral("Circos Plot"),
     };
     return kEngines;
 }
@@ -2195,6 +2198,11 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     if(engine==QLatin1String("Gantt Schedule")
        ||engine==QLatin1String("Availability Timeline")
        ||engine==QLatin1String("Borehole Log")) return {3,4,true};
+    // Source segment and position, target segment and position, and a weight
+    // if one is mapped.
+    if(engine==QLatin1String("Circos Plot")) return {4,5,true};
+    // Chromosome, band start, band end, stain.
+    if(engine==QLatin1String("Karyotype Ideogram")) return {4,4,true};
     // Three components and the value measured over them.
     if(engine==QLatin1String("Ternary Contour")) return {4,4,true};
     // Open, high, low, close. The period comes from the x mapping.
@@ -5708,6 +5716,357 @@ void QtPlotBackend::drawSequenceLogo(QPainter* p,const Frame& f,const PlotSpec& 
 }
 
 // ======================================================================
+// Karyotype ideogram
+//
+// A set of chromosomes drawn to scale with their banding, which is the
+// reference picture every cytogenetic result is reported against: a band name
+// like 17q21 means nothing without the figure that says where 17q21 is.
+//
+// Not the Gantt chart it superficially resembles. A Gantt row is a bar from a
+// start to an end and that is all; a chromosome has a SHAPE - it is pinched at
+// the centromere, which divides it into a short arm and a long arm, and the arm
+// a band sits on is half of what its name says. Drawing these as bars would
+// lose the centromere, and with it the only landmark on the figure.
+//
+// Four mapped columns: chromosome, band start, band end, and stain intensity
+// from 0 to 100 - the Giemsa darkness, which is what the light and dark bands
+// are. A NEGATIVE stain marks the centromere band, following the convention
+// that a cytoband table names that band's stain differently from all the
+// others; it is the one piece of information the four numeric columns cannot
+// otherwise carry, and inferring the centromere from the band pattern would be
+// a guess dressed as a landmark.
+void QtPlotBackend::drawKaryotype(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    if(spec.series.size()<4){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs four columns: chromosome, band start, "
+                                   "band end, and stain 0-100 (negative marks the centromere)"));
+        p->restore();
+        return;
+    }
+    const QVector<double>& chrom=spec.series.at(0).y;
+    const QVector<double>& from=spec.series.at(1).y;
+    const QVector<double>& to=spec.series.at(2).y;
+    const QVector<double>& stain=spec.series.at(3).y;
+    int rows=chrom.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    struct Band { double from,to,stain; };
+    struct Chromosome { double id=0.0,length=0.0,centromere=-1.0; QVector<Band> bands; };
+    QVector<Chromosome> all;
+    QHash<double,int> index;
+    for(int i=0;i<rows;++i){
+        if(!finite(chrom[i])||!finite(from[i])||!finite(to[i])) continue;
+        const double lo=qMin(from[i],to[i]),hi=qMax(from[i],to[i]);
+        if(!(hi>lo)) continue;
+        int at=index.value(chrom[i],-1);
+        if(at<0){
+            Chromosome fresh; fresh.id=chrom[i];
+            at=all.size(); index.insert(chrom[i],at); all.append(fresh);
+        }
+        const double level=finite(stain[i])?stain[i]:0.0;
+        all[at].bands.append({lo,hi,level});
+        all[at].length=qMax(all[at].length,hi);
+        if(level<0.0) all[at].centromere=0.5*(lo+hi);
+    }
+    if(all.isEmpty()) return;
+    std::sort(all.begin(),all.end(),
+              [](const Chromosome& a,const Chromosome& b){ return a.id<b.id; });
+
+    double longest=0.0;
+    for(const Chromosome& c:all) longest=qMax(longest,c.length);
+    if(!(longest>0.0)) return;
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height()*0.6,target.top()+titleRoom+fm.height()*0.6,
+                       target.width()-fm.height()*1.2,
+                       target.height()-titleRoom-fm.height()*3.6);
+    if(field.width()<40.0||field.height()<40.0) return;
+    const double lane=field.width()/double(all.size());
+    const double bodyW=qMin(lane*0.55,26.0);
+    // Every chromosome to ONE scale, so the longest fills the field and the
+    // rest are as short as they really are. Scaling each to its own lane is the
+    // obvious thing and destroys the figure: relative length is half of what a
+    // karyotype says, and it is how the numbering was assigned in the first
+    // place.
+    const double scale=field.height()/longest;
+
+    for(int c=0;c<all.size();++c){
+        const Chromosome& chr=all.at(c);
+        const double cx=field.left()+lane*(double(c)+0.5);
+        const double top=field.top();
+        const double bottom=top+chr.length*scale;
+        const double pinchAt=(chr.centromere>=0.0)?top+chr.centromere*scale:-1.0;
+        // Half-width at a given height: full, tapering to just over a third
+        // across the constriction. The taper is a fixed fraction of the
+        // chromosome's own length so that a short chromosome is not pinched
+        // over most of its body.
+        const double reach=qMax(4.0,chr.length*scale*0.06);
+        const auto halfWidth=[&](double y){
+            if(pinchAt<0.0) return bodyW*0.5;
+            const double away=std::abs(y-pinchAt);
+            if(away>=reach) return bodyW*0.5;
+            return bodyW*0.5*(0.38+0.62*away/reach);
+        };
+
+        // The outline, walked down one side and back up the other, with the
+        // ends rounded. Built once and used both as the clip for the bands and
+        // as the stroke around them, so a band can never sit outside the body
+        // it belongs to.
+        QPainterPath outline;
+        const double cap=qMin(bodyW*0.5,(bottom-top)*0.5);
+        {
+            QVector<QPointF> right,left;
+            for(double y=top+cap;y<=bottom-cap;y+=1.0){
+                right.append(QPointF(cx+halfWidth(y),y));
+                left.append(QPointF(cx-halfWidth(y),y));
+            }
+            if(right.isEmpty()){
+                right.append(QPointF(cx+bodyW*0.5,top));
+                left.append(QPointF(cx-bodyW*0.5,top));
+            }
+            outline.moveTo(QPointF(cx,top));
+            outline.quadTo(QPointF(cx+bodyW*0.5,top),right.first());
+            for(const QPointF& pt:right) outline.lineTo(pt);
+            outline.quadTo(QPointF(cx+bodyW*0.5,bottom),QPointF(cx,bottom));
+            outline.quadTo(QPointF(cx-bodyW*0.5,bottom),left.last());
+            for(int i=left.size()-1;i>=0;--i) outline.lineTo(left[i]);
+            outline.quadTo(QPointF(cx-bodyW*0.5,top),QPointF(cx,top));
+            outline.closeSubpath();
+        }
+
+        p->save();
+        p->setClipPath(outline);
+        p->setPen(Qt::NoPen);
+        for(const Band& band:chr.bands){
+            const double y0=top+band.from*scale,y1=top+band.to*scale;
+            if(band.stain<0.0){
+                // The centromere, in the colour it is conventionally given so
+                // that the landmark is visible rather than merely implied by
+                // the constriction.
+                p->setBrush(QColor(0xc0,0x40,0x40));
+            }else{
+                const int grey=int(qBound(0.0,255.0-band.stain*2.30,255.0));
+                p->setBrush(QColor(grey,grey,grey));
+            }
+            p->drawRect(QRectF(cx-bodyW,y0,bodyW*2.0,qMax(0.6,y1-y0)));
+        }
+        p->restore();
+
+        p->save();
+        p->setBrush(Qt::NoBrush);
+        p->setPen(QPen(spec.style.foreground,0.9));
+        p->drawPath(outline);
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(cx-lane*0.5,bottom+3.0,lane,fm.height()),
+                    Qt::AlignHCenter|Qt::AlignTop,QString::number(chr.id,'g',6));
+        p->restore();
+    }
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    int withCentromere=0,bands=0;
+    for(const Chromosome& c:all){
+        bands+=c.bands.size();
+        if(c.centromere>=0.0) ++withCentromere;
+    }
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 chromosomes, %2 bands, %3 with a centromere "
+                               "given; all drawn to one scale, longest %4")
+                    .arg(all.size()).arg(bands).arg(withCentromere)
+                    .arg(longest,0,'g',6));
+    p->restore();
+}
+
+// ======================================================================
+// Circos plot
+//
+// Segments of DIFFERENT lengths around a circle, and links between positions
+// INSIDE them. That is what separates it from the chord diagram already here: a
+// chord diagram's arcs are categories whose only size is how much flows through
+// them, so a link attaches to a category and nowhere in particular. A Circos
+// segment is a coordinate space - a chromosome, a contig, a timeline - and a
+// link attaches at a POSITION within it, which is the whole reason the picture
+// is used for rearrangements and translocations.
+//
+// Five mapped columns: the source segment, the position within it, the target
+// segment, the position within that, and an optional weight. Segment lengths
+// are taken as the furthest position seen on each, because that is the only
+// honest answer available from the data - a segment is at least as long as the
+// furthest thing on it, and claiming more would be inventing a coordinate space.
+void QtPlotBackend::drawCircos(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    if(spec.series.size()<4){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs four columns: source segment, position, "
+                                   "target segment, position (and an optional weight)"));
+        p->restore();
+        return;
+    }
+    const QVector<double>& fromSeg=spec.series.at(0).y;
+    const QVector<double>& fromPos=spec.series.at(1).y;
+    const QVector<double>& toSeg=spec.series.at(2).y;
+    const QVector<double>& toPos=spec.series.at(3).y;
+    const bool weighted=spec.series.size()>=5;
+    const QVector<double> weight=weighted?spec.series.at(4).y:QVector<double>();
+    int rows=fromSeg.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    QVector<double> ids;
+    QVector<double> span;
+    QHash<double,int> index;
+    const auto seat=[&](double id,double pos){
+        int at=index.value(id,-1);
+        if(at<0){ at=ids.size(); ids.append(id); span.append(0.0); index.insert(id,at); }
+        span[at]=qMax(span[at],pos);
+        return at;
+    };
+    struct Link { int a,b; double pa,pb,w; };
+    QVector<Link> links;
+    for(int i=0;i<rows;++i){
+        if(!finite(fromSeg[i])||!finite(toSeg[i])) continue;
+        if(!finite(fromPos[i])||!finite(toPos[i])) continue;
+        double w=1.0;
+        if(weighted&&i<weight.size()){
+            if(!finite(weight[i])||weight[i]<=0.0) continue;
+            w=weight[i];
+        }
+        const int a=seat(fromSeg[i],std::abs(fromPos[i]));
+        const int b=seat(toSeg[i],std::abs(toPos[i]));
+        links.append({a,b,std::abs(fromPos[i]),std::abs(toPos[i]),w});
+    }
+    if(ids.isEmpty()||links.isEmpty()) return;
+
+    // Segments in identifier order and sized by their own extent, with a gap
+    // between them so the ring reads as separate coordinate spaces rather than
+    // as one continuous one.
+    QVector<int> order(ids.size());
+    for(int i=0;i<order.size();++i) order[i]=i;
+    std::sort(order.begin(),order.end(),
+              [&ids](int a,int b){ return ids[a]<ids[b]; });
+    double totalSpan=0.0;
+    for(double s:span) totalSpan+=qMax(s,1e-9);
+    if(!(totalSpan>0.0)) return;
+
+    const double gapDegrees=qMin(3.0,120.0/double(ids.size()));
+    const double usable=360.0-gapDegrees*double(ids.size());
+    QVector<double> startAngle(ids.size(),0.0),sweep(ids.size(),0.0);
+    {
+        double at=90.0;                              // twelve o'clock, going clockwise
+        for(int i:order){
+            sweep[i]=usable*qMax(span[i],1e-9)/totalSpan;
+            startAngle[i]=at;
+            at-=sweep[i]+gapDegrees;
+        }
+    }
+    const auto angleOf=[&](int segment,double position){
+        const double f=(span[segment]>0.0)
+            ?qBound(0.0,position/span[segment],1.0):0.5;
+        return startAngle[segment]-sweep[segment]*f;
+    };
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left(),target.top()+titleRoom,target.width(),
+                       target.height()-titleRoom-fm.height()*1.6);
+    const QPointF centre=field.center();
+    const double outer=qMin(field.width(),field.height())*0.40;
+    const double ringW=qMax(6.0,outer*0.07);
+    const double inner=outer-ringW;
+    const auto onRing=[&](double degrees,double radius){
+        const double a=degrees*M_PI/180.0;
+        return QPointF(centre.x()+radius*std::cos(a),centre.y()-radius*std::sin(a));
+    };
+
+    // ---- The links first, so the ring is never hidden by them. Quadratic
+    // through the centre: the deeper a chord dips the further apart its ends
+    // are, which is the reading a straight chord cannot give because two very
+    // different pairs can be the same straight line's length apart.
+    double heaviest=0.0;
+    for(const Link& link:links) heaviest=qMax(heaviest,link.w);
+    p->save();
+    p->setBrush(Qt::NoBrush);
+    for(const Link& link:links){
+        const QPointF a=onRing(angleOf(link.a,link.pa),inner);
+        const QPointF b=onRing(angleOf(link.b,link.pb),inner);
+        // The control point is pulled toward the middle by how far apart the
+        // two ends are, so a link within one segment stays near the rim and one
+        // across the circle passes close to the centre.
+        double apart=std::abs(angleOf(link.a,link.pa)-angleOf(link.b,link.pb));
+        while(apart>360.0) apart-=360.0;
+        if(apart>180.0) apart=360.0-apart;
+        const double pull=1.0-qBound(0.0,apart/180.0,1.0);
+        QPainterPath chord;
+        chord.moveTo(a);
+        chord.quadTo(QPointF(centre.x()+(0.5*(a.x()+b.x())-centre.x())*pull,
+                             centre.y()+(0.5*(a.y()+b.y())-centre.y())*pull),b);
+        QColor colour=QColor::fromHsvF(std::fmod(0.06+0.618034*double(link.a),1.0),
+                                       0.6,0.8);
+        colour.setAlphaF(0.55);
+        QPen pen(colour);
+        pen.setWidthF(heaviest>0.0?qBound(0.7,0.7+2.3*link.w/heaviest,3.0):1.0);
+        pen.setCapStyle(Qt::RoundCap);
+        p->setPen(pen);
+        p->drawPath(chord);
+    }
+    p->restore();
+
+    // ---- The ring, with a tick every tenth of each segment so a position can
+    // actually be read off it. Without those the segments are just coloured
+    // arcs and the difference from a chord diagram is invisible.
+    p->save();
+    for(int i=0;i<ids.size();++i){
+        QPainterPath arc;
+        const QRectF outerBox(centre.x()-outer,centre.y()-outer,outer*2,outer*2);
+        const QRectF innerBox(centre.x()-inner,centre.y()-inner,inner*2,inner*2);
+        arc.arcMoveTo(outerBox,startAngle[i]);
+        arc.arcTo(outerBox,startAngle[i],-sweep[i]);
+        arc.arcTo(innerBox,startAngle[i]-sweep[i],sweep[i]);
+        arc.closeSubpath();
+        p->setPen(QPen(spec.style.background,1.0));
+        p->setBrush(QColor::fromHsvF(std::fmod(0.06+0.618034*double(i),1.0),0.42,0.8));
+        p->drawPath(arc);
+
+        p->setPen(QPen(spec.style.background,0.8));
+        for(int tick=1;tick<10;++tick){
+            const double a=startAngle[i]-sweep[i]*double(tick)/10.0;
+            p->drawLine(onRing(a,inner),onRing(a,inner+ringW*0.45));
+        }
+        p->setPen(spec.style.foreground);
+        const double mid=startAngle[i]-sweep[i]*0.5;
+        const QPointF where=onRing(mid,outer+fm.height()*0.8);
+        p->drawText(QRectF(where.x()-40.0,where.y()-fm.height()*0.5,80.0,fm.height()),
+                    Qt::AlignCenter,QString::number(ids[i],'g',6));
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    double carried=0.0;
+    for(const Link& link:links) carried+=link.w;
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 segments sized by their own extent, %2 links "
+                               "totalling %3; ticks every tenth of a segment")
+                    .arg(ids.size()).arg(links.size()).arg(carried,0,'g',5));
+    p->restore();
+}
+
+// ======================================================================
 // Ternary contour
 //
 // Three components summing to a whole, and a fourth quantity measured over
@@ -7246,6 +7605,12 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Alluvial Diagram")
         // Three radial axes, so a rectangular frame would measure nothing.
         && engine!=QLatin1String("Hive Plot")
+        // Chromosomes side by side: the horizontal direction is an ordering
+        // and the vertical one is a coordinate that restarts on every body.
+        && engine!=QLatin1String("Karyotype Ideogram")
+        // A ring of coordinate spaces, so nothing on it is a Cartesian
+        // position.
+        && engine!=QLatin1String("Circos Plot")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -26081,6 +26446,16 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Circos Plot")){
+            drawCircos(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Karyotype Ideogram")){
+            drawKaryotype(painter,target,spec);
             painter->restore();
             return;
         }

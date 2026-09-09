@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2108,
- "engine_count": 426,
+ "entry_count": 2110,
+ "engine_count": 428,
  "categories": [
   {
    "name": "Line Plots",
@@ -9456,6 +9456,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "base"
+    },
+    {
+     "category": "Flow, Network & Composition",
+     "name": "circos",
+     "engine": "Circos Plot",
+     "scale": null,
+     "advanced": false,
+     "description": "Segments of different lengths around a ring with links attached at positions INSIDE them, not merely to the segments",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "base"
     }
    ],
    "pack": "base"
@@ -18813,6 +18824,17 @@
      "preview": "",
      "thumbnail": "",
      "pack": "life"
+    },
+    {
+     "category": "Clinical & Meta-analysis",
+     "name": "karyotype",
+     "engine": "Karyotype Ideogram",
+     "scale": null,
+     "advanced": false,
+     "description": "Chromosomes drawn to one scale with their Giemsa banding and their centromeres, which is the reference figure a band name is read against",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "life"
     }
    ],
    "pack": "life"
@@ -23475,7 +23497,7 @@
    "id": "base",
    "name": "Core",
    "description": "The ordinary chart types, statistics, distributions and model diagnostics. Always on.",
-   "entryCount": 808
+   "entryCount": 809
   },
   {
    "id": "engineering",
@@ -23493,7 +23515,7 @@
    "id": "life",
    "name": "Life Sciences & Medicine",
    "description": "Clinical trials and meta-analysis, bioprocess and electrochemistry, spectroscopy and chromatography.",
-   "entryCount": 322
+   "entryCount": 323
   },
   {
    "id": "physics",

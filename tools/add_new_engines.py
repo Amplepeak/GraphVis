@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 20.
+"""Catalogue entries for the engine expansion, batches 1 to 21.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -513,6 +513,12 @@ NEW = [
      "Potential against pH with the stability field of water itself drawn from the Nernst equation, so a species outside it is visibly outside it"),
     ("Data Distribution Plots", "sequencelogo", "Sequence Logo",
      "One stack of letters per position, the stack height the information content in bits - so a conserved position is tall and a random one is not there"),
+
+    # ---- batch 21
+    ("Clinical & Meta-analysis", "karyotype", "Karyotype Ideogram",
+     "Chromosomes drawn to one scale with their Giemsa banding and their centromeres, which is the reference figure a band name is read against"),
+    ("Flow, Network & Composition", "circos", "Circos Plot",
+     "Segments of different lengths around a ring with links attached at positions INSIDE them, not merely to the segments"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -552,5 +558,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-20: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-21: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))
