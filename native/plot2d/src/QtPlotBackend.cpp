@@ -593,6 +593,7 @@ QStringList QtPlotBackend::supportedEngines() const {
         // Batch 24. The UK system first, because that is the one in use here.
         QStringLiteral("Soil Texture Triangle (UK)"),
         QStringLiteral("Soil Texture Triangle (USDA)"),
+        QStringLiteral("QAPF Diagram (Plutonic)"),
     };
     return kEngines;
 }
@@ -2246,6 +2247,8 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // Source segment and position, target segment and position, and a weight
     // if one is mapped.
     if(engine==QLatin1String("Circos Plot")) return {4,5,true};
+    // Modal per cent quartz, alkali feldspar, plagioclase and feldspathoid.
+    if(engine==QLatin1String("QAPF Diagram (Plutonic)")) return {4,4,true};
     // Per cent sand, silt and clay, in the order an analysis reports them.
     if(engine==QLatin1String("Soil Texture Triangle (UK)")
        ||engine==QLatin1String("Soil Texture Triangle (USDA)")) return {3,3,true};
@@ -6874,6 +6877,247 @@ void QtPlotBackend::drawSoilTexture(QPainter* p,const QRectF& target,
 }
 
 // ======================================================================
+// QAPF diagram (Streckeisen)
+//
+// The double triangle that names an igneous rock from its modal mineralogy.
+// Quartz at the top apex, feldspathoid at the bottom, alkali feldspar on the
+// left and plagioclase on the right - two triangles sharing the A-P edge rather
+// than a square, because quartz and feldspathoids are mutually exclusive: a
+// rock silica-rich enough to crystallise free quartz cannot also crystallise a
+// silica-undersaturated mineral. A composition therefore lives in one triangle
+// or the other, never in both, and a row claiming both is a measurement error
+// rather than a rock.
+//
+// Like the soil triangles, this is a classification diagram: the picture is a
+// fixed map of named regions and the sample is a dot on it, so the whole value
+// is in the names being on the right regions. These are not drawn from memory.
+// They are read from Figures 11 and 12 of the BGS Rock Classification Scheme,
+// Volume 1 (Gillespie and Styles, BGS Research Report RR 99-06), which is the
+// IUGS scheme after Streckeisen (1976), and every name was then checked against
+// that report's own appendix - "List of approved names for igneous rocks",
+// which carries a QAPF field number beside each name. Two independent places in
+// one document agreeing is the closest thing to a second source available here.
+//
+// Two boundary questions that secondary sources kept contradicting each other
+// about, settled from the figure:
+//
+//   - the Q 20-60 band divides at 35 and 65, so "granite" is one name
+//     subdivided into syenogranite and monzogranite, not a single field;
+//   - the F 10-60 band divides at 10, 50 and 90 - FOUR fields - where every
+//     other band divides at 10, 35, 65 and 90 into five.
+//
+// Four mapped columns: Q, A, P, F as modal percentages. Rows are normalised;
+// mafic minerals are excluded before plotting, which is the recalculation the
+// scheme requires and not something this engine can do for you.
+namespace {
+
+// A field: the band it sits in, the plagioclase-ratio range across it, and its
+// name. `foid` selects the lower triangle, where `lo`/`hi` are F rather than Q.
+struct QapfField { bool foid; double lo,hi,p0,p1; const char* number; const char* name; };
+
+const QapfField kQapfPlutonic[]={
+    // Q, upper triangle.
+    {false, 90,100,   0,100, "1a", "quartzolite"},
+    {false, 60, 90,   0,100, "1b", "quartz-rich granitoid"},
+    {false, 20, 60,   0, 10, "2", "alkali feldspar granite"},
+    {false, 20, 60,  10, 35, "3a", "syenogranite"},
+    {false, 20, 60,  35, 65, "3b", "monzogranite"},
+    {false, 20, 60,  65, 90, "4", "granodiorite"},
+    {false, 20, 60,  90,100, "5", "tonalite"},
+    {false,  5, 20,   0, 10, "6*", "quartz alkali feldspar syenite"},
+    {false,  5, 20,  10, 35, "7*", "quartz syenite"},
+    {false,  5, 20,  35, 65, "8*", "quartz monzonite"},
+    {false,  5, 20,  65, 90, "9*", "quartz monzodiorite / quartz monzogabbro"},
+    {false,  5, 20,  90,100, "10*", "quartz diorite / quartz gabbro / quartz anorthosite"},
+    {false,  0,  5,   0, 10, "6", "alkali feldspar syenite"},
+    {false,  0,  5,  10, 35, "7", "syenite"},
+    {false,  0,  5,  35, 65, "8", "monzonite"},
+    {false,  0,  5,  65, 90, "9", "monzodiorite / monzogabbro"},
+    {false,  0,  5,  90,100, "10", "diorite / gabbro / anorthosite"},
+    // F, lower triangle.
+    {true,   0, 10,   0, 10, "6'", "foid-bearing alkali feldspar syenite"},
+    {true,   0, 10,  10, 35, "7'", "foid-bearing syenite"},
+    {true,   0, 10,  35, 65, "8'", "foid-bearing monzonite"},
+    {true,   0, 10,  65, 90, "9'", "foid-bearing monzodiorite / monzogabbro"},
+    {true,   0, 10,  90,100, "10'", "foid-bearing diorite / gabbro / anorthosite"},
+    // Four fields across, not five, and divided at 50 rather than at 35 and 65.
+    {true,  10, 60,   0, 10, "11", "foid syenite"},
+    {true,  10, 60,  10, 50, "12", "foid monzosyenite"},
+    {true,  10, 60,  50, 90, "13", "foid monzodiorite / foid monzogabbro"},
+    {true,  10, 60,  90,100, "14", "foid diorite / foid gabbro"},
+    {true,  60,100,   0,100, "15", "foidolite"}};
+
+} // namespace
+
+void QtPlotBackend::drawQapf(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,qMax(6.0,spec.style.tickSize-0.5));
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    const int fieldCount=int(sizeof(kQapfPlutonic)/sizeof(kQapfPlutonic[0]));
+    const double height=std::sqrt(3.0)/2.0;
+    const double margin=fm.height()*2.2;
+    const double usableW=qMax(20.0,target.width()-2.0*margin);
+    const double usableH=qMax(20.0,target.height()-2.0*margin
+                              -(spec.title.isEmpty()?0.0:fm.height()*2.0));
+    // The whole construction spans one unit across and two triangle heights up.
+    const double scale=qMin(usableW,usableH/(2.0*height));
+    const double originX=target.center().x()-scale*0.5;
+    const double originY=target.center().y()
+                        +(spec.title.isEmpty()?0.0:fm.height());
+    // A is the origin of the construction and P is one unit to its right; the
+    // apex is up for quartz and down for feldspathoid.
+    const auto at=[&](double apex,double plagRatio,bool foid){
+        const double base=(100.0-apex)/100.0;         // what A and P share
+        const double x=base*(plagRatio/100.0)+apex/200.0;
+        const double y=(apex/100.0)*height*(foid?-1.0:1.0);
+        return QPointF(originX+x*scale,originY-y*scale);
+    };
+
+    // ---- The fields.
+    p->save();
+    for(int i=0;i<fieldCount;++i){
+        const QapfField& f=kQapfPlutonic[i];
+        QPolygonF shape;
+        shape<<at(f.lo,f.p0,f.foid)<<at(f.lo,f.p1,f.foid)
+             <<at(f.hi,f.p1,f.foid)<<at(f.hi,f.p0,f.foid);
+        QColor fill=QColor::fromHsvF(std::fmod(0.05+0.618034*double(i),1.0),0.13,0.99);
+        p->setBrush(fill);
+        p->setPen(QPen(spec.style.gridColor,0.7));
+        p->drawPolygon(shape);
+        // The FIELD NUMBER, not the name. Several of these names run to four
+        // words and the fields they belong to are a few millimetres across, so
+        // a name in each one would be a smear; the numbers are how the scheme
+        // itself refers to them - "field 10" is what a petrologist says - and
+        // the readout below names whatever was actually plotted.
+        // Above the field's centre rather than on it, so a rock plotting near
+        // the middle of its field does not sit on the number naming it.
+        const QPointF middle=at(0.5*(f.lo+f.hi),0.5*(f.p0+f.p1),f.foid)
+                            -QPointF(0.0,fm.height()*0.75);
+        QColor ink=spec.style.foreground; ink.setAlphaF(0.55);
+        p->setPen(ink);
+        p->drawText(QRectF(middle.x()-30.0,middle.y()-fm.height()*0.5,60.0,fm.height()),
+                    Qt::AlignCenter,QString::fromLatin1(f.number));
+    }
+    // The two triangles' own outlines over the field boundaries, so the shape of
+    // the construction reads before its subdivisions do.
+    p->setBrush(Qt::NoBrush);
+    p->setPen(QPen(spec.style.foreground,1.2));
+    p->drawPolyline(QPolygonF()<<at(0,0,false)<<at(100,0,false)<<at(0,100,false)
+                               <<at(0,0,false));
+    p->drawPolyline(QPolygonF()<<at(0,0,true)<<at(100,0,true)<<at(0,100,true)
+                               <<at(0,0,true));
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(at(100,0,false).x()-60.0,at(100,0,false).y()-fm.height()*1.6,
+                       120.0,fm.height()),Qt::AlignCenter,QStringLiteral("Q"));
+    p->drawText(QRectF(at(100,0,true).x()-60.0,at(100,0,true).y()+fm.height()*0.5,
+                       120.0,fm.height()),Qt::AlignCenter,QStringLiteral("F"));
+    p->drawText(QRectF(at(0,0,false).x()-64.0,at(0,0,false).y()-fm.height()*0.5,
+                       60.0,fm.height()),Qt::AlignRight|Qt::AlignVCenter,
+                QStringLiteral("A"));
+    p->drawText(QRectF(at(0,100,false).x()+4.0,at(0,100,false).y()-fm.height()*0.5,
+                       60.0,fm.height()),Qt::AlignLeft|Qt::AlignVCenter,
+                QStringLiteral("P"));
+    p->restore();
+
+    if(spec.series.size()<4){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                           target.width(),fm.height()),
+                    Qt::AlignHCenter|Qt::AlignVCenter,
+                    QStringLiteral("needs four columns: modal per cent Q, A, P and F"));
+        p->restore();
+        return;
+    }
+
+    // ---- The samples.
+    const QVector<double>& qCol=spec.series.at(0).y;
+    const QVector<double>& aCol=spec.series.at(1).y;
+    const QVector<double>& pCol=spec.series.at(2).y;
+    const QVector<double>& fCol=spec.series.at(3).y;
+    int rows=qCol.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    QVector<int> tally(fieldCount,0);
+    int drawn=0,both=0,unnamed=0;
+    p->save();
+    for(int i=0;i<rows;++i){
+        if(!finite(qCol[i])||!finite(aCol[i])||!finite(pCol[i])||!finite(fCol[i])) continue;
+        const double q=std::abs(qCol[i]),a=std::abs(aCol[i]);
+        const double pl=std::abs(pCol[i]),fo=std::abs(fCol[i]);
+        // Quartz and feldspathoid together is not a rock this diagram can name,
+        // and silently dropping one of them would name it anyway - wrongly.
+        if(q>0.0&&fo>0.0){ ++both; continue; }
+        const double apex=(fo>0.0)?fo:q;
+        const bool foid=(fo>0.0);
+        const double total=apex+a+pl;
+        if(!(total>0.0)) continue;
+        const double apexPct=100.0*apex/total;
+        const double feldspar=a+pl;
+        const double ratio=(feldspar>0.0)?100.0*pl/feldspar:50.0;
+
+        int found=-1;
+        for(int k=0;k<fieldCount&&found<0;++k){
+            const QapfField& f=kQapfPlutonic[k];
+            if(f.foid!=foid) continue;
+            if(apexPct<f.lo||apexPct>f.hi) continue;
+            if(ratio<f.p0||ratio>f.p1) continue;
+            found=k;
+        }
+        if(found>=0) ++tally[found]; else ++unnamed;
+        const QColor colour=spec.series.at(0).color;
+        p->setPen(QPen(colour,1.0));
+        p->setBrush(QColor(colour.red(),colour.green(),colour.blue(),180));
+        const double size=qMax(2.4,spec.style.lineWidth*2.0);
+        p->drawEllipse(at(apexPct,ratio,foid),size,size);
+        ++drawn;
+    }
+    p->restore();
+
+    // ---- What they were called. The names are the answer; the dots are only
+    // where the answer came from.
+    QStringList named;
+    int occupied=0;
+    for(int k=0;k<fieldCount;++k){
+        if(tally[k]<=0) continue;
+        ++occupied;
+        named.append(QStringLiteral("%1 %2")
+                         .arg(QString::fromLatin1(kQapfPlutonic[k].name))
+                         .arg(tally[k]));
+    }
+    // The names when there are few enough to read, the count of fields when
+    // there are not - and the trouble ALONGSIDE either, never instead of it.
+    // The first version replaced the names with the warning, so a set with one
+    // bad row reported nothing about the good ones.
+    QString summary=(occupied>0&&occupied<=6)
+        ?QStringLiteral("%1 rocks: %2").arg(drawn).arg(named.join(QStringLiteral(", ")))
+        :QStringLiteral("%1 rocks across %2 fields").arg(drawn).arg(occupied);
+    QStringList trouble;
+    if(both>0)
+        trouble.append(QStringLiteral("%1 rows have BOTH quartz and feldspathoid, "
+                                      "which no rock has").arg(both));
+    if(unnamed>0)
+        trouble.append(QStringLiteral("%1 in no field").arg(unnamed));
+    if(!trouble.isEmpty())
+        summary+=QStringLiteral("; ")+trouble.join(QStringLiteral("; "));
+    p->save();
+    p->setPen((both>0||unnamed>0)?spec.style.danger:spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*2.3,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,summary);
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("plutonic; IUGS after Streckeisen (1976), fields as "
+                               "BGS RR 99-06 figures 11 and 12; M excluded, QAPF "
+                               "normalised to 100"));
+    p->restore();
+}
+
+// ======================================================================
 // Ternary contour
 //
 // Three components summing to a whole, and a fourth quantity measured over
@@ -8427,6 +8671,8 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // coordinate.
         && engine!=QLatin1String("Soil Texture Triangle (UK)")
         && engine!=QLatin1String("Soil Texture Triangle (USDA)")
+        // A double triangle of named fields, like the Piper's construction.
+        && engine!=QLatin1String("QAPF Diagram (Plutonic)")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -27294,6 +27540,11 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("QAPF Diagram (Plutonic)")){
+            drawQapf(painter,target,spec);
             painter->restore();
             return;
         }

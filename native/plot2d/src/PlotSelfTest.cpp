@@ -1589,6 +1589,37 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 25. One rock in the middle of every QAPF field. The fields are
+    // rectangles in (apex per cent, plagioclase ratio), so a field's centre is
+    // known without any of the engine's machinery - and twenty-seven rocks must
+    // come back in twenty-seven different fields with none unnamed. Two further
+    // rows carry both quartz and feldspathoid, which no rock does, and must be
+    // refused rather than plotted.
+    QVector<double> qapfQ,qapfA,qapfP,qapfF;
+    {
+        const double table[27][5]={ // foid, lo, hi, p0, p1
+            {0,90,100,0,100},{0,60,90,0,100},{0,20,60,0,10},{0,20,60,10,35},
+            {0,20,60,35,65},{0,20,60,65,90},{0,20,60,90,100},{0,5,20,0,10},
+            {0,5,20,10,35},{0,5,20,35,65},{0,5,20,65,90},{0,5,20,90,100},
+            {0,0,5,0,10},{0,0,5,10,35},{0,0,5,35,65},{0,0,5,65,90},{0,0,5,90,100},
+            {1,0,10,0,10},{1,0,10,10,35},{1,0,10,35,65},{1,0,10,65,90},
+            {1,0,10,90,100},{1,10,60,0,10},{1,10,60,10,50},{1,10,60,50,90},
+            {1,10,60,90,100},{1,60,100,0,100}};
+        for(const auto& row:table){
+            const bool foid=row[0]>0.5;
+            const double apex=0.5*(row[1]+row[2]);
+            const double ratio=0.5*(row[3]+row[4]);
+            const double feldspar=100.0-apex;
+            const double plag=feldspar*ratio/100.0;
+            qapfQ.append(foid?0.0:apex);
+            qapfF.append(foid?apex:0.0);
+            qapfP.append(plag);
+            qapfA.append(feldspar-plag);
+        }
+        qapfQ.append(20); qapfF.append(20); qapfA.append(30); qapfP.append(30);
+        qapfQ.append(5);  qapfF.append(5);  qapfA.append(45); qapfP.append(45);
+    }
+
     // Batch 21 inputs.
     QVector<double> karyoChrom,karyoFrom,karyoTo,karyoStain;
     {
@@ -2197,6 +2228,8 @@ bool runEngineSweep(){
             {column("from",circosFromSeg),column("from pos",circosFromPos),
              column("to",circosToSeg),column("to pos",circosToPos),
              column("weight",circosWeight)}},
+        {QStringLiteral("QAPF Diagram (Plutonic)"),
+            {column("Q",qapfQ),column("A",qapfA),column("P",qapfP),column("F",qapfF)}},
         {QStringLiteral("Soil Texture Triangle (UK)"),
             {column("sand",soilSand),column("silt",soilSilt),column("clay",soilClay)}},
         {QStringLiteral("Soil Texture Triangle (USDA)"),

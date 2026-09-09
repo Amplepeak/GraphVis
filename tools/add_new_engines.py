@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 24.
+"""Catalogue entries for the engine expansion, batches 1 to 25.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -535,6 +535,10 @@ NEW = [
      "Sand, silt and clay against the Soil Survey of England and Wales texture classes, with each sample named"),
     ("Spatial & Specialized", "soiltextureusda", "Soil Texture Triangle (USDA)",
      "The same three columns against the USDA classes, whose regions are computed from the NRCS Soil Survey Manual definitions rather than traced off a drawing"),
+
+    # ---- batch 25
+    ("Earth & Ocean Science", "qapf", "QAPF Diagram (Plutonic)",
+     "The IUGS double triangle: quartz, alkali feldspar, plagioclase and feldspathoid against the named igneous rock fields, after Streckeisen"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -574,5 +578,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-24: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-25: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))
