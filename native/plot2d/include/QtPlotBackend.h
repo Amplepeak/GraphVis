@@ -272,6 +272,8 @@ private:
     void drawAlluvial(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Three parallel scales, with a check that the middle one is single-valued.
+    void drawNomogram(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Segments of different lengths around a ring, linked at positions inside
     // them rather than at the segments themselves.
     void drawCircos(QPainter* p, const QRectF& target, const PlotSpec& spec) const;

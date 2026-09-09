@@ -587,6 +587,7 @@ QStringList QtPlotBackend::supportedEngines() const {
         // Batch 21.
         QStringLiteral("Karyotype Ideogram"),
         QStringLiteral("Circos Plot"),
+        QStringLiteral("Alignment Nomogram"),
     };
     return kEngines;
 }
@@ -2180,7 +2181,9 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Icicle Plot"),
         QStringLiteral("Flame Graph"),
         // The same three, with the value read as a branch length.
-        QStringLiteral("Cladogram")};
+        QStringLiteral("Cladogram"),
+        // The two scales read from and the one read off.
+        QStringLiteral("Alignment Nomogram")};
     if(kThree.contains(engine)) return {3,3,true};
 
     // The Piper's six, in milliequivalents - drawn as one shape per water by
@@ -6067,6 +6070,190 @@ void QtPlotBackend::drawCircos(QPainter* p,const QRectF& target,const PlotSpec& 
 }
 
 // ======================================================================
+// Alignment nomogram
+//
+// Three parallel scales, and a straight line laid across them reads off the
+// third value from the other two. It is the calculator that needs no power, and
+// it is still used where one is not wanted: field forms, cockpit cards,
+// clinical dosing charts, anything laminated.
+//
+// The construction is the classical one. The outer scales carry u and v at
+// heights u and v; the middle scale sits halfway between them, so a line from
+// u on the left to v on the right crosses it at (u + v) / 2. That means an
+// alignment nomogram of this shape represents exactly the relations
+//
+//     h(w) = u + v
+//
+// and no others. A product becomes a sum under logarithms, so a multiplicative
+// relation is drawn by mapping the columns through log first - which is the
+// user's choice to make and is stated on the figure rather than done silently.
+//
+// WHAT THIS ENGINE WILL NOT DO is invent the scale functions. Given three
+// columns it cannot know whether the relation is additive, multiplicative or
+// neither, and a nomogram built on the wrong assumption is not a wrong graph -
+// it is a working calculator that returns wrong answers, which is worse than
+// anything else in this catalogue. So it builds the figure the data supports
+// and then CHECKS it: the middle scale is only single-valued if w is monotone
+// in (u + v), and the largest violation of that is measured and printed. Zero
+// means the nomogram is valid; anything else is the amount by which reading it
+// would lie.
+//
+// Three mapped columns: u, v, and the w they determine.
+void QtPlotBackend::drawNomogram(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    if(spec.series.size()<3){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignCenter,
+                    QStringLiteral("needs three columns: the two scales read from "
+                                   "and the one read off"));
+        p->restore();
+        return;
+    }
+    const QVector<double>& cu=spec.series.at(0).y;
+    const QVector<double>& cv=spec.series.at(1).y;
+    const QVector<double>& cw=spec.series.at(2).y;
+    int rows=cu.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    struct Row { double u,v,w,middle; };
+    QVector<Row> readings;
+    for(int i=0;i<rows;++i){
+        if(!finite(cu[i])||!finite(cv[i])||!finite(cw[i])) continue;
+        readings.append({cu[i],cv[i],cw[i],0.5*(cu[i]+cv[i])});
+    }
+    if(readings.size()<2) return;
+
+    Bounds uRange=boundsOf(cu),vRange=boundsOf(cv),wRange=boundsOf(cw);
+    double midLo=readings.first().middle,midHi=midLo;
+    for(const Row& row:readings){
+        midLo=qMin(midLo,row.middle); midHi=qMax(midHi,row.middle);
+    }
+    // The three scales share ONE vertical measure, because the isopleth is a
+    // straight line across all three and a line cannot be straight through
+    // three axes drawn to different scales. So the frame spans everything any
+    // of them needs.
+    const double lo=qMin(uRange.lo,qMin(vRange.lo,midLo));
+    const double hi=qMax(uRange.hi,qMax(vRange.hi,midHi));
+    if(!(hi>lo)) return;
+
+    const double titleRoom=spec.title.isEmpty()?0.0:fm.height()*2.0;
+    const QRectF field(target.left()+fm.height()*3.2,target.top()+titleRoom+fm.height()*1.2,
+                       target.width()-fm.height()*6.4,
+                       target.height()-titleRoom-fm.height()*3.8);
+    if(field.width()<60.0||field.height()<60.0) return;
+    const auto at=[&](double which,double value){
+        return QPointF(field.left()+field.width()*which,
+                       field.bottom()-(value-lo)/(hi-lo)*field.height());
+    };
+
+    // ---- The isopleths, one per supplied row, behind the scales. They are the
+    // evidence: every one of them is a straight line by construction, so if the
+    // marks they leave on the middle scale do not form a scale, the relation is
+    // not of this shape and the picture says so by being a mess.
+    p->save();
+    QColor thread=spec.series.at(2).color;
+    thread.setAlphaF(0.35);
+    QPen pen(thread); pen.setWidthF(0.7);
+    p->setPen(pen);
+    for(const Row& row:readings)
+        p->drawLine(at(0.0,row.u),at(1.0,row.v));
+    p->restore();
+
+    // ---- The three scales.
+    p->save();
+    p->setPen(QPen(spec.style.foreground,1.1));
+    for(double which:{0.0,0.5,1.0})
+        p->drawLine(at(which,lo),at(which,hi));
+
+    const auto scaleOf=[&](double which,const Bounds& range,const QString& name,
+                           bool labelLeft){
+        const double step=niceStep((range.hi-range.lo)/6.0);
+        if(!(step>0.0)) return;
+        for(double v=std::ceil(range.lo/step)*step;v<=range.hi+step*0.01;v+=step){
+            const QPointF here=at(which,v);
+            p->drawLine(here+QPointF(-4.0,0.0),here+QPointF(4.0,0.0));
+            p->drawText(QRectF(labelLeft?here.x()-84.0:here.x()+6.0,
+                               here.y()-fm.height()*0.5,78.0,fm.height()),
+                        (labelLeft?Qt::AlignRight:Qt::AlignLeft)|Qt::AlignVCenter,
+                        QString::number(v,'g',4));
+        }
+        p->drawText(QRectF(at(which,hi).x()-70.0,field.top()-fm.height()*1.3,
+                           140.0,fm.height()),
+                    Qt::AlignCenter,name);
+    };
+    scaleOf(0.0,uRange,spec.series.at(0).label.isEmpty()
+                ?QStringLiteral("u"):spec.series.at(0).label,true);
+    scaleOf(1.0,vRange,spec.series.at(1).label.isEmpty()
+                ?QStringLiteral("v"):spec.series.at(1).label,false);
+
+    // The middle scale is NOT a ruler. Its marks are where the supplied rows
+    // put them, labelled with the w that row had - because the whole point is
+    // that the spacing of this scale is whatever the relation makes it, and
+    // drawing it as evenly spaced numbers would be drawing the answer the
+    // engine wishes were true.
+    QVector<Row> sorted=readings;
+    std::sort(sorted.begin(),sorted.end(),
+              [](const Row& a,const Row& b){ return a.middle<b.middle; });
+    double lastLabelY=-1e9;
+    p->setPen(spec.style.foreground);
+    for(const Row& row:sorted){
+        const QPointF here=at(0.5,row.middle);
+        p->drawLine(here+QPointF(-5.0,0.0),here+QPointF(5.0,0.0));
+        if(std::abs(here.y()-lastLabelY)<fm.height()*1.05) continue;
+        lastLabelY=here.y();
+        const QRectF chip(here.x()+7.0,here.y()-fm.height()*0.5,78.0,fm.height());
+        p->fillRect(chip,spec.style.background);
+        p->drawText(chip,Qt::AlignLeft|Qt::AlignVCenter,QString::number(row.w,'g',4));
+    }
+    p->drawText(QRectF(at(0.5,hi).x()-70.0,field.top()-fm.height()*1.3,140.0,fm.height()),
+                Qt::AlignCenter,spec.series.at(2).label.isEmpty()
+                    ?QStringLiteral("w"):spec.series.at(2).label);
+    p->restore();
+
+    // ---- The check. Sorted by where they land on the middle scale, the w
+    // values must never go backwards; the largest step backwards is how badly a
+    // reading of this nomogram could be wrong, in the units of w.
+    double worstBackstep=0.0,runningMax=sorted.first().w;
+    for(const Row& row:sorted){
+        worstBackstep=qMax(worstBackstep,runningMax-row.w);
+        runningMax=qMax(runningMax,row.w);
+    }
+    const double wSpan=qMax(1e-300,wRange.hi-wRange.lo);
+    const double fraction=100.0*worstBackstep/wSpan;
+
+    p->save();
+    p->setFont(tickFont);
+    p->setPen(fraction>1.0?spec.style.danger:spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*2.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                fraction>1.0
+                ?QStringLiteral("NOT a valid nomogram in these variables: reading "
+                                "it could be wrong by %1 in %2, which is %3% of "
+                                "the range")
+                     .arg(worstBackstep,0,'g',4).arg(spec.series.at(2).label.isEmpty()
+                         ?QStringLiteral("w"):spec.series.at(2).label)
+                     .arg(fraction,0,'f',1)
+                :QStringLiteral("valid: the middle scale is single-valued, largest "
+                                "inconsistency %1% of the range")
+                     .arg(fraction,0,'f',2));
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                QStringLiteral("%1 readings; a straight line across the three "
+                               "scales solves h(w) = u + v - map the columns "
+                               "through log first for a product")
+                    .arg(readings.size()));
+    p->restore();
+}
+
+// ======================================================================
 // Ternary contour
 //
 // Three components summing to a whole, and a fourth quantity measured over
@@ -7611,6 +7798,9 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // A ring of coordinate spaces, so nothing on it is a Cartesian
         // position.
         && engine!=QLatin1String("Circos Plot")
+        // Three parallel scales sharing one vertical measure and nothing
+        // horizontal at all.
+        && engine!=QLatin1String("Alignment Nomogram")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -26446,6 +26636,11 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Alignment Nomogram")){
+            drawNomogram(painter,target,spec);
             painter->restore();
             return;
         }

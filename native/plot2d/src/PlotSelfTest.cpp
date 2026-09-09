@@ -1545,6 +1545,19 @@ bool runEngineSweep(){
             }
     }
 
+    // Batch 22. A hundred readings of w = (u + v) squared, which IS of the
+    // form an alignment nomogram represents - so the middle scale must come out
+    // single-valued and the engine's own check must report an inconsistency of
+    // zero. (A product, which is not of that form, is refused; that case is
+    // exercised in the probe rather than here, since the sweep only asks
+    // whether an engine drew.)
+    QVector<double> nomoU,nomoV,nomoW;
+    for(int a=1;a<=10;++a)
+        for(int b=1;b<=10;++b){
+            nomoU.append(double(a)); nomoV.append(double(b));
+            nomoW.append(double(a+b)*double(a+b));
+        }
+
     // Batch 21 inputs.
     QVector<double> karyoChrom,karyoFrom,karyoTo,karyoStain;
     {
@@ -2153,6 +2166,8 @@ bool runEngineSweep(){
             {column("from",circosFromSeg),column("from pos",circosFromPos),
              column("to",circosToSeg),column("to pos",circosToPos),
              column("weight",circosWeight)}},
+        {QStringLiteral("Alignment Nomogram"),
+            {column("u",nomoU),column("v",nomoV),column("w",nomoW)}},
         // Batch 18.
         {QStringLiteral("Ternary Contour"),
             {column("A",mixA),column("B",mixB),column("C",mixC),
