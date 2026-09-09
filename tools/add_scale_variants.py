@@ -160,6 +160,14 @@ NO_SCALE = {
     "Rare-Event Interval Chart", "Unit Hydrograph", "Recession Curve Analysis",
     "Step Response Metrics", "Jitter Bathtub", "Pressure Derivative Plot",
     "Isoconversional Plot",
+    # Batch 16, on the second test: the engine sets its own axes. A tripartite
+    # spectrum forces log-log in its rewrite, because the displacement and
+    # acceleration families are straight lines only there - so a scale variant
+    # of it would be overridden and the catalogue entry would promise something
+    # that cannot happen. (The Durov, the Stiff, the arc, the icicle and the
+    # flame graph need no entry here: they draw their own frames, so the axis
+    # probe never offers them in the first place.)
+    "Tripartite Response Spectrum",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

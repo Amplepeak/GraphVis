@@ -260,6 +260,12 @@ private:
     void drawPiper(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The Piper's six columns again, drawn so one water is one shape.
     void drawStiff(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // And a third time, projected into a square where mixing is a straight line.
+    void drawDurov(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Period against pseudo-velocity on log-log, with the constant displacement
+    // and constant acceleration families drawn over it. An axis engine: the two
+    // plotted quantities are ordinary coordinates.
+    void drawTripartite(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // A hierarchy as nested bars, from node/parent/own-value columns. upward

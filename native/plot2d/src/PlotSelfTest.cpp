@@ -1476,6 +1476,26 @@ bool runEngineSweep(){
         }
     }
 
+    // Batch 16. A design response spectrum, built as the three branches a code
+    // spectrum has: constant acceleration at short period, constant velocity in
+    // the middle, constant displacement at long period. The corners are placed
+    // so that the flat acceleration and the flat displacement are both decades,
+    // which means the first and last branches land exactly on lines the engine
+    // draws for itself - and a grid that is out by the factor of 2 pi, or has
+    // the two families the wrong way round, shows immediately.
+    QVector<double> spectrumPeriod,spectrumVelocity;
+    {
+        const double twoPi=2.0*M_PI;
+        const double flatV=100.0,flatA=1000.0,flatD=100.0;
+        const double corner1=twoPi*flatV/flatA,corner2=twoPi*flatV/flatD;
+        for(int i=0;i<=90;++i){
+            const double t=std::pow(10.0,-1.5+3.0*double(i)/90.0);
+            spectrumPeriod.append(t);
+            spectrumVelocity.append(t<corner1?flatA*t/twoPi
+                                   :t>corner2?twoPi*flatD/t:flatV);
+        }
+    }
+
     // Voronoi sites: a scattered survey with two clusters and a sparse corner,
     // so the area shading has something to distinguish rather than a uniform
     // field that would look the same however it were computed.
@@ -1970,6 +1990,15 @@ bool runEngineSweep(){
         {QStringLiteral("Voronoi Diagram"),
             {[&]{ PlotSeries s; s.label=QStringLiteral("site");
                   s.x=siteX; s.y=siteY; return s; }()}},
+        // Batch 16. The Durov takes the Piper's and the Stiff's six columns
+        // unchanged - three readings of one analysis, which is the point of
+        // having all three.
+        {QStringLiteral("Durov Diagram"),
+            {column("Ca",waterCa),column("Mg",waterMg),column("Na+K",waterNa),
+             column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},
+        {QStringLiteral("Tripartite Response Spectrum"),
+            {[&]{ PlotSeries s; s.label=QStringLiteral("design spectrum");
+                  s.x=spectrumPeriod; s.y=spectrumVelocity; return s; }()}},
     };
 
     for(const QString& engine:engines){

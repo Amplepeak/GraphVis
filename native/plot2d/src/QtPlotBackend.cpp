@@ -570,6 +570,9 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Icicle Plot"),
         QStringLiteral("Flame Graph"),
         QStringLiteral("Voronoi Diagram"),
+        // Batch 16.
+        QStringLiteral("Durov Diagram"),
+        QStringLiteral("Tripartite Response Spectrum"),
     };
     return kEngines;
 }
@@ -2016,7 +2019,10 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         // Two positions and nothing else. The cells are shaded by their own
         // area, so a third column would be a second thing competing to colour
         // them.
-        QStringLiteral("Voronoi Diagram")};
+        QStringLiteral("Voronoi Diagram"),
+        // Period and pseudo-velocity; displacement and acceleration are read
+        // off the two diagonal families rather than supplied.
+        QStringLiteral("Tripartite Response Spectrum")};
     if(kPairs.contains(engine)) return {2,2,true};
 
     // ---- Every column mapped, read as one series each. These get WIDER with
@@ -2152,8 +2158,10 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         QStringLiteral("Flame Graph")};
     if(kThree.contains(engine)) return {3,3,true};
 
-    // The Piper's six, in milliequivalents, drawn as one shape per water.
-    if(engine==QLatin1String("Stiff Diagram")) return {6,6,true};
+    // The Piper's six, in milliequivalents - drawn as one shape per water by
+    // the Stiff, and projected into a square by the Durov.
+    if(engine==QLatin1String("Stiff Diagram")
+       ||engine==QLatin1String("Durov Diagram")) return {6,6,true};
     // An edge list: source, target, and an optional weight.
     if(engine==QLatin1String("Arc Diagram")) return {2,3,true};
 
@@ -4451,11 +4459,20 @@ void QtPlotBackend::drawPiper(QPainter* p,const QRectF& target,const PlotSpec& s
 
     // ---- Vertex labels. Without them the two triangles are interchangeable
     // and the diagram cannot be read at all.
+    // The box is laid out so that a right-aligned label ENDS at the point it
+    // names and a left-aligned one starts there. A box merely centred on the
+    // point, which is what this was, puts a right-aligned label half a box to
+    // the RIGHT of its vertex - so every label on the left-hand side of the
+    // construction sat inside the figure naming the wrong thing.
     const auto tag=[&](const QPointF& where,const QString& text,int flags,
                        double dx,double dy){
         const QPointF screen=at(where.x(),where.y());
-        p->drawText(QRectF(screen.x()-50.0+dx,screen.y()-fm.height()*0.5+dy,
-                           100.0,fm.height()),flags,text);
+        const double width=110.0;
+        double left=screen.x()-width*0.5+dx;
+        if(flags&Qt::AlignRight)     left=screen.x()-width+dx;
+        else if(flags&Qt::AlignLeft) left=screen.x()+dx;
+        p->drawText(QRectF(left,screen.y()-fm.height()*0.5+dy,width,fm.height()),
+                    flags,text);
     };
     p->setPen(spec.style.foreground);
     const double pad=fm.height()*0.7;
@@ -4688,6 +4705,207 @@ void QtPlotBackend::drawStiff(QPainter* p,const QRectF& target,const PlotSpec& s
                 QStringLiteral("cations left, anions right; one scale for all "
                                "shapes, widest ion %1 meq")
                     .arg(widest,0,'g',3));
+    p->restore();
+}
+
+// ======================================================================
+// Durov diagram
+//
+// The third reading of the same six columns, and the one that answers a
+// question the other two cannot. A Piper's diamond tells you a water's type but
+// not where it sits between two end members; a Stiff tells two waters apart but
+// says nothing about mixing. A Durov projects both triangles into a SQUARE, and
+// in a square the mixing line between two waters is a straight line - so a
+// sequence of samples along a flow path falls on one, and departures from it
+// are the reactions.
+//
+// The cation triangle sits above the square and projects straight down; the
+// anion triangle sits to the left and projects straight across. Every sample
+// therefore appears three times, and the two projections are what put it in the
+// square - the same construction discipline as the Piper, where the frame is
+// drawn from the projection the data uses so a wrong projection cannot hide.
+//
+// Six mapped columns in milliequivalents, the same order as the Piper and the
+// Stiff: Ca, Mg, Na+K, HCO3, SO4, Cl.
+void QtPlotBackend::drawDurov(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+    drawFloatingTitle(p,target,spec);
+
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    const double height=std::sqrt(3.0)/2.0;
+    const double spanX=1.0+height,spanY=1.0+height;
+    const double margin=fm.height()*2.4;
+    const double usableW=qMax(20.0,target.width()-2.0*margin);
+    const double usableH=qMax(20.0,target.height()-2.0*margin
+                              -(spec.title.isEmpty()?0.0:fm.height()*2.0));
+    const double scale=qMin(usableW/spanX,usableH/spanY);
+    // The origin is the square's bottom left corner; the anion triangle runs
+    // into negative x from there and the cation triangle above y = 1.
+    const double originX=target.center().x()-scale*spanX*0.5+scale*height;
+    const double originY=target.bottom()-margin*0.7;
+    const auto at=[&](double x,double y){
+        return QPointF(originX+x*scale,originY-y*scale);
+    };
+
+    // The cation triangle: base along the top of the square from Ca on the left
+    // to Na+K on the right, Mg at the apex. Its x is what falls into the square.
+    const auto cationAt=[&](double fCa,double fNa,double fMg){
+        Q_UNUSED(fCa);
+        return QPointF(fNa+fMg*0.5,1.0+fMg*height);
+    };
+    // The anion triangle, the same triangle turned a quarter turn so that its
+    // base runs UP the left side of the square - HCO3 at the bottom, Cl at the
+    // top, SO4 at the apex. Its y is what falls into the square.
+    const auto anionAt=[&](double fHco3,double fCl,double fSo4){
+        Q_UNUSED(fHco3);
+        return QPointF(-fSo4*height,fCl+fSo4*0.5);
+    };
+
+    p->save();
+    QPen grid(spec.style.gridColor); grid.setWidthF(0.6);
+    QPen edge(spec.style.foreground); edge.setWidthF(1.0);
+
+    // The square, gridded every ten per cent. The grid is what makes it a
+    // Durov rather than two triangles beside a box: a mixing line is read
+    // against it.
+    p->setPen(grid);
+    for(int step=1;step<10;++step){
+        const double f=double(step)/10.0;
+        p->drawLine(at(f,0.0),at(f,1.0));
+        p->drawLine(at(0.0,f),at(1.0,f));
+    }
+    p->setPen(edge);
+    p->drawPolyline(QPolygonF()<<at(0,0)<<at(1,0)<<at(1,1)<<at(0,1)<<at(0,0));
+
+    // The two triangles, drawn from the same two functions the samples use.
+    const auto triangle=[&](bool cations){
+        p->setPen(grid);
+        for(int step=1;step<10;++step){
+            const double f=double(step)/10.0;
+            const auto place=[&](double a,double b,double c){
+                return cations?cationAt(a,b,c):anionAt(a,b,c);
+            };
+            // The three families of grid line, each holding one fraction fixed.
+            const QPointF p1=place(1.0-f,f,0.0),p2=place(1.0-f,0.0,f);
+            const QPointF p3=place(0.0,1.0-f,f),p4=place(f,1.0-f,0.0);
+            const QPointF p5=place(0.0,f,1.0-f),p6=place(f,0.0,1.0-f);
+            p->drawLine(at(p1.x(),p1.y()),at(p2.x(),p2.y()));
+            p->drawLine(at(p3.x(),p3.y()),at(p4.x(),p4.y()));
+            p->drawLine(at(p5.x(),p5.y()),at(p6.x(),p6.y()));
+        }
+        p->setPen(edge);
+        const QPointF a=cations?cationAt(1,0,0):anionAt(1,0,0);
+        const QPointF b=cations?cationAt(0,1,0):anionAt(0,1,0);
+        const QPointF c=cations?cationAt(0,0,1):anionAt(0,0,1);
+        p->drawPolyline(QPolygonF()<<at(a.x(),a.y())<<at(b.x(),b.y())
+                                   <<at(c.x(),c.y())<<at(a.x(),a.y()));
+    };
+    triangle(true);
+    triangle(false);
+
+    // The box is laid out so that a right-aligned label ENDS at the point it
+    // names and a left-aligned one starts there. A box merely centred on the
+    // point, which is what this was, puts a right-aligned label half a box to
+    // the RIGHT of its vertex - so every label on the left-hand side of the
+    // construction sat inside the figure naming the wrong thing.
+    const auto tag=[&](const QPointF& where,const QString& text,int flags,
+                       double dx,double dy){
+        const QPointF screen=at(where.x(),where.y());
+        const double width=110.0;
+        double left=screen.x()-width*0.5+dx;
+        if(flags&Qt::AlignRight)     left=screen.x()-width+dx;
+        else if(flags&Qt::AlignLeft) left=screen.x()+dx;
+        p->drawText(QRectF(left,screen.y()-fm.height()*0.5+dy,width,fm.height()),
+                    flags,text);
+    };
+    p->setPen(spec.style.foreground);
+    const double pad=fm.height()*0.75;
+    // Ca and Cl land on the SAME point - the square's top left corner is the
+    // cation triangle's left vertex and the anion triangle's top vertex at
+    // once - so they are separated by hand rather than by the geometry: the
+    // cation name goes up into the triangle it belongs to and the anion name
+    // down beside its own. Likewise HCO3 is lifted clear of the summary line
+    // that runs under the frame.
+    tag(cationAt(1,0,0),QStringLiteral("Ca"),Qt::AlignRight|Qt::AlignVCenter,-6.0,-pad*0.9);
+    tag(cationAt(0,1,0),QStringLiteral("Na+K"),Qt::AlignLeft|Qt::AlignVCenter,6.0,0.0);
+    tag(cationAt(0,0,1),QStringLiteral("Mg"),Qt::AlignHCenter|Qt::AlignVCenter,0.0,-pad);
+    tag(anionAt(1,0,0),QStringLiteral("HCO3"),Qt::AlignRight|Qt::AlignVCenter,-6.0,-pad*0.5);
+    tag(anionAt(0,1,0),QStringLiteral("Cl"),Qt::AlignRight|Qt::AlignVCenter,-6.0,pad*0.9);
+    tag(anionAt(0,0,1),QStringLiteral("SO4"),Qt::AlignRight|Qt::AlignVCenter,-6.0,0.0);
+    p->restore();
+
+    if(spec.series.size()<6){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(target,Qt::AlignHCenter|Qt::AlignBottom,
+                    QStringLiteral("needs six columns in meq: Ca, Mg, Na+K, HCO3, SO4, Cl"));
+        p->restore();
+        return;
+    }
+
+    const QVector<double>& ca=spec.series.at(0).y;
+    const QVector<double>& mg=spec.series.at(1).y;
+    const QVector<double>& na=spec.series.at(2).y;
+    const QVector<double>& hco3=spec.series.at(3).y;
+    const QVector<double>& so4=spec.series.at(4).y;
+    const QVector<double>& cl=spec.series.at(5).y;
+    int rows=ca.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    p->save();
+    int drawn=0;
+    double sumX=0.0,sumY=0.0;
+    for(int i=0;i<rows;++i){
+        if(!finite(ca[i])||!finite(mg[i])||!finite(na[i])) continue;
+        if(!finite(hco3[i])||!finite(so4[i])||!finite(cl[i])) continue;
+        const double cations=std::abs(ca[i])+std::abs(mg[i])+std::abs(na[i]);
+        const double anions=std::abs(hco3[i])+std::abs(so4[i])+std::abs(cl[i]);
+        if(!(cations>0.0)||!(anions>0.0)) continue;
+        const QPointF cationPoint=cationAt(std::abs(ca[i])/cations,
+                                           std::abs(na[i])/cations,
+                                           std::abs(mg[i])/cations);
+        const QPointF anionPoint=anionAt(std::abs(hco3[i])/anions,
+                                         std::abs(cl[i])/anions,
+                                         std::abs(so4[i])/anions);
+        // The square point is the two projections meeting, which is the whole
+        // construction: x from the cation triangle above, y from the anion
+        // triangle beside.
+        const QPointF square(cationPoint.x(),anionPoint.y());
+
+        const QColor colour=spec.series.at(0).color;
+        p->setPen(QPen(colour,1.0));
+        p->setBrush(QColor(colour.red(),colour.green(),colour.blue(),150));
+        const double size=qMax(2.2,spec.style.lineWidth*2.0);
+        p->drawEllipse(at(cationPoint.x(),cationPoint.y()),size,size);
+        p->drawEllipse(at(anionPoint.x(),anionPoint.y()),size,size);
+        p->drawEllipse(at(square.x(),square.y()),size*1.25,size*1.25);
+        // The projection lines. They are the difference between a Durov and
+        // three unrelated plots sharing a page: without them a reader cannot
+        // see which mark in the square belongs to which mark in the triangles.
+        QPen thread(colour); thread.setWidthF(0.5);
+        thread.setDashPattern({2,3});
+        p->setPen(thread);
+        p->setBrush(Qt::NoBrush);
+        p->drawLine(at(cationPoint.x(),cationPoint.y()),at(square.x(),square.y()));
+        p->drawLine(at(anionPoint.x(),anionPoint.y()),at(square.x(),square.y()));
+        sumX+=square.x(); sumY+=square.y();
+        ++drawn;
+    }
+    p->restore();
+
+    p->save();
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                drawn>0
+                ?QStringLiteral("%1 samples; square centroid %2 across, %3 up - "
+                                "a mixing line between two waters is straight here")
+                     .arg(drawn).arg(sumX/double(drawn),0,'f',3)
+                     .arg(sumY/double(drawn),0,'f',3)
+                :QStringLiteral("no complete samples"));
     p->restore();
 }
 
@@ -5001,6 +5219,125 @@ void QtPlotBackend::drawIcicle(QPainter* p,const QRectF& target,const PlotSpec& 
                     .arg(drawn).arg(deepest+1).arg(grand,0,'g',6)
                     .arg(upward?QStringLiteral("deepest at the top")
                                :QStringLiteral("roots at the top")));
+    p->restore();
+}
+
+// ======================================================================
+// Tripartite response spectrum
+//
+// Four quantities on two axes. Period runs across and pseudo-velocity up, both
+// logarithmic, and because D = VT/2pi and A = 2piV/T are products and quotients
+// of those two, constant displacement and constant acceleration are STRAIGHT
+// LINES on the same picture - one family sloping down, one up. A designer reads
+// all four off one curve: the acceleration governs the short-period end, the
+// displacement the long-period end, and where the curve leaves each family is
+// where the structure stops behaving like one and starts behaving like the
+// other. Drawing it as an ordinary log-log line chart throws that away and
+// leaves two of the four quantities to be worked out with a calculator.
+//
+// Two mapped columns: period and pseudo-velocity. The units are the data's own
+// - the two derived families are labelled in whatever they imply, since the
+// engine has no way to know whether the velocities are cm/s or in/s and
+// guessing would put a wrong number on the page.
+void QtPlotBackend::drawTripartite(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    const QFont tickFont=font(spec,qMax(6.0,spec.style.tickSize-1.0));
+    const QFontMetricsF fm(tickFont,p->device());
+
+    if(!f.xLog||!f.yLog){
+        p->save();
+        p->setFont(tickFont);
+        p->setPen(spec.style.danger);
+        p->drawText(f.plotArea.adjusted(6,6,-6,-6),Qt::AlignLeft|Qt::AlignTop,
+                    QStringLiteral("both axes must be logarithmic for the "
+                                   "displacement and acceleration families to "
+                                   "be straight"));
+        p->restore();
+        drawLineChart(p,f,spec);
+        return;
+    }
+
+    // The two families, in decades, over exactly the range the frame can show.
+    // Computed from the corners rather than from the data: a family line that
+    // crosses the frame belongs on it whether or not a sample sits near it.
+    const double tLo=f.xLo,tHi=f.xHi,vLo=f.yLo,vHi=f.yHi;   // already log10
+    const double twoPi=std::log10(2.0*M_PI);
+    // log D = log V + log T - log 2pi, and log A = log V - log T + log 2pi.
+    const double dLo=std::floor(vLo+tLo-twoPi),dHi=std::ceil(vHi+tHi-twoPi);
+    const double aLo=std::floor(vLo-tHi+twoPi),aHi=std::ceil(vHi-tLo+twoPi);
+
+    p->save();
+    p->setFont(tickFont);
+    p->setClipRect(f.plotArea);
+    const auto onPage=[&](double logT,double logV){
+        return QPointF(f.plotArea.left()
+                       +(logT-tLo)/qMax(1e-300,tHi-tLo)*f.plotArea.width(),
+                       f.plotArea.bottom()
+                       -(logV-vLo)/qMax(1e-300,vHi-vLo)*f.plotArea.height());
+    };
+    const auto decade=[](double power){
+        // 1e3 rather than 1000 past three decades, because the alternative is a
+        // label wider than the gap between two lines.
+        return (power>=-3.0&&power<=4.0)
+            ?QString::number(std::pow(10.0,power),'g',6)
+            :QStringLiteral("1e%1").arg(int(power));
+    };
+
+    QColor displacement=spec.style.positive; displacement.setAlphaF(0.75);
+    QColor acceleration=spec.style.warning;  acceleration.setAlphaF(0.75);
+
+    for(double d=dLo;d<=dHi;d+=1.0){
+        QPen pen(displacement); pen.setWidthF(0.7);
+        pen.setDashPattern({5,4});
+        p->setPen(pen);
+        // log V = log D + log 2pi - log T: one straight line, two endpoints.
+        p->drawLine(onPage(tLo,d+twoPi-tLo),onPage(tHi,d+twoPi-tHi));
+    }
+    for(double a=aLo;a<=aHi;a+=1.0){
+        QPen pen(acceleration); pen.setWidthF(0.7);
+        pen.setDashPattern({2,3});
+        p->setPen(pen);
+        // log V = log A + log T - log 2pi.
+        p->drawLine(onPage(tLo,a+tLo-twoPi),onPage(tHi,a+tHi-twoPi));
+    }
+
+    // Labels along the two edges each family leaves by, so a line is named
+    // where it is least likely to be crossing the data.
+    // Full strength for the numbers even though the lines they name are faint:
+    // a grid line is background and its label is not.
+    p->setPen(spec.style.positive);
+    for(double d=dLo;d<=dHi;d+=1.0){
+        // Displacement lines fall to the right, so they leave by the right edge
+        // or the bottom. Whichever the line reaches first is where it is named.
+        const double vAtRight=d+twoPi-tHi;
+        const QPointF where=(vAtRight>=vLo)?onPage(tHi,vAtRight)
+                                           :onPage(d+twoPi-vLo,vLo);
+        if(!f.plotArea.contains(where)) continue;
+        p->drawText(QRectF(where.x()-58.0,where.y()-fm.height()-1.0,54.0,fm.height()),
+                    Qt::AlignRight|Qt::AlignVCenter,decade(d));
+    }
+    p->setPen(spec.style.warning);
+    for(double a=aLo;a<=aHi;a+=1.0){
+        const double vAtRight=a+tHi-twoPi;
+        const QPointF where=(vAtRight<=vHi)?onPage(tHi,vAtRight)
+                                           :onPage(vHi-a+twoPi,vHi);
+        if(!f.plotArea.contains(where)) continue;
+        p->drawText(QRectF(where.x()-58.0,where.y()+1.0,54.0,fm.height()),
+                    Qt::AlignRight|Qt::AlignVCenter,decade(a));
+    }
+    p->restore();
+
+    drawLineChart(p,f,spec);
+
+    p->save();
+    p->setFont(tickFont);
+    p->setPen(spec.style.foreground);
+    // Along the bottom of the frame rather than the top, where the legend is.
+    p->drawText(QRectF(f.plotArea.left()+4.0,f.plotArea.bottom()-fm.height()-2.0,
+                       f.plotArea.width()-8.0,fm.height()),
+                Qt::AlignLeft|Qt::AlignVCenter,
+                QStringLiteral("dashed, falling: constant displacement V*T/2pi   "
+                               "dotted, rising: constant acceleration 2pi*V/T   "
+                               "both in the data's own units"));
     p->restore();
 }
 
@@ -5752,6 +6089,8 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         && engine!=QLatin1String("Arc Diagram")
         && engine!=QLatin1String("Icicle Plot")
         && engine!=QLatin1String("Flame Graph")
+        // Two triangles projecting into a square, the same case as the Piper.
+        && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
         // chrome that means nothing.
         && engine!=QLatin1String("3D Line")
@@ -12408,6 +12747,30 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         }
         out.xAxis=PlotAxis{QStringLiteral("age"),false,unsetValue(),unsetValue()};
         out.yAxis=PlotAxis{QStringLiteral("hazard rate"),false,0.0,unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------ Tripartite Response Spectrum
+    // The engine keeps its own name here rather than deriving into another,
+    // because the rewrite has nothing to transform: the two columns are already
+    // period and pseudo-velocity. What it does is FORCE both axes logarithmic,
+    // which is not a preference. The displacement and acceleration families are
+    // straight lines only on log-log, and a tripartite grid drawn on linear
+    // axes is four curved families that cannot be read - so this is a property
+    // of the chart rather than a setting to be left to whoever opens it.
+    if(in.engine==QLatin1String("Tripartite Response Spectrum")){
+        PlotSpec out=in;
+        for(PlotSeries& s:out.series){
+            s.drawLine=true;
+            s.drawMarkers=s.y.size()<=60;
+            s.lineWidth=qMax(1.3,in.style.lineWidth);
+        }
+        out.xAxis=PlotAxis{in.xAxis.label.isEmpty()?QStringLiteral("period")
+                                                   :in.xAxis.label,
+                           true,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{in.yAxis.label.isEmpty()
+                               ?QStringLiteral("pseudo-velocity"):in.yAxis.label,
+                           true,unsetValue(),unsetValue()};
         return out;
     }
 
@@ -24498,6 +24861,11 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             painter->restore();
             return;
         }
+        if(spec.engine==QLatin1String("Durov Diagram")){
+            drawDurov(painter,target,spec);
+            painter->restore();
+            return;
+        }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
             painter->restore();
@@ -24598,6 +24966,8 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             ||spec.engine==QLatin1String("Vorticity Map"))    drawVectorField(painter,f,spec);
     else if(spec.engine==QLatin1String("2D Contour"))        drawContour(painter,f,spec);
     else if(spec.engine==QLatin1String("Voronoi Diagram"))   drawVoronoi(painter,f,spec);
+    else if(spec.engine==QLatin1String("Tripartite Response Spectrum"))
+                                                             drawTripartite(painter,f,spec);
     else if(spec.engine==QLatin1String("Violin Plot"))       drawViolin(painter,f,spec);
     else if(spec.engine==QLatin1String("Raincloud"))         drawViolin(painter,f,spec);
     else if(spec.engine==QLatin1String("Forest Plot"))       drawForest(painter,f,spec);
