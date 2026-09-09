@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 // The colour map for engines that colour a FIELD rather than a set of series.
 //
 // A heat map, a contour, a surface, a vector field: the colour map is not
@@ -54,6 +55,54 @@ ComboBox {
         return out
     }
 
+    // The list, grouped and folded.
+    //
+    // Eighty four maps in eight categories, listed flat with headings, is a
+    // scroll rather than a choice: everything past Perceptually Uniform is
+    // below the fold, and the eight groups the maps are organised into are
+    // invisible until you have scrolled past them. So the popup opens on the
+    // eight headings, one group opens at a time, and the maps in it are the
+    // only ones drawn. The same shape as the theme picker, which had the same
+    // problem with a hundred and eight themes.
+    //
+    // Starts with everything closed, including the group holding the current
+    // map. Opening that one is a guess about what the person came to do - most
+    // often they came to change the map, not to admire the one they have - and
+    // it makes the list start half unrolled. The header of that group says
+    // "current" instead, which is the information without the scrolling.
+    property string openGroup: ""
+    function toggleGroup(name){
+        root.openGroup = (root.openGroup === name) ? "" : name
+    }
+    readonly property var rows: {
+        var out = []
+        var cats = root.canvas.colourMapCategories()
+        for (var c = 0; c < cats.length; ++c) {
+            var name = cats[c].name
+            var maps = cats[c].maps
+            var open = (root.openGroup === name)
+            var holdsCurrent = false
+            for (var k = 0; k < maps.length; ++k)
+                if (maps[k] === root.currentMap) holdsCurrent = true
+            out.push({ header: true, label: name, count: maps.length,
+                       open: open, current: holdsCurrent })
+            if (!open) continue
+            for (var m = 0; m < maps.length; ++m)
+                out.push({ header: false, label: maps[m], count: 0,
+                           open: false, current: maps[m] === root.currentMap })
+        }
+        return out
+    }
+
+    // Choosing a map, from wherever the choice was made.
+    function chooseMap(name){
+        // The canvas stores "" for the default rather than "Viridis", so a
+        // figure saved before the map was a choice reopens looking the same.
+        var value = (name === "Viridis") ? "" : name
+        if (root.app) root.app.plotColourMap = value   // binding carries it to the canvas
+        else root.canvas.colourMap = value
+    }
+
     model: root.entries
     textRole: "name"
     valueRole: "name"
@@ -71,14 +120,7 @@ ComboBox {
                 + "Perceptually uniform maps keep equal steps in value looking like equal steps "
                 + "in colour; diverging maps are for a field with a meaningful zero."
 
-    onActivated: (index) => {
-        var chosen = root.entries[index].name
-        // The canvas stores "" for the default rather than "Viridis", so a
-        // figure saved before the map was a choice reopens looking the same.
-        var value = (chosen === "Viridis") ? "" : chosen
-        if (root.app) root.app.plotColourMap = value    // binding carries it to the canvas
-        else root.canvas.colourMap = value
-    }
+    onActivated: (index) => root.chooseMap(root.entries[index].name)
 
     // A strip of the chosen map in the closed box, so the current choice is
     // visible without opening it.
@@ -99,46 +141,72 @@ ComboBox {
         }
     }
 
-    delegate: ItemDelegate {
-        id: entry
-        required property int index
-        required property var modelData
-        width: ListView.view ? ListView.view.width : entry.implicitWidth
-        highlighted: root.highlightedIndex === entry.index
+    // The rows the popup draws: a heading per category, and the maps of
+    // whichever heading is open. Not the ComboBox's own delegate model, because
+    // that one is the flat list of eighty four and this one folds.
+    Component {
+        id: rowDelegate
+        ItemDelegate {
+            id: row
+            required property var modelData
+            width: ListView.view ? ListView.view.width : implicitWidth
+            highlighted: !row.modelData.header && row.modelData.current
 
-        contentItem: ColumnLayout {
-            spacing: 2
-            // The category heading, drawn on the first map of each group.
-            Label {
-                visible: entry.modelData.first
-                Layout.topMargin: entry.index === 0 ? 0 : 6
-                text: entry.modelData.category.toUpperCase()
-                color: Theme.textMuted
-                font.pixelSize: 10
-                font.bold: true
-            }
-            RowLayout {
+            contentItem: RowLayout {
                 spacing: 8
+                // A heading: caret, name, how many are in it, and whether the
+                // map in use is one of them.
+                Label {
+                    visible: row.modelData.header
+                    text: row.modelData.open ? "▾" : "▸"
+                    color: Theme.textMuted
+                    font.pixelSize: 10
+                }
                 Image {
+                    visible: !row.modelData.header
                     Layout.preferredWidth: 52
                     Layout.preferredHeight: 12
                     fillMode: Image.Stretch
-                    source: root.canvas.colourMapPreview(entry.modelData.name, 104, 24)
+                    source: row.modelData.header
+                            ? "" : root.canvas.colourMapPreview(row.modelData.label, 104, 24)
                 }
                 Label {
-                    text: entry.modelData.name
-                    color: Theme.text
+                    text: row.modelData.header ? row.modelData.label.toUpperCase()
+                                               : row.modelData.label
+                    color: row.modelData.header ? Theme.textSecondary : Theme.text
+                    font.bold: row.modelData.header
+                    font.pixelSize: row.modelData.header ? 10 : Theme.fontSizeBody
+                    elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
+                Label {
+                    visible: row.modelData.header
+                    text: row.modelData.current ? row.modelData.count + " · current"
+                                                : String(row.modelData.count)
+                    color: row.modelData.current ? Theme.accent : Theme.textMuted
+                    font.pixelSize: 10
+                }
+            }
+
+            // A heading opens its group and leaves the popup where it is; a map
+            // is the choice, so it applies and closes. Closing on a heading
+            // would make the control take three clicks to use.
+            onClicked: {
+                if (row.modelData.header) root.toggleGroup(row.modelData.label)
+                else { root.chooseMap(row.modelData.label); root.popup.close() }
             }
         }
     }
 
     popup: Popup {
         y: root.height
+        // Every group closes again each time this is opened, so the list always
+        // looks the same when it appears rather than remembering a state from
+        // an earlier visit the person has forgotten about.
+        onAboutToShow: root.openGroup = ""
         width: Math.max(root.width, 240)
-        // Eighty four entries with headings is a long list; a third of the
-        // window is as much as it should ever take.
+        // Folded, the list is eight headings; opening one adds at most a
+        // dozen rows. A third of the window is still the ceiling.
         id: popupRoot
         implicitHeight: Math.min(popupRoot.contentItem.implicitHeight + 2, 420)
         padding: 1
@@ -146,8 +214,8 @@ ComboBox {
         contentItem: ListView {
             clip: true
             implicitHeight: contentHeight
-            model: root.delegateModel
-            currentIndex: root.highlightedIndex
+            model: root.rows
+            delegate: rowDelegate
             ScrollIndicator.vertical: ScrollIndicator {}
         }
 
