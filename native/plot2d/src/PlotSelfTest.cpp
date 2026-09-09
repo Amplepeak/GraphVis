@@ -2072,6 +2072,39 @@ bool runEngineSweep(){
              [&]{ PlotSeries s; s.label=QStringLiteral("hump");
                   s.x=streamX; s.y=streamHump;
                   s.color=QColor(0x8a,0x6b,0xa5); return s; }()}},
+        // Batch 20. Four positions built to carry 2, 1, 0 and 0.25 bits: all
+        // one symbol, an even split of two, an even split of all four, and a
+        // 1/2, 1/4, 1/8, 1/8 mixture. The third must draw NOTHING, which a
+        // per-cent scale or a wrong log base could not reproduce.
+        {QStringLiteral("Sequence Logo"),
+            {[&]{ PlotSeries s; s.label=QStringLiteral("A");
+                  s.x={1,2,3,4}; s.y={80,40,20,40};
+                  s.color=QColor(0x2c,0x8a,0x3e); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("C");
+                  s.x={1,2,3,4}; s.y={0,40,20,20};
+                  s.color=QColor(0x20,0x50,0xb0); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("G");
+                  s.x={1,2,3,4}; s.y={0,0,20,10};
+                  s.color=QColor(0xd0,0x90,0x10); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("T");
+                  s.x={1,2,3,4}; s.y={0,0,20,10};
+                  s.color=QColor(0xc0,0x30,0x30); return s; }()}},
+        // A boundary that IS the upper water line, so it must land exactly on
+        // the one the engine draws from the Nernst equation, plus a second
+        // boundary so the figure has something of the user's on it.
+        {QStringLiteral("Pourbaix Diagram"),
+            {[&]{ PlotSeries s; s.label=QStringLiteral("E = 1.229 - 0.0592 pH");
+                  for(int i=0;i<=14;++i){
+                      s.x.append(double(i));
+                      s.y.append(1.229-0.0592*double(i));
+                  }
+                  s.color=QColor(0xd0,0x30,0x30); return s; }(),
+             [&]{ PlotSeries s; s.label=QStringLiteral("a metal boundary");
+                  for(int i=0;i<=14;++i){
+                      s.x.append(double(i));
+                      s.y.append(-0.44-0.1184*qMax(0.0,double(i)-9.5));
+                  }
+                  s.color=QColor(0x30,0x60,0xc0); return s; }()}},
         // Batch 18.
         {QStringLiteral("Ternary Contour"),
             {column("A",mixA),column("B",mixB),column("C",mixC),

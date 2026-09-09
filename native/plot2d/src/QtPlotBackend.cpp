@@ -581,6 +581,9 @@ QStringList QtPlotBackend::supportedEngines() const {
         // Batch 19.
         QStringLiteral("Alluvial Diagram"),
         QStringLiteral("Hive Plot"),
+        // Batch 20.
+        QStringLiteral("Pourbaix Diagram"),
+        QStringLiteral("Sequence Logo"),
     };
     return kEngines;
 }
@@ -2056,6 +2059,11 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // it widens the same way a stacked area does. asSeries stays false: these
     // are ordinary y columns sharing one x, not roles.
     if(engine==QLatin1String("Streamgraph")) return {2,0,false};
+    // pH and then one column per species boundary; position and then one column
+    // per symbol. Both widen with the columns mapped, and capping either at two
+    // would draw one boundary out of six or a logo of a two-letter alphabet.
+    if(engine==QLatin1String("Pourbaix Diagram")
+       ||engine==QLatin1String("Sequence Logo")) return {2,0,false};
     // Silica and then every oxide mapped, a reference and then every
     // sample: both compare the FIRST column against all the rest, so
     // capping them at two would draw one trend out of eight.
@@ -5506,6 +5514,196 @@ void QtPlotBackend::drawHive(QPainter* p,const QRectF& target,const PlotSpec& sp
                     .arg(n).arg(e.from.size())
                     .arg(degree.isEmpty()?0:*std::min_element(degree.begin(),degree.end()))
                     .arg(busiest));
+    p->restore();
+}
+
+// ======================================================================
+// Pourbaix diagram
+//
+// Potential against pH: which form of a metal is thermodynamically stable in
+// water, and therefore whether it corrodes, passivates or is immune. The
+// catalogue could draw the boundaries as an ordinary line chart and that is not
+// a Pourbaix diagram, because a Pourbaix diagram is read AGAINST the stability
+// field of water itself - a species that sits outside it cannot exist in
+// aqueous solution however favourable its own thermodynamics look.
+//
+// The two water lines are drawn by the engine, from the Nernst equation and
+// nothing else:
+//
+//     (a)  O2 / H2O    E = 1.229 - 0.0592 pH
+//     (b)  H2O / H2    E = 0.000 - 0.0592 pH
+//
+// The 1.229 V is the standard potential of the oxygen electrode and the 0.0592
+// is (RT/F) ln 10 at 25 degrees, so both lines are computed rather than
+// tabulated - and both are named on the figure as (a) and (b), which is how
+// they are referred to everywhere the diagrams are used. What the engine does
+// NOT do is invent the species boundaries: those are the user's data, because
+// they depend on the metal, the temperature and the assumed ion activity, and a
+// boundary drawn from memory would look exactly as convincing as a correct one.
+//
+// x is pH from the mapping and each further mapped column is one boundary.
+void QtPlotBackend::drawPourbaix(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    const QFont tickFont=font(spec,qMax(6.0,spec.style.tickSize-0.5));
+    const QFontMetricsF fm(tickFont,p->device());
+
+    // Both lines are straight in pH, so two points each - but they are computed
+    // at the frame's own edges rather than over the data's range, because the
+    // stability field of water does not stop where the samples do.
+    const double slope=-0.0592;
+    const auto lineAt=[&](double intercept,double pH){ return intercept+slope*pH; };
+    const double left=f.xLog?std::pow(10.0,f.xLo):f.xLo;
+    const double right=f.xLog?std::pow(10.0,f.xHi):f.xHi;
+
+    p->save();
+    p->setFont(tickFont);
+    // The band between the two lines, shaded very lightly. It is a region, and
+    // drawing it as two lines alone leaves the reader to work out which side of
+    // each one is the inside.
+    {
+        QPolygonF band;
+        band<<toDevice(f,left,lineAt(1.229,left))<<toDevice(f,right,lineAt(1.229,right))
+            <<toDevice(f,right,lineAt(0.0,right))<<toDevice(f,left,lineAt(0.0,left));
+        QColor wash=spec.style.positive;
+        wash.setAlphaF(0.07);
+        p->setPen(Qt::NoPen);
+        p->setBrush(wash);
+        p->drawPolygon(band);
+    }
+    p->setBrush(Qt::NoBrush);
+    struct Water { double intercept; const char* tag; };
+    static const Water kWater[2]={{1.229,"(a)  O2 / H2O"},{0.0,"(b)  H2O / H2"}};
+    for(const Water& water:kWater){
+        QPen pen(spec.style.foreground);
+        pen.setWidthF(0.9);
+        pen.setDashPattern({6,4});
+        p->setPen(pen);
+        const QPointF a=toDevice(f,left,lineAt(water.intercept,left));
+        const QPointF b=toDevice(f,right,lineAt(water.intercept,right));
+        p->drawLine(a,b);
+        // Named at whichever end is on the page, since a frame that starts at
+        // pH 7 has no left end for these lines to be labelled at.
+        const QPointF where=f.plotArea.contains(b)?b:a;
+        const bool atRight=(where==b);
+        const QString tag=QString::fromLatin1(water.tag);
+        const QRectF chip(atRight?where.x()-fm.horizontalAdvance(tag)-6.0
+                                 :where.x()+4.0,
+                          where.y()-fm.height()-1.0,
+                          fm.horizontalAdvance(tag)+4.0,fm.height());
+        p->fillRect(chip,spec.style.background);
+        p->drawText(chip,Qt::AlignCenter,tag);
+    }
+    p->restore();
+
+    drawLineChart(p,f,spec);
+
+    p->save();
+    p->setFont(tickFont);
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(f.plotArea.left()+4.0,f.plotArea.bottom()-fm.height()-2.0,
+                       f.plotArea.width()-8.0,fm.height()),
+                Qt::AlignLeft|Qt::AlignVCenter,
+                QStringLiteral("water is stable only between (a) and (b), at 25 C; "
+                               "the species boundaries are the mapped columns"));
+    p->restore();
+}
+
+// ======================================================================
+// Sequence logo
+//
+// One stack of letters per position, where the HEIGHT of the stack is how much
+// is known at that position and the height of each letter within it is that
+// letter's share. A row of bar charts, one per position, shows the same
+// frequencies and hides the thing everyone actually wants: which positions are
+// conserved. A logo puts that on the vertical axis directly.
+//
+// The stack height is the information content in bits,
+//
+//     R = log2(s) - H,    H = -sum p log2 p
+//
+// with s the number of symbols. A position where every sequence agrees has
+// H = 0 and a full stack; a position where all symbols are equally likely has
+// H = log2(s) and no stack at all. That is why the axis is in bits and not in
+// per cent: per cent would make a perfectly random position look as tall as a
+// perfectly conserved one.
+//
+// x is the position from the mapping and each further mapped column is one
+// symbol, named by its own column label - so four columns A, C, G, T give a
+// nucleotide logo and twenty give a protein one, with no list of alphabets
+// anywhere in the code.
+void QtPlotBackend::drawSequenceLogo(QPainter* p,const Frame& f,const PlotSpec& spec) const {
+    const int symbols=spec.series.size();
+    if(symbols<2) return;
+    int steps=spec.series.at(0).y.size();
+    for(const PlotSeries& s:spec.series) steps=qMin(steps,int(s.y.size()));
+    if(steps<1) return;
+    const QVector<double>& xs=spec.series.at(0).x;
+
+    const double maxBits=std::log2(double(symbols));
+    // One column's width, from the closest pair of neighbouring positions, so
+    // positions that are not evenly spaced never overlap.
+    QVector<double> centres;
+    for(int j=0;j<steps&&j<xs.size();++j) if(finite(xs[j])) centres.append(xs[j]);
+    const double slot=slotWidthFrom(centres,1.0,f.xHi-f.xLo);
+
+    p->save();
+    for(int j=0;j<steps;++j){
+        if(j>=xs.size()||!finite(xs[j])) continue;
+        double total=0.0;
+        for(int i=0;i<symbols;++i){
+            const double v=spec.series.at(i).y[j];
+            if(finite(v)&&v>0.0) total+=v;
+        }
+        if(!(total>0.0)) continue;
+
+        double entropy=0.0;
+        QVector<QPair<double,int>> share;          // fraction, which symbol
+        for(int i=0;i<symbols;++i){
+            const double v=spec.series.at(i).y[j];
+            const double fraction=(finite(v)&&v>0.0)?v/total:0.0;
+            if(fraction>0.0) entropy-=fraction*std::log2(fraction);
+            share.append(qMakePair(fraction,i));
+        }
+        const double bits=qMax(0.0,maxBits-entropy);
+        // Largest at the top, which is the convention and the only ordering
+        // that lets the dominant symbol be read without measuring.
+        std::sort(share.begin(),share.end(),
+                  [](const QPair<double,int>& a,const QPair<double,int>& b){
+                      return a.first<b.first;
+                  });
+
+        const double xLeft=toDevice(f,xs[j]-slot*0.42,0.0).x();
+        const double xRight=toDevice(f,xs[j]+slot*0.42,0.0).x();
+        double base=0.0;
+        for(const QPair<double,int>& part:share){
+            const double letterBits=part.first*bits;
+            if(!(letterBits>0.0)) continue;
+            const double yBottom=toDevice(f,xs[j],base).y();
+            const double yTop=toDevice(f,xs[j],base+letterBits).y();
+            base+=letterBits;
+            const double height=yBottom-yTop;
+            if(height<0.6) continue;
+
+            const QString name=spec.series.at(part.second).label;
+            const QString glyph=name.isEmpty()?QStringLiteral("?"):name.left(1).toUpper();
+            // Drawn at a fixed size and then STRETCHED to the box, rather than
+            // choosing a point size per letter. A point size only comes in
+            // whole steps and would make two letters of nearly equal share come
+            // out visibly different, which is the one thing the reader is
+            // comparing.
+            QFont glyphFont=font(spec,40.0);
+            glyphFont.setBold(true);
+            const QFontMetricsF glyphMetrics(glyphFont,p->device());
+            const QRectF tight=glyphMetrics.tightBoundingRect(glyph);
+            if(tight.width()<=0.0||tight.height()<=0.0) continue;
+            p->save();
+            p->setFont(glyphFont);
+            p->setPen(spec.series.at(part.second).color);
+            p->translate(xLeft,yTop);
+            p->scale((xRight-xLeft)/tight.width(),height/tight.height());
+            p->drawText(QPointF(-tight.left(),-tight.top()),glyph);
+            p->restore();
+        }
+    }
     p->restore();
 }
 
@@ -13706,6 +13904,62 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
         }
         out.xAxis=PlotAxis{QStringLiteral("age"),false,unsetValue(),unsetValue()};
         out.yAxis=PlotAxis{QStringLiteral("hazard rate"),false,0.0,unsetValue()};
+        return out;
+    }
+
+    // ------------------------------------------------------ Sequence Logo
+    // Nothing to transform - the columns are already the counts - but the y
+    // axis has to be set here rather than left to the data. The frame is built
+    // from the series' values, which are counts, so without this the axis would
+    // run from zero to the largest count and the stacks, which are measured in
+    // BITS, would occupy a sliver at the bottom of it. The ceiling is log2 of
+    // the alphabet size, which is the most any position can carry.
+    if(in.engine==QLatin1String("Sequence Logo")){
+        PlotSpec out=in;
+        const int symbols=qMax(2,int(in.series.size()));
+        out.legendVisible=true;
+        // The x range is padded by half a position at each end. A stack is
+        // drawn CENTRED on its position, so with the frame running exactly from
+        // the first position to the last, the first and last stacks had half a
+        // letter outside the frame and clipped away.
+        double lo=unsetValue(),hi=unsetValue();
+        if(!in.series.isEmpty()){
+            QVector<double> centres;
+            for(double x:in.series.at(0).x) if(finite(x)) centres.append(x);
+            if(!centres.isEmpty()){
+                const Bounds across=boundsOf(centres);
+                const double slot=slotWidthFrom(centres,1.0,
+                                                qMax(1.0,across.hi-across.lo));
+                lo=across.lo-slot*0.6;
+                hi=across.hi+slot*0.6;
+            }
+        }
+        out.xAxis=PlotAxis{in.xAxis.label.isEmpty()?QStringLiteral("position")
+                                                   :in.xAxis.label,
+                           false,lo,hi};
+        out.yAxis=PlotAxis{QStringLiteral("information (bits)"),false,
+                           0.0,std::log2(double(symbols))};
+        return out;
+    }
+
+    // ---------------------------------------------------- Pourbaix Diagram
+    // The boundaries pass through untouched; only the axes are named, because a
+    // Pourbaix diagram with unlabelled axes is indistinguishable from any other
+    // pair of lines and the two water lines the engine draws are quoted against
+    // the standard hydrogen electrode specifically.
+    if(in.engine==QLatin1String("Pourbaix Diagram")){
+        PlotSpec out=in;
+        for(PlotSeries& s:out.series){
+            s.drawLine=true;
+            s.drawMarkers=s.y.size()<=40;
+            s.lineWidth=qMax(1.2,in.style.lineWidth);
+        }
+        out.xAxis=PlotAxis{in.xAxis.label.isEmpty()?QStringLiteral("pH")
+                                                   :in.xAxis.label,
+                           false,unsetValue(),unsetValue()};
+        out.yAxis=PlotAxis{in.yAxis.label.isEmpty()
+                               ?QStringLiteral("E (V vs SHE)"):in.yAxis.label,
+                           false,unsetValue(),unsetValue()};
         return out;
     }
 
@@ -25950,6 +26204,8 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             ||spec.engine==QLatin1String("Vorticity Map"))    drawVectorField(painter,f,spec);
     else if(spec.engine==QLatin1String("2D Contour"))        drawContour(painter,f,spec);
     else if(spec.engine==QLatin1String("Voronoi Diagram"))   drawVoronoi(painter,f,spec);
+    else if(spec.engine==QLatin1String("Pourbaix Diagram"))  drawPourbaix(painter,f,spec);
+    else if(spec.engine==QLatin1String("Sequence Logo"))     drawSequenceLogo(painter,f,spec);
     else if(spec.engine==QLatin1String("Tripartite Response Spectrum"))
                                                              drawTripartite(painter,f,spec);
     else if(spec.engine==QLatin1String("Violin Plot"))       drawViolin(painter,f,spec);

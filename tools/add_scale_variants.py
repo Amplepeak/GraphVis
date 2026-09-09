@@ -168,6 +168,13 @@ NO_SCALE = {
     # flame graph need no entry here: they draw their own frames, so the axis
     # probe never offers them in the first place.)
     "Tripartite Response Spectrum",
+    # Batch 20, both on the second test. A Pourbaix diagram's two water lines
+    # are straight in linear pH and volts and nothing else - and its y axis is a
+    # potential, which is routinely negative, so a logarithmic one cannot exist.
+    # A sequence logo sets its own y axis to log2 of the alphabet size, because
+    # that is the ceiling on what a position can carry, so a scale variant of it
+    # would be overridden by the rewrite.
+    "Pourbaix Diagram", "Sequence Logo",
 }
 
 # The variants, and what each is for. Ordered so the most useful come first in

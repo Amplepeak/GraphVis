@@ -285,6 +285,10 @@ private:
     // the two engines differ in nothing else.
     void drawIcicle(QPainter* p, const QRectF& target, const PlotSpec& spec,
                     bool upward) const;
+    // Potential against pH, with water's own stability field over the top.
+    void drawPourbaix(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // One stack of letters per position, the stack height in bits.
+    void drawSequenceLogo(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // Nearest-site regions. Takes a Frame rather than the target rectangle:
     // unlike the painters above it is drawn against ordinary axes, because the
     // positions are the data and a reader needs to know what they are.
