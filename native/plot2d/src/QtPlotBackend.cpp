@@ -558,6 +558,12 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Isoconversional Plot"),
         // Batch 13: the first engine that needed a painter of its own.
         QStringLiteral("Skew-T Log-P"),
+        // The Skew-T's three siblings. Same sounding, same thermodynamics,
+        // different transform - and the differences are the reason a
+        // forecaster keeps more than one of them.
+        QStringLiteral("Emagram"),
+        QStringLiteral("Stuve Diagram"),
+        QStringLiteral("Tephigram"),
     };
     return kEngines;
 }
@@ -2123,7 +2129,10 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
         // A sounding: pressure, temperature, dewpoint. Pressure first even
         // though it is drawn vertically, because it is the independent
         // variable and the two temperatures share it.
-        QStringLiteral("Skew-T Log-P")};
+        QStringLiteral("Skew-T Log-P"),
+        QStringLiteral("Emagram"),
+        QStringLiteral("Stuve Diagram"),
+        QStringLiteral("Tephigram")};
     if(kThree.contains(engine)) return {3,3,true};
 
     // Contingency: the two categories, and a count column if there is one.
@@ -3728,13 +3737,68 @@ inline Condensation liftingCondensation(double kelvin,double dewKelvin,double hP
     return out;
 }
 
+// Which of the four thermodynamic diagrams. They plot the SAME sounding and
+// differ only in where a (temperature, pressure) pair lands on the page, so
+// everything below - the four families of background curve, the parcel lift,
+// the condensation level, the energy integrals, the chrome - is written once
+// and the transform is the parameter.
+//
+// The differences are not cosmetic, which is why all four are offered rather
+// than one of them:
+//
+//   Skew-T    isotherms at 45 degrees, so the angle between an isotherm and a
+//             dry adiabat is wide and stability is easy to read.
+//   Emagram   isotherms vertical. The oldest of the four and the easiest to
+//             read a temperature off, at the cost of that angle.
+//   Stuve     pressure to the power R/cp, which makes the DRY ADIABATS
+//             STRAIGHT. That is the whole reason it exists.
+//   Tephigram temperature against log potential temperature, rotated. Area on
+//             it is proportional to energy, so CAPE is a region whose size can
+//             be judged by eye rather than a number to be trusted.
+enum class SoundingChart { SkewT, Emagram, Stuve, Tephigram };
+
+// Where a (temperature, pressure) pair sits, in the chart's own units. The
+// caller fits whatever box these produce to the page, so the units only have to
+// be self-consistent within one chart.
+inline QPointF placeOn(SoundingChart chart,double celsius,double hPa){
+    const double kelvin=celsius+273.15;
+    switch(chart){
+    case SoundingChart::Emagram:
+        return QPointF(celsius,std::log(1000.0/qMax(1e-6,hPa)));
+    case SoundingChart::Stuve:
+        // Pressure to the power R/cp, decreasing upward. A dry adiabat is
+        // T = theta (p/1000)^0.2854, which is linear in exactly this quantity -
+        // so it comes out a straight line through the origin.
+        return QPointF(celsius,-std::pow(qMax(1e-6,hPa)/1000.0,0.2854));
+    case SoundingChart::Tephigram: {
+        // Temperature against the log of potential temperature, then rotated
+        // through 45 degrees so the isobars run roughly across the page. The
+        // 160 scales the log axis into the same range as the temperature one;
+        // it is a choice of aspect and carries no physics.
+        const double theta=kelvin*std::pow(1000.0/qMax(1e-6,hPa),0.2854);
+        const double x=celsius;
+        const double y=160.0*std::log(theta/273.15);
+        const double c=std::sqrt(0.5);
+        return QPointF(c*(x+y),c*(y-x));
+    }
+    case SoundingChart::SkewT:
+    default:
+        // The skew is applied by the caller, which is the only place that knows
+        // the box's aspect - an isotherm is meant to be at 45 degrees ON THE
+        // PAGE, and that cannot be decided in chart units.
+        return QPointF(celsius,std::log(1000.0/qMax(1e-6,hPa)));
+    }
+}
+
 } // namespace
 
 // Three mapped columns: pressure, temperature and dewpoint. Pressure first
 // because it is the independent variable of a sounding even though it is drawn
 // on the vertical axis - the profile is a function of height, not of
 // temperature, and two temperatures share the one pressure.
-void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& spec) const {
+void QtPlotBackend::drawSounding(QPainter* p,const QRectF& target,const PlotSpec& spec,
+                                 int chartKind) const {
+    const SoundingChart chart=static_cast<SoundingChart>(chartKind);
     drawFloatingTitle(p,target,spec);
 
     const QFont tickFont=font(spec,spec.style.tickSize);
@@ -3785,9 +3849,40 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
     const auto heightOf=[&](double hPa){
         return std::log(lowest/qMax(1e-6,hPa))/heightInLogs;    // 0 bottom, 1 top
     };
+
+    // The other three charts place a point by their own transform, and where
+    // that lands is not known in advance - a tephigram's axes are a rotation of
+    // temperature and log potential temperature, so neither runs along the page.
+    // The extent is found by SAMPLING the whole temperature-pressure domain,
+    // which works for any transform and cannot be got wrong by assuming which
+    // way something runs.
+    double chartLeft=0.0,chartRight=1.0,chartLow=0.0,chartHigh=1.0;
+    if(chart!=SoundingChart::SkewT){
+        bool first=true;
+        for(int i=0;i<=24;++i){
+            const double celsius=coolest+(warmest-coolest)*double(i)/24.0;
+            for(int k=0;k<=24;++k){
+                const double hPa=lowest*std::pow(highest/lowest,double(k)/24.0);
+                const QPointF where=placeOn(chart,celsius,hPa);
+                if(first){
+                    chartLeft=chartRight=where.x();
+                    chartLow=chartHigh=where.y();
+                    first=false;
+                }
+                chartLeft=qMin(chartLeft,where.x()); chartRight=qMax(chartRight,where.x());
+                chartLow=qMin(chartLow,where.y());   chartHigh=qMax(chartHigh,where.y());
+            }
+        }
+    }
     const auto at=[&](double celsius,double hPa){
-        const double up=heightOf(hPa);
-        const double across=(celsius+skew*up-coolest)/(warmest-coolest);
+        if(chart==SoundingChart::SkewT){
+            const double up=heightOf(hPa);
+            const double across=(celsius+skew*up-coolest)/(warmest-coolest);
+            return QPointF(box.left()+across*box.width(),box.bottom()-up*box.height());
+        }
+        const QPointF where=placeOn(chart,celsius,hPa);
+        const double across=(where.x()-chartLeft)/qMax(1e-12,chartRight-chartLeft);
+        const double up=(where.y()-chartLow)/qMax(1e-12,chartHigh-chartLow);
         return QPointF(box.left()+across*box.width(),box.bottom()-up*box.height());
     };
 
@@ -3886,6 +3981,23 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
         }
     }
 
+    // Isobars. Horizontal on three of the four charts, where the frame implies
+    // them - and curved on a tephigram, where nothing else says where a
+    // pressure is. Drawn through the transform in every case rather than as
+    // horizontal rules, so the one chart that needs them is not a special case.
+    {
+        QPen pen(faint); pen.setWidthF(0.7);
+        p->setPen(pen);
+        for(const double hPa:{1000.0,925.0,850.0,700.0,600.0,500.0,400.0,
+                              300.0,250.0,200.0,150.0,100.0}){
+            if(hPa>lowest||hPa<highest) continue;
+            QPolygonF path;
+            for(int i=0;i<=24;++i)
+                path.append(at(coolest+(warmest-coolest)*double(i)/24.0,hPa));
+            p->drawPolyline(path);
+        }
+    }
+
     // Isotherms last of the background, and in the foreground colour at low
     // weight, because every other family is read as an angle AGAINST these.
     {
@@ -3893,16 +4005,19 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
         QPen pen(isotherm); pen.setWidthF(0.7);
         p->setPen(pen);
         const double first=std::ceil(coolest/10.0)*10.0;
-        for(double celsius=first-skew;celsius<=warmest;celsius+=10.0){
-            const QPointF a=at(celsius,lowest),b=at(celsius,highest);
-            p->drawLine(a,b);
-        }
+        const auto drawIsotherm=[&](double celsius){
+            QPolygonF path;
+            for(int i=0;i<=16;++i)
+                path.append(at(celsius,lowest*std::pow(highest/lowest,double(i)/16.0)));
+            p->drawPolyline(path);
+        };
+        for(double celsius=first-skew;celsius<=warmest;celsius+=10.0) drawIsotherm(celsius);
         // Zero is where ice matters, so it is drawn again in a way that can be
         // picked out at a glance.
         QPen freezing(spec.style.foreground); freezing.setWidthF(1.1);
         freezing.setDashPattern({6,4});
         p->setPen(freezing);
-        p->drawLine(at(0.0,lowest),at(0.0,highest));
+        drawIsotherm(0.0);
     }
     p->restore();
 
@@ -3914,24 +4029,43 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
     p->setPen(axis);
     p->setBrush(Qt::NoBrush);
     p->drawRect(box);
-    for(const double hPa:{1000.0,925.0,850.0,700.0,500.0,400.0,300.0,250.0,200.0,150.0,100.0}){
+    // Both label families are positioned by the TRANSFORM rather than by an
+    // assumed direction: a tephigram's isobars slope and its isotherms are
+    // diagonal, so a pressure label pinned to a fixed height and a temperature
+    // label pinned to the bottom edge would both be in the wrong place.
+    for(const double hPa:{1000.0,925.0,850.0,700.0,600.0,500.0,400.0,
+                          300.0,250.0,200.0,150.0,100.0}){
         if(hPa>lowest||hPa<highest) continue;
-        const double y=box.bottom()-heightOf(hPa)*box.height();
-        p->drawLine(QPointF(box.left()-4.0,y),QPointF(box.left(),y));
-        p->drawText(QRectF(target.left(),y-fm.height()*0.5,
+        const QPointF end=at(coolest,hPa);
+        if(end.y()<box.top()-1.0||end.y()>box.bottom()+1.0) continue;
+        p->drawLine(QPointF(box.left()-4.0,end.y()),QPointF(box.left(),end.y()));
+        p->drawText(QRectF(target.left(),end.y()-fm.height()*0.5,
                            box.left()-target.left()-6.0,fm.height()),
                     Qt::AlignRight|Qt::AlignVCenter,QString::number(int(hPa)));
     }
     for(double celsius=std::ceil(coolest/10.0)*10.0;celsius<=warmest;celsius+=10.0){
+        // At the foot of the isotherm itself, not on a fixed bottom row. The
+        // two coincide on the three charts whose isotherms reach the bottom
+        // edge; on a tephigram they do not, and the earlier version drew the
+        // tick on the diagonal foot while putting its number below the frame,
+        // so ticks and numbers disagreed by most of the width of the plot.
         const QPointF foot=at(celsius,lowest);
         if(foot.x()<box.left()-1.0||foot.x()>box.right()+1.0) continue;
+        if(foot.y()<box.top()-1.0||foot.y()>box.bottom()+1.0) continue;
         p->drawLine(foot,foot+QPointF(0,4.0));
-        p->drawText(QRectF(foot.x()-24.0,box.bottom()+5.0,48.0,fm.height()),
-                    Qt::AlignHCenter|Qt::AlignTop,QString::number(int(celsius)));
+        const QRectF chip(foot.x()-24.0,foot.y()+5.0,48.0,fm.height());
+        // Cleared behind, because on a tephigram this lands inside the frame on
+        // top of whatever background family passes through.
+        if(chart==SoundingChart::Tephigram) p->fillRect(chip,spec.style.background);
+        p->drawText(chip,Qt::AlignHCenter|Qt::AlignTop,QString::number(int(celsius)));
     }
+    const QString axisNote=
+         (chart==SoundingChart::Emagram)?QStringLiteral("temperature (C), isotherms vertical")
+        :(chart==SoundingChart::Stuve)  ?QStringLiteral("temperature (C), pressure as p^0.286 so dry adiabats are straight")
+        :(chart==SoundingChart::Tephigram)?QStringLiteral("temperature (C) against log potential temperature, rotated; area is energy")
+                                        :QStringLiteral("temperature (C), isotherms skewed 45 degrees");
     p->drawText(QRectF(box.left(),box.bottom()+fm.height()+4.0,box.width(),fm.height()),
-                Qt::AlignHCenter|Qt::AlignTop,
-                QStringLiteral("temperature (C), isotherms skewed 45 degrees"));
+                Qt::AlignHCenter|Qt::AlignTop,axisNote);
     p->restore();
 
     if(spec.series.size()<2) return;
@@ -3987,40 +4121,94 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
         const double theta=(surface.celsius+273.15)
                           *std::pow(1000.0/surface.hPa,0.2854);
         const double parcelThetaE=equivalentPotential(lcl.kelvin-273.15,lcl.hPa);
-        double parcelC=surface.celsius;
-        double lastP=surface.hPa,lastDiff=0.0;
-        bool started=false;
         const double gasConstant=287.058;
+
+        // ---- Pass one: the parcel's temperature at every reported level, and
+        // the buoyancy it implies. NOTHING is accumulated here. Which layers
+        // count as inhibition and which as available energy cannot be decided
+        // while walking up the column, because both are defined relative to the
+        // free convection and equilibrium levels and those are properties of the
+        // whole profile.
+        //
+        // The first version of this did accumulate as it walked - every negative
+        // layer into CIN, every positive one into CAPE, all the way to the top of
+        // the sounding. That is wrong above the equilibrium level, where the
+        // parcel is tens of degrees colder than an air mass it has already
+        // stopped rising through: on the self-test sounding it added about
+        // -4000 J/kg of "inhibition" from the stratosphere and reported
+        // CIN -3214 where the real figure is a few tens. It survived the
+        // constructed Skew-T test because that sounding was built with CIN
+        // exactly zero and stopped at 300 hPa with no equilibrium level, so the
+        // offending region did not exist in it.
+        struct Rung { double hPa; double diff; };
+        QVector<Rung> rungs;
+        rungs.reserve(sounding.size());
         for(const Level& level:sounding){
-            if(level.hPa>=lcl.hPa){
-                parcelC=dryAdiabatAt(theta,level.hPa)-273.15;
-            }else{
-                // Above the condensation level the parcel is on the saturated
-                // adiabat through the LCL, so its temperature at any pressure
-                // is one bisection rather than an integration from the level
-                // below. That also means the drawn path and the computed energy
-                // cannot disagree with the background adiabats they are read
-                // against, because all three are the same curve.
-                parcelC=saturatedTemperatureAt(parcelThetaE,level.hPa);
-            }
+            // Above the condensation level the parcel is on the saturated
+            // adiabat through the LCL, so its temperature at any pressure is one
+            // bisection rather than an integration from the level below. That
+            // also means the drawn path and the computed energy cannot disagree
+            // with the background adiabats they are read against, because all
+            // three are the same curve.
+            const double parcelC=(level.hPa>=lcl.hPa)
+                ?dryAdiabatAt(theta,level.hPa)-273.15
+                :saturatedTemperatureAt(parcelThetaE,level.hPa);
             if(!finite(parcelC)) break;
             path.append(at(parcelC,level.hPa));
-            const double diff=parcelC-level.celsius;
-            if(started&&level.hPa<lastP){
-                // Rd times the mean buoyancy across the layer, times the
-                // thickness in log pressure. Positive area is CAPE and
-                // negative is CIN; splitting them is the whole point, since
-                // their sum is a number nobody uses.
-                const double area=gasConstant*0.5*(diff+lastDiff)
-                                 *std::log(lastP/level.hPa);
-                if(area>0.0) available+=area; else inhibition+=area;
-                if(lastDiff<0.0&&diff>=0.0&&!finite(freeConvection))
-                    freeConvection=level.hPa;
-                if(lastDiff>0.0&&diff<=0.0&&finite(freeConvection)&&!finite(equilibrium))
-                    equilibrium=level.hPa;
-            }
-            lastP=level.hPa; lastDiff=diff; started=true;
+            rungs.append({level.hPa,parcelC-level.celsius});
         }
+
+        // ---- Pass two: cut the column into pieces of a single buoyancy sign,
+        // splitting any layer that changes sign at the crossing itself. The
+        // crossing is interpolated in log pressure, which is the measure the
+        // integral is taken in, so the two halves of a split layer add back to
+        // the whole layer exactly.
+        struct Piece { double bot,top,mean; };
+        QVector<Piece> pieces;
+        for(int i=1;i<rungs.size();++i){
+            const double bot=rungs[i-1].hPa,top=rungs[i].hPa;
+            if(!(top<bot)) continue;
+            const double d0=rungs[i-1].diff,d1=rungs[i].diff;
+            if((d0<0.0)!=(d1<0.0)&&std::abs(d1-d0)>1e-12){
+                const double f=d0/(d0-d1);
+                const double cut=std::exp(std::log(bot)
+                                          +f*(std::log(top)-std::log(bot)));
+                pieces.append({bot,cut,0.5*d0});
+                pieces.append({cut,top,0.5*d1});
+            }else{
+                pieces.append({bot,top,0.5*(d0+d1)});
+            }
+        }
+
+        // The free convection level is the bottom of the lowest positive piece;
+        // the equilibrium level is the top of the highest one. Between them the
+        // parcel rises, so all positive area there is available energy. Below the
+        // free convection level the negative area is what has to be supplied to
+        // get the parcel there, which is the inhibition. Above the equilibrium
+        // level nothing is counted at all.
+        int firstPositive=-1,lastPositive=-1;
+        for(int i=0;i<pieces.size();++i)
+            if(pieces[i].mean>0.0){
+                if(firstPositive<0) firstPositive=i;
+                lastPositive=i;
+            }
+        if(firstPositive>=0){
+            freeConvection=pieces[firstPositive].bot;
+            equilibrium=pieces[lastPositive].top;
+            for(int i=firstPositive;i<=lastPositive;++i)
+                if(pieces[i].mean>0.0)
+                    available+=gasConstant*pieces[i].mean
+                              *std::log(pieces[i].bot/pieces[i].top);
+            for(int i=0;i<firstPositive;++i)
+                if(pieces[i].mean<0.0)
+                    inhibition+=gasConstant*pieces[i].mean
+                               *std::log(pieces[i].bot/pieces[i].top);
+        }
+        // With no positive piece anywhere the parcel is never buoyant, so there
+        // is no level of free convection to reach and neither quantity is
+        // defined. Reporting the whole column's negative area as "CIN" in that
+        // case would be a large, meaningless number; both stay zero and the
+        // readout says why.
         QPen parcel(spec.style.warning);
         parcel.setWidthF(qMax(1.2,spec.style.lineWidth));
         parcel.setDashPattern({7,4});
@@ -4043,12 +4231,16 @@ void QtPlotBackend::drawSkewT(QPainter* p,const QRectF& target,const PlotSpec& s
     if(lcl.ok)
         found.append(QStringLiteral("LCL %1 hPa at %2 C")
                          .arg(lcl.hPa,0,'f',0).arg(lcl.kelvin-273.15,0,'f',1));
-    found.append(QStringLiteral("CAPE %1 J/kg").arg(available,0,'f',0));
-    found.append(QStringLiteral("CIN %1 J/kg").arg(inhibition,0,'f',0));
-    if(finite(freeConvection))
+    if(finite(freeConvection)){
+        found.append(QStringLiteral("CAPE %1 J/kg").arg(available,0,'f',0));
+        found.append(QStringLiteral("CIN %1 J/kg").arg(inhibition,0,'f',0));
         found.append(QStringLiteral("LFC %1 hPa").arg(freeConvection,0,'f',0));
-    if(finite(equilibrium))
         found.append(QStringLiteral("EL %1 hPa").arg(equilibrium,0,'f',0));
+    }else if(lcl.ok){
+        found.append(QStringLiteral(
+            "no LFC - the parcel is nowhere buoyant, so neither CAPE nor CIN "
+            "is defined"));
+    }
     // Temperature, not virtual temperature. The difference is a few per cent of
     // CAPE in a moist boundary layer and it is named here rather than implied,
     // because a CAPE quoted without saying which is not comparable with one
@@ -4880,6 +5072,9 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // curve in it. A rectangular one drawn around that would be a
         // second set of axes disagreeing with the first.
         && engine!=QLatin1String("Skew-T Log-P")
+        && engine!=QLatin1String("Emagram")
+        && engine!=QLatin1String("Stuve Diagram")
+        && engine!=QLatin1String("Tephigram")
         // Two triangles and a diamond, all in one construction. A
         // rectangular frame around them would put numbers on axes that
         // nothing in the diagram is measured against.
@@ -23625,8 +23820,14 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
             painter->restore();
             return;
         }
-        if(spec.engine==QLatin1String("Skew-T Log-P")){
-            drawSkewT(painter,target,spec);
+        if(spec.engine==QLatin1String("Skew-T Log-P")
+           ||spec.engine==QLatin1String("Emagram")
+           ||spec.engine==QLatin1String("Stuve Diagram")
+           ||spec.engine==QLatin1String("Tephigram")){
+            const int kind=(spec.engine==QLatin1String("Emagram"))?1
+                          :(spec.engine==QLatin1String("Stuve Diagram"))?2
+                          :(spec.engine==QLatin1String("Tephigram"))?3:0;
+            drawSounding(painter,target,spec,kind);
             painter->restore();
             return;
         }

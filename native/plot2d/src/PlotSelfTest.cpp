@@ -1905,6 +1905,23 @@ bool runEngineSweep(){
             {column("pressure",soundingPressure),
              column("temperature",soundingTemperature),
              column("dewpoint",soundingDewpoint)}},
+        // Batch 14: the same sounding through the other three transforms.
+        // Sharing the input is deliberate. The four charts differ only in
+        // where a point lands on the page, so they must agree about the
+        // condensation level and the energies; a disagreement between these
+        // four renders is a transform that has leaked into the physics.
+        {QStringLiteral("Emagram"),
+            {column("pressure",soundingPressure),
+             column("temperature",soundingTemperature),
+             column("dewpoint",soundingDewpoint)}},
+        {QStringLiteral("Stuve Diagram"),
+            {column("pressure",soundingPressure),
+             column("temperature",soundingTemperature),
+             column("dewpoint",soundingDewpoint)}},
+        {QStringLiteral("Tephigram"),
+            {column("pressure",soundingPressure),
+             column("temperature",soundingTemperature),
+             column("dewpoint",soundingDewpoint)}},
         {QStringLiteral("Piper Diagram"),
             {column("Ca",waterCa),column("Mg",waterMg),column("Na+K",waterNa),
              column("HCO3",waterHco3),column("SO4",waterSo4),column("Cl",waterCl)}},

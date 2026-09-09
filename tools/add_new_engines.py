@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 13.
+"""Catalogue entries for the engine expansion, batches 1 to 14.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -461,6 +461,18 @@ NEW = [
     # ---- batch 13: the first engine with a painter of its own
     ("Earth & Ocean Science", "skewt", "Skew-T Log-P",
      "A sounding on skewed logarithmic axes with dry and saturated adiabats, mixing ratios, the parcel path, LCL, CAPE and CIN"),
+
+    # ---- batch 14: the Skew-T's three siblings. Same sounding, same parcel,
+    # same background families, same energy integrals. They differ only in
+    # where a temperature and a pressure land on the page - and each of the
+    # three differences is the reason somebody prefers that chart to the
+    # others, so all three are offered rather than one of them.
+    ("Earth & Ocean Science", "emagram", "Emagram",
+     "A sounding with vertical isotherms - the oldest of the thermodynamic diagrams and the easiest to read a temperature off"),
+    ("Earth & Ocean Science", "stuve", "Stuve Diagram",
+     "A sounding against pressure to the power R/cp, the scale on which the dry adiabats come out straight"),
+    ("Earth & Ocean Science", "tephigram", "Tephigram",
+     "A sounding against log potential temperature, rotated, so that area is proportional to energy and CAPE can be judged by eye"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -500,5 +512,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-13: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-14: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

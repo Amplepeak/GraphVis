@@ -250,10 +250,12 @@ private:
     // with its impedance grid, a contingency table drawn to scale, and set
     // intersections as bars over a membership matrix.
     void drawSmith(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
-    // Draws its own skewed logarithmic frame, its own chrome and four
-    // families of background curve, so it takes the target rectangle
-    // rather than a Frame.
-    void drawSkewT(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // The four thermodynamic diagrams. They draw their own frame, chrome and
+    // background curves, so they take the target rectangle rather than a
+    // Frame; chartKind selects the transform (0 Skew-T, 1 emagram, 2 Stuve,
+    // 3 tephigram) and everything else is shared.
+    void drawSounding(QPainter* p, const QRectF& target, const PlotSpec& spec,
+                      int chartKind) const;
     // Two ternary triangles and the diamond both project into.
     void drawPiper(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     void drawMosaic(QPainter* p, const QRectF& target, const PlotSpec& spec) const;

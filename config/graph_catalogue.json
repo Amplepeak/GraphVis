@@ -2,8 +2,8 @@
  "schema": "graphvis.catalogue/1",
  "source": "GraphVis 17 src/graphvis/rendering/graph_library.py",
  "category_count": 46,
- "entry_count": 2085,
- "engine_count": 409,
+ "entry_count": 2088,
+ "engine_count": 412,
  "categories": [
   {
    "name": "Line Plots",
@@ -19925,6 +19925,39 @@
      "preview": "",
      "thumbnail": "",
      "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "emagram",
+     "engine": "Emagram",
+     "scale": null,
+     "advanced": false,
+     "description": "A sounding with vertical isotherms - the oldest of the thermodynamic diagrams and the easiest to read a temperature off",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "stuve",
+     "engine": "Stuve Diagram",
+     "scale": null,
+     "advanced": false,
+     "description": "A sounding against pressure to the power R/cp, the scale on which the dry adiabats come out straight",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
+    },
+    {
+     "category": "Earth & Ocean Science",
+     "name": "tephigram",
+     "engine": "Tephigram",
+     "scale": null,
+     "advanced": false,
+     "description": "A sounding against log potential temperature, rotated, so that area is proportional to energy and CAPE can be judged by eye",
+     "preview": "",
+     "thumbnail": "",
+     "pack": "earth"
     }
    ],
    "pack": "earth"
@@ -23234,7 +23267,7 @@
    "id": "earth",
    "name": "Earth & Environment",
    "description": "Map projections, GIS, terrain, hydrology, geology and oceanography.",
-   "entryCount": 199
+   "entryCount": 202
   },
   {
    "id": "life",
