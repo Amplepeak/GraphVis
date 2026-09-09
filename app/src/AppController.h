@@ -43,6 +43,37 @@ class AppController final : public QObject {
     Q_PROPERTY(QUrl literatureUrl READ literatureUrl NOTIFY literatureChanged)
     Q_PROPERTY(QVariantMap literatureAnalysis READ literatureAnalysis NOTIFY literatureChanged)
     Q_PROPERTY(bool scienceServiceAvailable READ scienceServiceAvailable NOTIFY scienceServiceAvailabilityChanged)
+
+    // Reading a paper with a model, which is OFF and stays off unless somebody
+    // turns it on.
+    //
+    // Everything GraphVis does with literature is local: PDF text, tables,
+    // embedded figures, and a recommender that scores columns arithmetically.
+    // That is the product, not a fallback. What this adds is the option of
+    // showing each figure to a vision model as well, for the one thing local
+    // parsing cannot do - read numbers back off a chart that published no
+    // table - and it is deliberately provider-agnostic: any OpenAI-compatible
+    // endpoint, or a model on this machine.
+    //
+    //   0  Off             nothing leaves this computer
+    //   1  Endpoint        an OpenAI-compatible HTTPS API of the person's choosing
+    //   2  Local model     transformers, on this machine, no network
+    Q_PROPERTY(int literatureAiProvider READ literatureAiProvider WRITE setLiteratureAiProvider NOTIFY literatureAiChanged)
+    Q_PROPERTY(QStringList literatureAiProviderNames READ literatureAiProviderNames CONSTANT)
+    Q_PROPERTY(QString literatureAiEndpoint READ literatureAiEndpoint WRITE setLiteratureAiEndpoint NOTIFY literatureAiChanged)
+    Q_PROPERTY(QString literatureAiModel READ literatureAiModel WRITE setLiteratureAiModel NOTIFY literatureAiChanged)
+    // WHERE THE KEY IS, never the key. A settings file is a plain-text file in
+    // AppData that gets copied into backups and support bundles, and a key
+    // written there is a key leaked by every one of them. GraphVis stores the
+    // NAME of an environment variable, or the path of a file holding the key,
+    // reads it at the moment of the call and forgets it.
+    Q_PROPERTY(QString literatureAiKeyEnv READ literatureAiKeyEnv WRITE setLiteratureAiKeyEnv NOTIFY literatureAiChanged)
+    Q_PROPERTY(QString literatureAiKeyFile READ literatureAiKeyFile WRITE setLiteratureAiKeyFile NOTIFY literatureAiChanged)
+    // Whether a key can be found where the two settings above say it is, so the
+    // interface can say "no key found" before a request fails rather than after.
+    Q_PROPERTY(bool literatureAiKeyPresent READ literatureAiKeyPresent NOTIFY literatureAiChanged)
+    // What the last connection test said. Empty until one is run.
+    Q_PROPERTY(QString literatureAiStatus READ literatureAiStatus NOTIFY literatureAiChanged)
     // Every add-dataset action leaves a row here - queued, converting,
     // importing, loaded or failed, with the reason. A status line that flashes
     // past is not evidence that anything happened.
@@ -301,6 +332,22 @@ public:
     Q_INVOKABLE void openLiteraturePath(const QString& path);
     Q_INVOKABLE void clearLiterature();
     Q_INVOKABLE void analyzeLiterature();
+    // Ask the chosen reader whether it answers, with a 16x16 blank rather than
+    // the person's paper.
+    Q_INVOKABLE void testLiteratureAi();
+    int literatureAiProvider() const{return literatureAiProvider_;}
+    void setLiteratureAiProvider(int provider);
+    QStringList literatureAiProviderNames() const;
+    QString literatureAiEndpoint() const{return literatureAiEndpoint_;}
+    void setLiteratureAiEndpoint(const QString& value);
+    QString literatureAiModel() const{return literatureAiModel_;}
+    void setLiteratureAiModel(const QString& value);
+    QString literatureAiKeyEnv() const{return literatureAiKeyEnv_;}
+    void setLiteratureAiKeyEnv(const QString& value);
+    QString literatureAiKeyFile() const{return literatureAiKeyFile_;}
+    void setLiteratureAiKeyFile(const QString& value);
+    bool literatureAiKeyPresent() const{return !resolveLiteratureAiKey().isEmpty();}
+    QString literatureAiStatus() const{return literatureAiStatus_;}
     Q_INVOKABLE QString scienceServiceInstallHint() const;
     // What "literature" can mean. A paper is usually a PDF, but a thesis
     // chapter, a lab protocol or a set of notes is just as likely to be a Word
@@ -497,6 +544,7 @@ signals:
     void analysisChanged();
     void analysisCatalogueChanged();
     void scienceServiceAvailabilityChanged();
+    void literatureAiChanged();
     void importLogChanged();
     void plotColourVisionChanged();
     void plotDisplayChanged();
@@ -633,6 +681,18 @@ private:
     QString workspaceMode_=QStringLiteral("Home");
     QUrl literatureUrl_;
     QVariantMap literatureAnalysis_;
+    // The optional reader. Off by default, and the key is never a member: only
+    // where to find it.
+    int literatureAiProvider_=0;
+    QString literatureAiEndpoint_;
+    QString literatureAiModel_;
+    QString literatureAiKeyEnv_=QStringLiteral("GRAPHVIS_VLM_API_KEY");
+    QString literatureAiKeyFile_;
+    QString literatureAiStatus_;
+    // The reader's configuration for one request, with the key resolved at the
+    // last moment. Empty object when the reader is off.
+    QJsonObject literatureAiConfig() const;
+    QString resolveLiteratureAiKey() const;
     QVariantMap analysisResult_;
     QString analysisKind_;
     QVariantList analysisCatalogue_;

@@ -78,6 +78,15 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotFieldKrigingVariogram_=qBound(0,settings.value(QStringLiteral("plot/fieldKrigingVariogram"),0).toInt(),2);
     plotFieldLoessFraction_=qBound(0.02,settings.value(QStringLiteral("plot/fieldLoessFraction"),0.25).toDouble(),1.0);
     uiLayout_=qBound(0,settings.value(QStringLiteral("ui/layout"),0).toInt(),5);
+    // The optional literature reader. Off unless somebody has turned it on, and
+    // the key is not among these: only the name of the environment variable or
+    // the path of the file it lives in.
+    literatureAiProvider_=qBound(0,settings.value(QStringLiteral("literature/aiProvider"),0).toInt(),2);
+    literatureAiEndpoint_=settings.value(QStringLiteral("literature/aiEndpoint")).toString();
+    literatureAiModel_=settings.value(QStringLiteral("literature/aiModel")).toString();
+    literatureAiKeyEnv_=settings.value(QStringLiteral("literature/aiKeyEnv"),
+                                       QStringLiteral("GRAPHVIS_VLM_API_KEY")).toString();
+    literatureAiKeyFile_=settings.value(QStringLiteral("literature/aiKeyFile")).toString();
     loadRecents();
     // Every signal connection below has to happen whether or not the native
     // core loads. When the DLL is missing this constructor used to return here,
@@ -694,11 +703,117 @@ void AppController::openLiteraturePath(const QString& path){
     openLiterature(QUrl::fromLocalFile(path));
 }
 void AppController::clearLiterature(){literatureUrl_=QUrl();literatureAnalysis_.clear();emit literatureChanged();}
+// =========================================================================
+// The optional literature reader
+//
+// Off by default and off after an upgrade: the setting is read with 0 as its
+// default, so a build that gains this feature does not gain a network call.
+// =========================================================================
+QStringList AppController::literatureAiProviderNames() const{
+    return {QStringLiteral("Off - read papers on this computer"),
+            QStringLiteral("OpenAI-compatible endpoint"),
+            QStringLiteral("Local model on this computer")};
+}
+
+#define GV_LIT_AI_SETTING(Name,Member,Key)                                  \
+void AppController::setLiteratureAi##Name(const QString& value){            \
+    const QString trimmed=value.trimmed();                                  \
+    if(Member==trimmed) return;                                             \
+    Member=trimmed;                                                         \
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))    \
+        .setValue(QStringLiteral(Key),Member);                              \
+    literatureAiStatus_.clear();   /* the last test was of something else */ \
+    emit literatureAiChanged();                                             \
+}
+GV_LIT_AI_SETTING(Endpoint,literatureAiEndpoint_,"literature/aiEndpoint")
+GV_LIT_AI_SETTING(Model,literatureAiModel_,"literature/aiModel")
+GV_LIT_AI_SETTING(KeyEnv,literatureAiKeyEnv_,"literature/aiKeyEnv")
+GV_LIT_AI_SETTING(KeyFile,literatureAiKeyFile_,"literature/aiKeyFile")
+#undef GV_LIT_AI_SETTING
+
+void AppController::setLiteratureAiProvider(int provider){
+    const int clamped=qBound(0,provider,2);
+    if(literatureAiProvider_==clamped) return;
+    literatureAiProvider_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("literature/aiProvider"),literatureAiProvider_);
+    literatureAiStatus_.clear();
+    emit literatureAiChanged();
+}
+
+// The key, at the moment it is needed and not before.
+//
+// The environment variable first, because that is the form that leaves no file
+// on disk at all; then a file, for the people whose key lives in one already.
+// Whitespace and a trailing newline are stripped, since a key pasted into a
+// text file almost always has one and a header with a newline in it fails in a
+// way nobody can read.
+QString AppController::resolveLiteratureAiKey() const{
+    if(!literatureAiKeyEnv_.isEmpty()){
+        const QString fromEnv=qEnvironmentVariable(literatureAiKeyEnv_.toLocal8Bit().constData());
+        if(!fromEnv.trimmed().isEmpty()) return fromEnv.trimmed();
+    }
+    if(!literatureAiKeyFile_.isEmpty()){
+        QFile f(literatureAiKeyFile_);
+        if(f.open(QIODevice::ReadOnly|QIODevice::Text))
+            return QString::fromUtf8(f.readAll()).trimmed();
+    }
+    return QString();
+}
+
+QJsonObject AppController::literatureAiConfig() const{
+    if(literatureAiProvider_==0) return QJsonObject{{"provider","off"}};
+    if(literatureAiProvider_==2)
+        return QJsonObject{{"provider","local"},{"model",literatureAiModel_}};
+    return QJsonObject{{"provider","endpoint"},
+                       {"endpoint",literatureAiEndpoint_},
+                       {"model",literatureAiModel_},
+                       {"api_key",resolveLiteratureAiKey()},
+                       {"timeout",90.0}};
+}
+
+void AppController::testLiteratureAi(){
+    if(busy_){setStatus(QStringLiteral("A native/science job is already running"));return;}
+    if(literatureAiProvider_==0){
+        literatureAiStatus_=QStringLiteral("No reader chosen - papers are read on this computer.");
+        emit literatureAiChanged();
+        return;
+    }
+    const QString exe=scienceServiceExecutable();
+    if(!QFileInfo::exists(exe)){
+        literatureAiStatus_=scienceServiceInstallHint();
+        emit literatureAiChanged();
+        emit scienceServiceAvailabilityChanged();
+        return;
+    }
+    if(literatureAiProvider_==1&&resolveLiteratureAiKey().isEmpty()){
+        // Said before the call rather than after it: an endpoint that answers
+        // 401 reads as a broken endpoint unless somebody tells you the key was
+        // never found.
+        literatureAiStatus_=QStringLiteral("No key found in %1%2 - the request would be "
+                                           "sent without one.")
+            .arg(literatureAiKeyEnv_.isEmpty()?QString():QStringLiteral("$")+literatureAiKeyEnv_)
+            .arg(literatureAiKeyFile_.isEmpty()?QString()
+                                               :QStringLiteral(" or %1").arg(literatureAiKeyFile_));
+        emit literatureAiChanged();
+        return;
+    }
+    literatureAiStatus_=QStringLiteral("Asking the reader…");
+    emit literatureAiChanged();
+    startScienceOp(QJsonObject{{"op","literature.vlm_test"},{"vlm",literatureAiConfig()}},
+                   QStringLiteral("literature.vlm_test"),
+                   QStringLiteral("Testing the literature reader"));
+}
+
 void AppController::analyzeLiterature(){
     if(literatureUrl_.isEmpty()){setStatus("Open a PDF first");return;} if(busy_){setStatus("A native/science job is already running");return;}
     const QString exe=scienceServiceExecutable(); if(!QFileInfo::exists(exe)){setStatus(scienceServiceInstallHint());emit scienceServiceAvailabilityChanged();return;}
     literatureAnalysis_.clear();
-    startScienceOp(QJsonObject{{"op","literature.extract"},{"path",cleanLocalPath(literatureUrl_)}},
+    startScienceOp(QJsonObject{{"op","literature.extract"},
+                               {"path",cleanLocalPath(literatureUrl_)},
+                               // "off" unless somebody chose otherwise, and the
+                               // service treats anything else as the exception.
+                               {"vlm",literatureAiConfig()}},
                    QStringLiteral("literature.extract"),
                    QStringLiteral("Extracting literature intelligence"));
 }
@@ -1187,6 +1302,21 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         // Housekeeping. It has no result to show, and the status line already
         // says how many cached scans were removed.
         if(!ok) setStatus(QStringLiteral("Could not clear the service cache: %1").arg(error));
+        return;
+    }
+
+    if(op==QStringLiteral("literature.vlm_test")){
+        // Its own branch: a connection test is not an analysed paper, and
+        // writing it into that slot would empty the panel of one.
+        const QString reader=obj.value(QStringLiteral("reader")).toString();
+        literatureAiStatus_=ok
+            ?QStringLiteral("%1%2").arg(reader.isEmpty()?QString():reader+QStringLiteral(" · "),
+                                        obj.value(QStringLiteral("detail")).toString())
+            :QStringLiteral("Failed: %1").arg(obj.value(QStringLiteral("error")).toString().isEmpty()
+                                              ?error:obj.value(QStringLiteral("error")).toString());
+        emit literatureAiChanged();
+        setStatus(ok?QStringLiteral("Literature reader answered")
+                    :QStringLiteral("Literature reader did not answer"));
         return;
     }
 

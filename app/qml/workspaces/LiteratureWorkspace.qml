@@ -49,8 +49,132 @@ Rectangle {
                         Button { text: "Recreate selected graph"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Enable after selecting a detected figure and completing axis calibration" }
                     }
                 }
+                // Reading a paper with a model. OFF, and folded away, because
+                // everything above this works without it: text, tables, figures
+                // and the recommender are all local, and that is the product
+                // rather than a fallback.
+                //
+                // What this adds is the one thing local parsing cannot do -
+                // read numbers back off a published chart that came with no
+                // table - and it is deliberately any-provider: an
+                // OpenAI-compatible endpoint of the person's choosing, or a
+                // model on their own machine.
+                GvGroupBox {
+                    title: "Reading help (optional)"
+                    collapsed: true
+                    Layout.fillWidth: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 6
+
+                        ComboBox {
+                            id: aiProvider
+                            Layout.fillWidth: true
+                            model: root.app.literatureAiProviderNames
+                            currentIndex: root.app.literatureAiProvider
+                            onActivated: root.app.literatureAiProvider = currentIndex
+                        }
+
+                        // What leaves the computer, stated where the choice is
+                        // made rather than in a manual nobody opens. Someone
+                        // working on unpublished data needs this sentence
+                        // before they pick an endpoint, not after.
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: 11
+                            color: root.app.literatureAiProvider === 1 ? Theme.warning : Theme.textMuted
+                            text: root.app.literatureAiProvider === 0
+                                  ? "Nothing leaves this computer. Papers are read here."
+                                  : (root.app.literatureAiProvider === 1
+                                     ? "Each figure image and its caption are uploaded to the endpoint below. Do not use a hosted endpoint for unpublished figures you cannot share."
+                                     : "The model runs on this computer. Nothing is uploaded; the first use of a session takes a while to load.")
+                        }
+
+                        TextField {
+                            visible: root.app.literatureAiProvider === 1
+                            Layout.fillWidth: true
+                            placeholderText: "https://…/v1/chat/completions"
+                            text: root.app.literatureAiEndpoint
+                            onEditingFinished: root.app.literatureAiEndpoint = text
+                        }
+                        TextField {
+                            visible: root.app.literatureAiProvider > 0
+                            Layout.fillWidth: true
+                            placeholderText: root.app.literatureAiProvider === 1
+                                             ? "model name" : "local model id"
+                            text: root.app.literatureAiModel
+                            onEditingFinished: root.app.literatureAiModel = text
+                        }
+
+                        // WHERE the key is, never the key. A settings file is
+                        // plain text in AppData and ends up in every backup and
+                        // support bundle; a key typed into one is a key leaked
+                        // by all of them.
+                        Label {
+                            visible: root.app.literatureAiProvider === 1
+                            text: "API key — GraphVis reads it, never stores it"
+                            color: Theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        TextField {
+                            visible: root.app.literatureAiProvider === 1
+                            Layout.fillWidth: true
+                            placeholderText: "environment variable name"
+                            text: root.app.literatureAiKeyEnv
+                            onEditingFinished: root.app.literatureAiKeyEnv = text
+                        }
+                        TextField {
+                            visible: root.app.literatureAiProvider === 1
+                            Layout.fillWidth: true
+                            placeholderText: "…or a file holding the key"
+                            text: root.app.literatureAiKeyFile
+                            onEditingFinished: root.app.literatureAiKeyFile = text
+                        }
+                        Label {
+                            visible: root.app.literatureAiProvider === 1
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: 11
+                            color: root.app.literatureAiKeyPresent ? Theme.positive : Theme.warning
+                            text: root.app.literatureAiKeyPresent
+                                  ? "Key found." : "No key found where those point."
+                        }
+
+                        RowLayout {
+                            visible: root.app.literatureAiProvider > 0
+                            Layout.fillWidth: true
+                            Button {
+                                text: "Test"
+                                enabled: !root.app.busy
+                                onClicked: root.app.testLiteratureAi()
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Sends a 16×16 blank image, not your paper, and reports what came back."
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 11
+                                color: Theme.textSecondary
+                                text: root.app.literatureAiStatus
+                            }
+                        }
+                    }
+                }
                 Item { Layout.fillHeight: true }
-                Label { text: root.app.scienceServiceAvailable ? "AI/science service ready" : "Native reader ready · AI extraction optional"; color: root.app.scienceServiceAvailable ? Theme.positive : Theme.textSecondary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                // "AI/science service" was one label for two unrelated things.
+                // The science add-on is Python doing deterministic parsing; the
+                // reader above is the only part with a model in it, and it is
+                // off. Saying "AI ready" of the first is how someone concludes
+                // their paper has been sent somewhere.
+                Label {
+                    text: root.app.scienceServiceAvailable
+                          ? "Science add-on ready · reading help " + (root.app.literatureAiProvider === 0 ? "off" : "on")
+                          : "Reading papers on this computer · science add-on not installed"
+                    color: root.app.scienceServiceAvailable ? Theme.positive : Theme.textSecondary
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
             }
         }
 

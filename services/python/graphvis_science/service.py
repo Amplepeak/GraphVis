@@ -35,6 +35,61 @@ def _figure_asset(req: dict):
                        caption=str(req.get("caption") or ""), observation=observation)
 
 
+def _vlm_provider(cfg: dict | None):
+    """The vision model to read figures with, or None for the offline path.
+
+    Nothing here is mandatory and nothing is the default. GraphVis reads a paper
+    with deterministic parsing - PDF text, tables, embedded figures - and that is
+    what runs unless somebody has deliberately chosen a model. `provider` is
+    "off" (or absent) for that, "endpoint" for any OpenAI-compatible HTTPS API,
+    or "local" for a model on this machine.
+
+    The key arrives in the request and is never written anywhere: the app reads
+    it from an environment variable or a file the person nominated, hands it over
+    for the one call, and forgets it.
+    """
+    cfg = cfg or {}
+    kind = str(cfg.get("provider") or "off").lower()
+    if kind in ("", "off", "none"):
+        return None
+    if kind in ("endpoint", "openai", "openai-compatible"):
+        endpoint = str(cfg.get("endpoint") or "").strip()
+        model = str(cfg.get("model") or "").strip()
+        if not endpoint or not model:
+            raise ValueError("An endpoint and a model name are both needed for a hosted reader")
+        from graphvis_science.literature.vlm import OpenAICompatibleVLM
+        return OpenAICompatibleVLM(endpoint, model, str(cfg.get("api_key") or "") or None,
+                                   timeout=float(cfg.get("timeout") or 90.0))
+    if kind == "local":
+        model = str(cfg.get("model") or "").strip()
+        if not model:
+            raise ValueError("A model id is needed for a local reader")
+        from graphvis_science.literature.vlm import LocalTransformersVLM
+        return LocalTransformersVLM(model, trust_remote_code=bool(cfg.get("trust_remote_code")))
+    raise ValueError(f"Unknown reader: {kind}")
+
+
+def _tiny_png(path: str) -> str:
+    """A 16x16 white PNG, written without PIL.
+
+    The connection test sends a picture because that is what these endpoints
+    take; it is deliberately the smallest legal one, so a test costs a token or
+    two rather than a page of a paper.
+    """
+    import zlib, struct
+    w = h = 16
+    raw = b"".join(b"\x00" + bytes([255, 255, 255] * w) for _ in range(h))
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw))
+           + chunk(b"IEND", b""))
+    Path(path).write_bytes(png)
+    return path
+
+
 def dispatch(req: dict) -> dict:
     op=req.get("op", "health")
     if op=="health":
@@ -45,11 +100,58 @@ def dispatch(req: dict) -> dict:
         return {"ok":True,"result":df[cols].describe().to_dict()}
     if op=="literature.extract":
         from graphvis_science.literature.extractor import extract_literature
-        result=extract_literature(req["path"])
+        # A reader, only if one was deliberately chosen. Without one this is
+        # exactly what it has always been: local parsing, no network, no model.
+        provider=_vlm_provider(req.get("vlm"))
+        figures=[]; reader=""
+        if provider is None:
+            result=extract_literature(req["path"])
+        else:
+            # The pipeline runs the same extractor and then shows each figure to
+            # the model, so choosing a reader adds work rather than replacing
+            # any of it.
+            from graphvis_science.literature.intelligence import LiteratureIntelligencePipeline
+            out_dir=str(req.get("out_dir") or (Path(req["path"]).parent/"graphvis_literature"))
+            analysed=LiteratureIntelligencePipeline(provider).analyze(req["path"],out_dir)
+            result=analysed.extraction
+            reader=getattr(provider,"name","reader")
+            for fig in analysed.figures:
+                obs=fig.observation
+                figures.append({
+                    "page":fig.page,"path":fig.path,"caption":fig.caption,
+                    "plot_type":getattr(obs,"plot_type","") if obs else "",
+                    "confidence":getattr(obs,"confidence",0.0) if obs else 0.0,
+                    "x_label":getattr(obs,"x_label","") if obs else "",
+                    "y_label":getattr(obs,"y_label","") if obs else "",
+                    "x_scale":getattr(obs,"x_scale","") if obs else "",
+                    "y_scale":getattr(obs,"y_scale","") if obs else "",
+                    "legend":list(getattr(obs,"legend",[]) or []) if obs else [],
+                    # Said out loud rather than swallowed: a figure the reader
+                    # failed on looks exactly like a figure it had nothing to
+                    # say about, and the difference is usually a bad key.
+                    "error":str(fig.diagnostics.get("vlm_error","")) if fig.diagnostics else ""})
         datasets=[]
         for d in getattr(result,"datasets",[]):
             datasets.append({"name":getattr(d,"name","dataset"),"rows":len(d.df),"columns":list(map(str,d.df.columns))})
-        return {"ok":True,"title":getattr(result,"title",""),"datasets":datasets,"text_chars":len(getattr(result,"text","")),"saved_paths":list(getattr(result,"saved_paths",[]) or []),"parameters":dict(getattr(result,"parameters",{}) or {}),"semantic_context":dict(getattr(result,"semantic_context",{}) or {}),"warnings":list(getattr(result,"warnings",[]) or [])}
+        return {"ok":True,"title":getattr(result,"title",""),"datasets":datasets,"text_chars":len(getattr(result,"text","")),"saved_paths":list(getattr(result,"saved_paths",[]) or []),"parameters":dict(getattr(result,"parameters",{}) or {}),"semantic_context":dict(getattr(result,"semantic_context",{}) or {}),"warnings":list(getattr(result,"warnings",[]) or []),"figures":figures,"reader":reader}
+
+    if op=="literature.vlm_test":
+        # Does the chosen reader answer at all? Asked with a 16x16 blank rather
+        # than a paper, so nothing of the person's leaves the machine to find
+        # out whether an endpoint and a key are right.
+        import tempfile
+        provider=_vlm_provider(req.get("vlm"))
+        if provider is None:
+            return {"ok":True,"reader":"","detail":"No reader chosen - papers are read offline."}
+        with tempfile.TemporaryDirectory() as tmp:
+            path=_tiny_png(str(Path(tmp)/"probe.png"))
+            try:
+                obs=provider.analyze_figure(path,"This is a blank test image. Reply with JSON.")
+            except Exception as exc:
+                return {"ok":False,"reader":getattr(provider,"name","reader"),
+                        "error":f"{type(exc).__name__}: {exc}"}
+        return {"ok":True,"reader":getattr(provider,"name","reader"),
+                "detail":f"Answered: plot_type '{obs.plot_type}', confidence {obs.confidence:.2f}"}
     if op=="literature.extractions":
         # Everything extracted from a paper before now. Each extraction already
         # writes a sidecar next to its dataset; nothing ever read them back, so
