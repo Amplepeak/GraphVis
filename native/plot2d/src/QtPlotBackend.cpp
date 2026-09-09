@@ -590,6 +590,9 @@ QStringList QtPlotBackend::supportedEngines() const {
         QStringLiteral("Alignment Nomogram"),
         // Batch 23.
         QStringLiteral("Dalitz Plot"),
+        // Batch 24. The UK system first, because that is the one in use here.
+        QStringLiteral("Soil Texture Triangle (UK)"),
+        QStringLiteral("Soil Texture Triangle (USDA)"),
     };
     return kEngines;
 }
@@ -2243,6 +2246,9 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // Source segment and position, target segment and position, and a weight
     // if one is mapped.
     if(engine==QLatin1String("Circos Plot")) return {4,5,true};
+    // Per cent sand, silt and clay, in the order an analysis reports them.
+    if(engine==QLatin1String("Soil Texture Triangle (UK)")
+       ||engine==QLatin1String("Soil Texture Triangle (USDA)")) return {3,3,true};
     // Chromosome, band start, band end, stain.
     if(engine==QLatin1String("Karyotype Ideogram")) return {4,4,true};
     // Three components and the value measured over them.
@@ -6591,6 +6597,283 @@ void QtPlotBackend::drawDalitz(QPainter* p,const Frame& f,const PlotSpec& spec) 
 }
 
 // ======================================================================
+// Soil texture triangle
+//
+// A classification diagram, and the first thing in this catalogue that is one.
+// Every other engine derives its picture from the data; this one is a fixed map
+// of named regions with the sample placed on it, so the whole value is in the
+// boundaries being right. A texture triangle drawn from memory would look
+// entirely convincing and would tell somebody their soil is a clay loam when it
+// is a silty clay loam, which is a different and worse failure than a wrong
+// contour: the figure is not describing the data, it is answering a question.
+//
+// So neither set of boundaries below was drawn from memory.
+//
+// The UK regions are the Soil Survey of England and Wales boundaries - clay at
+// 18, 35 and 55 per cent, and the sandy/silty splits - taken from the vertex
+// table in the `soiltexture` R package (Moeys), which for this system sits on
+// the published values rather than on a rounded plotting grid.
+//
+// The USDA regions were not transcribed from a drawing at all. They are
+// COMPUTED from the class definitions in the NRCS Soil Survey Manual - "sand:
+// 85 per cent or more sand, and the percentage of silt plus 1.5 times the
+// percentage of clay not exceeding 15", and so on - by clipping the whole
+// triangle with each inequality in turn. Nothing was read off a picture, and
+// the two classes whose definition is a disjunction (sandy loam, silt loam)
+// come out as two pieces each, which is what they are.
+//
+// Both sets were checked by the one identity a classification cannot escape:
+// the regions must TILE the triangle. Summed in exact rational arithmetic, each
+// system's classes come to 5000 against the triangle's own 5000, difference
+// zero - so there is no composition that falls in no class and none that falls
+// in two. A single mistyped vertex breaks that immediately.
+//
+// Three mapped columns: per cent sand, per cent silt, per cent clay, in the
+// order a particle-size analysis reports them. Rows are normalised, because an
+// analysis that sums to 99.7 is the normal case and not an error.
+namespace {
+
+struct TextureClass { const char* name; int count; const double (*vertex)[2]; };
+
+// (clay, silt) per cent. Sand is what is left.
+const double kUkClay[]        ={100,0, 55,0, 35,20, 35,45, 55,45};
+const double kUkSandyClay[]   ={55,0, 30,0, 30,20, 35,20};
+const double kUkSiltyClay[]   ={55,45, 35,45, 35,65};
+const double kUkClayLoam[]    ={35,20, 30,20, 18,32, 18,62, 35,45};
+const double kUkSiltyClayLo[] ={35,45, 18,62, 18,82, 35,65};
+const double kUkSandyClayLo[] ={30,0, 18,0, 18,32, 30,20};
+const double kUkSandyLoam[]   ={18,0, 15,0, 0,30, 0,50, 18,32};
+const double kUkSandySiltLo[] ={18,32, 0,50, 0,80, 18,62};
+const double kUkSiltLoam[]    ={18,62, 0,80, 0,100, 18,82};
+const double kUkLoamySand[]   ={15,0, 10,0, 0,15, 0,30};
+const double kUkSand[]        ={10,0, 0,0, 0,15};
+
+const double kUsSand[]        ={0,15, 0,0, 10,0};
+const double kUsLoamySand[]   ={0,30, 0,15, 10,0, 15,0};
+const double kUsSandyLoamA[]  ={0,48, 0,30, 15,0, 20,0, 20,28};
+const double kUsSandyLoamB[]  ={0,50, 0,48, 7,41, 7,50};
+const double kUsLoam[]        ={7,50, 7,41, 20,28, 27,28, 27,50};
+const double kUsSiltLoamA[]   ={27,73, 12,88, 12,50, 27,50};
+const double kUsSiltLoamB[]   ={12,80, 0,80, 0,50, 12,50};
+const double kUsSilt[]        ={12,88, 0,100, 0,80, 12,80};
+const double kUsSandyClayLo[] ={20,28, 20,0, 35,0, 35,20, 27,28};
+const double kUsClayLoam[]    ={27,53, 27,28, 40,15, 40,40};
+const double kUsSiltyClayLo[] ={40,60, 27,73, 27,53, 40,40};
+const double kUsSandyClay[]   ={35,20, 35,0, 55,0};
+const double kUsSiltyClay[]   ={60,40, 40,60, 40,40};
+const double kUsClay[]        ={100,0, 60,40, 40,40, 40,15, 55,0};
+
+struct Region { const char* name; const double* points; int count; };
+
+const Region kUk[]={
+    {"clay",kUkClay,5},{"sandy clay",kUkSandyClay,4},{"silty clay",kUkSiltyClay,3},
+    {"clay loam",kUkClayLoam,5},{"silty clay loam",kUkSiltyClayLo,4},
+    {"sandy clay loam",kUkSandyClayLo,4},{"sandy loam",kUkSandyLoam,5},
+    {"sandy silt loam",kUkSandySiltLo,4},{"silt loam",kUkSiltLoam,4},
+    {"loamy sand",kUkLoamySand,4},{"sand",kUkSand,3}};
+
+const Region kUsda[]={
+    {"sand",kUsSand,3},{"loamy sand",kUsLoamySand,4},
+    {"sandy loam",kUsSandyLoamA,5},{"sandy loam",kUsSandyLoamB,4},
+    {"loam",kUsLoam,5},{"silt loam",kUsSiltLoamA,4},{"silt loam",kUsSiltLoamB,4},
+    {"silt",kUsSilt,4},{"sandy clay loam",kUsSandyClayLo,5},
+    {"clay loam",kUsClayLoam,4},{"silty clay loam",kUsSiltyClayLo,4},
+    {"sandy clay",kUsSandyClay,3},{"silty clay",kUsSiltyClay,3},{"clay",kUsClay,5}};
+
+// Even-odd, in the (clay, silt) plane the regions are defined in - so the test
+// asks the same question the boundaries answer, rather than one about pixels.
+bool insideRegion(const Region& region,double clay,double silt){
+    bool in=false;
+    for(int i=0,j=region.count-1;i<region.count;j=i++){
+        const double ci=region.points[i*2],si=region.points[i*2+1];
+        const double cj=region.points[j*2],sj=region.points[j*2+1];
+        if((si>silt)!=(sj>silt)){
+            const double at=ci+(silt-si)*(cj-ci)/(sj-si);
+            if(clay<at) in=!in;
+        }
+    }
+    return in;
+}
+
+} // namespace
+
+void QtPlotBackend::drawSoilTexture(QPainter* p,const QRectF& target,
+                                    const PlotSpec& spec,bool uk) const {
+    drawFloatingTitle(p,target,spec);
+    const QFont tickFont=font(spec,spec.style.tickSize);
+    const QFontMetricsF fm(tickFont,p->device());
+    p->setFont(tickFont);
+
+    const Region* regions=uk?kUk:kUsda;
+    const int regionCount=uk?int(sizeof(kUk)/sizeof(kUk[0]))
+                            :int(sizeof(kUsda)/sizeof(kUsda[0]));
+
+    const double height=std::sqrt(3.0)/2.0;
+    const double margin=fm.height()*2.6;
+    const double usableW=qMax(20.0,target.width()-2.0*margin);
+    const double usableH=qMax(20.0,target.height()-2.0*margin
+                              -(spec.title.isEmpty()?0.0:fm.height()*2.0));
+    const double scale=qMin(usableW,usableH/height);
+    const double originX=target.center().x()-scale*0.5;
+    const double originY=target.bottom()-margin*0.9;
+    // Sand at the bottom left, silt at the bottom right, clay at the apex,
+    // which is how both systems are always printed.
+    const auto at=[&](double clay,double silt){
+        const double x=(silt+clay*0.5)/100.0;
+        return QPointF(originX+x*scale,originY-(clay/100.0)*height*scale);
+    };
+
+    p->save();
+    p->setPen(QPen(spec.style.gridColor,0.6));
+    for(int step=1;step<10;++step){
+        const double f=double(step)*10.0;
+        p->drawLine(at(f,0.0),at(f,100.0-f));            // constant clay
+        p->drawLine(at(0.0,f),at(100.0-f,f));            // constant silt
+        p->drawLine(at(0.0,100.0-f),at(f,100.0-f));      // constant sand
+    }
+    p->restore();
+
+    // ---- The regions, and their names at their own centroids.
+    p->save();
+    // Colour and label by CLASS, not by polygon. Two of the USDA classes are a
+    // union of two pieces, and colouring each piece by its position in the
+    // table gave sandy loam and silt loam two colours apiece and printed each
+    // name twice - which on a classification diagram reads as four classes
+    // where there are two.
+    const auto firstWithName=[&](int r){
+        for(int q=0;q<r;++q)
+            if(qstrcmp(regions[q].name,regions[r].name)==0) return q;
+        return r;
+    };
+    for(int r=0;r<regionCount;++r){
+        QPolygonF shape;
+        double cx=0.0,cy=0.0;
+        for(int i=0;i<regions[r].count;++i){
+            const double clay=regions[r].points[i*2],silt=regions[r].points[i*2+1];
+            shape<<at(clay,silt);
+            cx+=clay; cy+=silt;
+        }
+        cx/=double(regions[r].count); cy/=double(regions[r].count);
+        const int hueFrom=firstWithName(r);
+        QColor fill=QColor::fromHsvF(std::fmod(0.06+0.618034*double(hueFrom),1.0),
+                                     0.16,0.99);
+        p->setBrush(fill);
+        p->setPen(QPen(spec.style.foreground,0.8));
+        p->drawPolygon(shape);
+
+        // The name goes on the LARGEST piece of its class, once.
+        double widest=shape.boundingRect().width();
+        bool biggest=true;
+        for(int q=0;q<regionCount;++q){
+            if(q==r||qstrcmp(regions[q].name,regions[r].name)!=0) continue;
+            QPolygonF other;
+            for(int i=0;i<regions[q].count;++i)
+                other<<at(regions[q].points[i*2],regions[q].points[i*2+1]);
+            if(other.boundingRect().width()>widest) biggest=false;
+        }
+        if(!biggest) continue;
+        const QPointF middle=at(cx,cy);
+        p->setPen(spec.style.foreground);
+        const QString name=QString::fromLatin1(regions[r].name);
+        // Only where it fits. A name wider than its own region, printed anyway,
+        // labels its neighbours as well as itself.
+        if(fm.horizontalAdvance(name)<shape.boundingRect().width()+8.0)
+            p->drawText(QRectF(middle.x()-70.0,middle.y()-fm.height()*0.5,140.0,fm.height()),
+                        Qt::AlignCenter,name);
+    }
+    p->setPen(QPen(spec.style.foreground,1.2));
+    p->setBrush(Qt::NoBrush);
+    p->drawPolyline(QPolygonF()<<at(0,0)<<at(0,100)<<at(100,0)<<at(0,0));
+
+    p->setPen(spec.style.foreground);
+    const double pad=fm.height()*0.8;
+    p->drawText(QRectF(at(100,0).x()-70.0,at(100,0).y()-fm.height()-pad*0.4,140.0,fm.height()),
+                Qt::AlignCenter,QStringLiteral("clay %"));
+    p->drawText(QRectF(at(0,0).x()-140.0,at(0,0).y()+pad*0.3,140.0,fm.height()),
+                Qt::AlignRight|Qt::AlignVCenter,QStringLiteral("sand %"));
+    p->drawText(QRectF(at(0,100).x(),at(0,100).y()+pad*0.3,140.0,fm.height()),
+                Qt::AlignLeft|Qt::AlignVCenter,QStringLiteral("silt %"));
+    p->restore();
+
+    if(spec.series.size()<3){
+        p->save();
+        p->setPen(spec.style.foreground);
+        p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.2,
+                           target.width(),fm.height()),
+                    Qt::AlignHCenter|Qt::AlignVCenter,
+                    QStringLiteral("needs three columns: per cent sand, silt and clay"));
+        p->restore();
+        return;
+    }
+
+    // ---- The samples.
+    const QVector<double>& sandCol=spec.series.at(0).y;
+    const QVector<double>& siltCol=spec.series.at(1).y;
+    const QVector<double>& clayCol=spec.series.at(2).y;
+    int rows=sandCol.size();
+    for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
+
+    QVector<int> tally(regionCount,0);
+    int drawn=0,unclassified=0;
+    p->save();
+    for(int i=0;i<rows;++i){
+        if(!finite(sandCol[i])||!finite(siltCol[i])||!finite(clayCol[i])) continue;
+        const double total=std::abs(sandCol[i])+std::abs(siltCol[i])+std::abs(clayCol[i]);
+        if(!(total>0.0)) continue;
+        const double clay=100.0*std::abs(clayCol[i])/total;
+        const double silt=100.0*std::abs(siltCol[i])/total;
+        int found=-1;
+        for(int r=0;r<regionCount&&found<0;++r)
+            if(insideRegion(regions[r],clay,silt)) found=r;
+        if(found>=0) ++tally[found]; else ++unclassified;
+        const QColor colour=spec.series.at(0).color;
+        p->setPen(QPen(colour,1.0));
+        p->setBrush(QColor(colour.red(),colour.green(),colour.blue(),170));
+        const double size=qMax(2.4,spec.style.lineWidth*2.0);
+        p->drawEllipse(at(clay,silt),size,size);
+        ++drawn;
+    }
+    p->restore();
+
+    // ---- What each sample was called. The counts are the answer the diagram
+    // exists to give; reading them off the dots is what it is meant to save.
+    QStringList named;
+    for(int r=0;r<regionCount;++r){
+        if(tally[r]<=0) continue;
+        const QString name=QString::fromLatin1(regions[r].name);
+        // The two-piece classes appear twice in the table and must be reported
+        // once: a sample in either piece of sandy loam is a sandy loam.
+        bool merged=false;
+        for(int q=0;q<r;++q)
+            if(tally[q]>0&&QString::fromLatin1(regions[q].name)==name) merged=true;
+        if(merged) continue;
+        int count=0;
+        for(int q=0;q<regionCount;++q)
+            if(QString::fromLatin1(regions[q].name)==name) count+=tally[q];
+        named.append(QStringLiteral("%1 %2").arg(name).arg(count));
+    }
+    p->save();
+    p->setPen(unclassified>0?spec.style.danger:spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*2.3,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                unclassified>0
+                ?QStringLiteral("%1 samples, %2 in NO class - the regions should "
+                                "tile the triangle, so this is a fault in them")
+                     .arg(drawn).arg(unclassified)
+                :QStringLiteral("%1 samples: %2").arg(drawn)
+                     .arg(named.join(QStringLiteral(", "))));
+    p->setPen(spec.style.foreground);
+    p->drawText(QRectF(target.left(),target.bottom()-fm.height()*1.1,
+                       target.width(),fm.height()),
+                Qt::AlignHCenter|Qt::AlignVCenter,
+                uk?QStringLiteral("Soil Survey of England and Wales; rows normalised to 100")
+                  :QStringLiteral("USDA, regions computed from the NRCS Soil Survey Manual "
+                                  "definitions; rows normalised to 100"));
+    p->restore();
+}
+
+// ======================================================================
 // Ternary contour
 //
 // Three components summing to a whole, and a fourth quantity measured over
@@ -8140,6 +8423,10 @@ bool QtPlotBackend::engineHasAxes(const QString& engine){
         // Three parallel scales sharing one vertical measure and nothing
         // horizontal at all.
         && engine!=QLatin1String("Alignment Nomogram")
+        // A named map of regions on a triangle. Nothing on it is a Cartesian
+        // coordinate.
+        && engine!=QLatin1String("Soil Texture Triangle (UK)")
+        && engine!=QLatin1String("Soil Texture Triangle (USDA)")
         // Two triangles projecting into a square, the same case as the Piper.
         && engine!=QLatin1String("Durov Diagram")
         // 3-D draws its own projected cube; a 2-D frame around it would be
@@ -27007,6 +27294,13 @@ void QtPlotBackend::render(QPainter* painter,const QRectF& target,const PlotSpec
         }
         if(spec.engine==QLatin1String("Arc Diagram")){
             drawArc(painter,target,spec);
+            painter->restore();
+            return;
+        }
+        if(spec.engine==QLatin1String("Soil Texture Triangle (UK)")
+           ||spec.engine==QLatin1String("Soil Texture Triangle (USDA)")){
+            drawSoilTexture(painter,target,spec,
+                            spec.engine.endsWith(QLatin1String("(UK)")));
             painter->restore();
             return;
         }

@@ -1575,6 +1575,20 @@ bool runEngineSweep(){
             dalitz1.append(0.0); dalitz2.append(0.0); dalitz3.append(0.0);
         }
 
+    // Batch 24. One composition well inside each of the twelve USDA classes,
+    // taken from the standard texts - so the engine has to name all twelve, one
+    // each, and leave none unclassified. The same twelve go through the UK
+    // engine, where they fall differently because the systems genuinely differ.
+    QVector<double> soilSand,soilSilt,soilClay;
+    {
+        const double table[12][3]={{92,5,3},{82,10,8},{65,25,10},{40,40,20},
+                                   {20,65,15},{10,85,5},{60,15,25},{33,34,33},
+                                   {10,57,33},{52,8,40},{10,45,45},{20,20,60}};
+        for(const auto& row:table){
+            soilSand.append(row[0]); soilSilt.append(row[1]); soilClay.append(row[2]);
+        }
+    }
+
     // Batch 21 inputs.
     QVector<double> karyoChrom,karyoFrom,karyoTo,karyoStain;
     {
@@ -2183,6 +2197,10 @@ bool runEngineSweep(){
             {column("from",circosFromSeg),column("from pos",circosFromPos),
              column("to",circosToSeg),column("to pos",circosToPos),
              column("weight",circosWeight)}},
+        {QStringLiteral("Soil Texture Triangle (UK)"),
+            {column("sand",soilSand),column("silt",soilSilt),column("clay",soilClay)}},
+        {QStringLiteral("Soil Texture Triangle (USDA)"),
+            {column("sand",soilSand),column("silt",soilSilt),column("clay",soilClay)}},
         {QStringLiteral("Dalitz Plot"),
             {column("m2(12)",dalitzA),column("m2(23)",dalitzB),
              column("M",dalitzM),column("m1",dalitz1),

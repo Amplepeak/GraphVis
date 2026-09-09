@@ -1,4 +1,4 @@
-"""Catalogue entries for the engine expansion, batches 1 to 23.
+"""Catalogue entries for the engine expansion, batches 1 to 24.
 
 Idempotent: keyed by (engine, scale), replaced rather than appended. Run
 tools/add_scale_variants.py afterwards to give the new axis engines their scale
@@ -527,6 +527,14 @@ NEW = [
     # ---- batch 23
     ("Signals & RF", "dalitz", "Dalitz Plot",
      "Two invariant masses of a three-body decay inside the kinematic boundary that confines them, with the events outside it counted"),
+
+    # ---- batch 24. The UK system first: it is the one in use here, and the
+    # two are separate engines rather than one with a switch because they are
+    # different documents with different class names, not two views of one.
+    ("Spatial & Specialized", "soiltextureuk", "Soil Texture Triangle (UK)",
+     "Sand, silt and clay against the Soil Survey of England and Wales texture classes, with each sample named"),
+    ("Spatial & Specialized", "soiltextureusda", "Soil Texture Triangle (USDA)",
+     "The same three columns against the USDA classes, whose regions are computed from the NRCS Soil Survey Manual definitions rather than traced off a drawing"),
 ]
 
 by_name = {c["name"]: c for c in cats}
@@ -566,5 +574,5 @@ doc["category_count"] = len(cats)
 doc["entry_count"] = sum(len(c["entries"]) for c in cats)
 doc["engine_count"] = len({e["engine"] for c in cats for e in c["entries"]})
 path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-print("batches 1-23: %d engines; catalogue now %d entries / %d engines / %d categories"
+print("batches 1-24: %d engines; catalogue now %d entries / %d engines / %d categories"
       % (added, doc["entry_count"], doc["engine_count"], doc["category_count"]))

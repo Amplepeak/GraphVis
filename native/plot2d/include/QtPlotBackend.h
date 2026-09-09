@@ -282,6 +282,10 @@ private:
     void drawAlluvial(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Sand, silt and clay against the named texture classes. uk selects the
+    // Soil Survey of England and Wales regions rather than the USDA ones.
+    void drawSoilTexture(QPainter* p, const QRectF& target, const PlotSpec& spec,
+                         bool uk) const;
     // Three parallel scales, with a check that the middle one is single-valued.
     void drawNomogram(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Segments of different lengths around a ring, linked at positions inside
