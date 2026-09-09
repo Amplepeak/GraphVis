@@ -2288,6 +2288,11 @@ bool runEngineSweep(){
         spec.yAxis.label=QStringLiteral("value");
         spec.series=shaped.contains(engine)?shaped.value(engine)
                                           :QVector<PlotSeries>{a,b,c,d,e};
+        // Whatever constants the engine declares, at their defaults - which is
+        // the state the application starts every figure in. An engine whose
+        // painter reads a parameter must draw something with nothing but its
+        // own defaults, or a person who has just chosen it sees an empty frame.
+        spec.parameters=QtPlotBackend::engineParameterDefaults(engine);
         spec.style.background=Qt::white;
         spec.style.foreground=QColor(0x11,0x11,0x11);
         spec.style.gridColor=QColor(0xd8,0xd8,0xd8);
@@ -2467,6 +2472,60 @@ bool runRegressionChecks(){
                double(cold)/1e6,double(warm)/1e6);
     }
 
+    // ------------------------------------------------- 1b. engine parameters
+    // Constants an engine declares rather than reads from a column - see
+    // QtPlotBackend::engineParameters. Three things have to hold, and the
+    // first two are what a hand-wired setting gets wrong:
+    //
+    //   the value must REACH the engine (a Dalitz drawn with a lighter parent
+    //   has a smaller region, so the picture must change);
+    //   the prepared-figure cache must notice it changed, or the control does
+    //   nothing until something else forces a rebuild - which is exactly the
+    //   fault the field-estimator settings had;
+    //   and an engine that declares none must be unaffected by the mechanism
+    //   existing at all.
+    {
+        QtPlotBackend backend;
+        PlotSpec dalitz=whiteSpec(QStringLiteral("Dalitz Plot"));
+        // Two columns only: the masses come from the parameters, which is the
+        // whole point of the check. A grid over the region of a decay to three
+        // massless daughters with M = 1.
+        PlotSeries x,y;
+        x.label=QStringLiteral("m2(12)"); y.label=QStringLiteral("m2(23)");
+        for(int i=1;i<20;++i)
+            for(int j=1;j<20;++j){
+                x.x.append(0.0); x.y.append(double(i)/22.0);
+                y.x.append(0.0); y.y.append(double(j)/22.0);
+            }
+        for(int i=0;i<x.y.size();++i){ x.x[i]=double(i); y.x[i]=double(i); }
+        dalitz.series={x,y};
+        dalitz.parameters=QtPlotBackend::engineParameterDefaults(QStringLiteral("Dalitz Plot"));
+        if(dalitz.parameters.size()!=4)
+            failures.append(QStringLiteral("Dalitz Plot: declared %1 parameters, expected 4")
+                                .arg(dalitz.parameters.size()));
+
+        PlotSpec light=dalitz;
+        light.parameters.insert(QStringLiteral("parentMass"),
+                                0.55*dalitz.parameter(QStringLiteral("parentMass"),1.0));
+        const QImage full1=renderToImage(backend,dalitz);
+        const QImage lighter=renderToImage(backend,light);
+        const QImage full2=renderToImage(backend,dalitz);
+        if(full1==lighter)
+            failures.append(QStringLiteral("Dalitz Plot: halving the parent mass drew an "
+                                           "identical figure (parameter never reached the "
+                                           "engine, or the cache is stale)"));
+        if(full1!=full2)
+            failures.append(QStringLiteral("Dalitz Plot: the same parameters rendered "
+                                           "differently (parameter cache is not stable)"));
+
+        // An engine that declares nothing must declare nothing. A default map
+        // that quietly gained entries would put keys into every spec and into
+        // the fingerprint of every figure in the catalogue.
+        if(!QtPlotBackend::engineParameters(QStringLiteral("Line Chart")).isEmpty())
+            failures.append(QStringLiteral("Line Chart: declares engine parameters and "
+                                           "should not"));
+    }
+
     // -------------------------------------------------------------- 2. bars
     // drawBar used to place bar i at plotArea.left() + slot*(i+0.5), ignoring
     // s.x[i] entirely, so bars stood under an axis they did not correspond to.
@@ -2639,8 +2698,8 @@ bool runRegressionChecks(){
         printf("selftest: %d regression check(s) FAILED\n",int(failures.size()));
         return false;
     }
-    printf("selftest: regression checks passed (prepared-spec cache, bar positions, "
-           "horizontal bars, waterfall, correlation agreement)\n");
+    printf("selftest: regression checks passed (prepared-spec cache, engine parameters, "
+           "bar positions, horizontal bars, waterfall, correlation agreement)\n");
     return true;
 }
 

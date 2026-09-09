@@ -136,6 +136,37 @@ public:
     // The minimum on its own, for the callers that only need the number.
     static int columnsRequired(const QString& engine);
 
+    // A constant an engine needs that is not per-row data - a decay's parent
+    // mass, a reference pressure, a sample rate.
+    //
+    // Declared rather than hand-wired. The eight field-estimator settings are
+    // each threaded through six places (PlotSpec, a Q_PROPERTY and a clamping
+    // setter, a settings key, a QML control, the fingerprint), which is fine
+    // for one subsystem and hopeless as a rule: "any engine may declare
+    // constants" would mean six edits per constant forever. An engine adds a
+    // row to the table in engineParameters() and the interface builds the
+    // control from what the row says.
+    //
+    // Everything needed to draw and validate a control is in the row, the
+    // range included - a control that accepts a parent mass lighter than its
+    // own daughters is a control that produces a figure with no boundary and
+    // no explanation of why.
+    struct EngineParameter {
+        QString key;            // short ASCII name; the key in PlotSpec
+        QString label;          // what the control is called on screen
+        QString unit;           // shown after the value; may be empty
+        QString help;           // one line, for the tooltip
+        double defaultValue = 0.0;
+        double minimum = 0.0;
+        double maximum = 1.0;
+        int decimals = 3;
+    };
+    // Empty for all but a few engines: the interface hides the whole group on
+    // an empty list rather than showing an empty box.
+    static QVector<EngineParameter> engineParameters(const QString& engine);
+    // The declared defaults as a map, for filling a spec that has none.
+    static QMap<QString,double> engineParameterDefaults(const QString& engine);
+
 private:
     struct Frame {
         QRectF plotArea;      // where series are drawn

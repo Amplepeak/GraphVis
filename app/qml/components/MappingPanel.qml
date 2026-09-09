@@ -179,6 +179,97 @@ PanelScroll {
         }
     }
 
+    // Constants the engine needs that are not columns - a decay's parent mass,
+    // and whatever the next engine of that kind declares.
+    //
+    // Built from what the engine declares (QtPlotBackend::engineParameters), so
+    // nothing here names a parameter or knows what one means: an engine that
+    // gains a constant gains a control without a line changing in this file.
+    // Directly under the column rows, because "which columns" and "what
+    // constants" are the same question about the same figure, and hidden
+    // entirely on the engines that declare none, which is nearly all of them.
+    GvGroupBox {
+        title:"Engine settings"
+        visible:root.canvas && root.canvas.engineParameters.length>0
+        Layout.fillWidth:true;Layout.margins:8
+        ColumnLayout {
+            anchors.fill:parent
+            spacing:6
+            Repeater {
+                model: root.canvas ? root.canvas.engineParameters : []
+                delegate: RowLayout {
+                    id: paramRow
+                    required property var modelData
+                    Layout.fillWidth:true
+                    spacing:8
+                    Label{
+                        text:paramRow.modelData.label
+                        Layout.preferredWidth:96
+                        elide:Text.ElideRight
+                        color:Theme.textSecondary
+                        ToolTip.visible:paramHover.hovered
+                        ToolTip.text:paramRow.modelData.help
+                        HoverHandler{ id:paramHover }
+                    }
+                    // A text field rather than a slider or a spin box: these are
+                    // measured quantities that people paste in to six figures,
+                    // and dragging to 1.86484 is not a thing anyone can do.
+                    TextField {
+                        id: paramField
+                        Layout.fillWidth:true
+                        Layout.minimumWidth:70
+                        // Bound to the canvas, so the box follows a reset, a
+                        // reopened figure or a change of engine. Editing does
+                        // not break the binding, because what is typed is sent
+                        // to the canvas and comes back from it.
+                        text: Number(paramRow.modelData.value)
+                                  .toFixed(paramRow.modelData.decimals)
+                        horizontalAlignment: TextInput.AlignRight
+                        validator: DoubleValidator {
+                            bottom: paramRow.modelData.minimum
+                            top: paramRow.modelData.maximum
+                            decimals: paramRow.modelData.decimals
+                            notation: DoubleValidator.StandardNotation
+                        }
+                        // On finishing, not on every keystroke: half of "1.86"
+                        // is "1.8", which is a different figure and would be
+                        // rendered on the way to the one being typed.
+                        onEditingFinished:
+                            root.canvas.setEngineParameter(paramRow.modelData.key,
+                                                           Number(text))
+                        Keys.onEscapePressed: paramField.text=Qt.binding(function(){
+                            return Number(paramRow.modelData.value)
+                                       .toFixed(paramRow.modelData.decimals) })
+                    }
+                    Label{
+                        text:paramRow.modelData.unit
+                        visible:paramRow.modelData.unit.length>0
+                        color:Theme.textMuted
+                        Layout.preferredWidth:34
+                        elide:Text.ElideRight
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth:true
+                Label{
+                    text:"Not columns - these travel with the figure and are saved in it."
+                    color:Theme.textMuted
+                    font.pixelSize:11
+                    wrapMode:Text.WordWrap
+                    Layout.fillWidth:true
+                }
+                Button{
+                    id:resetParams
+                    text:"Defaults"
+                    onClicked:root.canvas.resetEngineParameters()
+                    ToolTip.visible:resetParams.hovered
+                    ToolTip.text:"Put every setting in this group back to what the engine declares."
+                }
+            }
+        }
+    }
+
     GvGroupBox {
         title:smart.checked?"5th axis / point cloud · AUTO":"5th axis / point cloud · MANUAL";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout {anchors.fill:parent

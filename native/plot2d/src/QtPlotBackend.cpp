@@ -2245,7 +2245,9 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
     // masses as constant columns. Six for what is really a two-column scatter,
     // because four of them are parameters and this program has no other way to
     // carry one.
-    if(engine==QLatin1String("Dalitz Plot")) return {6,6,true};
+    // Two mapped columns and four engine settings; six columns are still read
+    // as m2(12), m2(23) and the four masses, which is how it shipped.
+    if(engine==QLatin1String("Dalitz Plot")) return {2,6,true};
     // Source segment and position, target segment and position, and a weight
     // if one is mapped.
     if(engine==QLatin1String("Circos Plot")) return {4,5,true};
@@ -2308,6 +2310,55 @@ QtPlotBackend::ColumnPlan QtPlotBackend::columnPlan(const QString& engine){
 
 int QtPlotBackend::columnsRequired(const QString& engine){
     return columnPlan(engine).minimum;
+}
+
+// ----------------------------------------------------------------- parameters
+//
+// The constants engines declare. One table, read by the renderer for its
+// defaults and by the interface to build controls; there is no second list of
+// keys anywhere, which is the whole point of the mechanism.
+//
+// Ranges are what the engine can actually draw, not taste. Dalitz's masses are
+// bounded below at zero because a negative mass has no meaning and above at a
+// number large enough for any decay anyone will plot in GeV; the relation that
+// really matters - parent heavier than the sum of its daughters - cannot be
+// expressed as a per-control range and is checked by the engine, which says so
+// on the figure rather than refusing to draw one.
+QVector<QtPlotBackend::EngineParameter> QtPlotBackend::engineParameters(const QString& engine){
+    if(engine==QLatin1String("Dalitz Plot")){
+        // Units are the caller's: the axes are squared masses, so masses in
+        // GeV/c^2 give axes in GeV^2/c^4. Nothing here assumes GeV - the
+        // defaults are round numbers rather than any particular particle, so a
+        // fresh Dalitz draws a valid region and names nothing it should not.
+        return {
+            {QStringLiteral("parentMass"),QStringLiteral("Parent mass"),
+             QStringLiteral("mass"),
+             QStringLiteral("The decaying particle. Must exceed the three daughters "
+                            "together, or there is no allowed region."),
+             1.0,0.0,1000.0,6},
+            {QStringLiteral("daughter1"),QStringLiteral("Daughter 1"),
+             QStringLiteral("mass"),
+             QStringLiteral("The particle whose squared mass with daughter 2 is the "
+                            "x axis."),
+             0.14,0.0,1000.0,6},
+            {QStringLiteral("daughter2"),QStringLiteral("Daughter 2"),
+             QStringLiteral("mass"),
+             QStringLiteral("Shared by both axes: m2(12) on x and m2(23) on y."),
+             0.14,0.0,1000.0,6},
+            {QStringLiteral("daughter3"),QStringLiteral("Daughter 3"),
+             QStringLiteral("mass"),
+             QStringLiteral("The particle whose squared mass with daughter 2 is the "
+                            "y axis."),
+             0.14,0.0,1000.0,6}};
+    }
+    return {};
+}
+
+QMap<QString,double> QtPlotBackend::engineParameterDefaults(const QString& engine){
+    QMap<QString,double> out;
+    const QVector<EngineParameter> declared=engineParameters(engine);
+    for(const EngineParameter& p:declared) out.insert(p.key,p.defaultValue);
+    return out;
 }
 
 QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared){
@@ -6436,14 +6487,13 @@ void QtPlotBackend::drawDalitz(QPainter* p,const Frame& f,const PlotSpec& spec) 
     const QFont tickFont=font(spec,qMax(6.0,spec.style.tickSize-0.5));
     const QFontMetricsF fm(tickFont,p->device());
 
-    if(spec.series.size()<6){
+    if(spec.series.size()<2){
         p->save();
         p->setFont(tickFont);
         p->setPen(spec.style.danger);
         p->drawText(f.plotArea.adjusted(8,8,-8,-8),Qt::AlignLeft|Qt::AlignTop,
-                    QStringLiteral("needs six columns: m2(12), m2(23), then the "
-                                   "parent mass and the three daughter masses, "
-                                   "each constant down its column"));
+                    QStringLiteral("needs two columns: m2(12) and m2(23). The four "
+                                   "masses are engine settings, beside the mapping"));
         p->restore();
         return;
     }
@@ -6454,12 +6504,29 @@ void QtPlotBackend::drawDalitz(QPainter* p,const Frame& f,const PlotSpec& spec) 
     for(const PlotSeries& s:spec.series) rows=qMin(rows,int(s.y.size()));
     if(rows<1) return;
 
-    // The four constants, and the check that they are constants. A column that
-    // varies is not a parameter, and using its first row would be inventing one.
+    // The four masses. They are properties of the decay rather than of an
+    // event, so they come from the engine's settings - and from four extra
+    // columns when six are mapped, which is the form this engine shipped as
+    // and which any figure made before there were settings still carries.
+    //
+    // Columns win when they are there. A person who mapped six columns did so
+    // deliberately and their file is the more specific answer; silently
+    // preferring a settings default over a column they chose would change
+    // their figure under them.
+    static const char* kKeys[4]={"parentMass","daughter1","daughter2","daughter3"};
+    const QMap<QString,double> fallback=engineParameterDefaults(spec.engine);
     double mass[4]={0,0,0,0};
     bool steady[4]={true,true,true,true};
     double drift[4]={0,0,0,0};
+    const bool fromColumns=spec.series.size()>=6;
     for(int c=0;c<4;++c){
+        const QString key=QString::fromLatin1(kKeys[c]);
+        if(!fromColumns){
+            mass[c]=spec.parameter(key,fallback.value(key,0.0));
+            continue;
+        }
+        // A column that varies is not a parameter, and using its first row
+        // would be inventing one.
         const QVector<double>& column=spec.series.at(2+c).y;
         double lo=std::numeric_limits<double>::infinity(),hi=-lo;
         for(int i=0;i<rows;++i){
@@ -6585,9 +6652,14 @@ void QtPlotBackend::drawDalitz(QPainter* p,const Frame& f,const PlotSpec& spec) 
         notes.append(QStringLiteral("the parent mass must exceed the three "
                                     "daughters together; no boundary is drawn"));
     }else{
-        notes.append(QStringLiteral("M %1, daughters %2 %3 %4")
+        // Which of the two it read matters: a figure whose masses look wrong
+        // is fixed in one place or the other, and the person cannot tell
+        // which without being told.
+        notes.append(QStringLiteral("M %1, daughters %2 %3 %4 (%5)")
                          .arg(parent,0,'g',5).arg(m1,0,'g',4)
-                         .arg(m2,0,'g',4).arg(m3,0,'g',4));
+                         .arg(m2,0,'g',4).arg(m3,0,'g',4)
+                         .arg(fromColumns?QStringLiteral("from columns 3-6")
+                                         :QStringLiteral("engine settings")));
         notes.append(outside==0
             ?QStringLiteral("all %1 events inside the boundary").arg(rows)
             :QStringLiteral("%1 of %2 events OUTSIDE the boundary - the masses "
@@ -8884,6 +8956,16 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
     fnvBytes(h,&spec.style.fieldInvalidDisplay,sizeof(spec.style.fieldInvalidDisplay));
     fnvBytes(h,&spec.style.fieldKrigingVariogram,sizeof(spec.style.fieldKrigingVariogram));
     fnvBytes(h,&spec.style.fieldLoessFraction,sizeof(spec.style.fieldLoessFraction));
+    // Engine parameters. These are constants an engine draws with, so a change
+    // to one has to invalidate the prepared figure exactly as a change of
+    // column does - without this a new parent mass would return the cached
+    // figure and the control would appear to do nothing.
+    for(auto it=spec.parameters.constBegin();it!=spec.parameters.constEnd();++it){
+        const QByteArray key=it.key().toUtf8();
+        fnvBytes(h,key.constData(),size_t(key.size()));
+        const double value=it.value();
+        fnvBytes(h,&value,sizeof(value));
+    }
     return h;
 }
 
@@ -15447,11 +15529,12 @@ PlotSpec QtPlotBackend::prepareSpecCore(const PlotSpec& in) const {
     }
 
     // -------------------------------------------------------- Dalitz Plot
-    // The columns pass through untouched - the painter needs all six - but the
-    // axes have to be set here. The frame is built from every series, and four
-    // of these are masses: left to itself it would size the picture to include
-    // a column of 1.865s alongside invariant masses of a few tenths, and the
-    // events would occupy a corner of it.
+    // The columns pass through untouched - the painter reads the two, or six,
+    // it was given - but the axes have to be set here. The frame is built from
+    // every series, and in the six-column form four of them are masses: left
+    // to itself it would size the picture to include a column of 1.865s
+    // alongside invariant masses of a few tenths, and the events would occupy
+    // a corner of it.
     if(in.engine==QLatin1String("Dalitz Plot")){
         PlotSpec out=in;
         for(PlotSeries& s:out.series){ s.drawLine=false; s.drawMarkers=false; }

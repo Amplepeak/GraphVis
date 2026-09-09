@@ -235,6 +235,28 @@ public:
     // Empty for a column with no unit in its label, which is the common case.
     Q_INVOKABLE QStringList unitOptions(const QString& column) const;
 
+    // The constants the current engine declares, each with its current value,
+    // so the interface can build one control per row without knowing what any
+    // of them mean. Empty for all but a few engines.
+    //
+    // A list of maps rather than a typed model deliberately: this is the whole
+    // interface between "an engine needs a number" and "there is a box to type
+    // it in", and adding a parameter must not need a change on the QML side.
+    // Notified when the DECLARATION changes - a new engine, a reopened figure,
+    // a reset - and deliberately not when a value is typed. The model backs a
+    // Repeater, so emitting on every edit would destroy and rebuild the box
+    // being typed in the instant it was committed, and tabbing from one mass to
+    // the next would land nowhere.
+    Q_PROPERTY(QVariantList engineParameters READ engineParameterList NOTIFY engineParametersChanged)
+    QVariantList engineParameterList() const;
+    // The values alone, for the figure package.
+    QVariantMap engineParameterValues() const;
+    Q_INVOKABLE void setEngineParameter(const QString& key,double value);
+    Q_INVOKABLE double engineParameter(const QString& key) const;
+    // Back to what the engine declares. Someone who has typed four masses into
+    // the wrong figure needs one click, not four corrections.
+    Q_INVOKABLE void resetEngineParameters();
+
     // The canvas state a .gvfig stores, and the reverse. Everything the user
     // chose - engine, variant, title, columns, log axes, display units, colour
     // vision and the three theme colours. Deliberately a plain map: the figure
@@ -484,6 +506,7 @@ public:
     void geometryChange(const QRectF& newGeometry,const QRectF& oldGeometry) override;
 
 signals:
+    void engineParametersChanged();
     void sourceChanged();
     void stateChanged();
     void styleChanged();
@@ -528,6 +551,13 @@ private:
     // why that is one class rather than two copies of the same arithmetic.
     TouchGesture touch_;
     bool linkTransforms_=false;
+    // Parameter values per engine, so switching to another engine and back
+    // returns the masses that were typed rather than the declared defaults.
+    // Session-lived; a figure saved to a .gvfig carries its own copy.
+    QHash<QString,QMap<QString,double>> engineParams_;
+    // Put the declared defaults, or what was last typed for this engine, onto
+    // the spec. Called whenever the engine changes.
+    void adoptEngineParameters();
 
     void rebuild();          // reload data and regenerate the spec's series
     void applyVariant();     // catalogue scale variants: Semi-Log X, etc.

@@ -11,6 +11,7 @@
 // renderable by any backend, and must survive being written to a vector PDF.
 // =========================================================================
 #include <QColor>
+#include <QMap>
 #include <QString>
 #include <QVector>
 #include <limits>
@@ -261,6 +262,29 @@ struct PlotSpec {
     // area - a note whose anchor has been zoomed out of view must not appear
     // among the axis labels.
     QVector<PlotAnnotation> annotations;
+
+    // Constants an engine needs that are NOT per-row data.
+    //
+    // A Dalitz plot needs the parent mass and three daughter masses; those are
+    // properties of the decay, not of an event, and the only way to give them
+    // to an engine before this was a column repeating one number down every
+    // row. That works and is what the first Dalitz shipped as, but it costs
+    // four column slots to carry four numbers, it cannot express a value the
+    // dataset does not already contain, and every engine wanting a constant
+    // would have cost four more.
+    //
+    // Keyed by a short ASCII name the engine chooses, declared through
+    // QtPlotBackend::engineParameters() so the interface can build controls
+    // for them without knowing what any of them mean. Absent means "use the
+    // declared default", which is why this is a map and not a fixed struct:
+    // an engine that gains a parameter must not invalidate every figure made
+    // before it had one.
+    QMap<QString,double> parameters;
+    double parameter(const QString& key,double fallback) const {
+        const auto it=parameters.constFind(key);
+        if(it==parameters.constEnd()) return fallback;
+        return isUnset(*it)?fallback:*it;
+    }
 };
 
 } // namespace graphvis

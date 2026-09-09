@@ -294,10 +294,106 @@ GV_SETTER(setYUnit,yUnit_,QString)
 
 void PlotCanvas::setEngine(const QString& v){
     if(spec_.engine==v) return;
+    // What was typed for the engine being left, kept for the rest of the
+    // session. Someone comparing two engines on the same decay should not have
+    // to retype four masses each time they switch back.
+    if(!spec_.parameters.isEmpty()) engineParams_.insert(spec_.engine,spec_.parameters);
     spec_.engine=v;
+    adoptEngineParameters();
     engineSupported_=qtBackend_.supports(v);
     dirty_=true; rebuild(); update();
     emit sourceChanged(); emit stateChanged();
+}
+
+// ------------------------------------------------------------- parameters
+//
+// Constants an engine declares - see QtPlotBackend::engineParameters. The
+// canvas holds the values and knows nothing about what any of them mean, which
+// is what lets a new parameter be one table row and no more.
+void PlotCanvas::adoptEngineParameters(){
+    const QMap<QString,double> remembered=engineParams_.value(spec_.engine);
+    QMap<QString,double> next=QtPlotBackend::engineParameterDefaults(spec_.engine);
+    // Remembered values win, but only for keys the engine still declares: a
+    // renamed or withdrawn parameter must not linger in the spec where nothing
+    // reads it and the fingerprint still hashes it.
+    for(auto it=next.begin();it!=next.end();++it){
+        const auto had=remembered.constFind(it.key());
+        if(had!=remembered.constEnd()) it.value()=*had;
+    }
+    spec_.parameters=next;
+    emit engineParametersChanged();
+}
+
+QVariantMap PlotCanvas::engineParameterValues() const {
+    QVariantMap out;
+    for(auto it=spec_.parameters.constBegin();it!=spec_.parameters.constEnd();++it)
+        out.insert(it.key(),it.value());
+    return out;
+}
+
+QVariantList PlotCanvas::engineParameterList() const {
+    QVariantList out;
+    const QVector<QtPlotBackend::EngineParameter> declared=
+        QtPlotBackend::engineParameters(spec_.engine);
+    for(const QtPlotBackend::EngineParameter& p:declared){
+        out.append(QVariantMap{
+            {QStringLiteral("key"),p.key},
+            {QStringLiteral("label"),p.label},
+            {QStringLiteral("unit"),p.unit},
+            {QStringLiteral("help"),p.help},
+            {QStringLiteral("value"),spec_.parameter(p.key,p.defaultValue)},
+            {QStringLiteral("defaultValue"),p.defaultValue},
+            {QStringLiteral("minimum"),p.minimum},
+            {QStringLiteral("maximum"),p.maximum},
+            {QStringLiteral("decimals"),p.decimals}});
+    }
+    return out;
+}
+
+double PlotCanvas::engineParameter(const QString& key) const {
+    const QVector<QtPlotBackend::EngineParameter> declared=
+        QtPlotBackend::engineParameters(spec_.engine);
+    for(const QtPlotBackend::EngineParameter& p:declared)
+        if(p.key==key) return spec_.parameter(key,p.defaultValue);
+    return spec_.parameter(key,0.0);
+}
+
+void PlotCanvas::setEngineParameter(const QString& key,double value){
+    const QVector<QtPlotBackend::EngineParameter> declared=
+        QtPlotBackend::engineParameters(spec_.engine);
+    for(const QtPlotBackend::EngineParameter& p:declared){
+        if(p.key!=key) continue;
+        // Clamped here rather than trusted from the interface: a .gvfig and a
+        // script reach this too, and an engine's declared range is the range
+        // it can draw.
+        const double clamped=(value!=value)?p.defaultValue:qBound(p.minimum,value,p.maximum);
+        if(qFuzzyCompare(spec_.parameter(key,p.defaultValue),clamped)) return;
+        spec_.parameters.insert(key,clamped);
+        engineParams_.insert(spec_.engine,spec_.parameters);
+        // A repaint is not enough: these change what the engine computes, and
+        // the prepared figure is cached on a fingerprint that now differs.
+        update();
+        scheduleFullRender();
+        emit sourceChanged();
+        emit stateChanged();
+        return;
+    }
+    // A key the engine does not declare is a caller mistake, not data: ignored
+    // rather than stored, so nothing can put a value into the spec that no
+    // control will ever show and no engine will ever read.
+}
+
+void PlotCanvas::resetEngineParameters(){
+    const QMap<QString,double> defaults=
+        QtPlotBackend::engineParameterDefaults(spec_.engine);
+    if(spec_.parameters==defaults) return;
+    spec_.parameters=defaults;
+    engineParams_.insert(spec_.engine,spec_.parameters);
+    emit engineParametersChanged();
+    update();
+    scheduleFullRender();
+    emit sourceChanged();
+    emit stateChanged();
 }
 void PlotCanvas::setVariant(const QString& v){
     if(spec_.variant==v) return;
@@ -1596,6 +1692,10 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("grid"),spec_.style.gridColor.name(QColor::HexArgb)},
         {QStringLiteral("colourMap"),spec_.style.colourMap},
         {QStringLiteral("annotations"),annotations()},
+        // The engine's constants. Written as a map of key to number, so a
+        // figure saved with four masses reopens with them and a figure from an
+        // engine that declares none carries an empty map rather than nothing.
+        {QStringLiteral("engineParameters"),engineParameterValues()},
         // The zoom, when there is one. A figure saved while zoomed in reopens
         // showing what was on screen when it was saved; one saved fitted to
         // its data carries no limits at all and stays that way.
@@ -1645,6 +1745,31 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     // exactly right: those figures were all drawn with Viridis, which is what
     // an empty string means.
     spec_.style.colourMap=state.value(QStringLiteral("colourMap")).toString();
+
+    // The engine's constants, from the file where the file has them and from
+    // the engine's own declaration where it does not - a figure saved before
+    // this existed must open with the defaults rather than with nothing, or a
+    // Dalitz written by the older build would draw no boundary at all.
+    adoptEngineParameters();
+    const QVariantMap savedParams=state.value(QStringLiteral("engineParameters")).toMap();
+    if(!savedParams.isEmpty()){
+        const QVector<QtPlotBackend::EngineParameter> declared=
+            QtPlotBackend::engineParameters(spec_.engine);
+        for(const QtPlotBackend::EngineParameter& d:declared){
+            const QVariant v=savedParams.value(d.key);
+            bool ok=false;
+            const double number=v.toDouble(&ok);
+            // Clamped and checked, because a .gvfig is a file on disk that
+            // someone may have edited by hand.
+            if(!ok||number!=number) continue;
+            spec_.parameters.insert(d.key,qBound(d.minimum,number,d.maximum));
+        }
+        engineParams_.insert(spec_.engine,spec_.parameters);
+        // After the values, not before: adoptEngineParameters above emitted the
+        // declaration at its defaults, and the interface must end up showing
+        // what the figure was saved with.
+        emit engineParametersChanged();
+    }
 
     // Notes. Absent in a figure saved before they existed, which reads as none.
     // Rebuilt rather than merged: applyFigureState restores a figure, it does
