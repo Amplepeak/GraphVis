@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -9,7 +10,16 @@ ToolBar {
     signal importRequested()
     signal literatureRequested()
     signal addOnsRequested()
-    height: 58
+
+    // The layout's own opinion about this bar. 0 words, 1 symbols, 2 gone -
+    // see NavStyle in UiLayouts.h. Every layout in the table used to leave this
+    // bar exactly as it is, so however differently two shapes arranged their
+    // panels, the window looked identical from the neck up.
+    readonly property int navStyle: (root.app.uiLayoutSpec
+                                     && root.app.uiLayoutSpec.navStyle !== undefined)
+                                    ? root.app.uiLayoutSpec.navStyle : 0
+    readonly property bool symbols: root.navStyle === 1
+    height: root.symbols ? 38 : 58
 
     // The toolbar carries more controls than fit on a 1280-wide window, and a
     // RowLayout will not shrink a ToolButton below its implicit width - it just
@@ -24,9 +34,14 @@ ToolBar {
     // The thresholds are the widths at which each layout stops fitting, plus a
     // margin for the longest theme name. At tiny the pickers are the last thing
     // to go, because they are still reachable from the View popup.
-    readonly property bool compact: width < 1620
-    readonly property bool narrow: width < 1400
-    readonly property bool tiny: width < 1150
+    // Symbols mode reuses the degradation the bar already does when a window is
+    // narrow, rather than inventing a second way to be small: at "tiny" the
+    // pickers are already one View popup and the actions are already glyphs, so
+    // the whole bar is symbols and the only thing left to do is the six
+    // workspace buttons below.
+    readonly property bool compact: root.symbols || width < 1620
+    readonly property bool narrow: root.symbols || width < 1400
+    readonly property bool tiny: root.symbols || width < 1150
 
     background: Rectangle { color: Theme.surface; border.color: Theme.border }
 
@@ -49,21 +64,43 @@ ToolBar {
         }
         ToolSeparator {}
 
-        ToolButton { text: "⌂ Home"; onClicked: root.app.workspaceMode = "Home" }
-        ToolButton {
-            text: root.narrow ? "▣ Literature" : "▣ Read Literature"
-            font.bold: true
-            // Switches to the tab and nothing else. Opening a file browser
-            // unasked, just because nothing was loaded yet, is the tab deciding
-            // what you wanted; the button inside it is where that belongs.
-            onClicked: root.app.workspaceMode = "Literature"
+        // The six workspaces. One Repeater rather than six buttons, so a
+        // symbol, a word and a tooltip cannot drift apart between them - and
+        // the current one is marked, which the six hand-written buttons never
+        // were: the bar said where you could go and never where you are.
+        Repeater {
+            model: [
+                { mode: "Home",       glyph: "⌂", label: "Home" },
+                { mode: "Literature", glyph: "▣", label: "Read Literature" },
+                { mode: "Visualize",  glyph: "◈", label: "Visualize" },
+                { mode: "Data",       glyph: "▤", label: "Data" },
+                { mode: "Analysis",   glyph: "Σ", label: "Analysis" },
+                { mode: "Publish",    glyph: "↗", label: "Publish" }
+            ]
+            delegate: ToolButton {
+                id: navButton
+                required property var modelData
+                text: root.symbols ? navButton.modelData.glyph
+                                   : navButton.modelData.glyph + " " + navButton.modelData.label
+                checkable: true
+                checked: root.app.workspaceMode === navButton.modelData.mode
+                font.bold: navButton.checked
+                // Switches to the workspace and nothing else. Opening a file
+                // browser unasked, because nothing is loaded yet, is the tab
+                // deciding what you wanted; the button inside it is where that
+                // belongs.
+                onClicked: root.app.workspaceMode = navButton.modelData.mode
+                ToolTip.visible: root.symbols && navButton.hovered
+                ToolTip.text: navButton.modelData.label
+            }
         }
-        ToolButton { text: "◈ Visualize"; onClicked: root.app.workspaceMode = "Visualize" }
-        ToolButton { text: "Data"; onClicked: root.app.workspaceMode = "Data" }
-        ToolButton { text: "Analysis"; onClicked: root.app.workspaceMode = "Analysis" }
-        ToolButton { text: "Publish"; onClicked: root.app.workspaceMode = "Publish" }
         ToolSeparator {}
-        ToolButton { text: "Import data"; onClicked: root.importRequested() }
+        ToolButton {
+            text: root.symbols ? "⤓" : "Import data"
+            onClicked: root.importRequested()
+            ToolTip.visible: root.symbols && hovered
+            ToolTip.text: "Import data"
+        }
         ToolButton {
             text: root.narrow ? "↶" : "Undo"
             enabled: !root.app.busy

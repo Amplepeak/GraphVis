@@ -204,7 +204,8 @@ PanelScroll {
     Component.onCompleted: root.app.refreshAnalysisCatalogue()
 
     Label {
-        text: "Analysis & Experiment Design"
+        // A Label, not a Button - no mnemonic here - but spelled out to match.
+        text: "Analysis and Experiment Design"
         font.pixelSize: 17; font.bold: true; color: Theme.text; Layout.margins: 12
     }
     Label {

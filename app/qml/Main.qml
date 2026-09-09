@@ -276,7 +276,26 @@ ApplicationWindow {
         }
     }
 
-    header:TopBar{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onAddOnsRequested:addOnsDialog.open()}
+    // The window's chrome, as the chosen layout wants it. NavStyle 2 removes
+    // this bar entirely - the workspaces move to the spine below, or to Ctrl+K -
+    // which is the one part of the window no layout could change before.
+    readonly property var layoutSpec: root.app.uiLayoutSpec
+    readonly property int navStyle: (root.layoutSpec && root.layoutSpec.navStyle !== undefined)
+                                    ? root.layoutSpec.navStyle : 0
+    readonly property int navEdge: (root.layoutSpec && root.layoutSpec.navEdge !== undefined)
+                                   ? root.layoutSpec.navEdge : 0
+
+    header: TopBar {
+        app: root.app
+        visible: root.navStyle !== 2
+        // A hidden header still lays out at its implicit height in some styles,
+        // which leaves a 58 px band of nothing across the top - the very thing
+        // this is meant to remove.
+        height: visible ? implicitHeight : 0
+        onImportRequested: importDialog.open()
+        onLiteratureRequested: literatureDialog.open()
+        onAddOnsRequested: addOnsDialog.open()
+    }
 
     // Add-ons gets a window of its own rather than a ninth sidebar tab: it is
     // something you visit twice a year, not something you work in.
@@ -294,9 +313,31 @@ ApplicationWindow {
         }
     }
 
+    // The workspace spine, when the layout puts switching on an edge. Sits
+    // outside the shell rather than inside it, because it belongs to the window
+    // - it is the same six destinations in every workspace, and a shell that
+    // drew its own would have to draw it six times.
+    WorkspaceRail {
+        id: navRail
+        app: root.app
+        visible: root.navEdge !== 0
+        onRight: root.navEdge === 2
+        width: visible ? implicitWidth : 0
+        anchors {
+            top: parent.top
+            bottom: status.top
+            left: root.navEdge === 1 ? parent.left : undefined
+            right: root.navEdge === 2 ? parent.right : undefined
+        }
+        onImportRequested: importDialog.open()
+        onCommandRequested: palette.open()
+    }
+
     Loader {
         id: shellLoader
-        anchors{left:parent.left;right:parent.right;top:parent.top;bottom:status.top}
+        anchors{left:parent.left;right:parent.right;top:parent.top;bottom:status.top
+                leftMargin: root.navEdge === 1 ? navRail.width : 0
+                rightMargin: root.navEdge === 2 ? navRail.width : 0}
         sourceComponent:root.app.experimentalUi?experimentalShell:classicShell
     }
     Component{id:classicShell;ClassicShell{app:root.app;onImportRequested:importDialog.open();onLiteratureRequested:literatureDialog.open();onCommandRequested:palette.open()}}

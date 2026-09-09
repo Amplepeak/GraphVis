@@ -46,6 +46,24 @@ enum class BottomStrip { None, DataTable, Log, PageBar, SectionTabs };
 // What occupies the middle.
 enum class CanvasMode { Single, Notebook, Quadrants, Centred, Zen };
 
+// How the window's own chrome offers the six workspaces - Home, Literature,
+// Visualize, Data, Analysis, Publish.
+//
+// This was the one thing no layout could change. Every shape in the table
+// rearranged the panels around the figure and left the same wide bar of words
+// across the top, so however different two layouts were underneath, the window
+// looked the same from the neck up.
+//
+//   Labels   the bar as it has always been: icon, title, six words, actions
+//   Icons    the same bar as symbols with tooltips, about a third the height
+//   Hidden   no bar at all - switching moves to the edge, or to Ctrl+K
+enum class NavStyle { Labels, Icons, Hidden };
+
+// Where that switching lives. Top is the bar; Left and Right put a narrow strip
+// of workspace symbols down that edge instead, which is what makes a Hidden bar
+// usable rather than merely absent.
+enum class NavEdge { Top, Left, Right };
+
 struct UiLayout {
     QString id;
     int group = 0;              // index into the group table below
@@ -71,6 +89,9 @@ struct UiLayout {
     // The opposite edge expands by itself when something on the figure is
     // selected, while the browse side stays shut. Figma's asymmetry.
     bool inspectorSummons = false;
+
+    NavStyle navStyle = NavStyle::Labels;
+    NavEdge navEdge = NavEdge::Top;
 
     TopBand topBand = TopBand::None;
     BottomStrip bottomStrip = BottomStrip::None;

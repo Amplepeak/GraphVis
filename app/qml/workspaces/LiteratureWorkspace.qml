@@ -29,13 +29,33 @@ Rectangle {
 
     ListModel { id: annotations }
 
-    RowLayout {
-        anchors.fill: parent; anchors.margins: 8; spacing: 8
+    // Three panes whose widths are the person's business.
+    //
+    // This was a RowLayout of fixed widths - 250, whatever is left, 330 - so
+    // the side panels could be neither resized nor moved, and on a narrow
+    // window their contents were simply cut off at the edge: a button reading
+    // "Compare with active data" with the rest of the word past the border.
+    // A SplitView gives each divider a handle, and the two side panes are
+    // DockPanels, so they can also be torn out into windows of their own the
+    // way the visualise workspace's panels can.
+    SplitView {
+        anchors.fill: parent; anchors.margins: 8
+        orientation: Qt.Horizontal
 
-        Rectangle {
-            Layout.preferredWidth: 250; Layout.fillHeight: true; radius: 10; color: Theme.surface; border.color: Theme.border
-            ColumnLayout {
-                anchors.fill: parent; anchors.margins: 12; spacing: 10
+        DockPanel {
+            title: "Library"
+            SplitView.preferredWidth: 260
+            SplitView.minimumWidth: 150
+            floatingWidth: 360; floatingHeight: 640
+            Rectangle {
+            anchors.fill: parent
+            radius: 10; color: Theme.surface; border.color: Theme.border
+            // PanelScroll rather than a bare column: this panel now carries a
+            // reader configuration as well as the library, and on a laptop
+            // screen that is taller than the pane. A column with no scroll does
+            // not get shorter, it gets cut.
+            PanelScroll {
+                anchors.fill: parent; anchors.margins: 12; contentSpacing: 10
                 Label { text: "LIBRARY"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
                 Button { text: "Open literature…"; Layout.fillWidth: true; onClicked: root.openRequested() }
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
@@ -44,7 +64,12 @@ Rectangle {
                 GvGroupBox {
                     title: "Research tools"; Layout.fillWidth: true
                     ColumnLayout { anchors.fill: parent
-                        Button { text: "Extract figures & tables"; Layout.fillWidth: true; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
+                        // "&" in a Button is a MNEMONIC, not an ampersand: Qt eats it and
+                        // underlines the next letter, so this button read
+                        // "Extract figures _tables" on screen. Spelled out
+                        // rather than escaped as "&&", which is the same trap
+                        // waiting for the next person to edit the line.
+                        Button { text: "Extract figures and tables"; Layout.fillWidth: true; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
                         Button { text: "Use extracted dataset"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                         Button { text: "Recreate selected graph"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Enable after selecting a detected figure and completing axis calibration" }
                     }
@@ -176,10 +201,16 @@ Rectangle {
                     Layout.fillWidth: true
                 }
             }
+            }
         }
 
         Rectangle {
-            Layout.fillWidth: true; Layout.fillHeight: true; radius: 10; color: Theme.surface; border.color: Theme.border
+            SplitView.fillWidth: true
+            SplitView.minimumWidth: 240
+            radius: 10; color: Theme.surface; border.color: Theme.border
+            // Dragged narrow, the splash headline is wider than this pane, and
+            // without this it paints straight over the panel next door.
+            clip: true
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
 
@@ -187,8 +218,19 @@ Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 50; color: Theme.background
                     RowLayout {
                         anchors.fill: parent; anchors.margins: 7
-                        Label { text: root.hasPaper ? root.paperName : "Literature Reader"; color: Theme.text; elide: Text.ElideMiddle; Layout.maximumWidth: 420 }
-                        Item { Layout.fillWidth: true }
+                        // The title gives way to the buttons rather than
+                        // pushing them off the end: a paper name that has been
+                        // shortened can still be read, and an Analyze button
+                        // past the edge of the pane cannot be pressed. It was
+                        // capped at 420 with a spacer taking the rest, which
+                        // is fine until the pane is narrower than 420.
+                        Label {
+                            text: root.hasPaper ? root.paperName : "Literature Reader"
+                            color: Theme.text
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: 420
+                        }
                         Button { text: "Analyze"; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
                         Button { text: "Close paper"; enabled: root.hasPaper; onClicked: root.app.clearLiterature() }
                     }
@@ -215,10 +257,29 @@ Rectangle {
                         Button { Layout.alignment: Qt.AlignHCenter; text: "Send extracted data to workspace"; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                     }
 
+                    // The empty state, sized to whatever the pane has rather
+                    // than to the text: this is the one thing on screen when
+                    // the pane is narrow, so it is also the first thing to
+                    // spill out of it.
                     Column {
+                        id: splash
                         anchors.centerIn: parent; spacing: 14; visible: !root.hasPaper
-                        Label { anchors.horizontalCenter: parent.horizontalCenter; text: "Read Literature"; font.pixelSize: 38; font.bold: true; color: Theme.text }
-                        Label { anchors.horizontalCenter: parent.horizontalCenter; text: "Open a scientific paper to extract data and reconstruct figures."; color: Theme.textSecondary }
+                        width: Math.min(parent.width - 24, 520)
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            text: "Read Literature"
+                            font.pixelSize: splash.width < 320 ? 26 : 38
+                            font.bold: true; color: Theme.text
+                        }
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            text: "Open a scientific paper to extract data and reconstruct figures."
+                            color: Theme.textSecondary
+                        }
                         Button { anchors.horizontalCenter: parent.horizontalCenter; text: "Open literature"; onClicked: root.openRequested() }
                     }
 
@@ -230,12 +291,24 @@ Rectangle {
             }
         }
 
-        Rectangle {
-            Layout.preferredWidth: 330; Layout.fillHeight: true; radius: 10; color: Theme.background; border.color: Theme.border
-            ScrollView {
-                anchors.fill: parent
-                ColumnLayout {
-                    width: parent.width; spacing: 10
+        DockPanel {
+            title: "Literature intelligence"
+            SplitView.preferredWidth: 340
+            SplitView.minimumWidth: 180
+            floatingWidth: 420; floatingHeight: 720
+            Rectangle {
+            anchors.fill: parent
+            radius: 10; color: Theme.background; border.color: Theme.border
+            // A ScrollView with `width: parent.width` on its column, which is
+            // the trap PanelScroll exists to stop: inside a ScrollView the
+            // parent is the CONTENT item, so the column sized itself to its own
+            // content and grew wider than the pane. Nothing clipped it and
+            // nothing scrolled, so the buttons ran off the right-hand edge with
+            // their labels cut in half, and the panel could not be scrolled to
+            // reach what was below either. PanelScroll binds to availableWidth
+            // and clips.
+            PanelScroll {
+                anchors.fill: parent; contentSpacing: 10
                     Label { text: "LITERATURE INTELLIGENCE"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true; Layout.margins: 12 }
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
                     Label { text: root.app.busy && root.app.workspaceMode === "Literature" ? root.app.busyLabel : (root.analysed ? "Extraction complete" : "Select a figure, table or method section to inspect it."); color: root.analysed ? Theme.positive : Theme.text; wrapMode: Text.WordWrap; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12 }
@@ -280,8 +353,8 @@ Rectangle {
                             }
                         }
                     }
-                    Label { text: root.app.scienceServiceInstallHint(); color: Theme.textMuted; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true; Layout.margins: 12 }
-                }
+                Label { text: root.app.scienceServiceInstallHint(); color: Theme.textMuted; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true; Layout.margins: 12 }
+            }
             }
         }
     }

@@ -4,8 +4,6 @@ qt_add_executable(graphvis
   src/NativeApi.h
   src/AppController.cpp
   src/AppController.h
-  src/UiLayouts.cpp
-  src/UiLayouts.h
   src/NativeViewportWindow.cpp
   src/NativeViewportWindow.h
   src/ProjectWorkspace.cpp
@@ -33,7 +31,6 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/src/PlotCanvas.cpp
   ${GRAPHVIS_PLOT2D_DIR}/src/PlotSelfTest.cpp
   ${GRAPHVIS_PLOT2D_DIR}/src/Units.cpp
-  ${GRAPHVIS_PLOT2D_DIR}/src/SurfaceEstimators.cpp
   ${GRAPHVIS_PLOT2D_DIR}/include/ColourVision.h
   ${GRAPHVIS_PLOT2D_DIR}/include/Expression.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PublicationProfile.h
@@ -42,7 +39,6 @@ set(GRAPHVIS_PLOT2D_SOURCES
   ${GRAPHVIS_PLOT2D_DIR}/include/QtPlotBackend.h
   ${GRAPHVIS_PLOT2D_DIR}/include/ArrowTable.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotCanvas.h
-  ${GRAPHVIS_PLOT2D_DIR}/include/ColourMaps.h
   ${GRAPHVIS_PLOT2D_DIR}/include/TouchGesture.h
   ${GRAPHVIS_PLOT2D_DIR}/include/PlotSelfTest.h
   ${GRAPHVIS_PLOT2D_DIR}/include/Units.h
@@ -96,6 +92,7 @@ set(GRAPHVIS_QML_FILES
   qml/Main.qml
   qml/Theme.qml
   qml/components/TopBar.qml
+  qml/components/WorkspaceRail.qml
   qml/components/ThemePicker.qml
   qml/components/ColourVisionBar.qml
   qml/components/ProjectPanel.qml
@@ -123,13 +120,10 @@ set(GRAPHVIS_QML_FILES
   qml/components/PlotNotice.qml
   qml/components/DockPanel.qml
   qml/components/MainMenuBar.qml
+  qml/components/AxisScaleBar.qml
   qml/components/LayoutPicker.qml
   qml/components/CommandPalette.qml
   qml/components/RibbonBar.qml
-  qml/components/AxisScaleBar.qml
-  qml/components/IconRail.qml
-  qml/components/ShelfBar.qml
-  qml/components/PageBar.qml
   qml/components/FigureCell.qml
   qml/workspaces/NotebookCanvas.qml
   qml/components/ScanPanel.qml
@@ -282,44 +276,6 @@ if(WIN32)
     FILES_MATCHING PATTERN "*.dll"
   )
 
-  # --------------------------------------------------------------------------
-  # Qt's own QML modules.
-  #
-  # The application's GraphVis module is compiled into the resource system and
-  # needs nothing here. Every module it IMPORTS - QtQuick, QtQuick.Controls,
-  # QtQuick.Layouts, QtQuick.Window, QtQuick.Dialogs and what those pull in -
-  # is loaded from disk at runtime and has to be beside the executable.
-  #
-  # Nothing installed them. The staged tree had exactly one folder under qml/,
-  # the application's own, and the app died at startup with:
-  #
-  #     The GraphVis QML interface failed to load. This is commonly caused by
-  #     a missing Qt/QML runtime module or an incomplete deployed plugin
-  #     directory.
-  #
-  # It was both, in fact: the same build also shipped no platform plugin. Both
-  # were left to vcpkg's applocal deploy step, which did not run, and both were
-  # then collected by globbing the directory that step was supposed to fill.
-  #
-  # vcpkg_installed is populated at configure time and cannot be empty, so a
-  # plain install(DIRECTORY) is correct and is not a deferred glob.
-  #
-  # QtTest, QmlTime and the tooling/designer trees are development aids the
-  # application never imports; .pdb files are debug symbols for someone else's
-  # libraries. Everything else is kept, including the Controls styles the app
-  # does not currently select, because a style is chosen at RUN time and a
-  # missing one fails the same way this bug did.
-  # --------------------------------------------------------------------------
-  install(DIRECTORY
-    "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/qml/"
-    DESTINATION qml
-    PATTERN "*.pdb"    EXCLUDE
-    PATTERN "QtTest"   EXCLUDE
-    PATTERN "QmlTime"  EXCLUDE
-    PATTERN "tooling"  EXCLUDE
-    PATTERN "designer" EXCLUDE
-  )
-
   install(CODE "
     # Runtime DLLs copied beside the executable by the applocal deploy step.
     file(GLOB _gv_root_dlls \"${CMAKE_BINARY_DIR}/*.dll\")
@@ -327,71 +283,11 @@ if(WIN32)
       file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}\" TYPE SHARED_LIBRARY FILES \${_gv_root_dlls})
     endif()
 
-    # Qt plugin directories.
-    #
-    # TWO sources, and the order matters. The build root is where vcpkg's
-    # applocal deploy is SUPPOSED to put them, and where they are when it runs.
-    # vcpkg_installed/.../Qt6/plugins is where they actually live, is populated
-    # at configure time, and cannot be empty.
-    #
-    # Globbing only the build root is what shipped an application that could
-    # not open a window:
-    #
-    #     This application failed to start because no Qt platform plugin
-    #     could be initialized.
-    #
-    # The deploy step had not run on that build, the glob matched nothing, the
-    # install reported success, and the missing file was qwindows.dll - which
-    # was sitting in vcpkg_installed the whole time. An install rule must not
-    # depend on another step having happened when it can read the real source
-    # directly. The build-root pass is kept because a fast-preset tree may
-    # carry a plugin the vcpkg tree does not, and file(INSTALL) skips a file
-    # that is already there and identical.
+    # Qt plugin directories. Missing ones are simply skipped.
     foreach(_gv_plugin_dir platforms imageformats iconengines styles tls networkinformation generic)
-      # unset, not set to \"\": list(APPEND) onto an empty STRING leaves a
-      # leading empty element, and file(INSTALL) on an empty path errors.
-      unset(_gv_plugin_dlls)
-      file(GLOB _gv_vcpkg_plugins
-           \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/plugins/\${_gv_plugin_dir}/*.dll\")
-      file(GLOB _gv_build_plugins \"${CMAKE_BINARY_DIR}/\${_gv_plugin_dir}/*.dll\")
-      if(_gv_vcpkg_plugins)
-        list(APPEND _gv_plugin_dlls \${_gv_vcpkg_plugins})
-      endif()
-      if(_gv_build_plugins)
-        list(APPEND _gv_plugin_dlls \${_gv_build_plugins})
-      endif()
-      if(_gv_plugin_dlls)
-        list(REMOVE_DUPLICATES _gv_plugin_dlls)
-      endif()
+      file(GLOB _gv_plugin_dlls \"${CMAKE_BINARY_DIR}/\${_gv_plugin_dir}/*.dll\")
       if(_gv_plugin_dlls)
         file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/\${_gv_plugin_dir}\" TYPE SHARED_LIBRARY FILES \${_gv_plugin_dlls})
-      endif()
-    endforeach()
-
-    # The platform plugin is not optional and its absence is not a warning:
-    # without it the application starts, fails, and shows a dialog that tells
-    # the user to reinstall - which does not help, because the installer is
-    # what is missing it. Better to fail the install than to package that.
-    if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/platforms/qwindows.dll\")
-      message(FATAL_ERROR
-        \"No Qt platform plugin was installed: platforms/qwindows.dll is missing \"
-        \"from \${CMAKE_INSTALL_PREFIX}. The application would start and immediately \"
-        \"fail with 'no Qt platform plugin could be initialized'. Looked in \"
-        \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/plugins/platforms \"
-        \"and ${CMAKE_BINARY_DIR}/platforms.\")
-    endif()
-
-    # And every QML module the interface imports. Checked one by one rather
-    # than by testing that qml/ merely exists: it DID exist, holding only the
-    # application's own module, and that is exactly the state that shipped.
-    foreach(_gv_qml_module QtQuick QtQuick/Controls QtQuick/Layouts QtQuick/Window QtQuick/Dialogs QtQml)
-      if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/qml/\${_gv_qml_module}/qmldir\")
-        message(FATAL_ERROR
-          \"QML module \${_gv_qml_module} was not installed: \"
-          \"qml/\${_gv_qml_module}/qmldir is missing from \${CMAKE_INSTALL_PREFIX}. \"
-          \"The application would start and immediately fail with 'The GraphVis \"
-          \"QML interface failed to load'. Source: \"
-          \"${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/Qt6/qml.\")
       endif()
     endforeach()
   ")

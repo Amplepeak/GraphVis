@@ -21,6 +21,11 @@ const QVector<UiLayoutGroup>& uiLayoutGroups(){
         {QStringLiteral("Focus"),
          QStringLiteral("The figure fills the window and the rest is summoned. For "
                         "reading, presenting and the last look before export.")},
+        {QStringLiteral("No top bar"),
+         QStringLiteral("The bar of words across the top is gone. Home, Literature, "
+                        "Visualize, Data, Analysis and Publish move to a strip of "
+                        "symbols down one edge, or to Ctrl+K, and the window looks "
+                        "like a different application.")},
     };
     return kGroups;
 }
@@ -284,6 +289,9 @@ const QVector<UiLayout>& uiLayouts(){
         l.focusDim=true; l.statsStrip=true;
         out.append(l);
 
+        // The command bar keeps the top bar as icons: with no sidebar and no
+        // rail, a hidden bar would leave nothing on screen to switch with but
+        // a keyboard shortcut nobody has been told about.
         l={}; l.id=QStringLiteral("command"); l.group=4;
         l.name=QStringLiteral("Command bar");
         l.icon=QStringLiteral("⌕");
@@ -292,6 +300,76 @@ const QVector<UiLayout>& uiLayouts(){
                                      "whole window and every control is reached by typing "
                                      "for it.");
         l.sidebar=SidebarEdge::None;
+        l.navStyle=NavStyle::Icons;
+        out.append(l);
+
+        // ================================================================= 5
+        // Shapes that change the chrome rather than the panels.
+        //
+        // Every layout above rearranges what is around the figure and leaves
+        // the same wide bar of words across the top, so two very different
+        // shapes still look like the same application from the neck up. These
+        // five move that bar, shrink it to symbols, or remove it.
+
+        l={}; l.id=QStringLiteral("symbols"); l.group=5;
+        l.name=QStringLiteral("Symbols only");
+        l.icon=QStringLiteral("◌");
+        l.from=QStringLiteral("Blender, Krita");
+        l.description=QStringLiteral("The same arrangement with the words taken out: the "
+                                     "top bar becomes a row of symbols about a third the "
+                                     "height, and the panel keeps the space it gives up.");
+        l.sidebar=SidebarEdge::Left; l.sidebarMode=SidebarMode::Tabs;
+        l.navStyle=NavStyle::Icons;
+        out.append(l);
+
+        l={}; l.id=QStringLiteral("left-spine"); l.group=5;
+        l.name=QStringLiteral("Left spine");
+        l.icon=QStringLiteral("▌");
+        l.from=QStringLiteral("Slack, Discord");
+        l.description=QStringLiteral("No bar across the top at all. The six workspaces "
+                                     "become a spine of symbols down the left edge, with "
+                                     "the panel beside it and the figure filling the rest.");
+        l.sidebar=SidebarEdge::Left; l.sidebarMode=SidebarMode::Rail;
+        l.rail=true; l.railPersists=true; l.sidebarWidth=330;
+        l.navStyle=NavStyle::Hidden; l.navEdge=NavEdge::Left;
+        out.append(l);
+
+        l={}; l.id=QStringLiteral("right-spine"); l.group=5;
+        l.name=QStringLiteral("Right spine");
+        l.icon=QStringLiteral("▐");
+        l.from=QStringLiteral("Photoshop, Affinity");
+        l.description=QStringLiteral("The same again on the other edge, for a left-handed "
+                                     "pointer or a second screen on the left: workspaces "
+                                     "and panels both on the right, figure hard left.");
+        l.sidebar=SidebarEdge::Right; l.sidebarMode=SidebarMode::Tabs;
+        l.navStyle=NavStyle::Hidden; l.navEdge=NavEdge::Right;
+        out.append(l);
+
+        l={}; l.id=QStringLiteral("spine-and-table"); l.group=5;
+        l.name=QStringLiteral("Spine and table");
+        l.icon=QStringLiteral("▙");
+        l.from=QStringLiteral("Excel, Tableau");
+        l.description=QStringLiteral("Workspaces down the left edge, the data table along "
+                                     "the bottom, and nothing above the figure - for "
+                                     "working between the numbers and the picture.");
+        l.sidebar=SidebarEdge::Left; l.sidebarMode=SidebarMode::Rail;
+        l.rail=true; l.railPersists=true; l.sidebarWidth=320;
+        l.bottomStrip=BottomStrip::DataTable;
+        l.navStyle=NavStyle::Hidden; l.navEdge=NavEdge::Left;
+        l.statsStrip=true;
+        out.append(l);
+
+        l={}; l.id=QStringLiteral("bare"); l.group=5;
+        l.name=QStringLiteral("Bare");
+        l.icon=QStringLiteral("□");
+        l.from=QStringLiteral("Preview, Quick Look");
+        l.description=QStringLiteral("Nothing but the figure: no top bar, no spine, no "
+                                     "panel. Everything is reached with Ctrl+K, which is "
+                                     "the one thing this shape depends on you knowing.");
+        l.sidebar=SidebarEdge::None;
+        l.navStyle=NavStyle::Hidden;
+        l.canvas=CanvasMode::Zen;
+        l.focusDim=true;
         out.append(l);
 
         return out;
@@ -317,6 +395,8 @@ QVariantMap uiLayoutAsMap(const UiLayout& l){
     m.insert(QStringLiteral("railRightToo"),l.railRightToo);
     m.insert(QStringLiteral("railPersists"),l.railPersists);
     m.insert(QStringLiteral("inspectorSummons"),l.inspectorSummons);
+    m.insert(QStringLiteral("navStyle"),int(l.navStyle));
+    m.insert(QStringLiteral("navEdge"),int(l.navEdge));
     m.insert(QStringLiteral("topBand"),int(l.topBand));
     m.insert(QStringLiteral("bottomStrip"),int(l.bottomStrip));
     m.insert(QStringLiteral("canvas"),int(l.canvas));

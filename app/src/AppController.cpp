@@ -77,7 +77,12 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotFieldInvalidDisplay_=qBound(0,settings.value(QStringLiteral("plot/fieldInvalidDisplay"),0).toInt(),5);
     plotFieldKrigingVariogram_=qBound(0,settings.value(QStringLiteral("plot/fieldKrigingVariogram"),0).toInt(),2);
     plotFieldLoessFraction_=qBound(0.02,settings.value(QStringLiteral("plot/fieldLoessFraction"),0.25).toDouble(),1.0);
-    uiLayout_=qBound(0,settings.value(QStringLiteral("ui/layout"),0).toInt(),5);
+    // Clamped to the TABLE, not to a number. This said 5, left over from when
+    // there were six layouts, so anyone who chose one of the other fifteen got
+    // it for that session and was silently put back on layout 5 at the next
+    // start - a setting that looks like it saved and did not.
+    uiLayout_=qBound(0,settings.value(QStringLiteral("ui/layout"),0).toInt(),
+                     int(graphvis::uiLayouts().size())-1);
     // The optional literature reader. Off unless somebody has turned it on, and
     // the key is not among these: only the name of the environment variable or
     // the path of the file it lives in.
