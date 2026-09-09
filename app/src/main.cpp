@@ -215,7 +215,12 @@ int main(int argc, char *argv[])
             const bool exportOk = graphvis::runPlotSelfTest(args.at(flag + 1));
             const bool enginesOk = graphvis::runEngineSweep();
             const bool regressionOk = graphvis::runRegressionChecks();
-            return (exportOk && enginesOk && regressionOk) ? 0 : 1;
+            // The whole-catalogue property checks: row order, constant columns
+            // and ink on the rim, asked of all 434 engines at once. Reporting,
+            // so a build log says what every engine answered rather than only
+            // which ones failed.
+            const bool propertiesOk = graphvis::runPropertyChecks(true);
+            return (exportOk && enginesOk && regressionOk && propertiesOk) ? 0 : 1;
         }
     }
 

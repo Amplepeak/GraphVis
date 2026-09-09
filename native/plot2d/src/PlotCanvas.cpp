@@ -612,6 +612,14 @@ void PlotCanvas::rotateByPixels(double dx,double dy){
     setElevation(spec_.view3d.elevation+dy*(180.0/qMax(160.0,height())));
 }
 
+void PlotCanvas::setCameraZoom(double factor){
+    if(!(factor>0.0)) return;
+    const double next=qBound(0.35,factor,4.0);
+    if(qFuzzyCompare(next,spec_.view3d.zoom)) return;
+    spec_.view3d.zoom=next;
+    cameraMoved();
+}
+
 void PlotCanvas::zoom3DBy(double factor){
     if(!view3D()||!(factor>0.0)) return;
     // Bounded so the figure cannot be driven out of its own frame. The old
@@ -1696,6 +1704,14 @@ QVariantMap PlotCanvas::figureState() const {
         // figure saved with four masses reopens with them and a figure from an
         // engine that declares none carries an empty map rather than nothing.
         {QStringLiteral("engineParameters"),engineParameterValues()},
+        // The camera. A 3-D figure IS its angle - the whole reason to turn one
+        // is that the shape reads from where you put it - and a figure that
+        // reopened at the default angle had thrown away the only thing the
+        // person did to it. Written for every figure, ignored on reopening by
+        // the engines that have no camera.
+        {QStringLiteral("azimuth"),spec_.view3d.azimuth},
+        {QStringLiteral("elevation"),spec_.view3d.elevation},
+        {QStringLiteral("cameraZoom"),spec_.view3d.zoom},
         // The zoom, when there is one. A figure saved while zoomed in reopens
         // showing what was on screen when it was saved; one saved fitted to
         // its data carries no limits at all and stays that way.
@@ -1792,6 +1808,16 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
         if(!std::isfinite(note.x)||!std::isfinite(note.y)) continue;
         spec_.annotations.append(note);
     }
+
+    // The camera, before the rebuild below - it is part of the figure, not of
+    // the view, and rebuild does not touch it. Clamped through the setters so
+    // an edited file cannot put the cube inside out.
+    if(state.contains(QStringLiteral("azimuth")))
+        setAzimuth(state.value(QStringLiteral("azimuth")).toDouble());
+    if(state.contains(QStringLiteral("elevation")))
+        setElevation(state.value(QStringLiteral("elevation")).toDouble());
+    if(state.contains(QStringLiteral("cameraZoom")))
+        setCameraZoom(state.value(QStringLiteral("cameraZoom")).toDouble());
 
     dirty_=true;
     rebuild();

@@ -110,6 +110,10 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(bool view3D READ view3D NOTIFY stateChanged)
     Q_PROPERTY(double azimuth READ azimuth WRITE setAzimuth NOTIFY styleChanged)
     Q_PROPERTY(double elevation READ elevation WRITE setElevation NOTIFY styleChanged)
+    // How close the camera sits. zoom3DBy multiplies it, which a wheel wants
+    // and a slider cannot use: a control that can only say "a bit more" has no
+    // position to show. Same bounds as zoom3DBy applies.
+    Q_PROPERTY(double cameraZoom READ cameraZoom WRITE setCameraZoom NOTIFY styleChanged)
     Q_PROPERTY(int fieldInterpolation READ fieldInterpolation WRITE setFieldInterpolation NOTIFY styleChanged)
     // The scattered estimator and its policies. -1 on fieldEstimator keeps the
     // grid-filling path, which is what every existing figure uses.
@@ -340,6 +344,8 @@ public:
     bool view3D() const;
     double azimuth() const { return spec_.view3d.azimuth; }
     double elevation() const { return spec_.view3d.elevation; }
+    double cameraZoom() const { return spec_.view3d.zoom; }
+    void setCameraZoom(double factor);
     void setAzimuth(double degrees);
     void setElevation(double degrees);
     // Drag: horizontal turns, vertical tilts. Pixels, so the caller does not

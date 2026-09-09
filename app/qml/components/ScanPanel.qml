@@ -120,7 +120,11 @@ ColumnLayout {
     ListView {
         Layout.fillWidth: true
         Layout.fillHeight: true
-        Layout.minimumHeight: 120
+        // Low enough that the whole block fits inside the share the library
+        // panel gives it on a short window. A floor of 120 made the block
+        // taller than its own allowance, so the buttons above it were pushed
+        // out of the panel instead of the list shrinking.
+        Layout.minimumHeight: 70
         clip: true
         spacing: 4
         model: root.app.scanRecommendations

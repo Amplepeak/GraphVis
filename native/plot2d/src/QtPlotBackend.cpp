@@ -769,7 +769,19 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
     // Room on the right for the colour bar, when the engine is one that paints
     // a quantity as colour. Reserved here rather than taken out of the plot
     // area later, because a bar drawn over the frame is a bar drawn over data.
-    double right=kMarginRight;
+    // The LAST x label is centred on the last tick, so half of it hangs past
+    // the right end of the frame. kMarginRight is 18 points, which is enough
+    // for "20" and not for "1.80e+06" - and the half that does not fit is
+    // simply cut off by the edge of the canvas. Found by asking every engine
+    // whether it puts ink on the rim: an acceptability curve, whose x axis is a
+    // willingness-to-pay in hundreds of thousands, was the one that did.
+    //
+    // The whole last label rather than half of it, so a figure exported at a
+    // different width does not lose it again.
+    double lastXLabel=0.0;
+    for(const AxisTick& t:xTicks)
+        if(!t.minor) lastXLabel=qMax(lastXLabel,fm.horizontalAdvance(t.label));
+    double right=qMax(kMarginRight,lastXLabel*0.5+6.0);
     if(usesColourMap(spec.engine)){
         right+=fm.height()*0.9                                        // gap
               +qMax(8.0,fm.height()*0.85)                             // the bar
@@ -8970,24 +8982,36 @@ quint64 QtPlotBackend::specFingerprint(const PlotSpec& spec){
 }
 
 namespace {
-// The caller's limits and notes, put back on top of a rewrite that set its own.
+// The caller's limits, notes and CAMERA, put back on top of a rewrite that set
+// its own.
 //
-// Both are deliberately absent from specFingerprint, for the same reason: no
-// rewrite in prepareSpec reads either, and both change while someone is
-// interacting. Hashing the limits meant dragging a violin plot re-derived the
-// violin sixty times a second; hashing the notes would mean re-deriving it on
-// every keystroke while a note is being typed.
+// All three are deliberately absent from specFingerprint, for the same reason:
+// no rewrite in prepareSpec reads any of them, and all three change while
+// someone is interacting. Hashing the limits meant dragging a violin plot
+// re-derived the violin sixty times a second; hashing the notes would mean
+// re-deriving it on every keystroke while a note is being typed; hashing the
+// camera would mean re-preparing a 200,000-point surface on every frame of a
+// drag, which is the cost the draft path exists to avoid.
 //
-// This is not an optimisation, it is a correctness fix. Without the second
-// line a note added to a figure whose data had not changed hit the cache,
-// which had been filled before the note existed, and simply did not appear -
-// and one that was deleted stayed on screen.
+// This is not an optimisation, it is a correctness fix, and it has now been the
+// same fix three times. Without the notes line a note added to a figure whose
+// data had not changed hit the cache, which had been filled before the note
+// existed, and simply did not appear. Without the camera lines TURNING A 3-D
+// FIGURE DID NOTHING: the painter draws the PREPARED spec, the prepared spec
+// came out of a cache filled at the previous angle, and every frame of a drag
+// redrew the same picture. It looked like the figure snapping between a few
+// fixed faces, because the only thing that invalidated the cache was the point
+// count changing when draft thinning switched off at the end of the gesture -
+// so the figure moved once, on release, and not at all while being dragged.
+// Zoom was the same fault seen from the other side: a wheel notch changed a
+// number nothing read.
 PlotSpec& applyLimits(PlotSpec& out,const PlotSpec& in){
     if(!isUnset(in.xAxis.min)) out.xAxis.min=in.xAxis.min;
     if(!isUnset(in.xAxis.max)) out.xAxis.max=in.xAxis.max;
     if(!isUnset(in.yAxis.min)) out.yAxis.min=in.yAxis.min;
     if(!isUnset(in.yAxis.max)) out.yAxis.max=in.yAxis.max;
     out.annotations=in.annotations;
+    out.view3d=in.view3d;
     return out;
 }
 } // namespace

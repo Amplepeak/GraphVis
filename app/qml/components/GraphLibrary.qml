@@ -227,16 +227,26 @@ Rectangle {
             Layout.fillWidth: true
             enabled: root.app.activeArrowPath !== ""
             highlighted: true
-            text: root.app.scanning
-                  ? "Finding the best graphs…"
-                  : (root.app.scanRecommendations.length > 0
-                     ? "★  Best for this data  (" + root.app.scanRecommendations.length + " found)"
-                     : "★  Best for this data")
+            // The caret says this OPENS AND CLOSES. Without it the button reads
+            // as an action - press it and something happens - so the block it
+            // opens looked permanent, and the block is tall enough to leave
+            // three or four rows of the catalogue on screen underneath it. The
+            // one control that puts the list back was the button that had
+            // already been pressed.
+            text: (scanOpen.checked ? "▾  " : "▸  ")
+                  + (root.app.scanning
+                     ? "Finding the best graphs…"
+                     : (root.app.scanRecommendations.length > 0
+                        ? "★  Best for this data  (" + root.app.scanRecommendations.length + " found)"
+                        : "★  Best for this data"))
             ToolTip.visible: bestButton.hovered
             ToolTip.text: root.app.activeArrowPath !== ""
                           ? "Reads the loaded data - and the open paper, if there is one - "
                             + "and ranks the graphs that suit it, each with the axis mapping "
-                            + "it should use. Click one to draw it."
+                            + "it should use. Click one to draw it. "
+                            + (scanOpen.checked
+                               ? "Click here to fold this away and get the list back."
+                               : "")
                           : "Import a dataset first."
             onClicked: scanOpen.checked = !scanOpen.checked
         }
@@ -244,7 +254,16 @@ Rectangle {
         ScanPanel {
             id: scan
             Layout.fillWidth: true
-            Layout.preferredHeight: scanOpen.checked ? 320 : 0
+            // Never more than two fifths of the panel. 320 was a fixed height
+            // chosen against a tall window; in a short one it took everything
+            // the catalogue had, and the list this panel exists for was four
+            // rows at the bottom. The scan's own list scrolls inside whatever
+            // it gets, so a smaller share costs a row of results rather than
+            // hiding anything.
+            Layout.preferredHeight: scanOpen.checked
+                                    ? Math.max(180, Math.min(320, root.height * 0.4))
+                                    : 0
+            Layout.maximumHeight: scanOpen.checked ? Math.max(180, root.height * 0.45) : 0
             visible: scanOpen.checked
             app: root.app
             onRecommendationChosen: (graph, mappings) => root.scanApplied(graph, mappings)

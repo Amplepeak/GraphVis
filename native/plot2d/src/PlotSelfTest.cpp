@@ -3,6 +3,9 @@
 
 #include <QFile>
 #include <QHash>
+#include <QRegularExpression>
+#include <QSet>
+#include <QtGlobal>
 #include <QImage>
 #include <QFileInfo>
 #include <QPageSize>
@@ -15,14 +18,27 @@
 
 namespace graphvis {
 
-// Renders every supported engine and reports which of them drew nothing.
+// One engine's inputs: its own shape where it has one, the shared signal
+// otherwise. Shared, because a check over the whole catalogue that invents its
+// own data is a check asking every engine to read something it was not
+// designed for - and then reporting the right answer to that as a fault.
+struct SweepInputs {
+    PlotSeries a,b,c,d,e;
+    QHash<QString,QVector<PlotSeries>> shaped;
+    QVector<PlotSeries> forEngine(const QString& engine) const {
+        return shaped.contains(engine)?shaped.value(engine)
+                                      :QVector<PlotSeries>{a,b,c,d,e};
+    }
+};
+
+// The sweep's inputs, built once and shared.
 //
-// The vector-export test above proves one figure exports correctly. This proves
-// the other thirty do not crash, do not hang, and put ink on the page - which
-// is the failure mode that matters for an engine expressed as a rewrite: a
-// wrong transformation produces an empty plot, not a compile error, and nobody
-// notices until they try to use that catalogue entry.
-bool runEngineSweep(){
+// These were local to runEngineSweep, which meant every other check over the
+// whole catalogue had to invent its own data - and data invented for a check
+// is data no engine was designed for, so the check reports the wrong answer
+// as a fault. One table, used by the sweep and by the property checks.
+SweepInputs sweepInputs(){
+    SweepInputs in;
     // Data shaped to satisfy every engine at once: a time base, a decaying
     // signal, a paired measurement for agreement plots, a probability column
     // for ROC and volcano, and a binary label.
@@ -45,74 +61,6 @@ bool runEngineSweep(){
         d.x.append(t); d.y.append((i%3==0)?1.0:0.0);
         e.x.append(t); e.y.append(9.0-base+0.3*std::sin(t*1.7));
     }
-
-    QtPlotBackend backend;
-    const QStringList engines=backend.supportedEngines();
-    QStringList blank;
-
-    // A frame with no data at all, so "did this engine draw anything" is
-    // measured against the chrome rather than against a guessed number. The
-    // first version of this test used a fixed threshold and reported five
-    // working engines as broken, because a single thin curve puts far less ink
-    // on the page than four dense ones.
-    // "Did this engine draw anything" is measured against that engine's OWN
-    // empty frame. A fixed threshold reported five working engines as broken,
-    // because a single thin curve puts far less ink on the page than four dense
-    // ones. A shared baseline then reported the polar engines as broken,
-    // because they have no rectangular frame at all and draw less chrome than
-    // the engine the baseline came from.
-    auto imageOf=[&](const PlotSpec& probe){
-        QImage canvas(640,400,QImage::Format_ARGB32_Premultiplied);
-        canvas.fill(Qt::white);
-        {
-            QPainter painter(&canvas);
-            painter.setRenderHint(QPainter::Antialiasing,true);
-            backend.render(&painter,QRectF(0,0,640,400),probe);
-        }
-        return canvas;
-    };
-    auto inkFor=[&](const PlotSpec& probe){
-        const QImage canvas=imageOf(probe);
-        qint64 ink=0;
-        for(int y=0;y<canvas.height();y+=2){
-            const QRgb* row=reinterpret_cast<const QRgb*>(canvas.constScanLine(y));
-            for(int x=0;x<canvas.width();x+=2)
-                if(qRed(row[x])<250||qGreen(row[x])<250||qBlue(row[x])<250) ++ink;
-        }
-        return ink;
-    };
-    // Pixels that DIFFER between two renders of the same figure.
-    //
-    // This replaces counting non-white pixels, which cannot see a curve that
-    // lands on the gridlines it overdraws: a blue line through a grey gridline
-    // changes that pixel without adding a non-white one, so a correct thin
-    // curve can come out with LESS "ink" than its own empty frame. That is not
-    // a near miss, it is a measure that answers a different question from the
-    // one being asked. What is wanted is "did anything appear", and the way to
-    // ask it is to compare the two pictures.
-    auto changedPixels=[](const QImage& a,const QImage& b){
-        qint64 n=0;
-        for(int y=0;y<a.height();++y){
-            const QRgb* pa=reinterpret_cast<const QRgb*>(a.constScanLine(y));
-            const QRgb* pb=reinterpret_cast<const QRgb*>(b.constScanLine(y));
-            for(int x=0;x<a.width();++x) if(pa[x]!=pb[x]) ++n;
-        }
-        return n;
-    };
-
-    qint64 baseline=0;
-    {
-        PlotSpec empty;
-        empty.engine=QStringLiteral("Line Chart");
-        empty.title=QStringLiteral("baseline");
-        empty.xAxis.label=QStringLiteral("time_h");
-        empty.yAxis.label=QStringLiteral("value");
-        empty.style.background=Qt::white;
-        empty.style.foreground=QColor(0x11,0x11,0x11);
-        empty.style.gridColor=QColor(0xd8,0xd8,0xd8);
-        baseline=inkFor(empty);
-    }
-    printf("selftest: empty-frame baseline %lld px\n",static_cast<long long>(baseline));
 
     // A few engines do not read a measurement at all. An edge list is a list of
     // pairs, a mosaic is a contingency table, an UpSet plot is set membership,
@@ -2279,6 +2227,91 @@ bool runEngineSweep(){
             {[&]{ PlotSeries s; s.label=QStringLiteral("design spectrum");
                   s.x=spectrumPeriod; s.y=spectrumVelocity; return s; }()}},
     };
+    in.a=a; in.b=b; in.c=c; in.d=d; in.e=e;
+    in.shaped=shaped;
+    return in;
+}
+
+// Renders every supported engine and reports which of them drew nothing.
+//
+// The vector-export test above proves one figure exports correctly. This proves
+// the other thirty do not crash, do not hang, and put ink on the page - which
+// is the failure mode that matters for an engine expressed as a rewrite: a
+// wrong transformation produces an empty plot, not a compile error, and nobody
+// notices until they try to use that catalogue entry.
+bool runEngineSweep(){
+    const SweepInputs in=sweepInputs();
+    const PlotSeries &a=in.a,&b=in.b,&c=in.c,&d=in.d,&e=in.e;
+    (void)a;(void)b;(void)c;(void)d;(void)e;
+    const QHash<QString,QVector<PlotSeries>>& shaped=in.shaped;
+    QtPlotBackend backend;
+    const QStringList engines=backend.supportedEngines();
+    QStringList blank;
+
+    // A frame with no data at all, so "did this engine draw anything" is
+    // measured against the chrome rather than against a guessed number. The
+    // first version of this test used a fixed threshold and reported five
+    // working engines as broken, because a single thin curve puts far less ink
+    // on the page than four dense ones.
+    // "Did this engine draw anything" is measured against that engine's OWN
+    // empty frame. A fixed threshold reported five working engines as broken,
+    // because a single thin curve puts far less ink on the page than four dense
+    // ones. A shared baseline then reported the polar engines as broken,
+    // because they have no rectangular frame at all and draw less chrome than
+    // the engine the baseline came from.
+    auto imageOf=[&](const PlotSpec& probe){
+        QImage canvas(640,400,QImage::Format_ARGB32_Premultiplied);
+        canvas.fill(Qt::white);
+        {
+            QPainter painter(&canvas);
+            painter.setRenderHint(QPainter::Antialiasing,true);
+            backend.render(&painter,QRectF(0,0,640,400),probe);
+        }
+        return canvas;
+    };
+    auto inkFor=[&](const PlotSpec& probe){
+        const QImage canvas=imageOf(probe);
+        qint64 ink=0;
+        for(int y=0;y<canvas.height();y+=2){
+            const QRgb* row=reinterpret_cast<const QRgb*>(canvas.constScanLine(y));
+            for(int x=0;x<canvas.width();x+=2)
+                if(qRed(row[x])<250||qGreen(row[x])<250||qBlue(row[x])<250) ++ink;
+        }
+        return ink;
+    };
+    // Pixels that DIFFER between two renders of the same figure.
+    //
+    // This replaces counting non-white pixels, which cannot see a curve that
+    // lands on the gridlines it overdraws: a blue line through a grey gridline
+    // changes that pixel without adding a non-white one, so a correct thin
+    // curve can come out with LESS "ink" than its own empty frame. That is not
+    // a near miss, it is a measure that answers a different question from the
+    // one being asked. What is wanted is "did anything appear", and the way to
+    // ask it is to compare the two pictures.
+    auto changedPixels=[](const QImage& a,const QImage& b){
+        qint64 n=0;
+        for(int y=0;y<a.height();++y){
+            const QRgb* pa=reinterpret_cast<const QRgb*>(a.constScanLine(y));
+            const QRgb* pb=reinterpret_cast<const QRgb*>(b.constScanLine(y));
+            for(int x=0;x<a.width();++x) if(pa[x]!=pb[x]) ++n;
+        }
+        return n;
+    };
+
+    qint64 baseline=0;
+    {
+        PlotSpec empty;
+        empty.engine=QStringLiteral("Line Chart");
+        empty.title=QStringLiteral("baseline");
+        empty.xAxis.label=QStringLiteral("time_h");
+        empty.yAxis.label=QStringLiteral("value");
+        empty.style.background=Qt::white;
+        empty.style.foreground=QColor(0x11,0x11,0x11);
+        empty.style.gridColor=QColor(0xd8,0xd8,0xd8);
+        baseline=inkFor(empty);
+    }
+    printf("selftest: empty-frame baseline %lld px\n",static_cast<long long>(baseline));
+
 
     for(const QString& engine:engines){
         PlotSpec spec;
@@ -2526,6 +2559,85 @@ bool runRegressionChecks(){
                                            "should not"));
     }
 
+    // ------------------------------------------------------- 1c. the camera
+    // Turning a 3-D figure has to change the picture, and the prepared-figure
+    // cache must not be able to hide it.
+    //
+    // This is the fault that made rotation and zoom look broken in the
+    // application: the painter draws the PREPARED spec, the prepared spec comes
+    // from a cache keyed on a fingerprint that does not include the camera, and
+    // nothing put the caller's camera back on top of the cached copy. So every
+    // frame of a drag redrew the figure at the angle it had been prepared at.
+    // The cache was never invalidated by the drag itself - only by the point
+    // count changing when draft thinning switched off at the end of it, which
+    // is why the figure appeared to snap between a few fixed faces.
+    //
+    // Rendered through ONE backend on purpose. A fresh backend per render has
+    // an empty cache and passes this check no matter how broken the caching is,
+    // which is exactly how the fault survived a probe that looked at nothing
+    // but the painters.
+    {
+        QVector<double> gx,gy,gz;
+        for(int i=0;i<40;++i)
+            for(int j=0;j<40;++j){
+                const double u=-3.0+6.0*i/39.0,v=-3.0+6.0*j/39.0;
+                gx.append(u); gy.append(v);
+                gz.append(std::exp(-(u*u+v*v)/4.0)*std::cos(u*1.5));
+            }
+        const QStringList projected{
+            QStringLiteral("3D Topography / Surface"),QStringLiteral("3D Scatter"),
+            QStringLiteral("3D Line"),QStringLiteral("Surface + Contours"),
+            QStringLiteral("Ribbon")};
+        for(const QString& engine:projected){
+            QtPlotBackend backend;
+            PlotSpec home=whiteSpec(engine);
+            PlotSeries sx,sy,sz;
+            sx.label=QStringLiteral("x"); sy.label=QStringLiteral("y"); sz.label=QStringLiteral("z");
+            sx.y=gx; sy.y=gy; sz.y=gz;
+            for(int i=0;i<gx.size();++i){
+                sx.x.append(double(i)); sy.x.append(double(i)); sz.x.append(double(i));
+            }
+            home.series={sx,sy,sz};
+            home.view3d.azimuth=-35.0; home.view3d.elevation=24.0; home.view3d.zoom=1.0;
+
+            PlotSpec turned=home;  turned.view3d.azimuth=40.0;
+            PlotSpec tilted=home;  tilted.view3d.elevation=-15.0;
+            PlotSpec closer=home;  closer.view3d.zoom=1.8;
+
+            const QImage a=renderToImage(backend,home);
+            const QImage b=renderToImage(backend,turned);
+            const QImage c=renderToImage(backend,tilted);
+            const QImage d=renderToImage(backend,closer);
+            const QImage back=renderToImage(backend,home);
+            if(a==b)
+                failures.append(QStringLiteral("%1: turning the camera drew an identical "
+                                               "figure (the cached prepared spec still "
+                                               "carries the old angle)").arg(engine));
+            if(a==c)
+                failures.append(QStringLiteral("%1: tilting the camera drew an identical "
+                                               "figure").arg(engine));
+            if(a==d)
+                failures.append(QStringLiteral("%1: zooming the camera drew an identical "
+                                               "figure").arg(engine));
+            if(a!=back)
+                failures.append(QStringLiteral("%1: returning to the first angle drew a "
+                                               "different figure").arg(engine));
+
+            // And the same while thinned, because that is what a drag actually
+            // renders: draft mode is on for every frame between press and
+            // release, and it is the frames DURING the gesture that were
+            // frozen.
+            backend.setDraft(true);
+            const QImage da=renderToImage(backend,home);
+            const QImage db=renderToImage(backend,turned);
+            backend.setDraft(false);
+            if(da==db)
+                failures.append(QStringLiteral("%1: turning the camera drew an identical "
+                                               "figure in draft mode - which is every "
+                                               "frame of a drag").arg(engine));
+        }
+    }
+
     // -------------------------------------------------------------- 2. bars
     // drawBar used to place bar i at plotArea.left() + slot*(i+0.5), ignoring
     // s.x[i] entirely, so bars stood under an axis they did not correspond to.
@@ -2699,7 +2811,7 @@ bool runRegressionChecks(){
         return false;
     }
     printf("selftest: regression checks passed (prepared-spec cache, engine parameters, "
-           "bar positions, horizontal bars, waterfall, correlation agreement)\n");
+           "3-D camera, bar positions, horizontal bars, waterfall, correlation agreement)\n");
     return true;
 }
 
@@ -2769,5 +2881,252 @@ bool runPlotSelfTest(const QString& outputPdf){
     printf("selftest: %s\n",ok?"VECTOR PDF OK":"FAILED");
     return ok;
 }
+
+
+// ======================================================================
+// Property checks
+//
+// Everything above this line tests one engine at a time against an answer
+// someone worked out. That does not scale to 434 engines, and the engines
+// nobody has checked are exactly the ones a defect survives in.
+//
+// These ask questions that need no knowledge of what an engine means, so they
+// can be asked of all of them at once:
+//
+//   ORDER      shuffle the rows. A picture with no notion of row order must be
+//              byte-identical. This is the bar-position defect asked
+//              mechanically: drawBar placed bar i at slot i and ignored its x
+//              value entirely, so two datasets with the same values in a
+//              different order drew the same picture when they should not have,
+//              and one row moved to the end drew a different one when it should
+//              not have either.
+//
+//   FLAT       a column that never varies. Every engine must survive it without
+//              producing non-finite geometry - Qt says so out loud, and this
+//              listens for it. The Voronoi ramp divided by a spread of zero and
+//              painted every cell NaN; a regular lattice of sample sites is a
+//              survey grid, not a corner case.
+//
+//   EDGE       nothing painted hard against the edge of the canvas. A figure
+//              that touches the frame is a figure with something cut off it,
+//              which is what the streamgraph's band name, the sequence logo's
+//              outer stacks and the Piper's misanchored labels all looked like.
+//
+// The exception lists are not excuses. Each names engines for which the
+// property is FALSE BY DEFINITION - a streamgraph's stacking order is its row
+// order, a Circos link is a row - and each was written after reading the
+// report, not before.
+namespace {
+
+// Qt complains about NaN geometry rather than crashing on it, so the warning is
+// the only signal there is. Collected rather than printed: the point is to
+// attribute each one to the engine that caused it.
+QStringList g_qtWarnings;
+QtMessageHandler g_previousHandler=nullptr;
+void collectQtMessage(QtMsgType type,const QMessageLogContext& ctx,const QString& text){
+    if(type==QtWarningMsg||type==QtCriticalMsg||type==QtFatalMsg) g_qtWarnings.append(text);
+    if(g_previousHandler) g_previousHandler(type,ctx,text);
+}
+
+// Ink in the outermost ring of the canvas, by side. Two pixels, because
+// antialiasing puts a faint edge on anything ending exactly at the boundary.
+//
+// The BOTTOM is not asked about. Every painter in this catalogue writes its
+// caption on the last line of the target rectangle - "26 rocks across 26
+// fields", "thickness is the value; there is no y scale" - so ink two pixels
+// from the bottom is the house style rather than a figure running off the page.
+// The other three sides have no such convention: a label against the right edge
+// is a label with its end cut off.
+QString edgesTouched(const QImage& img){
+    const int ring=2;
+    const auto dark=[&](int x,int y){
+        const QRgb p=img.pixel(x,y);
+        return qRed(p)<235||qGreen(p)<235||qBlue(p)<235;
+    };
+    bool left=false,right=false,top=false;
+    for(int x=0;x<img.width();++x)
+        for(int y=0;y<ring;++y)
+            if(dark(x,y)) top=true;
+    for(int y=0;y<img.height();++y)
+        for(int x=0;x<ring;++x){
+            if(dark(x,y)) left=true;
+            if(dark(img.width()-1-x,y)) right=true;
+        }
+    QStringList sides;
+    if(left) sides.append(QStringLiteral("left"));
+    if(right) sides.append(QStringLiteral("right"));
+    if(top) sides.append(QStringLiteral("top"));
+    return sides.join(QStringLiteral("+"));
+}
+
+} // namespace
+
+bool runPropertyChecks(bool report){
+    const SweepInputs in=sweepInputs();
+    QtPlotBackend probe;
+    const QStringList engines=probe.supportedEngines();
+    QStringList failures;
+
+    // Row order is asserted on the engines whose answer CANNOT depend on it,
+    // and reported on the rest.
+    //
+    // Invariance is not a property of the catalogue as a whole and pretending
+    // otherwise would make this check noise: a line chart joins consecutive
+    // rows, an area fills between them, a cumulative sum is defined by the
+    // order it adds in, a streamgraph stacks in arrival order, a pie's slices
+    // go round in the order they were given. Shuffling any of those asks a
+    // different question of the same numbers, and 178 of the 395 engines
+    // reordering their picture is the expected answer rather than 178 defects.
+    //
+    // What IS asserted is the set below: every one of them turns a column into
+    // a SUMMARY - a count, a density, a quantile, a cell - and a summary that
+    // moves when the rows are shuffled has read the row number for something.
+    // That is the bar-position defect exactly: drawBar placed bar i at slot i
+    // and never looked at its x value.
+    //
+    // Each name here was verified to be invariant when the list was written,
+    // so a failure is a change rather than a discovery.
+    static const QSet<QString> kOrderFree{
+        QStringLiteral("Histogram"),QStringLiteral("KDE Density"),
+        QStringLiteral("ECDF"),QStringLiteral("Box Plot"),
+        QStringLiteral("Violin Plot"),QStringLiteral("Scatter"),
+        QStringLiteral("Hexbin"),QStringLiteral("Heatmap"),
+        QStringLiteral("Correlation Matrix"),QStringLiteral("Q-Q Plot"),
+        QStringLiteral("Swarm Plot"),QStringLiteral("Beeswarm"),
+        QStringLiteral("Contour"),QStringLiteral("2D Density"),
+        QStringLiteral("Ridgeline"),QStringLiteral("Raincloud Plot"),
+        QStringLiteral("Bubble Chart")};
+
+    int orderChecked=0,flatChecked=0,edgeChecked=0;
+    QStringList orderChanged,edgeTouched,flatNoisy;
+
+    g_qtWarnings.clear();
+    g_previousHandler=qInstallMessageHandler(collectQtMessage);
+
+    for(const QString& engine:engines){
+        const QVector<PlotSeries> columns=in.forEngine(engine);
+        if(columns.isEmpty()) continue;
+
+        PlotSpec base=whiteSpec(engine);
+        base.series=columns;
+        base.parameters=QtPlotBackend::engineParameterDefaults(engine);
+
+        // ---- ORDER
+        if(!engine.startsWith(QLatin1String("3D "))){
+            PlotSpec shuffled=base;
+            const int rows=shuffled.series.isEmpty()?0:int(shuffled.series.at(0).y.size());
+            if(rows>=8){
+                // One deterministic permutation, applied to every column
+                // together: a shuffle that broke the correspondence between
+                // columns would be a different dataset, not the same one in a
+                // different order.
+                QVector<int> order(rows);
+                for(int i=0;i<rows;++i) order[i]=i;
+                quint32 seed=99991u;
+                for(int i=rows-1;i>0;--i){
+                    seed^=seed<<13; seed^=seed>>17; seed^=seed<<5;
+                    const int j=int(seed%quint32(i+1));
+                    std::swap(order[i],order[j]);
+                }
+                bool usable=true;
+                for(PlotSeries& s:shuffled.series){
+                    if(s.y.size()!=rows||s.x.size()!=rows){ usable=false; break; }
+                    QVector<double> x(rows),y(rows);
+                    for(int i=0;i<rows;++i){ x[i]=s.x[order[i]]; y[i]=s.y[order[i]]; }
+                    // x carries the row index for the column-shaped engines, so
+                    // it is renumbered rather than permuted: the rows have moved,
+                    // and their positions along the axis have not.
+                    bool xIsIndex=true;
+                    for(int i=0;i<rows;++i) if(!qFuzzyCompare(s.x[i],double(i))){ xIsIndex=false; break; }
+                    s.y=y;
+                    if(!xIsIndex) s.x=x;
+                }
+                if(usable){
+                    ++orderChecked;
+                    QtPlotBackend one,two;
+                    if(renderToImage(one,base)!=renderToImage(two,shuffled))
+                        orderChanged.append(engine);
+                }
+            }
+        }
+
+        // ---- FLAT
+        {
+            PlotSpec flat=base;
+            for(PlotSeries& s:flat.series)
+                for(int i=0;i<s.y.size();++i) s.y[i]=1.0;
+            ++flatChecked;
+            const int before=g_qtWarnings.size();
+            QtPlotBackend backend;
+            renderToImage(backend,flat);
+            if(g_qtWarnings.size()>before)
+                flatNoisy.append(QStringLiteral("%1: %2").arg(engine)
+                                     .arg(g_qtWarnings.at(before)));
+        }
+
+        // ---- EDGE
+        //
+        // At a comfortable size, not the 480x320 the other checks use. A
+        // figure crammed into a postage stamp legitimately runs out of room,
+        // and asserting against that would report the size of the test canvas
+        // as a defect in the engine. Ink on the edge of a 900x640 figure is
+        // something the engine placed there.
+        {
+            ++edgeChecked;
+            QtPlotBackend backend;
+            const QImage wide=renderToImage(backend,base,900,640);
+            const QString sides=edgesTouched(wide);
+            if(!sides.isEmpty()){
+                edgeTouched.append(QStringLiteral("%1 (%2)").arg(engine,sides));
+                // The picture, when asked for one. A list of names says which
+                // engines put ink on the edge and nothing about whether that
+                // is a label hanging off the figure or a frame drawn to the
+                // rim on purpose, and only the picture answers that.
+                if(report&&!qEnvironmentVariableIsEmpty("GRAPHVIS_PROPERTY_DUMP")){
+                    QString safe=engine;
+                    safe.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9]+")),
+                                 QStringLiteral("_"));
+                    wide.save(qEnvironmentVariable("GRAPHVIS_PROPERTY_DUMP")
+                              +QStringLiteral("/edge_")+safe+QStringLiteral(".png"));
+                }
+            }
+        }
+    }
+
+    qInstallMessageHandler(g_previousHandler);
+
+    if(report){
+        printf("property: order-invariance checked on %d engines, %d changed "
+               "(%d of them asserted)\n",
+               orderChecked,int(orderChanged.size()),int(kOrderFree.size()));
+        for(const QString& e:orderChanged) printf("  order: %s\n",qPrintable(e));
+        printf("property: flat-column checked on %d engines, %d produced warnings\n",
+               flatChecked,int(flatNoisy.size()));
+        for(const QString& e:flatNoisy) printf("  flat: %s\n",qPrintable(e));
+        printf("property: edge checked on %d engines, %d touch the canvas edge\n",
+               edgeChecked,int(edgeTouched.size()));
+        for(const QString& e:edgeTouched) printf("  edge: %s\n",qPrintable(e));
+    }
+
+    for(const QString& e:orderChanged)
+        if(kOrderFree.contains(e))
+            failures.append(QStringLiteral("%1: reordering the rows changed the picture, "
+                                           "and this engine summarises rather than "
+                                           "traces them - something is reading the row "
+                                           "number").arg(e));
+    for(const QString& e:flatNoisy)
+        failures.append(QStringLiteral("non-finite geometry on a constant column - %1").arg(e));
+    for(const QString& e:edgeTouched)
+        failures.append(QStringLiteral("%1: draws against the edge of the canvas").arg(e));
+
+    if(!failures.isEmpty()){
+        for(const QString& f:failures) printf("selftest: PROPERTY: %s\n",qPrintable(f));
+        printf("selftest: %d property check(s) FAILED\n",int(failures.size()));
+        return false;
+    }
+    printf("selftest: property checks passed (row order, constant columns, canvas edge)\n");
+    return true;
+}
+
 
 } // namespace graphvis

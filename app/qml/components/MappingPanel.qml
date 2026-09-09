@@ -179,6 +179,93 @@ PanelScroll {
         }
     }
 
+    // The camera, for the engines drawn into a projected cube.
+    //
+    // Turning one was a drag on the figure and nothing else: no control, no
+    // readout, no hint that the gesture existed. So a figure that came up at an
+    // unhelpful angle looked like a figure that could not be turned, and a drag
+    // that did nothing - because the pointer was outside the figure, or because
+    // the engine is not one of the projected ones - was indistinguishable from
+    // rotation being broken.
+    //
+    // These are the same two numbers the drag writes, so they are also a
+    // readout: turn the figure with the mouse and the sliders follow it. If
+    // they do not move, the drag is not reaching the canvas, which is a
+    // different fault from the camera not working and now looks different too.
+    GvGroupBox {
+        title:"View angle"
+        visible:root.canvas && root.canvas.view3D
+        Layout.fillWidth:true;Layout.margins:8
+        ColumnLayout {
+            anchors.fill:parent
+            spacing:6
+            Label{
+                text:"Drag the figure to turn it, wheel to zoom, double-click to reset."
+                color:Theme.textMuted
+                font.pixelSize:11
+                wrapMode:Text.WordWrap
+                Layout.fillWidth:true
+            }
+            // Each slider writes to the canvas and then REBINDS to it. Without
+            // the rebinding a slider stops following the figure the moment it
+            // is touched once, and the two drift apart for the rest of the
+            // session - which is worse than having no slider, because it then
+            // shows an angle the figure is not at.
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Turn";Layout.preferredWidth:64;elide:Text.ElideRight;color:Theme.textSecondary}
+                Slider{
+                    id:azimuthSlider
+                    from:-180;to:180
+                    value:root.canvas ? root.canvas.azimuth : 0
+                    Layout.fillWidth:true;Layout.minimumWidth:60
+                    onMoved:{
+                        root.canvas.azimuth=value
+                        value=Qt.binding(function(){ return root.canvas.azimuth })
+                    }
+                }
+                Label{text:(root.canvas?Math.round(root.canvas.azimuth):0)+"°"
+                      Layout.preferredWidth:34;color:Theme.textSecondary}
+            }
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Tilt";Layout.preferredWidth:64;elide:Text.ElideRight;color:Theme.textSecondary}
+                Slider{
+                    id:elevationSlider
+                    from:-89;to:89
+                    value:root.canvas ? root.canvas.elevation : 0
+                    Layout.fillWidth:true;Layout.minimumWidth:60
+                    onMoved:{
+                        root.canvas.elevation=value
+                        value=Qt.binding(function(){ return root.canvas.elevation })
+                    }
+                }
+                Label{text:(root.canvas?Math.round(root.canvas.elevation):0)+"°"
+                      Layout.preferredWidth:34;color:Theme.textSecondary}
+            }
+            RowLayout{Layout.fillWidth:true;spacing:8
+                Label{text:"Zoom";Layout.preferredWidth:64;elide:Text.ElideRight;color:Theme.textSecondary}
+                Slider{
+                    id:zoomSlider
+                    from:0.35;to:4.0
+                    value:root.canvas ? root.canvas.cameraZoom : 1
+                    Layout.fillWidth:true;Layout.minimumWidth:60
+                    onMoved:{
+                        root.canvas.cameraZoom=value
+                        value=Qt.binding(function(){ return root.canvas.cameraZoom })
+                    }
+                }
+                Label{text:(root.canvas?root.canvas.cameraZoom.toFixed(2):"1.00")+"×"
+                      Layout.preferredWidth:34;color:Theme.textSecondary}
+            }
+            Button{
+                id:resetCameraButton
+                text:"Straight on"
+                onClicked:root.canvas.resetCamera()
+                ToolTip.visible:resetCameraButton.hovered
+                ToolTip.text:"Back to the angle the figure opens at."
+            }
+        }
+    }
+
     // Constants the engine needs that are not columns - a decay's parent mass,
     // and whatever the next engine of that kind declares.
     //
