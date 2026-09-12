@@ -289,9 +289,9 @@ QVariantList ProjectWorkspace::scanFolder(const QString& folder,const QStringLis
     QDirIterator it(folder,QDir::Files|QDir::NoDotAndDotDot,
                     recursive?QDirIterator::Subdirectories:QDirIterator::NoIteratorFlags);
     // Hoisted out of the loop. The suffix filter was a linear scan of 149
-    // strings per file, and isLinked() built a fresh QStringList of every
-    // linked path in the active group per file and then scanned that too - at
-    // the 4000-file cap, roughly 600,000 string comparisons and 4000 list
+    // strings per file, and the linked-path check built a fresh QStringList of
+    // every linked path in the active group per file and then scanned that too
+    // - at the 4000-file cap, roughly 600,000 string comparisons and 4000 list
     // constructions for one rescan.
     QSet<QString> suffixSet;
     for(const QString& e:suffixes) suffixSet.insert(e.toLower());
@@ -542,10 +542,6 @@ bool ProjectWorkspace::deleteGroup(const QString& groupName){
     return true;
 }
 
-bool ProjectWorkspace::isLinked(const QString& path,const QString& kind) const{
-    if(activeGroup_.isEmpty()) return false;
-    return groups_.value(activeGroup_).toMap().value(kind).toStringList().contains(path,Qt::CaseInsensitive);
-}
 
 bool ProjectWorkspace::linkToActiveGroup(const QStringList& paths,const QString& kind){
     return linkToActiveGroup(paths,kind,true);

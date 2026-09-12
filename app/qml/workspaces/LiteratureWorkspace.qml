@@ -7,6 +7,12 @@
 //   module "QtQuick.Pdf" is not installed
 // Extraction is done natively by app.analyzeLiterature(), so no PDF rendering
 // is needed here and the import is gone.
+//
+// Bound, because this file now has Repeater delegates that reach the file's
+// root id. Without it those resolve through the old unbound context lookup,
+// which works until a model role happens to share a name and then silently
+// resolves to the wrong thing.
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -29,6 +35,15 @@ Rectangle {
 
     ListModel { id: annotations }
 
+    // What was extracted BEFORE this session.
+    //
+    // Every extraction already wrote a sidecar beside its dataset, and the
+    // service has always been able to read them back - literature.extractions -
+    // and nothing ever called it. So closing the program threw away every
+    // extraction it had made: the work survived on disk and the interface could
+    // not see it. Asked for once, when the workspace is opened.
+    Component.onCompleted: root.app.loadPastExtractions()
+
     // Three panes whose widths are the person's business.
     //
     // This was a RowLayout of fixed widths - 250, whatever is left, 330 - so
@@ -41,6 +56,10 @@ Rectangle {
     SplitView {
         anchors.fill: parent; anchors.margins: 8
         orientation: Qt.Horizontal
+        // "A SplitView gives each divider a handle" was only half true: the
+        // default handle is a single pixel, so the dividers here were as hard
+        // to find as the one between the sidebar and the figure.
+        handle: GvSplitHandle {}
 
         DockPanel {
             title: "Library"
@@ -61,6 +80,42 @@ Rectangle {
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
                 Label { text: root.hasPaper ? root.paperName : "No paper open"; color: Theme.text; font.bold: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                 Label { text: root.analysed ? "Extraction complete" : (root.hasPaper ? "Not analysed yet" : ""); color: Theme.textSecondary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                // Papers this program has read before. Opening one puts it
+                // back where it was rather than extracting it again, which on
+                // a scanned paper is minutes saved.
+                GvGroupBox {
+                    title: "Extracted before"
+                    Layout.fillWidth: true
+                    collapsed: true
+                    visible: root.app.pastExtractions.length > 0
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 4
+                        Repeater {
+                            model: root.app.pastExtractions
+                            delegate: Button {
+                                id: pastButton
+                                required property var modelData
+                                Layout.fillWidth: true
+                                flat: true
+                                text: {
+                                    const t = pastButton.modelData.title
+                                    if (t !== undefined && String(t) !== "") return String(t)
+                                    const p = String(pastButton.modelData.path || pastButton.modelData)
+                                    return p.split(/[\\/]/).pop()
+                                }
+                                ToolTip.visible: pastButton.hovered
+                                ToolTip.text: String(pastButton.modelData.path || pastButton.modelData)
+                                onClicked: {
+                                    const chosen = String(pastButton.modelData.path
+                                                          || pastButton.modelData)
+                                    if (chosen !== "") root.app.openLiterature("file:///" + chosen)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 GvGroupBox {
                     title: "Research tools"; Layout.fillWidth: true
                     ColumnLayout { anchors.fill: parent
@@ -71,7 +126,21 @@ Rectangle {
                         // waiting for the next person to edit the line.
                         Button { text: "Extract figures and tables"; Layout.fillWidth: true; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
                         Button { text: "Use extracted dataset"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
-                        Button { text: "Recreate selected graph"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Enable after selecting a detected figure and completing axis calibration" }
+                        // Was `enabled: false` with a tooltip describing a
+                        // selection the interface could not make. It can now.
+                        Button {
+                            id: recreateButton
+                            text: "Recreate selected graph"
+                            Layout.fillWidth: true
+                            enabled: root.analysed && lab.calibrated && !root.app.busy
+                            onClicked: lab.trace()
+                            ToolTip.visible: recreateButton.hovered
+                            ToolTip.text: root.analysed
+                                ? (lab.calibrated
+                                   ? "Follow the colour you picked across the plot area and turn it back into numbers"
+                                   : "Choose a figure, drag a box round its plot area, click the line, and type both axis ranges")
+                                : "Extract the paper first"
+                        }
                     }
                 }
                 // Reading a paper with a model. OFF, and folded away, because
@@ -239,9 +308,67 @@ Rectangle {
                 Item {
                     Layout.fillWidth: true; Layout.fillHeight: true
 
+                    // Once a paper has been extracted, the middle of the window
+                    // is the figures themselves rather than a summary of how
+                    // many there were. Reading numbers back off a published
+                    // chart is the thing this workspace exists for, and it used
+                    // to have nowhere to happen: the extractor found the
+                    // figures, wrote them to disk, and the interface showed a
+                    // count.
+                    FigureLab {
+                        id: lab
+                        anchors.fill: parent
+                        app: root.app
+                        visible: root.analysed
+                    }
+
+                    // What the extraction looks like while it runs, and what it
+                    // says when it stops. Over the middle of the window rather
+                    // than as a line in a side panel: a four-minute OCR pass
+                    // with a grey sentence somewhere off to the left is
+                    // indistinguishable from a program that has hung, which is
+                    // exactly how it was reported.
+                    BusyOverlay {
+                        id: extractBusy
+                        anchors.fill: parent
+                        app: root.app
+                        // Only OUR job. The controller has one busy flag for
+                        // every science operation, so without this the panel
+                        // would light up during an unrelated import.
+                        active: root.app.workspaceMode === "Literature"
+                    }
+
+                    // The summary is built when the analysis lands rather than
+                    // bound to it, so it survives being dismissed and does not
+                    // reappear every time something else touches the map.
+                    Connections {
+                        target: root.app
+                        function onLiteratureChanged() {
+                            if (!root.analysed) return
+                            const a = root.app.literatureAnalysis
+                            const figures = root.app.literatureFigures.length
+                            const datasets = a.datasets ? a.datasets.length : 0
+                            const chars = a.text_chars ? a.text_chars : 0
+                            var parts = []
+                            parts.push(figures + (figures === 1 ? " figure" : " figures"))
+                            parts.push(datasets + (datasets === 1 ? " table" : " tables"))
+                            if (chars > 0) parts.push(chars.toLocaleString(Qt.locale()) + " characters of text")
+                            extractBusy.doneSummary = "Read the paper — " + parts.join(", ")
+                            // A paper the extractor had something to complain
+                            // about says so here rather than in a log nobody
+                            // opens: no figures found is a normal outcome for a
+                            // vector-drawn paper and a person needs telling.
+                            if (a.warnings && a.warnings.length > 0)
+                                extractBusy.doneSummary += "\n" + a.warnings.join(" · ")
+                            else if (figures === 0)
+                                extractBusy.doneSummary += "\nNo raster figures in this PDF — its charts are "
+                                                         + "probably drawn as vectors, which this cannot trace yet."
+                        }
+                    }
+
                     ColumnLayout {
                         anchors.centerIn: parent; width: parent.width * 0.7; spacing: 14
-                        visible: root.hasPaper
+                        visible: root.hasPaper && !root.analysed
                         Label { Layout.alignment: Qt.AlignHCenter; text: root.paperName; font.pixelSize: 26; font.bold: true; color: Theme.text; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                         Label {
                             Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Theme.textSecondary
@@ -323,8 +450,40 @@ Rectangle {
                         title: "Actions"; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
                         ColumnLayout { anchors.fill: parent
                             Button { text: "Analyze paper"; Layout.fillWidth: true; enabled: !root.app.busy && root.hasPaper; onClicked: root.app.analyzeLiterature() }
-                            Button { text: "Reconstruct graph"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Select a detected figure before reconstruction" }
-                            Button { text: "Compare with active dataset"; Layout.fillWidth: true; enabled: false; ToolTip.visible: hovered; ToolTip.text: "Available after a reconstructed literature series is selected" }
+                            Button {
+                                id: reconstructButton
+                                text: "Reconstruct graph"
+                                Layout.fillWidth: true
+                                enabled: root.analysed && lab.calibrated && !root.app.busy
+                                onClicked: lab.trace()
+                                ToolTip.visible: reconstructButton.hovered
+                                ToolTip.text: lab.calibrated
+                                    ? "Read the calibrated figure into a table of numbers"
+                                    : "Calibrate a figure in the middle of the window first"
+                            }
+                            Button {
+                                id: compareButton
+                                text: "Compare with active dataset"
+                                Layout.fillWidth: true
+                                // A reconstruction is a dataset like any other,
+                                // so "compare" is: import it, then go to the
+                                // workspace where two datasets can be plotted
+                                // against each other. Nothing special, which is
+                                // the point - the numbers off the paper are now
+                                // ordinary numbers.
+                                enabled: root.app.lastReconstruction
+                                         && root.app.lastReconstruction.rows > 0
+                                         && !root.app.busy
+                                onClicked: {
+                                    if (root.app.importReconstruction())
+                                        root.app.workspaceMode = "Visualize"
+                                }
+                                ToolTip.visible: compareButton.hovered
+                                ToolTip.text: compareButton.enabled
+                                    ? "Import the traced series as a dataset and open it in Visualize, "
+                                    + "beside whatever is already loaded"
+                                    : "Read a figure first — this imports the numbers that came out of it"
+                            }
                             Button { text: "Send extracted data to workspace"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                         }
                     }

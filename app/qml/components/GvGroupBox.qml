@@ -50,11 +50,21 @@ GroupBox {
     }
 
     label: Item {
+        id: labelBox
         implicitHeight: caption.implicitHeight + 4
+        // The title has to fit the frame it labels. It was drawn at its full
+        // natural width from a fixed left inset, so in a narrow panel - a
+        // three-pane layout on a small screen puts these in 184 px - a title
+        // like "Point cloud and material" simply ran out past the frame and
+        // over whatever was beside it. Elided, the frame is still labelled and
+        // the tooltip on the title says the rest.
+        readonly property real captionWidth:
+            Math.max(0, Math.min(caption.implicitWidth,
+                                 control.width - caret.width - 34))
         Rectangle {
             x: 10
             y: (parent.height - caption.implicitHeight) / 2
-            width: caret.width + caption.implicitWidth + 12
+            width: caret.width + labelBox.captionWidth + 12
             height: caption.implicitHeight
             color: control.panelColor
         }
@@ -74,6 +84,8 @@ GroupBox {
             id: caption
             x: 15 + caret.width
             y: (parent.height - implicitHeight) / 2
+            width: labelBox.captionWidth
+            elide: Text.ElideRight
             text: control.title
             color: titleHover.hovered && control.collapsible
                    ? Theme.text : Theme.textSecondary
@@ -85,7 +97,7 @@ GroupBox {
         Item {
             x: 12
             y: 0
-            width: caret.width + caption.implicitWidth + 8
+            width: caret.width + labelBox.captionWidth + 8
             height: parent.height
             HoverHandler {
                 id: titleHover
@@ -96,8 +108,13 @@ GroupBox {
                 enabled: control.collapsible
                 onTapped: control.collapsed = !control.collapsed
             }
-            ToolTip.visible: titleHover.hovered && control.collapsible
-            ToolTip.text: control.collapsed ? "Show this group" : "Fold this group away"
+            // The full title too, for the panel narrow enough to have elided it.
+            ToolTip.visible: titleHover.hovered
+            ToolTip.text: control.collapsible
+                          ? control.title + " — "
+                            + (control.collapsed ? "show this group"
+                                                 : "fold this group away")
+                          : control.title
         }
     }
 

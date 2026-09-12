@@ -19,7 +19,28 @@ ToolBar {
                                      && root.app.uiLayoutSpec.navStyle !== undefined)
                                     ? root.app.uiLayoutSpec.navStyle : 0
     readonly property bool symbols: root.navStyle === 1
-    height: root.symbols ? 38 : 58
+
+    // Folded away, and remembered between sessions.
+    //
+    // A 58 px band across the top of the window is the single biggest thing
+    // between the person and a bigger figure, and every control on it is also
+    // in the menu bar or behind Ctrl+K.
+    //
+    // Folded, the bar is a strip that SAYS what it is. The first version of
+    // this was 14 px with a small caret in the middle in the muted text colour,
+    // which was reported the only way that could be reported: the bar was
+    // closed and the way back could not be found. A control whose whole job is
+    // to be discovered after the thing it restores has vanished has to be the
+    // most obvious thing on that strip, not the most tasteful - so it is 22 px,
+    // it is tinted, the caret is the accent colour, it carries the words "Show
+    // toolbar", and the entire width of the window is the click target.
+    readonly property bool folded: root.app.topBarCollapsed
+    // implicitHeight, NOT height. Main.qml gives the window header
+    // `height: visible ? implicitHeight : 0`, and an assignment there overrides
+    // a `height` binding written here - so this was a `height:` that never
+    // reached the window, which is why the symbols layouts were still 58 px
+    // tall rather than the 38 they ask for.
+    implicitHeight: root.folded ? 22 : (root.symbols ? 38 : 58)
 
     // The toolbar carries more controls than fit on a 1280-wide window, and a
     // RowLayout will not shrink a ToolButton below its implicit width - it just
@@ -45,11 +66,44 @@ ToolBar {
 
     background: Rectangle { color: Theme.surface; border.color: Theme.border }
 
+    // The folded strip. The whole width of it is the way back.
+    Rectangle {
+        anchors.fill: parent
+        visible: root.folded
+        // Tinted rather than the surface colour, so the strip reads as a
+        // control rather than as the edge of the window.
+        color: foldedHover.hovered
+               ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.26)
+               : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.13)
+        Row {
+            anchors.centerIn: parent
+            spacing: 6
+            Label {
+                text: "▾"
+                color: Theme.accent
+                font.pixelSize: 11
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Label {
+                text: "Show toolbar"
+                color: foldedHover.hovered ? Theme.text : Theme.textSecondary
+                font.pixelSize: 11
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+        HoverHandler { id: foldedHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.app.topBarCollapsed = false }
+        ToolTip.visible: foldedHover.hovered
+        ToolTip.text: "Show the toolbar again  ·  also under View ▸ Toolbar"
+    }
+
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: 12
         anchors.rightMargin: 12
         spacing: root.compact ? 4 : 7
+        visible: !root.folded
 
         Image {
             source: "qrc:/qt/qml/GraphVis/assets/graphvis_icon.png"
@@ -208,6 +262,18 @@ ToolBar {
             onClicked: viewPopup.opened ? viewPopup.close() : viewPopup.open()
             ToolTip.visible: hovered
             ToolTip.text: "Theme and window mode"
+        }
+
+        // Last on the row, hard against the right-hand edge, which is where a
+        // window's own fold controls live.
+        ToolButton {
+            id: foldButton
+            text: "▴"
+            implicitWidth: 24
+            onClicked: root.app.topBarCollapsed = true
+            ToolTip.visible: foldButton.hovered
+            ToolTip.text: "Fold the toolbar away — everything on it is also in "
+                        + "the menus and in Ctrl+K"
         }
     }
 

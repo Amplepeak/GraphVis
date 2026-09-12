@@ -28,9 +28,37 @@ Rectangle {
     signal importRequested()
     signal commandRequested()
 
-    implicitWidth: 46
+    // Folded, this is a narrow tinted strip. Still on screen, because the
+    // layouts that use this have no top bar: hiding it completely would leave
+    // Ctrl+K as the only way to reach another workspace, which is the thing the
+    // rail exists to prevent. Tinted and 18 px rather than a muted caret in
+    // 14, for the same reason the folded toolbar is - a way back nobody can
+    // find is not a way back.
+    readonly property bool folded: root.app.navRailCollapsed
+    implicitWidth: root.folded ? 18 : 46
     color: Theme.surfaceAlt
     border.color: Theme.border
+
+    Rectangle {
+        anchors.fill: parent
+        visible: root.folded
+        color: foldedHover.hovered
+               ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.26)
+               : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.13)
+        Label {
+            anchors.centerIn: parent
+            rotation: -90
+            text: (root.onRight ? "◂" : "▸") + "  WORKSPACES"
+            color: foldedHover.hovered ? Theme.text : Theme.textSecondary
+            font.pixelSize: 9
+            font.bold: true
+            font.letterSpacing: 1
+        }
+        HoverHandler { id: foldedHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.app.navRailCollapsed = false }
+        ToolTip.visible: foldedHover.hovered
+        ToolTip.text: "Show the workspace bar  ·  also under View ▸ Workspace bar"
+    }
 
     readonly property var entries: [
         { mode: "Home",       glyph: "⌂", label: "Home" },
@@ -46,6 +74,7 @@ Rectangle {
         anchors.topMargin: 8
         anchors.bottomMargin: 8
         spacing: 2
+        visible: !root.folded
 
         Image {
             source: "qrc:/qt/qml/GraphVis/assets/graphvis_icon.png"
@@ -118,6 +147,22 @@ Rectangle {
             ToolTip.visible: findEntry.hovered
             ToolTip.text: "Find anything · Ctrl+K"
             onClicked: root.commandRequested()
+        }
+        // Fold the spine away, leaving the strip that brings it back.
+        ItemDelegate {
+            id: foldEntry
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            contentItem: Label {
+                text: root.onRight ? "▸" : "◂"
+                font.pixelSize: 12
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                color: Theme.textMuted
+            }
+            ToolTip.visible: foldEntry.hovered
+            ToolTip.text: "Fold the workspace bar away"
+            onClicked: root.app.navRailCollapsed = true
         }
     }
 }

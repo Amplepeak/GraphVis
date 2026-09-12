@@ -37,8 +37,49 @@ class DOEEngine:
         return DesignResult(df,"Sobol",{"discrepancy":float(qmc.discrepancy(unit)),"n":len(df)})
 
     @staticmethod
-    def full_factorial(levels: Mapping[str, Sequence[float]]) -> DesignResult:
-        names=list(levels); rows=list(product(*[list(levels[n]) for n in names]));
+    def full_factorial(levels: Mapping[str, Sequence[float] | int]) -> DesignResult:
+        """Every combination of the given factor levels.
+
+        Accepts either shape, because both are natural and the field's own hint
+        advertised the one this could not read:
+
+            {"temperature": [20, 30, 40], "pH": [6, 7]}   explicit levels
+            {"temperature": 3, "pH": 2}                   a count per factor
+
+        A count becomes that many evenly spaced coded levels from -1 to +1,
+        which is the DOE convention and the only thing a bare number can mean
+        when no units have been given. Before this, a count raised
+        "TypeError: 'int' object is not iterable" from inside itertools, naming
+        nothing the user had typed - and a count was exactly what the hint told
+        them to type, so the documented input was the broken one.
+        """
+        if not levels:
+            raise ValueError("No factor levels supplied.")
+        names = list(levels)
+        expanded: list[list[float]] = []
+        for name in names:
+            value = levels[name]
+            if isinstance(value, bool):
+                raise ValueError(f"'{name}' needs a level count or a list of levels.")
+            if isinstance(value, (int, float)):
+                count = int(value)
+                if count < 2:
+                    raise ValueError(
+                        f"'{name}' needs at least 2 levels; {count} was given.")
+                expanded.append([float(v) for v in np.linspace(-1.0, 1.0, count)])
+                continue
+            try:
+                points = [float(v) for v in value]
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"'{name}' needs a level count or a list of levels, "
+                    f"not {value!r}."
+                ) from exc
+            if len(points) < 2:
+                raise ValueError(f"'{name}' needs at least 2 levels.")
+            expanded.append(points)
+
+        rows = list(product(*expanded))
         if not rows: raise ValueError("No factor levels supplied.")
         return DesignResult(pd.DataFrame(rows,columns=names),"Full factorial",{"runs":len(rows)})
 

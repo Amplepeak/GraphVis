@@ -491,9 +491,16 @@ def _ops() -> list[Op]:
            {"x": Arg(COLUMN, "x"), "y": Arg(COLUMN, "y"), "n_peaks": Arg(VALUE),
             "kind": Arg(VALUE), "baseline_order": Arg(VALUE)},
            "Fit overlapping Gaussian/Lorentzian/Voigt peaks", ("x", "y"), "Peaks"))
+    # The default was "gaussian", which fit_nonlinear_model had no branch for,
+    # so it fell through to exponential saturation and reported that fit under
+    # the name "gaussian". Gaussian is a real model now, and an unrecognised
+    # name is an error rather than a different curve wearing the asked-for
+    # label.
     add(Op("fit_nonlinear", f"{_A}.tools:fit_nonlinear_model",
            {"x": Arg(COLUMN, "x"), "y": Arg(COLUMN, "y"),
-            "model": Arg(VALUE, "model", default="gaussian")},
+            "model": Arg(VALUE, "model", default="Gaussian",
+                         hint="Gaussian, Lorentzian, Exponential saturation, "
+                              "Exponential decay, Michaelis-Menten or Logistic")},
            "Fit a single non-linear peak model", ("x", "y"), "Peaks"))
 
     # -------------------------------------------------------- electrochemistry
@@ -599,7 +606,9 @@ def _ops() -> list[Op]:
            {"values": Arg(COLUMN, "y"), "confidence": Arg(VALUE)},
            "Weibull reliability", ("y",), "Reliability"))
     add(Op("bootstrap_ci", f"{_A}.reliability:ReliabilityEngine.bootstrap_ci",
-           {"values": Arg(COLUMN, "y"), "statistic": Arg(VALUE),
+           {"values": Arg(COLUMN, "y"),
+            "statistic": Arg(VALUE, "statistic", default="mean",
+                             hint="mean, median, std, var, min or max"),
             "confidence": Arg(VALUE), "resamples": Arg(VALUE), "seed": Arg(VALUE)},
            "Bootstrap confidence interval", ("y",), "Reliability"))
     add(Op("failure_probability", f"{_A}.reliability:ReliabilityEngine.failure_probability",
@@ -664,7 +673,8 @@ def _ops() -> list[Op]:
                label, (), "Design of experiments"))
     add(Op("full_factorial", f"{_A}.doe:DOEEngine.full_factorial",
            {"levels": Arg(VALUE, "levels", required=True,
-                             hint='levels per factor, e.g. {"temperature": 3, "pH": 2}')},
+                             hint='{"temperature": [20, 30, 40], "pH": [6, 7]}, '
+                                  'or a count per factor: {"temperature": 3, "pH": 2}')},
            "Full factorial design", (), "Design of experiments"))
     add(Op("central_composite", f"{_A}.doe:DOEEngine.central_composite",
            {"bounds": Arg(VALUE, "bounds", required=True,

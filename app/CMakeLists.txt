@@ -16,6 +16,18 @@ qt_add_executable(graphvis
   src/SplashWindow.h
 )
 
+# The icon Windows draws for the program itself.
+#
+# setWindowIcon covers the window. Everything OUTSIDE it - the taskbar button,
+# the Explorer file icon, the Start menu and desktop shortcuts the installer
+# creates, the Alt+Tab card - comes from an icon RESOURCE compiled into the
+# executable, and there was none. The installer points its shortcuts at
+# graphvis.exe and takes whatever icon the exe carries, so a missing resource
+# is a generic placeholder in every one of those places at once.
+if(WIN32)
+  target_sources(graphvis PRIVATE graphvis.rc)
+endif()
+
 # --------------------------------------------------------------------------
 # 2-D plot renderer (native/plot2d)
 #
@@ -111,6 +123,13 @@ set(GRAPHVIS_QML_FILES
   qml/components/StatusStrip.qml
   qml/components/GraphLibrary.qml
   qml/components/GvGroupBox.qml
+  qml/components/GvSplitHandle.qml
+  qml/components/LimitRow.qml
+  qml/components/RangePanel.qml
+  qml/components/ColourStops.qml
+  qml/components/FigureLab.qml
+  qml/components/BusyOverlay.qml
+  qml/components/ExpressionBox.qml
   qml/components/StatusPill.qml
   qml/components/ActiveDatasetBar.qml
   qml/components/AnnotationLayer.qml

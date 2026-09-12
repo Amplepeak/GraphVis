@@ -80,10 +80,17 @@ cargo fetch --locked --manifest-path (Join-Path $Root 'native/Cargo.toml')
 if($LASTEXITCODE -ne 0){throw 'cargo fetch --locked failed'}
 
 Write-Host "== Configure/build GraphVis $Version ($Preset) ==" -ForegroundColor Cyan
-cmake --preset $Preset
-if($LASTEXITCODE -ne 0){throw 'CMake configure failed'}
-cmake --build --preset $Preset --parallel
-if($LASTEXITCODE -ne 0){throw 'CMake build failed'}
+# Pushed to $Root for the same reason as in Quick-Build.ps1: both --preset calls
+# read CMakePresets.json from the current directory, so a release cut from any
+# other directory dies here rather than at the start.
+Push-Location $Root
+try {
+  cmake --preset $Preset
+  if($LASTEXITCODE -ne 0){throw 'CMake configure failed'}
+  cmake --build --preset $Preset --parallel
+  if($LASTEXITCODE -ne 0){throw 'CMake build failed'}
+}
+finally { Pop-Location }
 Clear-BuildTree -Path $Stage -What 'staging folder'
 cmake --install $Build --prefix $Stage
 if($LASTEXITCODE -ne 0){throw 'CMake install/stage failed'}

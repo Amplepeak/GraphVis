@@ -49,13 +49,44 @@ class LiteratureIntelligencePipeline:
     def __init__(self,vlm:VLMProvider|None=None): self.vlm=vlm
     def analyze(self,path:str,output_dir:str,*,use_vlm:bool=True,extract_figures:bool=True,progress=None)->LiteratureIntelligenceResult:
         root=Path(output_dir); root.mkdir(parents=True,exist_ok=True)
-        ext=extract_literature(path,extract_dataset=True,ocr=True,progress=progress,output_dir=str(root/"literature_dataset"))
+        # The extractor counts its own work 0..100, and there are two more
+        # phases after it. Passed through unscaled the bar reached 100%, said
+        # "Done", and then went back to 96% to pull the figures - which is the
+        # single most effective way to make a progress bar look broken. Its
+        # scale is squeezed into the first 94% instead.
+        def stage(message,percent=-1.0):
+            if not progress: return
+            # "Done" is the extractor's word for its own last step, and it is
+            # not done - the figures come next. Saying so at 94% is how a
+            # person concludes the program has finished and then wonders why it
+            # is still going.
+            if str(message).strip().lower()=="done": message="Text and tables read"
+            progress(message,percent if percent<0 else percent*0.94)
+        ext=extract_literature(path,extract_dataset=True,ocr=True,progress=stage,output_dir=str(root/"literature_dataset"))
         result=LiteratureIntelligenceResult(ext)
+        def say(message,percent=-1.0):
+            if progress: progress(message,percent)
         if extract_figures and str(path).lower().endswith(".pdf"):
-            result.figures=extract_pdf_figure_images(path,str(root/"figures"))
+            say("Pulling the figures out of the PDF…",95)
+            # Tolerant, because the figures are an ADDITION to the text and
+            # tables rather than a precondition for them. Without this the whole
+            # extraction failed on a machine with no PyMuPDF, and the caller's
+            # only recovery was to run the expensive text pass a second time.
+            try:
+                result.figures=extract_pdf_figure_images(path,str(root/"figures"))
+            except ImportError as exc:
+                ext.warnings.append(f"Figure images need PyMuPDF: {exc}")
+            except Exception as exc:
+                ext.warnings.append(f"Figure images could not be read: {type(exc).__name__}: {exc}")
+        say(f"{len(result.figures)} figures found",97)
         paper_context=(ext.text[:18_000] if ext.text else "")
-        for fig in result.figures:
+        for index,fig in enumerate(result.figures,1):
             if use_vlm and self.vlm is not None:
+                # One model call per figure, over the network. This is by far
+                # the longest step when a reader is switched on, and it is the
+                # one a person most needs told about - a paper with twenty
+                # figures is twenty round trips.
+                say(f"Reading figure {index} of {len(result.figures)}…",-1.0)
                 prompt=f"Caption: {fig.caption}\nPaper context excerpt:\n{paper_context}\nRelate this figure to the methods and operating conditions."
                 try: fig.observation=self.vlm.analyze_figure(fig.path,prompt)
                 except Exception as exc: fig.diagnostics["vlm_error"]=f"{type(exc).__name__}: {exc}"

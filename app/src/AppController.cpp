@@ -18,6 +18,7 @@
 #include <QScreen>
 #include <QSettings>
 #include <QCryptographicHash>
+#include <QImage>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
@@ -47,6 +48,9 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     // and must never block application launch.
     if(!settings.contains(QStringLiteral("updates/automaticChecks"))) settings.setValue(QStringLiteral("updates/automaticChecks"),false);
     experimentalUi_=settings.value(QStringLiteral("ui/experimental"),true).toBool();
+    topBarCollapsed_=settings.value(QStringLiteral("ui/topBarCollapsed"),false).toBool();
+    sidebarCollapsed_=settings.value(QStringLiteral("ui/sidebarCollapsed"),false).toBool();
+    navRailCollapsed_=settings.value(QStringLiteral("ui/navRailCollapsed"),false).toBool();
     themeIndex_=settings.value(QStringLiteral("ui/themeIndex"),0).toInt();
     rendererMode_=settings.value(QStringLiteral("ui/rendererMode"),rendererMode_).toString();
     // Maximised by default: a scientific editor wants the whole screen, and it
@@ -202,6 +206,21 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
             if(line.trimmed().isEmpty()) continue;
             const auto doc=QJsonDocument::fromJson(line);
             if(!doc.isObject()) continue;
+            // A PROGRESS line, not the answer.
+            //
+            // Without this branch the first one would be taken as the reply:
+            // handleScienceReply would find no fields it understands, setBusy
+            // would be cleared, and the real reply arriving later would be
+            // dropped by the pendingScienceOp_ guard below. So the flag is
+            // checked before anything else touches the line.
+            if(doc.object().value(QStringLiteral("progress")).toBool()){
+                if(!busy_) continue;         // a late line from a finished job
+                const QString message=doc.object().value(QStringLiteral("message")).toString();
+                if(!message.isEmpty()) busyLabel_=message;
+                busyPercent_=doc.object().value(QStringLiteral("percent")).toDouble(-1.0);
+                emit busyChanged();
+                continue;
+            }
             // Only a reply to something we actually asked for. handleScienceReply
             // dispatches on pendingScienceOp_, so a stray line - a late reply to
             // a cancelled request, or anything the service prints on its own -
@@ -275,7 +294,16 @@ void AppController::setStatus(const QString&s){
     }
     emit statusChanged();
 }
-void AppController::setBusy(bool value,const QString& label){busy_=value;busyLabel_=value?label:QString();emit busyChanged();}
+void AppController::setBusy(bool value,const QString& label){
+    busy_=value;
+    busyLabel_=value?label:QString();
+    // A new operation starts indeterminate and starts its clock. Finishing
+    // clears both, so a finished job cannot leave a stale percentage on screen
+    // for the next one to inherit.
+    busyPercent_=-1.0;
+    busySince_=value?QDateTime::currentDateTime():QDateTime();
+    emit busyChanged();
+}
 void AppController::setActiveDatasetId(const QString&id){if(activeDatasetId_==id)return;activeDatasetId_=id;emit activeDatasetChanged();}
 void AppController::setRendererMode(const QString& value){
     if(rendererMode_==value)return;
@@ -295,6 +323,30 @@ void AppController::setRendererMode(const QString& value){
 static bool gGraphicsApiIsOpenGL=false;
 void AppController::setGraphicsApiIsOpenGL(bool value){gGraphicsApiIsOpenGL=value;}
 bool AppController::graphicsApiIsOpenGL(){return gGraphicsApiIsOpenGL;}
+// The folds. One setter each rather than one taking a name, because three
+// named properties are what QML binds to and a string key would only move the
+// typo from compile time to run time.
+void AppController::setTopBarCollapsed(bool value){
+    if(topBarCollapsed_==value)return;
+    topBarCollapsed_=value;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("ui/topBarCollapsed"),value);
+    emit chromeChanged();
+}
+void AppController::setSidebarCollapsed(bool value){
+    if(sidebarCollapsed_==value)return;
+    sidebarCollapsed_=value;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("ui/sidebarCollapsed"),value);
+    emit chromeChanged();
+}
+void AppController::setNavRailCollapsed(bool value){
+    if(navRailCollapsed_==value)return;
+    navRailCollapsed_=value;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("ui/navRailCollapsed"),value);
+    emit chromeChanged();
+}
 void AppController::setExperimentalUi(bool value){if(experimentalUi_==value)return;experimentalUi_=value;QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4")).setValue(QStringLiteral("ui/experimental"),value);emit experimentalUiChanged();}
 void AppController::setWorkspaceMode(const QString& value){if(workspaceMode_==value)return;workspaceMode_=value;emit workspaceModeChanged();}
 
@@ -833,6 +885,130 @@ bool AppController::importFirstLiteratureDataset(){
 }
 
 
+// =========================================================================
+// Reading numbers back off a published figure
+//
+// The de-renderer, the calibration model and the tracing code all existed and
+// were tested; what did not exist was any way to reach them. The service had
+// the operation, nothing called it, and the three buttons that would have
+// called it were `enabled: false` with tooltips describing a selection the
+// interface had no way to make.
+//
+// Two things were missing and only one was the interface. The other was that
+// literature.extract only returned a figure list when a vision model was
+// configured, so the list every one of those buttons selects from was empty
+// unless you had an API key - see service.py. Pulling figure images out of a
+// PDF is PyMuPDF and needs no model; the model reads the axes for you, it is
+// not what finds the pictures.
+// =========================================================================
+
+void AppController::derenderFigure(const QVariantMap& request){
+    if(busy_){setStatus(QStringLiteral("A native/science job is already running"));return;}
+    const QString image=request.value(QStringLiteral("image_path")).toString();
+    if(image.isEmpty()||!QFileInfo::exists(image)){
+        setStatus(QStringLiteral("Choose a figure first"));return;
+    }
+    const QString exe=scienceServiceExecutable();
+    if(!QFileInfo::exists(exe)){
+        setStatus(scienceServiceInstallHint());
+        emit scienceServiceAvailabilityChanged();
+        return;
+    }
+    // Built here rather than passed through as a blob, so a missing field is a
+    // message rather than a Python traceback.
+    const QVariantList rgb=request.value(QStringLiteral("rgb")).toList();
+    if(rgb.size()!=3){
+        setStatus(QStringLiteral("Pick the colour of the line to follow"));return;
+    }
+    const QVariantList box=request.value(QStringLiteral("bbox")).toList();
+    if(box.size()!=4){
+        setStatus(QStringLiteral("Draw a box around the plot area first"));return;
+    }
+    const QVariantList xr=request.value(QStringLiteral("x_range")).toList();
+    const QVariantList yr=request.value(QStringLiteral("y_range")).toList();
+    if(xr.size()!=2||yr.size()!=2){
+        setStatus(QStringLiteral("Type what the two axes run from and to"));return;
+    }
+    const auto numbers=[](const QVariantList& in){
+        QJsonArray out; for(const QVariant& v:in) out.append(v.toDouble()); return out;
+    };
+    QJsonObject req{
+        {"op","literature.derender"},
+        {"image_path",image},
+        {"rgb",numbers(rgb)},
+        {"bbox",numbers(box)},
+        {"x_range",numbers(xr)},
+        {"y_range",numbers(yr)},
+        {"x_scale",request.value(QStringLiteral("x_scale"),QStringLiteral("linear")).toString()},
+        {"y_scale",request.value(QStringLiteral("y_scale"),QStringLiteral("linear")).toString()},
+        {"plot_type",request.value(QStringLiteral("plot_type"),QStringLiteral("line")).toString()},
+        {"tolerance",request.value(QStringLiteral("tolerance"),45.0).toDouble()},
+        {"caption",request.value(QStringLiteral("caption")).toString()},
+        {"page",request.value(QStringLiteral("page"),1).toInt()}};
+    startScienceOp(req,QStringLiteral("literature.derender"),
+                   QStringLiteral("Reading the figure"));
+}
+
+void AppController::loadPastExtractions(){
+    if(busy_) return;                    // asked again on the next visit
+    const QString exe=scienceServiceExecutable();
+    if(!QFileInfo::exists(exe)) return;  // silent: this is a courtesy, not an action
+    startScienceOp(QJsonObject{{"op","literature.extractions"}},
+                   QStringLiteral("literature.extractions"),
+                   QStringLiteral("Looking for earlier extractions"));
+}
+
+void AppController::derenderHeatmap(const QVariantMap& request){
+    if(busy_){setStatus(QStringLiteral("A native/science job is already running"));return;}
+    const QString image=request.value(QStringLiteral("image_path")).toString();
+    if(image.isEmpty()||!QFileInfo::exists(image)){
+        setStatus(QStringLiteral("Choose a figure first"));return;
+    }
+    const QString exe=scienceServiceExecutable();
+    if(!QFileInfo::exists(exe)){
+        setStatus(scienceServiceInstallHint());
+        emit scienceServiceAvailabilityChanged();
+        return;
+    }
+    const QVariantList box=request.value(QStringLiteral("bbox")).toList();
+    if(box.size()!=4){
+        setStatus(QStringLiteral("Draw a box around the panel first"));return;
+    }
+    QJsonArray bbox; for(const QVariant& v:box) bbox.append(v.toDouble());
+    // The grid it is read onto. Not the panel's pixel count: a 900x600 panel
+    // is 540,000 cells of mostly-repeated colour, and the answer a person
+    // wants is a field they can plot, not a photograph rewritten as numbers.
+    const int w=qBound(4,request.value(QStringLiteral("width"),160).toInt(),1024);
+    const int h=qBound(4,request.value(QStringLiteral("height"),120).toInt(),1024);
+    startScienceOp(QJsonObject{{"op","literature.heatmap"},
+                               {"image_path",image},
+                               {"bbox",bbox},
+                               {"width",w},
+                               {"height",h},
+                               {"grayscale",request.value(QStringLiteral("grayscale"),true).toBool()}},
+                   QStringLiteral("literature.heatmap"),
+                   QStringLiteral("Reading the panel as a grid"));
+}
+
+QColor AppController::figurePixel(const QString& imagePath,int x,int y) const{
+    // Loaded per call rather than cached. An eyedropper click is a human
+    // action, so this happens a handful of times a session, and a cache here
+    // would be a stale figure waiting to be sampled after the file changed.
+    QImage image(imagePath);
+    if(image.isNull()) return QColor();
+    const int px=qBound(0,x,image.width()-1);
+    const int py=qBound(0,y,image.height()-1);
+    return image.pixelColor(px,py);
+}
+
+bool AppController::importReconstruction(){
+    const QString path=lastReconstruction_.value(QStringLiteral("csv_path")).toString();
+    if(path.isEmpty()||!QFileInfo::exists(path)){
+        setStatus(QStringLiteral("Trace a curve out of a figure first"));return false;
+    }
+    return importDataset(QUrl::fromLocalFile(path));
+}
+
 bool AppController::exportProjectState(const QUrl& url){
     if(!runtime_)return false;
     const QString path=cleanLocalPath(url); if(path.isEmpty())return false;
@@ -1322,6 +1498,63 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         emit literatureAiChanged();
         setStatus(ok?QStringLiteral("Literature reader answered")
                     :QStringLiteral("Literature reader did not answer"));
+        return;
+    }
+
+    if(op==QStringLiteral("literature.extractions")){
+        // Its own branch for the same reason the de-render has one: this reply
+        // carries no figures, and writing it into literatureAnalysis_ would
+        // empty the panel of the paper currently open.
+        pastExtractions_=ok?obj.value(QStringLiteral("extractions")).toArray().toVariantList()
+                           :QVariantList();
+        emit literatureChanged();
+        // Deliberately silent on the status line. This runs when the workspace
+        // is opened, not because anybody asked, and "0 earlier extractions" is
+        // not news.
+        return;
+    }
+
+    if(op==QStringLiteral("literature.heatmap")){
+        if(ok){
+            const QVariantList shape=obj.value(QStringLiteral("shape")).toArray().toVariantList();
+            const int rows=shape.size()>0?shape.at(0).toInt():0;
+            const int cols=shape.size()>1?shape.at(1).toInt():0;
+            lastReconstruction_=QVariantMap{
+                {QStringLiteral("kind"),QStringLiteral("grid")},
+                {QStringLiteral("rows"),rows*cols},
+                {QStringLiteral("shape"),QVariant(shape)},
+                {QStringLiteral("values"),obj.value(QStringLiteral("values")).toArray().toVariantList()}};
+            setStatus(QStringLiteral("Read the panel as a %1 x %2 grid").arg(cols).arg(rows));
+        }else{
+            lastReconstruction_.clear();
+            setStatus(QStringLiteral("Could not read that panel: %1")
+                      .arg(obj.value(QStringLiteral("error")).toString().isEmpty()
+                           ?error:obj.value(QStringLiteral("error")).toString()));
+        }
+        emit literatureChanged();
+        return;
+    }
+
+    if(op==QStringLiteral("literature.derender")){
+        // Its own branch, and above the catch-all below for the reason that
+        // comment gives: writing a de-render reply into literatureAnalysis_
+        // would replace the analysed paper - the figure list included - with a
+        // reply that has no figures in it, so tracing one curve would empty the
+        // panel you traced it from.
+        if(ok){
+            lastReconstruction_=obj.toVariantMap();
+            const int rows=obj.value(QStringLiteral("rows")).toInt();
+            setStatus(rows>0
+                ?QStringLiteral("Traced %1 points out of the figure").arg(rows)
+                :QStringLiteral("No points matched that colour — try a larger tolerance, "
+                                "or click nearer the middle of the line"));
+        }else{
+            lastReconstruction_.clear();
+            setStatus(QStringLiteral("Could not read the figure: %1")
+                      .arg(obj.value(QStringLiteral("error")).toString().isEmpty()
+                           ?error:obj.value(QStringLiteral("error")).toString()));
+        }
+        emit literatureChanged();
         return;
     }
 
@@ -1903,10 +2136,6 @@ static QScreen* graphvisTargetScreen(){
     return QGuiApplication::primaryScreen();
 }
 
-QRect AppController::targetScreenGeometry() const{
-    QScreen* screen=graphvisTargetScreen();
-    return screen?screen->geometry():QRect(0,0,1280,800);
-}
 
 QRect AppController::targetWorkAreaGeometry() const{
     QScreen* screen=graphvisTargetScreen();
@@ -1988,11 +2217,6 @@ QStringList AppController::uiLayoutNames() const{
     return out;
 }
 
-QStringList AppController::uiLayoutDescriptions() const{
-    QStringList out;
-    for(const graphvis::UiLayout& l:graphvis::uiLayouts()) out.append(l.description);
-    return out;
-}
 
 QVariantList AppController::uiLayoutList() const{
     QVariantList out;

@@ -170,11 +170,53 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 8; spacing: 6
 
+        // One row of chrome where there were two.
+        //
+        // Every row above the list is a row of the list you cannot see, and in
+        // a short sidebar that arithmetic decides whether the panel is usable
+        // at all: the count, the Packs button, the word "Categories" and the
+        // two expand buttons were 50 px of a 180 px panel. The heading said
+        // "GRAPH LIBRARY" directly underneath a panel header already saying
+        // "Graph Library", and "Categories" labelled a list that is visibly a
+        // list of categories - so both were spending height to say what was
+        // already on screen.
         RowLayout {
             Layout.fillWidth: true
-            Label { text: "GRAPH LIBRARY"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
-            Item { Layout.fillWidth: true }
-            Label { text: root.app.graphEntryCount + " graphs"; color: Theme.textMuted; font.pixelSize: 11 }
+            spacing: 4
+            // The count gives way rather than pushing the buttons off the end:
+            // a button shoved past the edge cannot be clicked, and a number
+            // that has been elided can still be read from what is left of it.
+            // Without this the row's minimum width was 274 px in a 264 px
+            // column, and a row that cannot fit is laid out past the edge - the
+            // same overflow as the vertical one, sideways.
+            Label {
+                text: root.app.graphEntryCount + " graphs"
+                color: Theme.textMuted
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+            }
+            // Only meaningful on the category tree; a search has already opened
+            // everything it matched.
+            ToolButton {
+                text: "Expand"
+                font.pixelSize: 11
+                flat: true
+                visible: searchField.text.trim().length === 0
+                ToolTip.visible: hovered
+                ToolTip.text: "Open every category"
+                onClicked: root.setAllCategories(true)
+            }
+            ToolButton {
+                text: "Collapse"
+                font.pixelSize: 11
+                flat: true
+                visible: searchField.text.trim().length === 0
+                ToolTip.visible: hovered
+                ToolTip.text: "Close every category"
+                onClicked: root.setAllCategories(false)
+            }
             // The packs. Every engine is compiled in either way - a pack is a
             // filter over the library, not a download - so this is a button
             // that shortens a list, and it says so rather than saying
@@ -346,36 +388,27 @@ Rectangle {
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            visible: searchField.text.trim().length === 0
-            Label {
-                text: "Categories"
-                color: Theme.textMuted
-                font.pixelSize: 11
-            }
-            Item { Layout.fillWidth: true }
-            ToolButton {
-                text: "Expand all"
-                font.pixelSize: 11
-                flat: true
-                onClicked: root.setAllCategories(true)
-            }
-            ToolButton {
-                text: "Collapse all"
-                font.pixelSize: 11
-                flat: true
-                onClicked: root.setAllCategories(false)
-            }
-        }
+        // The Categories row that used to be here is now part of the one at the
+        // top of this panel.
 
         ListView {
             id: view
             Layout.fillWidth: true; Layout.fillHeight: true
-            // A floor, so the chrome above cannot squeeze the list out of
-            // existence in a short panel - four rows is the point at which
-            // browsing stops and guessing starts.
-            Layout.minimumHeight: 120
+            // NO floor.
+            //
+            // This was 120 - "a floor, so the chrome above cannot squeeze the
+            // list out of existence" - and the reasoning was right about what
+            // the list needs and wrong about what a floor does. fillHeight
+            // already hands this every pixel the chrome does not take, so the
+            // floor changed nothing in a panel with room. In a panel WITHOUT
+            // room it made the column's minimum height larger than the panel it
+            // had to fit in, and a column that cannot fit does not shrink: it
+            // lays its children out past its own bottom edge, where they paint
+            // over whatever is below. That is the overlap that was reported.
+            // Squeezed, the list is now short and still scrolls; the way to get
+            // rows back is to drag the divider above it, which is now wide
+            // enough to find.
+            Layout.minimumHeight: 0
             clip: true
             model: root.rows
             currentIndex: -1

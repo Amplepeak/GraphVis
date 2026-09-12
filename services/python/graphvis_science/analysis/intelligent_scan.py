@@ -275,9 +275,70 @@ def _best_column_match(columns: list[str], textual: str) -> tuple[str | None, fl
     return (scored[0][1], scored[0][0]) if scored else (None, 0.0)
 
 
+# The order roles are filled, most important first. Decides which role keeps a
+# column when one column has been given two jobs.
+_ROLE_ORDER = ("x", "y", "z", "w", "v", "matrix")
+
+# Below this, a pair's dependency score is not distinguishable from the noise
+# floor of the estimator that produced it, so no relationship is claimed.
+_DEPENDENCE_FLOOR = 0.25
+
+
+def _dependence_word(dep: float) -> str:
+    """Describe a dependency at the strength actually measured.
+
+    Every one of these sentences used to begin "Strong dependency detected",
+    whatever the number that followed it - so two independent random columns
+    scoring 0.20 were reported as a strong dependency, with the 0.20 printed
+    immediately afterwards. The adjective has to move with the evidence, or the
+    explanation is worse than no explanation: it is a finding the data does not
+    support, written in the program's own voice.
+    """
+    if dep >= 0.80:
+        return "A strong relationship"
+    if dep >= 0.55:
+        return "A clear relationship"
+    if dep >= 0.40:
+        return "A moderate relationship"
+    return "A weak but non-random relationship"
+
+
+def _one_role_each(mappings: dict[str, str | None]) -> dict[str, str]:
+    """Strip a column out of every role but its most important one.
+
+    A recommendation that puts one column on two axes is never right, and the
+    scanner produced them routinely. With two numeric columns and no declared
+    response, the response fell back to a column that was already a parameter,
+    so a two-column dataset was offered a heatmap of
+    ``x=voltage, y=current, z=current`` - a response surface whose height is one
+    of its own axes - under a sentence calling 'current' both an independent
+    swept parameter and the response.
+    """
+    seen: set[str] = set()
+    out: dict[str, str] = {}
+    for role in _ROLE_ORDER:
+        column = mappings.get(role)
+        if not column or column in seen:
+            continue
+        seen.add(column)
+        out[role] = column
+    for role, column in mappings.items():
+        if role in _ROLE_ORDER or not column or column in seen:
+            continue
+        seen.add(column)
+        out[role] = column
+    return out
+
+
 def _add(rec_list: list[ScanRecommendation], graph: str, score: float, mappings: dict[str, str | None], reason: str,
          source: str = "dataset", diagnostics: dict[str, Any] | None = None) -> None:
-    mappings = {k: v for k, v in mappings.items() if v}
+    asked = {k: v for k, v in mappings.items() if v}
+    mappings = _one_role_each(asked)
+    # Losing x or y to de-duplication means the graph itself was degenerate -
+    # the same column on both axes - rather than an optional encoding channel
+    # that simply could not be filled.
+    if (asked.get("x") and not mappings.get("x")) or (asked.get("y") and not mappings.get("y")):
+        return
     key = (graph, tuple(sorted(mappings.items())))
     for i, old in enumerate(rec_list):
         old_key = (old.graph, tuple(sorted((k, v) for k, v in old.mappings.items() if v)))
@@ -290,6 +351,71 @@ def _add(rec_list: list[ScanRecommendation], graph: str, score: float, mappings:
 
 def _pair_cache_key(a: str, b: str) -> str:
     return json.dumps(sorted((str(a), str(b))), ensure_ascii=False, separators=(",", ":"))
+
+
+def _grouping_columns(df: pd.DataFrame, profiles: dict[str, Any],
+                      dataset: Any) -> list[tuple[str, int, float]]:
+    """Columns that split the rows into groups worth comparing.
+
+    Returns (name, number of groups, eta-squared) for each, best first.
+    Eta-squared is the share of the total variance of the target that lies
+    between the groups rather than within them - the effect size behind a
+    one-way ANOVA - so the caller can say how much the split explains instead
+    of only that it is possible.
+
+    A grouping column is one with few enough levels to read on an axis and
+    enough rows per level to be a summary rather than a scatter of singletons.
+    Text columns qualify, and so do numeric columns that only ever take a
+    handful of values, because a dose level or a replicate number is a group
+    whatever its dtype.
+    """
+    numeric_names = {str(c) for c in getattr(dataset, "numeric_columns", []) or []}
+    targets = [c for c in profiles if c in df.columns]
+    if not targets:
+        return []
+    # The target for the effect size is the numeric column with the most spread
+    # to explain; a constant column would make every eta-squared meaningless.
+    target = max(targets, key=lambda c: float(profiles[c].get("std", 0.0) or 0.0))
+    values = pd.to_numeric(df[target], errors="coerce").to_numpy(float)
+    finite = np.isfinite(values)
+    if finite.sum() < 6:
+        return []
+
+    out: list[tuple[str, int, float]] = []
+    for raw in df.columns:
+        name = str(raw)
+        if name == target:
+            continue
+        series = df[raw]
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        levels = int(series.nunique(dropna=True))
+        if levels < 2 or levels > 12:
+            continue
+        if len(df) < 3 * levels:
+            continue
+        # A numeric column is only a grouping if it is genuinely discrete: a
+        # continuous measurement that happens to have twelve distinct values in
+        # a short table is not a set of experimental conditions.
+        if is_numeric and (name in numeric_names and levels > 8):
+            continue
+
+        codes = series.astype("string").fillna("<missing>").to_numpy()
+        usable = finite
+        grand = float(np.mean(values[usable]))
+        total = float(np.sum((values[usable] - grand) ** 2))
+        if not (total > 0):
+            continue
+        between = 0.0
+        for level in pd.unique(codes[usable]):
+            member = usable & (codes == level)
+            count = int(member.sum())
+            if count == 0:
+                continue
+            between += count * (float(np.mean(values[member])) - grand) ** 2
+        out.append((name, levels, float(min(max(between / total, 0.0), 1.0))))
+
+    out.sort(key=lambda row: row[2], reverse=True)
+    return out[:2]
 
 
 def scan_dataset(dataset: Any, literature: Iterable[Any] | None = None, *, progress=None, cancelled=None,
@@ -524,6 +650,17 @@ def scan_dataset(dataset: Any, literature: Iterable[Any] | None = None, *, progr
     if not responses:
         responses = [c for c in profiled_numeric if profiles[c].get("response_like") and c not in params][:8]
     if not responses:
+        # The fallback used to be `profiled_numeric[-1]` with no regard for what
+        # was already a parameter, which is how one column became both the
+        # sweep's last axis and its response. A response has to be a column the
+        # parameters do not already contain.
+        responses = [c for c in profiled_numeric if c not in params][-1:]
+    if not responses and len(params) > 1:
+        # Every numeric column is name-like a parameter. Something still has to
+        # be the measured quantity, so the last one gives up its parameter role
+        # rather than filling both.
+        responses = [params.pop()]
+    if not responses:
         responses = [profiled_numeric[-1]]
     if params and responses:
         x, y = params[0], responses[0]
@@ -545,9 +682,18 @@ def scan_dataset(dataset: Any, literature: Iterable[Any] | None = None, *, progr
     # Strongest empirical relationships get their own graph-specific mappings.
     for rank, p in enumerate(pairs[:8]):
         a, b, dep = p["a"], p["b"], float(p["dependency"])
+        # Below this the score is indistinguishable from the estimator's own
+        # floor. Mutual information computed from a finite histogram is biased
+        # upwards, so two independent normal columns of 200 rows score about
+        # 0.20 - measured, not assumed. Recommending a graph off that, and
+        # calling it a detected relationship, is inventing a finding.
+        if dep < _DEPENDENCE_FLOOR:
+            continue
         score = 0.67 + 0.25 * dep - 0.015 * rank
         _add(recs, "4D / 5D Scatter", score, {"x": a, "y": b},
-             f"Strong dependency detected between '{a}' and '{b}' (|ρ/Pearson|/MI score {dep:.2f}).", diagnostics=p)
+             f"{_dependence_word(dep)} between '{a}' and '{b}' "
+             f"(Pearson {p.get('pearson', 0.0):+.2f}, Spearman {p.get('spearman', 0.0):+.2f}, "
+             f"mutual information {p.get('mutual_info', 0.0):.2f}).", diagnostics=p)
         if abs(float(p.get("spearman", 0))) >= 0.72:
             _add(recs, "Line Chart", score - 0.04, {"x": a, "y": b},
                  f"'{a}' and '{b}' show a strong monotonic relationship (Spearman ρ={p['spearman']:.2f}).", diagnostics=p)
@@ -564,6 +710,44 @@ def scan_dataset(dataset: Any, literature: Iterable[Any] | None = None, *, progr
     _add(recs, "Histogram", 0.62, {"x": distribution_col}, f"Distribution summary for '{distribution_col}', selected from skew/outlier diagnostics.")
     _add(recs, "KDE Density", 0.60, {"x": distribution_col}, f"Smooth density estimate for '{distribution_col}'.")
     _add(recs, "ECDF", 0.58, {"x": distribution_col}, f"Distribution-free cumulative view for '{distribution_col}'.")
+
+    # Grouped comparisons.
+    #
+    # The commonest scientific plot there is - a measurement compared across a
+    # handful of named conditions - and the scanner did not offer it at all. It
+    # ranked only over `numeric_columns`, so a table of (catalyst, yield) was
+    # given a histogram of yield with the catalyst ignored, and the four groups
+    # that are the entire point of the experiment appeared nowhere.
+    #
+    # The reason carries the measured separation rather than the bare fact that
+    # a text column exists: eta-squared, the share of the total variance lying
+    # between the groups rather than within them. That is what decides whether
+    # splitting by this column shows anything, and it is a number the user can
+    # argue with.
+    for name, levels, eta_squared in _grouping_columns(df, profiles, dataset):
+        target = next((c for c in responses if c in profiled_numeric), None) or profiled_numeric[0]
+        share = f"{100.0 * eta_squared:.0f}% of the variance in '{target}'"
+        if eta_squared >= 0.02:
+            detail = (f"'{name}' splits the rows into {levels} groups and accounts for "
+                      f"{share}, so the comparison is worth drawing.")
+        else:
+            detail = (f"'{name}' splits the rows into {levels} groups but accounts for only "
+                      f"{share}, so expect the groups to overlap.")
+        base = 0.88 if eta_squared >= 0.06 else (0.74 if eta_squared >= 0.02 else 0.55)
+        diag = {"group_column": name, "levels": levels, "eta_squared": eta_squared,
+                "target": target}
+        _add(recs, "Box Plot", base, {"x": name, "y": target},
+             f"Median, quartiles and outliers per group. {detail}", diagnostics=diag)
+        _add(recs, "Violin Plot", base - 0.04, {"x": name, "y": target},
+             f"Shows the shape of each group's distribution, not only its quartiles. {detail}",
+             diagnostics=diag)
+        _add(recs, "Bar Chart", base - 0.08, {"x": name, "y": target},
+             f"Group means with error bars, for the comparison as a headline number. {detail}",
+             diagnostics=diag)
+        if levels <= 6:
+            _add(recs, "Grouped Scatter", base - 0.10, {"x": name, "y": target},
+                 f"Every observation drawn, which a box plot hides. {detail}",
+                 diagnostics=diag)
 
     # Geographic pair.
     lon = next((c for c in profiled_numeric if profiles[c].get("longitude_like")), None)

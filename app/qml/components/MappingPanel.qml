@@ -110,6 +110,72 @@ PanelScroll {
     Label{text:"Variable Mapping";font.pixelSize:17;font.bold:true;color:Theme.text;Layout.margins:12}
     Label{text:"Changes apply as you make them. Smart Render then chooses clarity and performance parameters automatically.";wrapMode:Text.WordWrap;color:Theme.textSecondary;Layout.fillWidth:true;Layout.leftMargin:12;Layout.rightMargin:12}
 
+    // The formula, on the seven engines that plot one. Above the column
+    // requirement because on those engines there are no columns to require -
+    // the formula IS the data.
+    GvGroupBox {
+        title: "Formula"
+        Layout.fillWidth: true
+        Layout.leftMargin: 8
+        Layout.rightMargin: 8
+        visible: root.canvas && root.canvas.usesExpression
+        ColumnLayout {
+            anchors.fill: parent
+            ExpressionBox { canvas: root.canvas; Layout.fillWidth: true }
+        }
+    }
+
+    // HOW MANY COLUMNS this engine reads, and how many are mapped.
+    //
+    // The canvas has computed this since the port began - PlotCanvas
+    // columnsRequired, from the engine's own column plan - and no part of the
+    // interface ever read it. It is the answer to the single most common
+    // confusion in the program: a heat map or a 3-D scatter drawn from two
+    // columns produces a correct, empty, unexplained frame, and the reason is
+    // that the engine wanted a third. Saying so beside the mapping controls is
+    // where a person is already looking when it happens.
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.leftMargin: 12
+        Layout.rightMargin: 12
+        visible: root.canvas && root.canvas.columnsRequired > 0
+        implicitHeight: needLabel.implicitHeight + 14
+        radius: Theme.radius
+        readonly property int mapped: {
+            if (!root.canvas) return 0
+            var n = 0
+            if (String(root.canvas.xColumn || "") !== "") ++n
+            if (root.canvas.yColumns && root.canvas.yColumns.length > 0) n += root.canvas.yColumns.length
+            if (String(root.canvas.zColumn || "") !== "") ++n
+            if (String(root.canvas.colorColumn || "") !== "") ++n
+            return n
+        }
+        readonly property bool short_: root.canvas && mapped < root.canvas.columnsRequired
+        color: short_ ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.14)
+                      : Qt.rgba(Theme.positive.r, Theme.positive.g, Theme.positive.b, 0.10)
+        border.color: short_ ? Theme.warning : Theme.positive
+
+        Label {
+            id: needLabel
+            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 9 }
+            wrapMode: Text.WordWrap
+            font.pixelSize: 11
+            color: Theme.text
+            text: {
+                if (!root.canvas) return ""
+                var need = root.canvas.columnsRequired
+                var have = parent.mapped
+                if (have < need)
+                    return "“" + root.canvas.engine + "” reads " + need + " columns and "
+                         + have + (have === 1 ? " is" : " are") + " mapped. Until the rest are "
+                         + "chosen the figure will be an empty frame — that is the missing "
+                         + "column, not a broken graph."
+                return "“" + root.canvas.engine + "” reads " + need
+                     + (need === 1 ? " column" : " columns") + ", and has them."
+            }
+        }
+    }
+
     GvGroupBox {
         title:"Intelligent Auto-Optimization";Layout.fillWidth:true;Layout.margins:8
         ColumnLayout { anchors.fill:parent;spacing:6
@@ -177,6 +243,16 @@ PanelScroll {
             anchors.fill: parent
             AxisScaleBar { canvas: root.canvas; Layout.fillWidth: true }
         }
+    }
+
+    // How much of each column the figure shows, and what range the colours run
+    // over. Directly under the scale, because "log or linear" and "from where
+    // to where" are the same question about the same axis - and because a
+    // person hunting for a cap looks where the axis controls already are.
+    RangePanel {
+        canvas: root.canvas
+        Layout.fillWidth: true
+        Layout.margins: 8
     }
 
     // The camera, for the engines drawn into a projected cube.

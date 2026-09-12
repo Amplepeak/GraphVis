@@ -149,14 +149,11 @@ MenuBar {
             onTriggered: root.app.redo()
         }
         MenuSeparator {}
-        Action {
-            text: "Reset the figure's view"
-            enabled: root.canvas !== null
-            onTriggered: {
-                if (root.canvas.view3D) root.canvas.resetCamera()
-                else root.canvas.resetView()
-            }
-        }
+        // "Reset the figure's view" used to be here. It is a VIEW operation -
+        // it changes what you are looking at, not what the figure is - and View
+        // is where it was looked for and not found. It is in that menu now, and
+        // is not repeated here: one command in two menus is two places to keep
+        // in step and one more thing to read past.
         Action {
             text: "Clear notes on the figure"
             enabled: root.canvas !== null && root.canvas.annotationCount > 0
@@ -166,6 +163,60 @@ MenuBar {
 
     Menu {
         title: "&View"
+
+        // Putting the figure back where it started. Both of them, named
+        // separately rather than one entry that quietly does different things
+        // on a 2-D and a 3-D figure: on a rotated surface "reset view" and
+        // "reset camera" are two different undos and a person wants to ask for
+        // the one they mean.
+        Action {
+            text: "Reset the figure's view"
+            enabled: root.canvas !== null
+            onTriggered: {
+                if (root.canvas.view3D) root.canvas.resetCamera()
+                else root.canvas.resetView()
+            }
+        }
+        Action {
+            text: "Reset the 3-D camera"
+            enabled: root.canvas !== null && root.canvas.view3D
+            onTriggered: if (root.canvas) root.canvas.resetCamera()
+        }
+        Action {
+            text: "Fit the axes back to the data"
+            enabled: root.canvas !== null && root.canvas.viewZoomed
+            onTriggered: if (root.canvas) root.canvas.resetView()
+        }
+
+        MenuSeparator {}
+
+        // The window's own bars. Each can also be folded from a control on the
+        // bar itself; these are here so the folds are FINDABLE - a person
+        // looking for "how do I get more room for the figure" looks in a menu,
+        // not for a caret they have not noticed - and so a bar folded in an
+        // earlier session can be brought back from a fixed place.
+        Action {
+            text: "Toolbar"
+            checkable: true
+            checked: !root.app.topBarCollapsed
+            onTriggered: root.app.topBarCollapsed = !root.app.topBarCollapsed
+        }
+        Action {
+            text: "Controls panel"
+            checkable: true
+            checked: !root.app.sidebarCollapsed
+            onTriggered: root.app.sidebarCollapsed = !root.app.sidebarCollapsed
+        }
+        Action {
+            text: "Workspace bar"
+            checkable: true
+            checked: !root.app.navRailCollapsed
+            // Only the layouts that put the workspaces on an edge have one.
+            enabled: root.app.uiLayoutSpec && root.app.uiLayoutSpec.navEdge !== 0
+            onTriggered: root.app.navRailCollapsed = !root.app.navRailCollapsed
+        }
+
+        MenuSeparator {}
 
         Menu {
             title: "Interface theme"
@@ -509,99 +560,83 @@ MenuBar {
                 }
             }
             }
+
+            // HOW FINE that grid is.
+            //
+            // PlotCanvas has carried fieldResolution since the field engines
+            // were written and nothing ever set it, so every heat map, contour
+            // and surface in the program was drawn at the automatic resolution
+            // with no way to ask for another. It is the difference between a
+            // map of the structure and a map of the sampling: too coarse and a
+            // real feature is one cell, too fine and every cell is one
+            // measurement and the picture is noise.
+            Menu {
+                title: "Field detail"
+                enabled: root.canvas !== null && root.canvas.usesColourMap
+                Repeater {
+                    model: [
+                        { label: "Automatic — chosen from how many samples there are", cells: 0 },
+                        { label: "Coarse · 40 cells", cells: 40 },
+                        { label: "Medium · 80 cells", cells: 80 },
+                        { label: "Fine · 160 cells", cells: 160 },
+                        { label: "Very fine · 280 cells", cells: 280 }
+                    ]
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.label
+                        checkable: true
+                        checked: root.canvas !== null && root.canvas.fieldResolution === modelData.cells
+                        onTriggered: if (root.canvas) root.canvas.fieldResolution = modelData.cells
+                    }
+                }
+            }
         }
 
         MenuSeparator {}
 
         Menu {
             title: "Layout"
-            // Twenty-one window shapes in five families, each taken from an
-            // application known to work rather than invented here. Grouped,
-            // because twenty-one names in one flat menu is a list nobody reads.
+            // The window shapes, in families, because a flat list of
+            // twenty-six names is a list nobody reads.
             //
-            // The five families are written out rather than repeated over,
-            // because a Repeater CANNOT create a Menu. Its delegate has to be
-            // an Item and Menu is not one, so the submenus were created and
-            // never added to anything: the Layout menu opened onto an empty
-            // panel. MenuItem is an Item, which is why every other Repeater in
-            // this file works.
-            Menu {
-                title: root.groupName(0)
-                Repeater {
-                    model: root.layoutsIn(0)
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.icon + "   " + modelData.name
-                        checkable: true
-                        checked: root.app.uiLayout === modelData.index
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.description
-                                      + "\n(after " + modelData.from + ")"
-                        onTriggered: root.app.uiLayout = modelData.index
-                    }
-                }
-            }
-            Menu {
-                title: root.groupName(1)
-                Repeater {
-                    model: root.layoutsIn(1)
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.icon + "   " + modelData.name
-                        checkable: true
-                        checked: root.app.uiLayout === modelData.index
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.description
-                                      + "\n(after " + modelData.from + ")"
-                        onTriggered: root.app.uiLayout = modelData.index
-                    }
-                }
-            }
-            Menu {
-                title: root.groupName(2)
-                Repeater {
-                    model: root.layoutsIn(2)
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.icon + "   " + modelData.name
-                        checkable: true
-                        checked: root.app.uiLayout === modelData.index
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.description
-                                      + "\n(after " + modelData.from + ")"
-                        onTriggered: root.app.uiLayout = modelData.index
-                    }
-                }
-            }
-            Menu {
-                title: root.groupName(3)
-                Repeater {
-                    model: root.layoutsIn(3)
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.icon + "   " + modelData.name
-                        checkable: true
-                        checked: root.app.uiLayout === modelData.index
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.description
-                                      + "\n(after " + modelData.from + ")"
-                        onTriggered: root.app.uiLayout = modelData.index
-                    }
-                }
-            }
-            Menu {
-                title: root.groupName(4)
-                Repeater {
-                    model: root.layoutsIn(4)
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.icon + "   " + modelData.name
-                        checkable: true
-                        checked: root.app.uiLayout === modelData.index
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.description
-                                      + "\n(after " + modelData.from + ")"
-                        onTriggered: root.app.uiLayout = modelData.index
+            // These families were written out one Menu at a time, because a
+            // Repeater CANNOT create a Menu - its delegate has to be an Item
+            // and Menu is not one, so the submenus were created and never
+            // added to anything and this menu opened onto an empty panel.
+            //
+            // Hand-writing them then failed the other way: a sixth family was
+            // added to the table and there was no sixth Menu here, so five
+            // shapes existed, were persisted, were selectable from a script,
+            // and could not be reached from either place that lists them. This
+            // menu and LayoutPicker are two copies of the same list, so the
+            // fault had to be fixed twice.
+            //
+            // Instantiator is what does what the Repeater cannot: it creates
+            // non-Item objects and hands each one back, and insertMenu puts it
+            // in. Adding a family is now a row in UiLayouts.cpp and nothing
+            // here.
+            id: layoutMenu
+            Instantiator {
+                model: root.app.uiLayoutGroupList
+                onObjectAdded: (index, object) => layoutMenu.insertMenu(index, object)
+                onObjectRemoved: (index, object) => layoutMenu.removeMenu(object)
+                delegate: Menu {
+                    id: familyMenu
+                    required property int index
+                    required property var modelData
+                    title: familyMenu.modelData.name
+                    Repeater {
+                        model: root.layoutsIn(familyMenu.index)
+                        delegate: MenuItem {
+                            required property var modelData
+                            text: modelData.icon + "   " + modelData.name
+                            checkable: true
+                            checked: root.app.uiLayout === modelData.index
+                            ToolTip.visible: hovered
+                            ToolTip.text: modelData.description
+                                          + "\n(after " + modelData.from + ")"
+                            onTriggered: root.app.uiLayout = modelData.index
+                        }
                     }
                 }
             }

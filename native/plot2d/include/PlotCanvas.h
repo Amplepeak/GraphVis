@@ -16,6 +16,7 @@
 // what is exported is what was on screen.
 // =========================================================================
 #include "PlotSpec.h"
+#include "ArrowTable.h"
 #include "TouchGesture.h"
 #include "QtPlotBackend.h"
 
@@ -56,8 +57,26 @@ class PlotCanvas : public QQuickPaintedItem {
     Q_PROPERTY(QString xSourceUnit READ xSourceUnit NOTIFY stateChanged)
     Q_PROPERTY(QString ySourceUnit READ ySourceUnit NOTIFY stateChanged)
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY sourceChanged)
-    Q_PROPERTY(bool logX READ logX WRITE setLogX NOTIFY sourceChanged)
-    Q_PROPERTY(bool logY READ logY WRITE setLogY NOTIFY sourceChanged)
+
+    // THE FORMULA, for the seven engines that plot one rather than a dataset.
+    //
+    // PlotSpec has carried `expression` since those engines were written and
+    // nothing could set it: no property, no field, no menu. So Function Plot
+    // drew sin(x)*exp(-x/6), Function Surface drew sin(x)*cos(y), and all seven
+    // drew their hard-coded demonstration formula whatever the person wanted -
+    // an expression compiler, an RPN evaluator and a function table, reachable
+    // only as a fixed picture.
+    Q_PROPERTY(QString expression READ expression WRITE setExpression NOTIFY sourceChanged)
+    // True only on those engines, so the interface offers the field where it
+    // means something and nowhere else.
+    Q_PROPERTY(bool usesExpression READ usesExpression NOTIFY stateChanged)
+    // Whether what is typed COMPILES, and what is wrong with it if not. A
+    // formula field that silently draws nothing when you mistype a bracket is
+    // worse than no field at all.
+    Q_PROPERTY(QString expressionError READ expressionError NOTIFY stateChanged)
+    // Every function the expression engine understands, for the help beside the
+    // field. Expression::knownFunctions built this list and nobody read it.
+    Q_INVOKABLE static QStringList expressionFunctions();
     // How each axis's values are transformed. 0 Linear, 1 Log10, 2 Log(1+x),
     // 3 z-score, 4 quantile - see AxisTransform in PlotSpec.h.
     //
@@ -87,7 +106,6 @@ class PlotCanvas : public QQuickPaintedItem {
     // and stayed there because the condition was permanent. A short status and
     // a long explanation are different things and belong in different places.
     Q_PROPERTY(QString notice READ notice NOTIFY stateChanged)
-    Q_PROPERTY(bool engineSupported READ engineSupported NOTIFY stateChanged)
     Q_PROPERTY(int pointCount READ pointCount NOTIFY stateChanged)
     // Figure colours follow the UI theme; without these the canvas
     // stayed dark inside a light theme.
@@ -144,6 +162,83 @@ class PlotCanvas : public QQuickPaintedItem {
     // True only while the engine on screen actually colours a field, so the
     // interface can hide the picker on the engines it would do nothing for.
     Q_PROPERTY(bool usesColourMap READ usesColourMap NOTIFY stateChanged)
+
+    // ------------------------------------------------------------------
+    // Axis limits and the colour scale, as a THING THE INTERFACE CAN SHOW.
+    //
+    // The limits themselves are not new: PlotAxis has carried min and max
+    // since the port began and the 2-D frame has always honoured them. What
+    // was missing was any way to SET them. A zoom could, by dragging, which is
+    // fine for "a bit closer" and useless for "VHPR above ten is not what I am
+    // looking at" - and on the 3-D family, which has no drag-zoom at all,
+    // there was no way to say it and the painter ignored the fields anyway.
+    //
+    // One list rather than twelve properties, because what the interface wants
+    // to draw is a row per axis and the number of rows depends on the engine:
+    // a line chart has two, a 3-D scatter has three, a pie chart has none.
+    // Each entry carries everything a row needs and nothing it has to work
+    // out for itself:
+    //
+    //   role      0 x, 1 y, 2 the third column
+    //   name      "X", "Y", "Z"
+    //   label     the column, as the axis is labelled
+    //   used      whether this engine reads this role at all
+    //   dataMin   what the column actually spans - the travel of a slider
+    //   dataMax
+    //   min       the limit in force, or dataMin when it is automatic
+    //   max
+    //   autoMin   whether that end is fitted rather than chosen
+    //   autoMax
+    //
+    // dataMin and dataMax are what makes a slider possible: a slider needs to
+    // know what "all the way left" means, and no control can invent that.
+    Q_PROPERTY(QVariantList axisRanges READ axisRanges NOTIFY axisRangesChanged)
+    // The same shape for the colour ramp: dataMin, dataMax, min, max, auto*,
+    // plus `levels` and whether the engine on screen uses a ramp at all.
+    Q_PROPERTY(QVariantMap colourRange READ colourRange NOTIFY axisRangesChanged)
+
+    // role is 0, 1 or 2 as above. An end passed as NaN - Number.NaN from QML -
+    // means "fit this end to the data", which is how a field is emptied.
+    Q_INVOKABLE void setAxisLimits(int role,double lo,double hi);
+    Q_INVOKABLE void clearAxisLimits(int role);
+    // Every axis and the colour ramp back to automatic, in one call, without
+    // touching the camera or the notes.
+    Q_INVOKABLE void clearAllLimits();
+    Q_INVOKABLE void setColourLimits(double lo,double hi);
+    Q_INVOKABLE void clearColourLimits();
+    // 0 is a continuous ramp; 2..256 draws that many discrete bands.
+    Q_INVOKABLE void setColourLevels(int levels);
+    // Clamp or drop, for values outside the colour range. False clamps them to
+    // the nearer end of the ramp, which is the default and what a capped scale
+    // usually means; true leaves them undrawn.
+    Q_PROPERTY(bool colourOutOfRangeDropped READ colourOutOfRangeDropped
+               WRITE setColourOutOfRangeDropped NOTIFY axisRangesChanged)
+
+    // The person's own colours, as "#aarrggbb" strings so QML can bind them
+    // straight to a swatch and hand them to a colour dialog.
+    //
+    // Empty is every figure drawn before this existed. Non-empty overrides the
+    // named map on a field and the colour-vision palette on a set of series or
+    // pie sectors - see PlotStyle::customColours for why one list serves both.
+    Q_PROPERTY(QVariantList customColours READ customColours NOTIFY axisRangesChanged)
+    // True while the ramp on screen is a hand-picked one, so the interface can
+    // say which of the two is in force without comparing lists.
+    Q_PROPERTY(bool usingCustomColours READ usingCustomColours NOTIFY axisRangesChanged)
+
+    Q_INVOKABLE void setCustomColour(int index,const QColor& colour);
+    Q_INVOKABLE void addCustomColour(const QColor& colour);
+    Q_INVOKABLE void removeCustomColour(int index);
+    Q_INVOKABLE void clearCustomColours();
+    // Fills the list from what is ON SCREEN RIGHT NOW - the current map
+    // sampled at `count` points, or the current palette - so editing starts
+    // from the figure the person is looking at rather than from an empty row.
+    // Starting from nothing is what makes a colour editor feel like a second
+    // job instead of an adjustment.
+    Q_INVOKABLE void seedCustomColours(int count);
+    // How many swatches the interface should offer by default: the band count
+    // when the ramp is banded, the number of series or sectors when it is a
+    // set of categories, and a readable handful otherwise.
+    Q_INVOKABLE int suggestedColourCount() const;
 
     // Level of detail.
     //
@@ -204,8 +299,6 @@ class PlotCanvas : public QQuickPaintedItem {
     // noise; zoomed a thousandfold into a transient it is the whole point.
     Q_PROPERTY(QString cursorText READ cursorText NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorOnPlot READ cursorOnPlot NOTIFY cursorChanged)
-    Q_PROPERTY(double cursorX READ cursorX NOTIFY cursorChanged)
-    Q_PROPERTY(double cursorY READ cursorY NOTIFY cursorChanged)
 
     // Annotations.
     //
@@ -256,7 +349,6 @@ public:
     // The values alone, for the figure package.
     QVariantMap engineParameterValues() const;
     Q_INVOKABLE void setEngineParameter(const QString& key,double value);
-    Q_INVOKABLE double engineParameter(const QString& key) const;
     // Back to what the engine declares. Someone who has typed four masses into
     // the wrong figure needs one click, not four corrections.
     Q_INVOKABLE void resetEngineParameters();
@@ -269,6 +361,13 @@ public:
     Q_INVOKABLE QVariantMap figureState() const;
     Q_INVOKABLE void applyFigureState(const QVariantMap& state);
     QString title() const { return spec_.title; }
+    QString expression() const { return spec_.expression; }
+    void setExpression(const QString& text);
+    bool usesExpression() const {
+        return spec_.engine.startsWith(QLatin1String("Function"))
+            || spec_.engine.startsWith(QLatin1String("Implicit"));
+    }
+    QString expressionError() const { return expressionError_; }
     bool logX() const { return spec_.xAxis.log10; }
     bool logY() const { return spec_.yAxis.log10; }
     QString message() const { return message_; }
@@ -399,6 +498,12 @@ public:
     int fieldResolution() const { return spec_.style.fieldResolution; }
     void setFieldResolution(int cells);
     bool usesColourMap() const { return usesColourMap_; }
+    QVariantList axisRanges() const;
+    QVariantMap colourRange() const;
+    bool colourOutOfRangeDropped() const { return spec_.style.colourOutOfRangeDropped; }
+    void setColourOutOfRangeDropped(bool drop);
+    QVariantList customColours() const;
+    bool usingCustomColours() const { return !spec_.style.customColours.isEmpty(); }
     void setBackgroundColor(const QColor& c);
     void setForegroundColor(const QColor& c);
     void setGridColor(const QColor& c);
@@ -406,7 +511,6 @@ public:
     // The names setColourMap accepts, in the order they should be offered.
     // Here rather than in QML so the list cannot drift from the one the
     // renderer actually understands.
-    Q_INVOKABLE static QStringList colourMapNames();
     // The same names grouped into the eight categories GraphVis 17 used, as
     // [{name, maps: [...]}, ...]. Eighty four names in one list is a list to
     // scroll, not a choice to make.
@@ -423,8 +527,6 @@ public:
     void setXUnit(const QString& v);
     void setYUnit(const QString& v);
     void setTitle(const QString& v);
-    void setLogX(bool v);
-    void setLogY(bool v);
     int xTransform() const { return spec_.xAxis.transform; }
     int yTransform() const { return spec_.yAxis.transform; }
     int zTransform() const { return spec_.zAxis.transform; }
@@ -513,6 +615,10 @@ public:
 
 signals:
     void engineParametersChanged();
+    // Separate from styleChanged so that dragging a limit slider does not make
+    // every style-bound control in the interface re-evaluate sixty times a
+    // second.
+    void axisRangesChanged();
     void sourceChanged();
     void stateChanged();
     void styleChanged();
@@ -593,6 +699,35 @@ private:
     // Recomputed in rebuild(), where the prepared spec already exists, so the
     // property is a read rather than a preparation each time QML binds to it.
     bool usesColourMap_=false;
+    // Empty when the formula compiles, or when there is none to compile.
+    QString expressionError_;
+    // What each mapped role SPANS, measured in rebuild() from the series that
+    // were actually composed. The sliders' travel, and the value a field falls
+    // back to when its end is automatic.
+    double dataLo_[3]={0,0,0};
+    double dataHi_[3]={1,1,1};
+    bool dataSpanValid_[3]={false,false,false};
+    bool roleUsed_[3]={false,false,false};
+    QString roleLabel_[3];
+    // Written by setAxisLimits, read by rebuild() so that a limit survives the
+    // rebuild a style change triggers - and is dropped when the figure itself
+    // changes, because a ceiling of ten on VHPR means nothing on another
+    // column. See applyStoredLimits.
+    double limitLo_[3]={0,0,0};
+    double limitHi_[3]={0,0,0};
+    bool limitLoSet_[3]={false,false,false};
+    bool limitHiSet_[3]={false,false,false};
+    // Re-colours the series in place from the chosen colours or the palette.
+    // A full rebuild would re-read the Arrow file to change eight colours,
+    // which on a 200,000-row table is a visible pause for a swatch click.
+    void applySeriesColours();
+    void applyStoredLimits();
+    // Measured from the FULL column rather than from spec_.series, which the
+    // preview budget has already thinned: a stride through 200,000 rows can
+    // miss the largest value in the file, and a slider whose right-hand end is
+    // not the top of the column is a slider that cannot select the top of the
+    // column.
+    void measureRoleSpans(const ArrowTable& table);
     int fullRenderPolicy_=0;               // Automatic
     double fullRenderAskAfterSeconds_=5.0;
     bool dirty_=true;

@@ -102,7 +102,10 @@ public:
     // walk an adopted folder twice.
     bool linkToActiveGroup(const QStringList& paths,const QString& kind,bool rescanAfter);
     bool unlinkFromActiveGroup(const QStringList& paths,const QString& kind,bool rescanAfter);
-    Q_INVOKABLE bool isLinked(const QString& path,const QString& kind) const;
+    // isLinked(path, kind) was here. The datasets, literature and scripts
+    // lists each carry a `linked` flag per row already, which is what the panel
+    // reads, so this was a second way to ask the same question that only QML
+    // could have used and never did.
 
     Q_INVOKABLE QString revealFolder(const QString& which) const;
 

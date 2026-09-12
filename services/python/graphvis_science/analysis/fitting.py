@@ -97,17 +97,6 @@ class CurveFittingEngine:
         r2,rmse=_metrics(yy,pred); return FitResult("Global linear fit",params,xx,yy,pred,yy-pred,r2,rmse)
 
 
-@dataclass(slots=True)
-class Peak:
-    index: int
-    x: float
-    height: float
-    prominence: float
-    width: float
-    fwhm: float
-    area: float
-
-
 class PeakEngine:
     @staticmethod
     def detect(x: Iterable[float], y: Iterable[float], prominence: float | None = None, distance: int | None = None) -> pd.DataFrame:

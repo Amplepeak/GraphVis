@@ -139,6 +139,63 @@ struct PlotStyle {
     // rather than failing, because a typo in a theme should not blank a plot.
     QString colourMap;
 
+    // WHAT RANGE the colour map runs over, and in how many steps.
+    //
+    // The map has always been stretched across whatever the data happened to
+    // span, which is the right default and the wrong only-option: one outlier
+    // at 160 puts the whole body of a distribution into the bottom eighth of
+    // the ramp and every point that matters comes out the same dark blue. The
+    // 3-D scatter that prompted this was exactly that picture.
+    //
+    // Unset means "fit to the data", which is what it did before.
+    double colourMin = unsetValue();
+    double colourMax = unsetValue();
+    // What happens to a value OUTSIDE that range, which is a real choice and
+    // not a detail:
+    //
+    //   false  clamp - it is drawn in the colour at the nearer end, which reads
+    //          as "at least this much" and keeps every point on screen. The
+    //          default, and what a capped scale means in most publications.
+    //   true   drop  - it is not drawn at all, so the figure shows only the
+    //          band that was asked for and the rest is background.
+    //
+    // Neither is right in general. Clamping keeps the shape of the cloud and
+    // saturates its tail into one colour; dropping shows exactly the population
+    // in range and silently removes the rest, which is honest in a figure with
+    // a caption saying so and misleading in one without. The person chooses,
+    // beside the range itself.
+    bool colourOutOfRangeDropped = false;
+    // 0 is the continuous ramp. Two or more turns it into that many discrete
+    // bands - the difference between a photograph and a contour map, and what
+    // lets a reader say "that region is the third band" at all. The colour bar
+    // is drawn through the same function, so the key and the figure agree.
+    int colourLevels = 0;
+
+    // The person's OWN colours, when none of the eighty-four maps is the one
+    // they want.
+    //
+    // Empty is every figure that has ever been drawn: the named map for a
+    // field, the colour-vision palette for a set of series. Non-empty overrides
+    // both, and it is deliberately ONE list rather than two, because "the
+    // colours this figure uses, in order" is one idea wearing two hats:
+    //
+    //   a ramp        the stops, interpolated - or, when colourLevels is set,
+    //                 band k is exactly colour k, so five bands and five
+    //                 colours means picking each band by hand
+    //   a set of      the cycle - series 0, 1, 2..., pie sector 0, 1, 2...,
+    //   categories    taken in order and wrapped when there are more
+    //                 categories than colours
+    //
+    // Which hat it wears is decided by the engine on screen, so the same list
+    // follows a person from a heat map to a pie chart instead of being set up
+    // twice.
+    //
+    // Nothing checks these for colour-vision safety, and that is the trade:
+    // the generated palettes are measured through a dichromat projection and a
+    // hand-picked set cannot be. The interface says so where the choice is
+    // made rather than here.
+    QVector<QColor> customColours;
+
     // What to do with the cells of a gridded field that no sample landed in.
     //
     //   0  None     leave them empty - the background shows through

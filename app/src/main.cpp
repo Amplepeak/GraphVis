@@ -258,7 +258,13 @@ int main(int argc, char *argv[])
         appendStartupLog(QStringLiteral("The previous session ended unexpectedly. Report written to %1")
                              .arg(unexpectedExit));
     appendStartupLog(QStringLiteral("Starting Qt GUI application"));
-    app.setWindowIcon(QIcon(QStringLiteral("qrc:/qt/qml/GraphVis/assets/graphvis_icon.png")));
+    // ":" and not "qrc:". The qrc: form is a URL, which QML and QUrl
+    // understand and QIcon does not - it is handed to QFile, which has never
+    // heard of a scheme, so this silently produced an EMPTY icon and the
+    // window, the taskbar button and the Alt+Tab card have carried the generic
+    // Windows placeholder ever since. QIcon has no way to complain: an icon
+    // that failed to load and an icon nobody set look identical.
+    app.setWindowIcon(QIcon(QStringLiteral(":/qt/qml/GraphVis/assets/graphvis_icon.png")));
 
     // The splash comes up before AppController, because AppController's
     // constructor is where start-up actually spends its time.

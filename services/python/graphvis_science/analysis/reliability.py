@@ -22,11 +22,43 @@ class ReliabilityEngine:
         table=pd.DataFrame({"time":t,"reliability":reliability,"cdf":q})
         return ReliabilityResult("Weibull reliability",table,{"shape":float(shape),"scale":float(scale),"confidence":confidence})
 
+    # What `statistic` may name. The request arrives as JSON, so a caller can
+    # only ever send a string; taking a bare Callable meant that anything the
+    # application actually sent raised "TypeError: 'str' object is not
+    # callable", and the only working call was the one that omitted the
+    # argument entirely and got the mean.
+    BOOTSTRAP_STATISTICS = {
+        "mean": np.mean,
+        "median": np.median,
+        "std": lambda a: np.std(a, ddof=1),
+        "var": lambda a: np.var(a, ddof=1),
+        "min": np.min,
+        "max": np.max,
+    }
+
     @staticmethod
-    def bootstrap_ci(values: Iterable[float], statistic: Callable[[np.ndarray],float]=np.mean,
+    def bootstrap_ci(values: Iterable[float],
+                     statistic: Callable[[np.ndarray],float] | str = "mean",
                      *, confidence: float=.95, resamples: int=2000, seed:int=0) -> dict[str,float]:
         x=np.asarray(values,float).ravel(); x=x[np.isfinite(x)]
         if len(x)<2: raise ValueError("Bootstrap requires at least 2 finite observations.")
+        if statistic is None:
+            statistic = "mean"
+        if isinstance(statistic, str):
+            key = statistic.strip().lower()
+            table = ReliabilityEngine.BOOTSTRAP_STATISTICS
+            if key not in table:
+                raise ValueError(
+                    f"Unknown bootstrap statistic {statistic!r}. "
+                    f"Choose one of: {', '.join(sorted(table))}."
+                )
+            statistic = table[key]
+        elif not callable(statistic):
+            raise ValueError(
+                f"'statistic' must name a statistic, not {statistic!r}. "
+                f"Choose one of: "
+                f"{', '.join(sorted(ReliabilityEngine.BOOTSTRAP_STATISTICS))}."
+            )
         rng=np.random.default_rng(seed); stats_out=np.empty(int(resamples),float)
         for i in range(int(resamples)): stats_out[i]=statistic(x[rng.integers(0,len(x),len(x))])
         a=(1-confidence)/2

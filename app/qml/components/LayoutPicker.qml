@@ -45,91 +45,47 @@ ToolButton {
                   : "Choose the window's shape"
     onClicked: menu.open()
 
-    // The five families are written out rather than repeated over, because a
-    // Repeater CANNOT create a Menu: its delegate has to be an Item and Menu is
-    // not one. Doing it the other way produced five submenus that were built
-    // and never added to anything, so the picker opened onto an empty panel.
+    // One submenu per family, built from the group table.
+    //
+    // These were written out by hand, one Menu per family, because a Repeater
+    // CANNOT create a Menu - its delegate has to be an Item and Menu is not
+    // one, and doing it that way produced five submenus that were built and
+    // never added to anything, so the picker opened onto an empty panel.
+    //
+    // Hand-writing them has its own failure, and it happened: a sixth family
+    // was added to the table and there was no sixth Menu here, so five layouts
+    // existed, were selectable from a script, were persisted, and could not be
+    // reached from the interface at all. The picker showed twenty-one of
+    // twenty-six shapes and looked complete.
+    //
+    // An Instantiator is the thing that does what the Repeater cannot: it
+    // creates non-Item objects and hands each one back, and insertMenu puts it
+    // in. Adding a family is now a row in the table and nothing here.
     Menu {
         id: menu
         y: root.height
 
-        Menu {
-            title: root.groupName(0)
-            Repeater {
-                model: root.layoutsIn(0)
-                delegate: MenuItem {
-                    required property var modelData
-                    text: modelData.icon + "   " + modelData.name
-                    checkable: true
-                    checked: root.app.uiLayout === modelData.index
-                    ToolTip.visible: hovered
-                    ToolTip.text: modelData.description
-                                  + "\n(after " + modelData.from + ")"
-                    onTriggered: root.app.uiLayout = modelData.index
-                }
-            }
-        }
-        Menu {
-            title: root.groupName(1)
-            Repeater {
-                model: root.layoutsIn(1)
-                delegate: MenuItem {
-                    required property var modelData
-                    text: modelData.icon + "   " + modelData.name
-                    checkable: true
-                    checked: root.app.uiLayout === modelData.index
-                    ToolTip.visible: hovered
-                    ToolTip.text: modelData.description
-                                  + "\n(after " + modelData.from + ")"
-                    onTriggered: root.app.uiLayout = modelData.index
-                }
-            }
-        }
-        Menu {
-            title: root.groupName(2)
-            Repeater {
-                model: root.layoutsIn(2)
-                delegate: MenuItem {
-                    required property var modelData
-                    text: modelData.icon + "   " + modelData.name
-                    checkable: true
-                    checked: root.app.uiLayout === modelData.index
-                    ToolTip.visible: hovered
-                    ToolTip.text: modelData.description
-                                  + "\n(after " + modelData.from + ")"
-                    onTriggered: root.app.uiLayout = modelData.index
-                }
-            }
-        }
-        Menu {
-            title: root.groupName(3)
-            Repeater {
-                model: root.layoutsIn(3)
-                delegate: MenuItem {
-                    required property var modelData
-                    text: modelData.icon + "   " + modelData.name
-                    checkable: true
-                    checked: root.app.uiLayout === modelData.index
-                    ToolTip.visible: hovered
-                    ToolTip.text: modelData.description
-                                  + "\n(after " + modelData.from + ")"
-                    onTriggered: root.app.uiLayout = modelData.index
-                }
-            }
-        }
-        Menu {
-            title: root.groupName(4)
-            Repeater {
-                model: root.layoutsIn(4)
-                delegate: MenuItem {
-                    required property var modelData
-                    text: modelData.icon + "   " + modelData.name
-                    checkable: true
-                    checked: root.app.uiLayout === modelData.index
-                    ToolTip.visible: hovered
-                    ToolTip.text: modelData.description
-                                  + "\n(after " + modelData.from + ")"
-                    onTriggered: root.app.uiLayout = modelData.index
+        Instantiator {
+            model: root.app.uiLayoutGroupList
+            onObjectAdded: (index, object) => menu.insertMenu(index, object)
+            onObjectRemoved: (index, object) => menu.removeMenu(object)
+            delegate: Menu {
+                id: familyMenu
+                required property int index
+                required property var modelData
+                title: familyMenu.modelData.name
+                Repeater {
+                    model: root.layoutsIn(familyMenu.index)
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.icon + "   " + modelData.name
+                        checkable: true
+                        checked: root.app.uiLayout === modelData.index
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.description
+                                      + "\n(after " + modelData.from + ")"
+                        onTriggered: root.app.uiLayout = modelData.index
+                    }
                 }
             }
         }

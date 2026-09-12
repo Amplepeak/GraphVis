@@ -1,0 +1,17 @@
+// The Windows application icon.
+//
+// Everything Windows draws for this program outside its own window - the
+// taskbar button, the Explorer file icon, the Start menu and desktop
+// shortcuts, the Alt+Tab card - comes from an icon RESOURCE compiled into the
+// executable. Not from setWindowIcon, which only reaches the window itself,
+// and not from the installer, which points its shortcuts at the exe and takes
+// whatever icon the exe carries. There was no resource, so all of it was the
+// generic Windows placeholder while a perfectly good icon sat in the repo.
+//
+// IDI_ICON1 is the conventional name for it: Windows shows the icon resource
+// with the lowest name, and the shell looks for this one first.
+//
+// The .ico carries 16, 24, 32, 48, 64, 128 and 256 pixel images. All of them
+// matter - the taskbar takes 32, the Alt+Tab card 48 or 256 depending on the
+// display, and a scaled-down 256 into a 16 px slot is a smear.
+IDI_ICON1 ICON "../assets/branding/graphvis.ico"

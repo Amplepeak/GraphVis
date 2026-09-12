@@ -149,12 +149,64 @@ def fit_overlapping_peaks(x, y, n_peaks=3, kind="Gaussian", baseline_order=1):
     return FitResult(kind, params, x, y, fit, y-fit, r2)
 
 
+# The models fit_nonlinear_model understands, lower-cased for matching. The
+# names are also what the error message offers, so the two cannot drift.
+NONLINEAR_MODELS = (
+    "Gaussian",
+    "Lorentzian",
+    "Exponential saturation",
+    "Exponential decay",
+    "Michaelis-Menten",
+    "Logistic",
+)
+
+
 def fit_nonlinear_model(x, y, model="Exponential saturation") -> FitResult:
+    """Fit one named model, or say which names exist.
+
+    This used to end in a bare `else` that fitted exponential saturation for
+    any name it did not recognise, and then labelled the result with the name
+    that had been ASKED for. So a request for a Gaussian returned an
+    exponential-saturation fit reported as `"model": "gaussian"`, with an R2 for
+    the wrong curve and nothing anywhere saying so. The operation's registered
+    default was `gaussian` - a name this function never handled - so every call
+    that did not override it was mislabelled.
+
+    A number carrying the name of a model that did not produce it is worse than
+    an error, because it is quotable. `curve_fit` next door already raises
+    "Unsupported built-in model"; this now does the same, and Gaussian and
+    Lorentzian are real fits rather than names that fall through.
+    """
     x, y = _clean_xy(x, y)
     if len(x) < 6:
         raise ValueError("At least six finite points are required.")
+
+    wanted = str(model or "").strip().lower()
+    canonical = {m.lower(): m for m in NONLINEAR_MODELS}
+    if wanted not in canonical:
+        raise ValueError(
+            f"Unsupported nonlinear model: {model!r}. "
+            f"Choose one of: {', '.join(NONLINEAR_MODELS)}."
+        )
+    model = canonical[wanted]
+
     xmin = float(x.min()); xs = x - xmin; span = max(float(np.ptp(xs)), 1e-12)
-    if model == "Exponential decay":
+
+    if model in ("Gaussian", "Lorentzian"):
+        # Fitted in the original x so the centre is reported in data units
+        # rather than as an offset from the first point.
+        peak = float(x[int(np.argmax(y))])
+        floor = float(np.nanmin(y))
+        height = float(np.ptp(y)) or 1.0
+        profile = gaussian if model == "Gaussian" else lorentzian
+        width_name = "sigma" if model == "Gaussian" else "gamma"
+
+        def fn(p): return profile(x, p[0], p[1], p[2]) + p[3]
+        p0 = [height, peak, span / 6.0, floor]
+        names = ["amplitude", "centre", width_name, "offset"]
+        bounds = ([-np.inf, float(x.min()) - span, 1e-12, -np.inf],
+                  [np.inf, float(x.max()) + span, np.inf, np.inf])
+    elif model == "Exponential decay":
         def fn(p): return p[0] + p[1]*np.exp(-np.maximum(p[2], 1e-12)*xs)
         p0 = [float(y[-1]), float(y[0]-y[-1]), 1/span]
         names = ["offset", "amplitude", "rate"]
@@ -170,7 +222,7 @@ def fit_nonlinear_model(x, y, model="Exponential saturation") -> FitResult:
         p0 = [float(np.ptp(y)), 4/span, float(np.median(x)), float(np.nanmin(y))]
         names = ["amplitude", "slope", "midpoint", "offset"]
         bounds = ([-np.inf,-np.inf,float(x.min())-span,-np.inf],[np.inf,np.inf,float(x.max())+span,np.inf])
-    else:
+    else:   # "Exponential saturation" - reached by name now, not by falling through
         def fn(p): return p[0] - p[1]*np.exp(-np.maximum(p[2], 1e-12)*xs)
         p0 = [float(y[-1]), float(y[-1]-y[0]), 1/span]
         names = ["asymptote", "amplitude", "rate"]

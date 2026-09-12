@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, sys, traceback
+import contextlib, json, sys, traceback
 from pathlib import Path
 
 
@@ -10,6 +10,48 @@ def _load_frame(path: str):
     with pa.memory_map(str(p), "r") as source:
         table=ipc.open_file(source).read_all()
     return table.to_pandas(types_mapper=None)
+
+
+# The protocol channel, captured before anything else can rebind sys.stdout.
+#
+# A library printing to stdout writes into the middle of the reply stream. That
+# is not hypothetical: PyMuPDF prints "Consider using the pymupdf_layout
+# package..." during extraction, which lands between two protocol lines. The
+# application skips anything that is not a JSON object, so it survives - but it
+# survives by luck, and a library that ever printed something JSON-shaped would
+# be read as a reply. main() redirects stray output to stderr for the duration
+# of a request; this is the handle the protocol keeps for itself.
+_PROTOCOL = sys.stdout
+
+
+def emit_progress(message: str, percent: float = -1.0) -> None:
+    """Say what a long operation is doing WHILE it does it.
+
+    The protocol was one JSON line per request and the application read the
+    first line it got as the answer, so an extraction that takes four minutes
+    on a scanned paper was four minutes of a completely static window with no
+    way to tell it apart from a program that had hung. Reported exactly that
+    way: "there's no indication of it loading or done".
+
+    A progress line carries `progress: true`, which is what tells the
+    application it is NOT the reply - see AppController's readyRead handler.
+    Anything that does not understand the flag sees a line it has no branch
+    for, which is the behaviour it already had for stray output.
+
+    percent < 0 means "working, but I cannot say how far", which is honest for
+    a step whose length is not known in advance and is better than a bar that
+    invents a number.
+    """
+    try:
+        _PROTOCOL.write(json.dumps({"progress": True, "message": str(message),
+                                     "percent": float(percent)},
+                                    separators=(",", ":")) + "\n")
+        _PROTOCOL.flush()
+    except Exception:
+        # Progress is a courtesy. It must never be the reason an operation
+        # fails - a closed pipe here would otherwise take the whole extraction
+        # down after the work was already done.
+        pass
 
 
 def _figure_asset(req: dict):
@@ -99,37 +141,46 @@ def dispatch(req: dict) -> dict:
         cols=req.get("columns") or list(df.select_dtypes("number").columns)
         return {"ok":True,"result":df[cols].describe().to_dict()}
     if op=="literature.extract":
-        from graphvis_science.literature.extractor import extract_literature
-        # A reader, only if one was deliberately chosen. Without one this is
-        # exactly what it has always been: local parsing, no network, no model.
+        # ONE path, model or no model.
+        #
+        # This used to branch: with a reader configured it ran the pipeline and
+        # returned the figures it found; without one it ran the bare extractor
+        # and returned `figures: []`. Since every downstream feature - picking a
+        # figure, calibrating it, tracing a curve back into numbers - starts by
+        # choosing a figure from that list, the entire de-rendering half of the
+        # program was unreachable unless you had an API key. That is exactly
+        # backwards: pulling the figure IMAGES out of a PDF is PyMuPDF and needs
+        # no model at all. The model reads the axes for you; it is not what
+        # finds the pictures.
+        #
+        # So the pipeline runs either way and the provider - which may be None -
+        # only decides whether each figure also gets an observation attached.
+        from graphvis_science.literature.intelligence import LiteratureIntelligencePipeline
         provider=_vlm_provider(req.get("vlm"))
-        figures=[]; reader=""
-        if provider is None:
-            result=extract_literature(req["path"])
-        else:
-            # The pipeline runs the same extractor and then shows each figure to
-            # the model, so choosing a reader adds work rather than replacing
-            # any of it.
-            from graphvis_science.literature.intelligence import LiteratureIntelligencePipeline
-            out_dir=str(req.get("out_dir") or (Path(req["path"]).parent/"graphvis_literature"))
-            analysed=LiteratureIntelligencePipeline(provider).analyze(req["path"],out_dir)
-            result=analysed.extraction
-            reader=getattr(provider,"name","reader")
-            for fig in analysed.figures:
-                obs=fig.observation
-                figures.append({
-                    "page":fig.page,"path":fig.path,"caption":fig.caption,
-                    "plot_type":getattr(obs,"plot_type","") if obs else "",
-                    "confidence":getattr(obs,"confidence",0.0) if obs else 0.0,
-                    "x_label":getattr(obs,"x_label","") if obs else "",
-                    "y_label":getattr(obs,"y_label","") if obs else "",
-                    "x_scale":getattr(obs,"x_scale","") if obs else "",
-                    "y_scale":getattr(obs,"y_scale","") if obs else "",
-                    "legend":list(getattr(obs,"legend",[]) or []) if obs else [],
-                    # Said out loud rather than swallowed: a figure the reader
-                    # failed on looks exactly like a figure it had nothing to
-                    # say about, and the difference is usually a bad key.
-                    "error":str(fig.diagnostics.get("vlm_error","")) if fig.diagnostics else ""})
+        out_dir=str(req.get("out_dir") or (Path(req["path"]).parent/"graphvis_literature"))
+        # The pipeline is tolerant of PyMuPDF being absent - it records a
+        # warning and returns no figures rather than failing the extraction, so
+        # there is no second, expensive text pass to fall back to here.
+        analysed=LiteratureIntelligencePipeline(provider).analyze(
+            req["path"],out_dir,progress=emit_progress)
+        result=analysed.extraction
+        reader=getattr(provider,"name","reader") if provider is not None else ""
+        figures=[]
+        for fig in analysed.figures:
+            obs=fig.observation
+            figures.append({
+                "page":fig.page,"path":fig.path,"caption":fig.caption,
+                "plot_type":getattr(obs,"plot_type","") if obs else "",
+                "confidence":getattr(obs,"confidence",0.0) if obs else 0.0,
+                "x_label":getattr(obs,"x_label","") if obs else "",
+                "y_label":getattr(obs,"y_label","") if obs else "",
+                "x_scale":getattr(obs,"x_scale","") if obs else "",
+                "y_scale":getattr(obs,"y_scale","") if obs else "",
+                "legend":list(getattr(obs,"legend",[]) or []) if obs else [],
+                # Said out loud rather than swallowed: a figure the reader
+                # failed on looks exactly like a figure it had nothing to say
+                # about, and the difference is usually a bad key.
+                "error":str(fig.diagnostics.get("vlm_error","")) if fig.diagnostics else ""})
         datasets=[]
         for d in getattr(result,"datasets",[]):
             datasets.append({"name":getattr(d,"name","dataset"),"rows":len(d.df),"columns":list(map(str,d.df.columns))})
@@ -520,20 +571,32 @@ def dispatch(req: dict) -> dict:
         from graphvis_science.analysis.surfaces import clear_geometry_cache
         clear_geometry_cache()
         return {"ok": True, "cleared": "geometry"}
-    if op=="fit.modified_gompertz":
-        from graphvis_science.analysis.fitting import fit_modified_gompertz
-        df=_load_frame(req["arrow_path"]); out=fit_modified_gompertz(df[req["x"]].to_numpy(float),df[req["y"]].to_numpy(float))
-        return {"ok":True,"result":out if isinstance(out,dict) else getattr(out,"__dict__",str(out))}
+    # "fit.modified_gompertz" used to be here and has been removed. It was both
+    # unreachable AND broken: it imported `fit_modified_gompertz`, which does
+    # not exist in analysis/fitting.py and has not for some time. Calling it
+    # raised ImportError, and nothing ever called it, so nothing noticed - which
+    # is the whole hazard of an operation with no caller.
+    #
+    # Nothing is lost. "modified gompertz" is a registered model, so the fit is
+    # reachable the way every other model is:
+    #
+    #     {"op": "analysis.run", "kind": "fit_model", "model": "modified gompertz", ...}
+    #
+    # One route to a thing, and it is the route the Analysis panel already uses.
     raise KeyError(f"Unknown operation: {op}")
 
 
 def main() -> int:
     for line in sys.stdin:
         try:
-            req=json.loads(line); res=dispatch(req)
+            req=json.loads(line)
+            # Whatever a library decides to print goes to stderr, where it is a
+            # diagnostic. stdout carries the protocol and nothing else.
+            with contextlib.redirect_stdout(sys.stderr):
+                res=dispatch(req)
         except Exception as exc:
             res={"ok":False,"error":f"{type(exc).__name__}: {exc}","traceback":traceback.format_exc(limit=6)}
-        sys.stdout.write(json.dumps(res,default=str,separators=(",",":"))+"\n");sys.stdout.flush()
+        _PROTOCOL.write(json.dumps(res,default=str,separators=(",",":"))+"\n");_PROTOCOL.flush()
     return 0
 
 if __name__=="__main__": raise SystemExit(main())

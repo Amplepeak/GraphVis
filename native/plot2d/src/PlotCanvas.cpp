@@ -3,6 +3,7 @@
 #include "ArrowTable.h"
 #include "ColourVision.h"
 #include "ColourMaps.h"
+#include "Expression.h"
 #include "PublicationProfile.h"
 #include "Units.h"
 
@@ -350,13 +351,6 @@ QVariantList PlotCanvas::engineParameterList() const {
     return out;
 }
 
-double PlotCanvas::engineParameter(const QString& key) const {
-    const QVector<QtPlotBackend::EngineParameter> declared=
-        QtPlotBackend::engineParameters(spec_.engine);
-    for(const QtPlotBackend::EngineParameter& p:declared)
-        if(p.key==key) return spec_.parameter(key,p.defaultValue);
-    return spec_.parameter(key,0.0);
-}
 
 void PlotCanvas::setEngineParameter(const QString& key,double value){
     const QVector<QtPlotBackend::EngineParameter> declared=
@@ -658,6 +652,418 @@ void PlotCanvas::cameraMoved(){
     emit styleChanged();
 }
 
+// ======================================================================
+// Axis limits and the colour scale
+//
+// The limits go straight onto spec_.xAxis/yAxis/zAxis, which is where the pan
+// and zoom already put theirs and where the backend has always read them: one
+// notion of "what is being shown", so the screen, the export and the
+// full-resolution render cannot disagree about it. Typing a range IS a zoom
+// you did not have to drag - and on the 3-D family, where there is no drag to
+// do, it is the only way to say it.
+//
+// They are ALSO kept in limit*_ , because rebuild() clears the axes whenever
+// the figure changes and a style change - a colour map, a grid toggle - can
+// trigger one. Without the copy, capping VHPR at ten and then changing the
+// colour map put the cap back to 160 with nothing on screen to say why. The
+// copy is dropped, deliberately, when the COLUMN in that role changes: a
+// ceiling of ten belongs to VHPR and means nothing on whatever replaces it.
+
+namespace { PlotAxis* axisFor(PlotSpec& spec,int role){
+    switch(role){
+    case 0: return &spec.xAxis;
+    case 1: return &spec.yAxis;
+    case 2: return &spec.zAxis;
+    default: return nullptr;
+    }
+} }
+
+void PlotCanvas::measureRoleSpans(const ArrowTable& table){
+    for(int r=0;r<3;++r){
+        dataSpanValid_[r]=false; roleUsed_[r]=false;
+        dataLo_[r]=0.0; dataHi_[r]=1.0; roleLabel_[r].clear();
+    }
+    if(spec_.series.isEmpty()) return;
+
+    // Two shapes of engine, and the difference decides which numbers are the
+    // x axis. A line chart puts x on every series' x vector and one column per
+    // series on y; a 3-D scatter, a heat map and the rest of the multi-column
+    // family put each ROLE in its own series, all of them on y. columnPlan is
+    // the same question rebuild() asks when it composes them.
+    const QtPlotBackend::ColumnPlan plan=QtPlotBackend::columnPlan(spec_.engine);
+    const auto span=[](const QVector<double>& v,double& lo,double& hi){
+        double a=std::numeric_limits<double>::infinity(),b=-a;
+        for(double x:v) if(std::isfinite(x)){ a=qMin(a,x); b=qMax(b,x); }
+        if(!std::isfinite(a)||!std::isfinite(b)) return false;
+        if(!(b>a)) b=a+1.0;      // a flat column still needs a usable slider
+        lo=a; hi=b; return true;
+    };
+
+    if(plan.asSeries){
+        // resolvedY_ is the ROLE LIST on these engines - roles[0] is the x
+        // column - so it is what says which file column each row of the panel
+        // is about.
+        for(int r=0;r<3&&r<spec_.series.size();++r){
+            roleUsed_[r]=true;
+            roleLabel_[r]=spec_.series.at(r).label;
+            const QString column=(r<resolvedY_.size())?resolvedY_.at(r):QString();
+            if(!column.isEmpty()&&table.hasColumn(column))
+                dataSpanValid_[r]=span(table.column(column),dataLo_[r],dataHi_[r]);
+            else
+                dataSpanValid_[r]=span(spec_.series.at(r).y,dataLo_[r],dataHi_[r]);
+        }
+    }else{
+        roleUsed_[0]=roleUsed_[1]=true;
+        roleLabel_[0]=spec_.xAxis.label;
+        roleLabel_[1]=spec_.yAxis.label;
+        if(!resolvedX_.isEmpty()&&table.hasColumn(resolvedX_))
+            dataSpanValid_[0]=span(table.column(resolvedX_),dataLo_[0],dataHi_[0]);
+        // Several y columns share one axis, so the axis spans all of them.
+        double lo=0,hi=0; bool seen=false;
+        for(const QString& name:std::as_const(resolvedY_)){
+            if(!table.hasColumn(name)) continue;
+            double a=0,b=0;
+            if(!span(table.column(name),a,b)) continue;
+            lo=seen?qMin(lo,a):a; hi=seen?qMax(hi,b):b; seen=true;
+        }
+        if(seen){ dataLo_[1]=lo; dataHi_[1]=hi; dataSpanValid_[1]=true; }
+        // No third role on a series engine: the colour column, where there is
+        // one, is a series of its own and not an axis.
+    }
+}
+
+void PlotCanvas::applyStoredLimits(){
+    bool any=false;
+    for(int r=0;r<3;++r){
+        PlotAxis* axis=axisFor(spec_,r);
+        if(!axis) continue;
+        // A limit whose role the engine no longer reads is forgotten rather
+        // than carried on to whatever occupies that slot next.
+        if(!roleUsed_[r]){ limitLoSet_[r]=limitHiSet_[r]=false; continue; }
+        if(limitLoSet_[r]){ axis->min=limitLo_[r]; any=true; }
+        if(limitHiSet_[r]){ axis->max=limitHi_[r]; any=true; }
+    }
+    // A typed range is a view, so the figure offers to reset it in the same
+    // place a dragged one does.
+    if(any) hasView_=true;
+}
+
+QVariantList PlotCanvas::axisRanges() const {
+    QVariantList out;
+    static const char* kNames[3]={"X","Y","Z"};
+    for(int r=0;r<3;++r){
+        QVariantMap m;
+        m.insert(QStringLiteral("role"),r);
+        m.insert(QStringLiteral("name"),QString::fromLatin1(kNames[r]));
+        m.insert(QStringLiteral("label"),roleLabel_[r]);
+        m.insert(QStringLiteral("used"),roleUsed_[r]&&dataSpanValid_[r]);
+        m.insert(QStringLiteral("dataMin"),dataLo_[r]);
+        m.insert(QStringLiteral("dataMax"),dataHi_[r]);
+        m.insert(QStringLiteral("autoMin"),!limitLoSet_[r]);
+        m.insert(QStringLiteral("autoMax"),!limitHiSet_[r]);
+        // The value a field and a slider should SHOW. An automatic end shows
+        // where the axis actually sits, not an empty box: a box that has to be
+        // filled before it can be nudged is a box nobody nudges.
+        m.insert(QStringLiteral("min"),limitLoSet_[r]?limitLo_[r]:dataLo_[r]);
+        m.insert(QStringLiteral("max"),limitHiSet_[r]?limitHi_[r]:dataHi_[r]);
+        out.append(m);
+    }
+    return out;
+}
+
+QVariantMap PlotCanvas::colourRange() const {
+    // The ramp runs over the third column on the engines that have one, which
+    // is every 3-D engine and every gridded field. Where the value being
+    // coloured is DERIVED - the magnitude of a vector field, the area of a
+    // Voronoi cell - the column span is the wrong yardstick and the fields are
+    // shown disabled rather than wrong.
+    const bool haveSpan=roleUsed_[2]&&dataSpanValid_[2];
+    const double lo=haveSpan?dataLo_[2]:0.0;
+    const double hi=haveSpan?dataHi_[2]:1.0;
+    const bool autoMin=isUnset(spec_.style.colourMin);
+    const bool autoMax=isUnset(spec_.style.colourMax);
+    QVariantMap m;
+    m.insert(QStringLiteral("used"),usesColourMap_);
+    m.insert(QStringLiteral("known"),haveSpan);
+    m.insert(QStringLiteral("label"),roleLabel_[2]);
+    m.insert(QStringLiteral("dataMin"),lo);
+    m.insert(QStringLiteral("dataMax"),hi);
+    m.insert(QStringLiteral("autoMin"),autoMin);
+    m.insert(QStringLiteral("autoMax"),autoMax);
+    m.insert(QStringLiteral("min"),autoMin?lo:spec_.style.colourMin);
+    m.insert(QStringLiteral("max"),autoMax?hi:spec_.style.colourMax);
+    m.insert(QStringLiteral("levels"),spec_.style.colourLevels);
+    m.insert(QStringLiteral("dropOutOfRange"),spec_.style.colourOutOfRangeDropped);
+    return m;
+}
+
+void PlotCanvas::setAxisLimits(int role,double lo,double hi){
+    if(role<0||role>2) return;
+    PlotAxis* axis=axisFor(spec_,role);
+    if(!axis) return;
+    // NaN is how QML says "fit this end". Passing the two ends together rather
+    // than one setter each is what lets a range slider move both in one step
+    // without the figure being redrawn at an intermediate range where the
+    // bottom is momentarily above the top.
+    const bool wantLo=std::isfinite(lo);
+    const bool wantHi=std::isfinite(hi);
+    // A pair that does not increase is refused rather than clamped: silently
+    // swapping what somebody typed is worse than leaving it alone, and the
+    // fields still show what the axis is.
+    if(wantLo&&wantHi&&!(hi>lo)) return;
+
+    limitLoSet_[role]=wantLo; limitHiSet_[role]=wantHi;
+    if(wantLo) limitLo_[role]=lo;
+    if(wantHi) limitHi_[role]=hi;
+    axis->min=wantLo?lo:unsetValue();
+    axis->max=wantHi?hi:unsetValue();
+
+    if(wantLo||wantHi) hasView_=true;
+    else{
+        // Both ends automatic on every axis is the same state resetView leaves
+        // the figure in, so it is that state rather than a view of the whole
+        // range that happens to look like it.
+        bool anyLeft=false;
+        for(int r=0;r<3;++r) if(limitLoSet_[r]||limitHiSet_[r]) anyLeft=true;
+        if(!anyLeft) hasView_=false;
+    }
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+    emit stateChanged();
+}
+
+void PlotCanvas::clearAxisLimits(int role){
+    setAxisLimits(role,std::numeric_limits<double>::quiet_NaN(),
+                       std::numeric_limits<double>::quiet_NaN());
+}
+
+void PlotCanvas::clearAllLimits(){
+    for(int r=0;r<3;++r){
+        limitLoSet_[r]=limitHiSet_[r]=false;
+        if(PlotAxis* axis=axisFor(spec_,r)){
+            axis->min=unsetValue(); axis->max=unsetValue();
+        }
+    }
+    hasView_=false;
+    spec_.style.colourMin=unsetValue();
+    spec_.style.colourMax=unsetValue();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+    emit stateChanged();
+}
+
+void PlotCanvas::setColourLimits(double lo,double hi){
+    const bool wantLo=std::isfinite(lo);
+    const bool wantHi=std::isfinite(hi);
+    if(wantLo&&wantHi&&!(hi>lo)) return;
+    spec_.style.colourMin=wantLo?lo:unsetValue();
+    spec_.style.colourMax=wantHi?hi:unsetValue();
+    // A painting decision, like the colour map itself: the data and the
+    // prepared spec are unchanged, so this repaints rather than rebuilds.
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+void PlotCanvas::clearColourLimits(){
+    setColourLimits(std::numeric_limits<double>::quiet_NaN(),
+                    std::numeric_limits<double>::quiet_NaN());
+}
+
+void PlotCanvas::setColourOutOfRangeDropped(bool drop){
+    if(spec_.style.colourOutOfRangeDropped==drop) return;
+    spec_.style.colourOutOfRangeDropped=drop;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+QVariantList PlotCanvas::customColours() const {
+    QVariantList out;
+    for(const QColor& c:spec_.style.customColours)
+        out.append(c.name(QColor::HexArgb));
+    return out;
+}
+
+void PlotCanvas::applySeriesColours(){
+    // The colours the series would have had, and then the chosen ones over the
+    // top. Kept in one place so a pie chart, a line chart and a bar chart agree
+    // about which colour is series two.
+    const QVector<QColor>& chosen=spec_.style.customColours;
+    const QVector<QColor> palette=seriesPalette(colourVisionFromInt(colourVision_));
+    if(palette.isEmpty()&&chosen.isEmpty()) return;
+    for(int i=0;i<spec_.series.size();++i){
+        spec_.series[i].color=chosen.isEmpty()
+            ? palette.at(i%palette.size())
+            : chosen.at(i%chosen.size());
+    }
+}
+
+void PlotCanvas::setCustomColour(int index,const QColor& colour){
+    if(index<0||index>=spec_.style.customColours.size()) return;
+    if(!colour.isValid()) return;
+    if(spec_.style.customColours.at(index)==colour) return;
+    spec_.style.customColours[index]=colour;
+    // Series colours are part of the SPEC, not of the painting, so they are
+    // hashed into the fingerprint and have to be rewritten rather than merely
+    // repainted. Rewritten in place: a rebuild would re-read the Arrow file to
+    // change one swatch.
+    applySeriesColours();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+void PlotCanvas::addCustomColour(const QColor& colour){
+    if(!colour.isValid()) return;
+    if(spec_.style.customColours.size()>=256) return;
+    spec_.style.customColours.append(colour);
+    applySeriesColours();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+void PlotCanvas::removeCustomColour(int index){
+    if(index<0||index>=spec_.style.customColours.size()) return;
+    spec_.style.customColours.remove(index);
+    applySeriesColours();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+void PlotCanvas::clearCustomColours(){
+    if(spec_.style.customColours.isEmpty()) return;
+    spec_.style.customColours.clear();
+    // Back to the palette, which is what the series carried before anybody
+    // chose anything.
+    applySeriesColours();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+int PlotCanvas::suggestedColourCount() const {
+    if(spec_.style.colourLevels>=2) return spec_.style.colourLevels;
+    if(!usesColourMap_){
+        // A set of categories: one swatch per series, which for a pie chart is
+        // one per sector because the sectors ARE the first series' values.
+        const int series=spec_.series.size();
+        if(spec_.engine==QLatin1String("Pie")||spec_.engine==QLatin1String("Donut"))
+            return qBound(2,int(spec_.series.isEmpty()?0:spec_.series.first().y.size()),12);
+        return qBound(2,series,12);
+    }
+    // A continuous ramp has no natural count. Five stops is enough to shape one
+    // and few enough to set by hand in a few seconds.
+    return 5;
+}
+
+void PlotCanvas::seedCustomColours(int count){
+    const int n=qBound(2,count>0?count:suggestedColourCount(),256);
+    QVector<QColor> seeded;
+    seeded.reserve(n);
+    if(usesColourMap_){
+        // The map as it is drawn now, sampled evenly. Starting from the ramp
+        // on screen means the first thing the person sees after clicking
+        // "choose my own" is the figure they already had, unchanged - so the
+        // only difference is that it has become editable.
+        for(int i=0;i<n;++i){
+            const double t=(n==1)?0.5:double(i)/double(n-1);
+            seeded.append(colourmaps::sample(colourmaps::tableFor(spec_.style.colourMap),t));
+        }
+    }else{
+        const QVector<QColor> palette=seriesPalette(colourVisionFromInt(colourVision_));
+        for(int i=0;i<n;++i)
+            seeded.append(palette.isEmpty()?QColor(Qt::gray):palette.at(i%palette.size()));
+    }
+    spec_.style.customColours=seeded;
+    applySeriesColours();
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+void PlotCanvas::setColourLevels(int levels){
+    // 0 is the continuous ramp; anything else is at least two bands, because
+    // "one band" is a figure painted a single colour and nobody means that.
+    const int clamped=(levels<=0)?0:qBound(2,levels,256);
+    if(spec_.style.colourLevels==clamped) return;
+    spec_.style.colourLevels=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit axisRangesChanged();
+}
+
+// The formula the Function and Implicit engines plot.
+//
+// Validated here rather than only in the renderer, because the renderer's
+// answer to a formula it cannot parse is to draw nothing, and "nothing" is what
+// an empty dataset looks like too. Compiling as it is typed means the field can
+// say "unknown function 'sni'" instead, which is the difference between a typo
+// and a program that does not work.
+//
+// The variables offered depend on the engine, and they are the same ones
+// prepareSpecCore binds when it evaluates: t for a parametric curve, x and y
+// for a surface or a contour, x alone for a plain function of one variable.
+void PlotCanvas::setExpression(const QString& text){
+    if(spec_.expression==text) return;
+    spec_.expression=text;
+
+    expressionError_.clear();
+    const QString trimmed=text.trimmed();
+    if(!trimmed.isEmpty()&&usesExpression()){
+        QStringList variables;
+        if(spec_.engine==QLatin1String("Function 3D Parametric")) variables<<QStringLiteral("t");
+        else if(spec_.engine==QLatin1String("Function Surface")
+              ||spec_.engine==QLatin1String("Function Mesh")
+              ||spec_.engine==QLatin1String("Function Contour")
+              ||spec_.engine==QLatin1String("Implicit Surface")
+              ||spec_.engine==QLatin1String("Implicit Function"))
+            variables<<QStringLiteral("x")<<QStringLiteral("y");
+        else variables<<QStringLiteral("x");
+
+        // A parametric curve is three formulas separated by semicolons, so each
+        // part is compiled on its own and the message says which one failed.
+        const QStringList parts=(spec_.engine==QLatin1String("Function 3D Parametric"))
+                                ? trimmed.split(QLatin1Char(';'))
+                                : QStringList{trimmed};
+        for(int i=0;i<parts.size();++i){
+            Expression compiled;
+            if(compiled.compile(parts.at(i).trimmed(),variables)) continue;
+            expressionError_=(parts.size()>1)
+                ? QStringLiteral("part %1: %2").arg(i+1).arg(compiled.error())
+                : compiled.error();
+            break;
+        }
+    }
+
+    // A formula IS the data on these engines, so this is a rebuild rather than
+    // a repaint - the same as changing a mapped column.
+    dirty_=true;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit sourceChanged();
+    emit stateChanged();
+}
+
+QStringList PlotCanvas::expressionFunctions(){
+    return Expression::knownFunctions();
+}
+
 void PlotCanvas::setColourMap(const QString& name){
     if(spec_.style.colourMap==name) return;
     spec_.style.colourMap=name;
@@ -778,9 +1184,6 @@ void PlotCanvas::setFieldResolution(int cells){
     emit styleChanged();
 }
 
-QStringList PlotCanvas::colourMapNames(){
-    return colourmaps::names();
-}
 
 // The same eighty four, grouped the way GraphVis 17 grouped them. A flat list
 // of eighty four names is not a choice anyone can make; "Diverging" and
@@ -822,8 +1225,6 @@ void PlotCanvas::setColourVision(int mode){
     emit styleChanged();
     update();
 }
-
-void PlotCanvas::setLogX(bool v){ setXTransform(v?AxisLog10:AxisLinear); }
 
 // The transform belongs to the DATA, so unlike the grid or the colour map this
 // has to go all the way back through the rewrite - a quantile axis changes what
@@ -916,7 +1317,6 @@ void PlotCanvas::setLinkAxisTransforms(bool on){
     if(on&&spec_.yAxis.transform!=spec_.xAxis.transform) setXTransform(spec_.xAxis.transform);
     emit sourceChanged();
 }
-void PlotCanvas::setLogY(bool v){ setYTransform(v?AxisLog10:AxisLinear); }
 
 // Catalogue entries carry their axis-scale variant as a separate field, so
 // "Line Chart" + "Semi-Log X" is one entry rather than a distinct engine.
@@ -1250,6 +1650,16 @@ void PlotCanvas::rebuild(){
     // is cached on the spec's fingerprint, so this is a lookup, not a second
     // preparation.
     usesColourMap_=QtPlotBackend::usesColourMap(qtBackend_.preparedFor(spec_).engine);
+    // What each role spans, and then the person's own limits back on top.
+    //
+    // In this order because applyStoredLimits drops a limit whose role the new
+    // figure does not read, and it can only know that once the spans have been
+    // measured. Both AFTER the series are composed and before anything is
+    // drawn, so the first paint of a rebuilt figure is already at the range
+    // that was asked for rather than snapping to it a frame later.
+    measureRoleSpans(table);
+    applyStoredLimits();
+    emit axisRangesChanged();
     emit stateChanged();
     scheduleFullRender();
 }
@@ -1349,6 +1759,18 @@ void writeBack(PlotAxis& axis,const AxisView& v){
 } // namespace
 
 void PlotCanvas::commitView(){
+    // A DRAGGED range is a typed range that was not typed: the two are the same
+    // state, so a pan or a pinch updates the stored copy and the fields in the
+    // panel move with the figure. Without this, dragging and then changing a
+    // colour map would put the range back to whatever was last typed.
+    for(int r=0;r<2;++r){
+        const PlotAxis* axis=(r==0)?&spec_.xAxis:&spec_.yAxis;
+        limitLoSet_[r]=!isUnset(axis->min);
+        limitHiSet_[r]=!isUnset(axis->max);
+        if(limitLoSet_[r]) limitLo_[r]=axis->min;
+        if(limitHiSet_[r]) limitHi_[r]=axis->max;
+    }
+    emit axisRangesChanged();
     // A view change makes the accepted full-resolution image a picture of a
     // different range, so it goes through the same path as any other edit.
     scheduleFullRender();
@@ -1497,6 +1919,13 @@ void PlotCanvas::resetView(){
     hasView_=false;
     spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
     spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
+    // A TYPED limit is a view too, so Reset view clears it. The alternative -
+    // resetting the drag but leaving the numbers - gives a button that
+    // sometimes appears to do nothing, on exactly the figures where the person
+    // set a range deliberately and has forgotten they did.
+    spec_.zAxis.min=unsetValue(); spec_.zAxis.max=unsetValue();
+    for(int r=0;r<3;++r) limitLoSet_[r]=limitHiSet_[r]=false;
+    emit axisRangesChanged();
     commitView();
 }
 
@@ -1688,6 +2117,9 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("engine"),spec_.engine},
         {QStringLiteral("variant"),spec_.variant},
         {QStringLiteral("title"),spec_.title},
+        // The formula, for the engines that plot one. A figure whose whole
+        // content is an expression has not been saved without it.
+        {QStringLiteral("expression"),spec_.expression},
         {QStringLiteral("xColumn"),xColumn_},
         {QStringLiteral("yColumns"),QVariant(yColumns_)},
         {QStringLiteral("logX"),spec_.xAxis.log10},
@@ -1719,6 +2151,21 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("xMax"),isUnset(spec_.xAxis.max)?QVariant():QVariant(spec_.xAxis.max)},
         {QStringLiteral("yMin"),isUnset(spec_.yAxis.min)?QVariant():QVariant(spec_.yAxis.min)},
         {QStringLiteral("yMax"),isUnset(spec_.yAxis.max)?QVariant():QVariant(spec_.yAxis.max)},
+        // The third axis, which only the projected engines read - and the
+        // colour scale, which is a reading decision as much as the map itself
+        // is. A figure whose whole point is that VHPR is capped at ten has not
+        // been saved if it reopens at a hundred and sixty.
+        {QStringLiteral("zMin"),isUnset(spec_.zAxis.min)?QVariant():QVariant(spec_.zAxis.min)},
+        {QStringLiteral("zMax"),isUnset(spec_.zAxis.max)?QVariant():QVariant(spec_.zAxis.max)},
+        {QStringLiteral("colourMin"),isUnset(spec_.style.colourMin)
+                                     ?QVariant():QVariant(spec_.style.colourMin)},
+        {QStringLiteral("colourMax"),isUnset(spec_.style.colourMax)
+                                     ?QVariant():QVariant(spec_.style.colourMax)},
+        {QStringLiteral("colourLevels"),spec_.style.colourLevels},
+        {QStringLiteral("colourDrop"),spec_.style.colourOutOfRangeDropped},
+        // The chosen colours, as hex. A figure whose whole point is the palette
+        // somebody built for it has not been saved if it reopens in viridis.
+        {QStringLiteral("customColours"),customColours()},
     };
 }
 
@@ -1738,6 +2185,7 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     spec_.engine=text("engine",spec_.engine);
     spec_.variant=text("variant",spec_.variant);
     spec_.title=text("title",spec_.title);
+    spec_.expression=text("expression",spec_.expression);
     xColumn_=text("xColumn",xColumn_);
     if(state.contains(QStringLiteral("yColumns")))
         yColumns_=state.value(QStringLiteral("yColumns")).toStringList();
@@ -1834,7 +2282,38 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     spec_.xAxis.max=limit("xMax",unsetValue());
     spec_.yAxis.min=limit("yMin",unsetValue());
     spec_.yAxis.max=limit("yMax",unsetValue());
-    hasView_=!isUnset(spec_.xAxis.min)||!isUnset(spec_.yAxis.min);
+    spec_.zAxis.min=limit("zMin",unsetValue());
+    spec_.zAxis.max=limit("zMax",unsetValue());
+    spec_.style.colourMin=limit("colourMin",unsetValue());
+    spec_.style.colourMax=limit("colourMax",unsetValue());
+    if(state.contains(QStringLiteral("colourLevels")))
+        spec_.style.colourLevels=qBound(0,state.value(QStringLiteral("colourLevels")).toInt(),256);
+    if(state.contains(QStringLiteral("colourDrop")))
+        spec_.style.colourOutOfRangeDropped=state.value(QStringLiteral("colourDrop")).toBool();
+    if(state.contains(QStringLiteral("customColours"))){
+        spec_.style.customColours.clear();
+        const QVariantList list=state.value(QStringLiteral("customColours")).toList();
+        for(const QVariant& v:list){
+            const QColor c(v.toString());
+            // A malformed entry is skipped rather than turning the figure
+            // black, the same rule the background and foreground follow.
+            if(c.isValid()) spec_.style.customColours.append(c);
+        }
+        applySeriesColours();
+    }
+    // The stored copy too, or the first rebuild after reopening - which a
+    // style change is enough to cause - would put the saved range back to the
+    // full extent of the data.
+    for(int r=0;r<3;++r){
+        const PlotAxis* axis=(r==0)?&spec_.xAxis:(r==1)?&spec_.yAxis:&spec_.zAxis;
+        limitLoSet_[r]=!isUnset(axis->min);
+        limitHiSet_[r]=!isUnset(axis->max);
+        if(limitLoSet_[r]) limitLo_[r]=axis->min;
+        if(limitHiSet_[r]) limitHi_[r]=axis->max;
+    }
+    hasView_=!isUnset(spec_.xAxis.min)||!isUnset(spec_.yAxis.min)
+           ||!isUnset(spec_.zAxis.min)||!isUnset(spec_.zAxis.max);
+    emit axisRangesChanged();
     update();
     emit sourceChanged();
     emit styleChanged();

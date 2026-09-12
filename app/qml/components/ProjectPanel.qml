@@ -148,6 +148,21 @@ PanelScroll {
                 onClicked: adoptDialog.open()
             }
 
+            // Straight back to where you were. ProjectWorkspace::reopenLast has
+            // always known which that was - it is how the recent list is built -
+            // and nothing offered it, so the first thing after every start was
+            // finding your own project in a list.
+            Button {
+                id: reopenButton
+                Layout.fillWidth: true
+                visible: root.project.recentProjects.length > 0
+                text: "Reopen " + (root.project.recentProjects.length > 0
+                                   ? root.project.recentProjects[0].name : "the last project")
+                ToolTip.visible: reopenButton.hovered
+                ToolTip.text: "Open the project you were in last"
+                onClicked: root.project.reopenLast()
+            }
+
             Label {
                 visible: root.project.recentProjects.length > 0
                 text: "Recent"
@@ -284,6 +299,49 @@ PanelScroll {
                 text: "Open the project folder"
                 onClicked: root.project.revealFolder("")
             }
+            // What the active group actually holds, which the workspace has
+            // always been able to say and was never asked.
+            Label {
+                Layout.fillWidth: true
+                visible: root.project.activeGroup !== ""
+                wrapMode: Text.WordWrap
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+                text: {
+                    var g = root.project.activeGroupContents
+                    if (!g) return ""
+                    function count(k) { return g[k] && g[k].length !== undefined ? g[k].length : 0 }
+                    return "“" + root.project.activeGroup + "” holds "
+                         + count("datasets") + " datasets, "
+                         + count("literature") + " papers and "
+                         + count("scripts") + " scripts."
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                Button {
+                    id: addOpenButton
+                    Layout.fillWidth: true
+                    flat: true
+                    text: "Add the open dataset"
+                    // addDatasetPath takes a plain path, which is what the
+                    // workspace has for the dataset already loaded - the file
+                    // dialog route needs you to find a file you are looking at.
+                    enabled: String(root.app.activeArrowPath || "") !== ""
+                    ToolTip.visible: addOpenButton.hovered
+                    ToolTip.text: "Copy the dataset currently loaded into this project"
+                    onClicked: root.project.addDatasetPath(root.app.activeArrowPath)
+                }
+                Button {
+                    id: closeButton
+                    flat: true
+                    text: "Close project"
+                    ToolTip.visible: closeButton.hovered
+                    ToolTip.text: "Stop working in this project. Nothing is moved or deleted."
+                    onClicked: root.project.closeProject()
+                }
+            }
         }
     }
 
@@ -383,6 +441,59 @@ PanelScroll {
                 }
             }
 
+            // WHAT WAS REMOVED.
+            //
+            // "Remove" moves a managed file into detached/ and says nothing is
+            // deleted, which was true and no help at all: the folder existed,
+            // ProjectWorkspace could list it and put files back, and the
+            // interface showed neither. A removal you cannot see or undo reads
+            // as a deletion however it is worded.
+            GvGroupBox {
+                title: "Removed from this project"
+                Layout.fillWidth: true
+                collapsed: true
+                visible: root.detached.length > 0
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 4
+                    Repeater {
+                        model: root.detached
+                        delegate: RowLayout {
+                            id: goneRow
+                            required property var modelData
+                            // The list may be paths or records depending on how
+                            // the workspace built it; read once here so the two
+                            // children below agree about which it is.
+                            readonly property string gonePath:
+                                goneRow.modelData.path !== undefined
+                                ? String(goneRow.modelData.path) : String(goneRow.modelData)
+                            readonly property string goneName:
+                                goneRow.modelData.name !== undefined
+                                ? String(goneRow.modelData.name)
+                                : goneRow.gonePath.split(/[\\/]/).pop()
+                            Layout.fillWidth: true
+                            spacing: Theme.gap
+                            Label {
+                                Layout.fillWidth: true
+                                text: goneRow.goneName
+                                color: Theme.textSecondary
+                                elide: Text.ElideMiddle
+                                font.pixelSize: Theme.fontSizeSmall
+                            }
+                            Button {
+                                text: "Put back"
+                                flat: true
+                                onClicked: {
+                                    root.project.restoreDetached(goneRow.gonePath)
+                                    root.refreshDetached()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 visible: root.project.datasets.length > 0
@@ -396,6 +507,19 @@ PanelScroll {
                                 + (root.project.activeGroup || "Default") + "\""
                     onClicked: {
                         root.project.linkToActiveGroup(root.selectedList(), "datasets")
+                        root.clearSelection()
+                    }
+                }
+                Button {
+                    id: unlinkButton
+                    text: "Unlink"
+                    enabled: root.selectedList().length > 0 && root.project.activeGroup !== ""
+                    ToolTip.visible: unlinkButton.hovered
+                    ToolTip.text: "Take the selected datasets out of \""
+                                + (root.project.activeGroup || "Default")
+                                + "\". The files stay exactly where they are."
+                    onClicked: {
+                        root.project.unlinkFromActiveGroup(root.selectedList(), "datasets")
                         root.clearSelection()
                     }
                 }
@@ -494,6 +618,20 @@ PanelScroll {
         font.pixelSize: Theme.fontSizeSmall
         wrapMode: Text.WordWrap
     }
+
+    // Asked rather than bound: detachedDatasets() walks a folder, so it is
+    // refreshed when something changes it rather than on every repaint.
+    property var detached: []
+    function refreshDetached() {
+        root.detached = root.project && root.project.hasProject
+                        ? root.project.detachedDatasets() : []
+    }
+    Connections {
+        target: root.project
+        function onContentsChanged() { root.refreshDetached() }
+        function onProjectChanged() { root.refreshDetached() }
+    }
+    Component.onCompleted: root.refreshDetached()
 
     Dialog {
         id: groupPrompt

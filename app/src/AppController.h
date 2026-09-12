@@ -11,6 +11,7 @@
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QColor>
 #include "NativeViewportWindow.h"
 #include "ProjectWorkspace.h"
 
@@ -37,11 +38,58 @@ class AppController final : public QObject {
     Q_PROPERTY(QString rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString busyLabel READ busyLabel NOTIFY busyChanged)
+    // How far through, 0..100, or -1 for "working, and cannot say how far".
+    //
+    // A science operation used to be one request and one reply with nothing in
+    // between, so an extraction that takes four minutes on a scanned paper was
+    // four minutes of a static window that could not be told apart from a hung
+    // program. The service reports its steps now - see emit_progress in
+    // service.py - and this is where they arrive.
+    //
+    // -1 rather than a made-up number: a bar that invents progress it does not
+    // have is worse than one that admits it is indeterminate, because the
+    // person calibrates their patience against it.
+    Q_PROPERTY(double busyPercent READ busyPercent NOTIFY busyChanged)
+    // When the current operation started, so the interface can say how long it
+    // has been going. On a step with no percentage that is the only honest
+    // measure of progress there is.
+    Q_PROPERTY(QDateTime busySince READ busySince NOTIFY busyChanged)
     Q_PROPERTY(QString sqlResult READ sqlResult NOTIFY sqlResultChanged)
     Q_PROPERTY(bool experimentalUi READ experimentalUi WRITE setExperimentalUi NOTIFY experimentalUiChanged)
+
+    // The window's own bars, folded away and remembered.
+    //
+    // Every bar here is something a person may want out of the way while they
+    // work and back again afterwards, and a fold that forgets itself at every
+    // restart is a fold nobody uses twice. Three, because they are three
+    // different bars: the one across the top of the window, the tool panel down
+    // the side of the figure, and the spine of workspace symbols the "no top
+    // bar" layouts put on an edge. Each keeps a way back on screen when it is
+    // folded - a fold with no handle is a control that deletes itself.
+    Q_PROPERTY(bool topBarCollapsed READ topBarCollapsed WRITE setTopBarCollapsed NOTIFY chromeChanged)
+    Q_PROPERTY(bool sidebarCollapsed READ sidebarCollapsed WRITE setSidebarCollapsed NOTIFY chromeChanged)
+    Q_PROPERTY(bool navRailCollapsed READ navRailCollapsed WRITE setNavRailCollapsed NOTIFY chromeChanged)
     Q_PROPERTY(QString workspaceMode READ workspaceMode WRITE setWorkspaceMode NOTIFY workspaceModeChanged)
     Q_PROPERTY(QUrl literatureUrl READ literatureUrl NOTIFY literatureChanged)
     Q_PROPERTY(QVariantMap literatureAnalysis READ literatureAnalysis NOTIFY literatureChanged)
+    // The figures found in the paper, each a page number, an image on disk and
+    // whatever caption sat under it. Populated with or without a reading model
+    // - the images come out of the PDF with PyMuPDF, and the model, when there
+    // is one, only adds its reading of the axes on top.
+    //
+    // Everything in the de-rendering half of the program starts here: you
+    // cannot calibrate a figure you cannot choose.
+    Q_PROPERTY(QVariantList literatureFigures READ literatureFigures NOTIFY literatureChanged)
+    // The CSV the last de-render wrote, and the figure it came from, so the
+    // interface can offer to plot it or compare it without being told twice.
+    Q_PROPERTY(QVariantMap lastReconstruction READ lastReconstruction NOTIFY literatureChanged)
+    // Everything extracted from a paper in an EARLIER session.
+    //
+    // Each extraction already wrote a sidecar next to its dataset and the
+    // service has always been able to read them back - literature.extractions -
+    // but nothing called it, so closing the program threw away every extraction
+    // it had made. The work survived on disk and the interface could not see it.
+    Q_PROPERTY(QVariantList pastExtractions READ pastExtractions NOTIFY literatureChanged)
     Q_PROPERTY(bool scienceServiceAvailable READ scienceServiceAvailable NOTIFY scienceServiceAvailabilityChanged)
 
     // Reading a paper with a model, which is OFF and stays off unless somebody
@@ -130,7 +178,6 @@ class AppController final : public QObject {
     //   5 Studio         full-bleed canvas with the controls floating over it
     Q_PROPERTY(int uiLayout READ uiLayout WRITE setUiLayout NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList uiLayoutNames READ uiLayoutNames CONSTANT)
-    Q_PROPERTY(QStringList uiLayoutDescriptions READ uiLayoutDescriptions CONSTANT)
     // The layouts as records rather than as two parallel string lists. See
     // UiLayouts.h for why: a layout that is a branch in a QML file can only
     // differ by what someone remembered to branch on.
@@ -242,11 +289,21 @@ public:
     QString rendererMode() const{return rendererMode_;}
     bool busy() const{return busy_;}
     QString busyLabel() const{return busyLabel_;}
+    double busyPercent() const{return busyPercent_;}
+    QDateTime busySince() const{return busySince_;}
     QString sqlResult() const{return sqlResult_;}
     bool experimentalUi() const{return experimentalUi_;}
+    bool topBarCollapsed() const{return topBarCollapsed_;}
+    bool sidebarCollapsed() const{return sidebarCollapsed_;}
+    bool navRailCollapsed() const{return navRailCollapsed_;}
     QString workspaceMode() const{return workspaceMode_;}
     QUrl literatureUrl() const{return literatureUrl_;}
     QVariantMap literatureAnalysis() const{return literatureAnalysis_;}
+    QVariantList literatureFigures() const{
+        return literatureAnalysis_.value(QStringLiteral("figures")).toList();
+    }
+    QVariantMap lastReconstruction() const{return lastReconstruction_;}
+    QVariantList pastExtractions() const{return pastExtractions_;}
     QVariantMap analysisResult() const{return analysisResult_;}
     QString analysisKind() const{return analysisKind_;}
     bool analysisOk() const{return analysisResult_.value(QStringLiteral("ok")).toBool();}
@@ -287,7 +344,6 @@ public:
     // which on a two-monitor machine straddles the gap between the screens.
     // These pick one real screen and stay inside its work area instead.
     Q_INVOKABLE QRect preferredWindowGeometry(int width,int height) const;
-    Q_INVOKABLE QRect targetScreenGeometry() const;
     Q_INVOKABLE QRect targetWorkAreaGeometry() const;
     Q_INVOKABLE void saveWindowGeometry(int x,int y,int width,int height);
     bool literatureContextAvailable() const;
@@ -308,6 +364,9 @@ public:
     void setActiveDatasetId(const QString& id);
     void setRendererMode(const QString& value);
     void setExperimentalUi(bool value);
+    void setTopBarCollapsed(bool value);
+    void setSidebarCollapsed(bool value);
+    void setNavRailCollapsed(bool value);
     void setWorkspaceMode(const QString& value);
 
     Q_INVOKABLE bool importDataset(const QUrl& url);
@@ -417,7 +476,6 @@ public:
     QVariantList uiLayoutList() const;
     QVariantList uiLayoutGroupList() const;
     QVariantMap uiLayoutSpec() const;
-    QStringList uiLayoutDescriptions() const;
     QStringList plotFieldInterpolationNames() const{
         return {QStringLiteral("None - only the cells that were measured"),
                 QStringLiteral("Nearest - each gap takes its closest measurement"),
@@ -458,6 +516,28 @@ public:
     static const QSet<QString>& importableExtensions();
     Q_INVOKABLE void cancelActiveJob();
     Q_INVOKABLE bool importFirstLiteratureDataset();
+    // Trace one coloured curve out of a figure and get the numbers back.
+    //
+    // `request` carries the image, the plot area in pixels, what the axes span
+    // and the colour to follow - the calibration a reading model would supply,
+    // typed instead when there is no model. See FigureLab.qml, which collects
+    // it, and service.py's literature.derender, which does the work.
+    Q_INVOKABLE void derenderFigure(const QVariantMap& request);
+    // The colour under a point of a figure image, for the eyedropper. Read in
+    // C++ because QML cannot sample a pixel, and the whole gesture is "click
+    // the curve you want" - which is the only way to name a colour that does
+    // not require the person to already know its hex.
+    Q_INVOKABLE QColor figurePixel(const QString& imagePath,int x,int y) const;
+    // Import the CSV the last de-render wrote, as a dataset of its own.
+    Q_INVOKABLE bool importReconstruction();
+    // Ask the service what was extracted before now. Answers into
+    // pastExtractions.
+    Q_INVOKABLE void loadPastExtractions();
+    // The OTHER half of de-rendering: a colour-mapped panel - a heat map, an
+    // image, a spatial field - read back as a grid of numbers rather than a
+    // curve traced across it. Same calibration, different question, and it was
+    // as unreachable as the curve tracing was.
+    Q_INVOKABLE void derenderHeatmap(const QVariantMap& request);
     Q_INVOKABLE bool exportProjectState(const QUrl& url);
     Q_INVOKABLE void notify(const QString& message){ setStatus(message); }
 
@@ -539,6 +619,7 @@ signals:
     void busyChanged();
     void sqlResultChanged();
     void experimentalUiChanged();
+    void chromeChanged();
     void workspaceModeChanged();
     void literatureChanged();
     void analysisChanged();
@@ -676,11 +757,20 @@ private:
     QString rendererMode_=QStringLiteral("Native WGPU");
     bool busy_=false;
     QString busyLabel_;
+    double busyPercent_=-1.0;
+    QDateTime busySince_;
     QString sqlResult_;
     bool experimentalUi_=true;
+    bool topBarCollapsed_=false;
+    bool sidebarCollapsed_=false;
+    bool navRailCollapsed_=false;
     QString workspaceMode_=QStringLiteral("Home");
     QUrl literatureUrl_;
     QVariantMap literatureAnalysis_;
+    // Kept out of literatureAnalysis_ so that re-analysing the paper does not
+    // silently discard a reconstruction the person is still working with.
+    QVariantMap lastReconstruction_;
+    QVariantList pastExtractions_;
     // The optional reader. Off by default, and the key is never a member: only
     // where to find it.
     int literatureAiProvider_=0;

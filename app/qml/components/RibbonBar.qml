@@ -37,12 +37,33 @@ Rectangle {
         }
     }
 
-    RowLayout {
+    // The band SCROLLS rather than running off the end of the window.
+    //
+    // A RowLayout does not shrink its children below their minimum widths - it
+    // lays them out past its own right edge - so on a narrower window the last
+    // group or two were simply painted outside the canvas, over whatever was
+    // beside it, with nothing to say they were there. Same idiom as the panel
+    // header's action row: clip, flick sideways, and put an arrow at the edge
+    // when there is more.
+    Flickable {
+        id: ribbonScroll
         anchors.fill: parent
-        anchors.leftMargin: 10
-        anchors.rightMargin: 10
-        anchors.topMargin: 4
-        anchors.bottomMargin: 4
+        clip: true
+        contentWidth: ribbonRow.width + 20
+        contentHeight: height
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.HorizontalFlick
+        readonly property bool overflowing: contentWidth > width + 1
+
+    RowLayout {
+        id: ribbonRow
+        x: 10
+        y: 4
+        // At least the width of the band, so the stretching spacer below still
+        // pushes OUTPUT to the right-hand end when everything fits, and exactly
+        // what it needs once it does not.
+        width: Math.max(ribbonScroll.width - 20, implicitWidth)
+        height: ribbonScroll.height - 8
         spacing: 10
 
         Group {
@@ -129,5 +150,22 @@ Rectangle {
                 ToolTip.text: "PDF, SVG, PNG, the script that redraws it, or the numbers behind it"
             }
         }
+    }
+    }
+
+    // Nothing may be hidden silently: an arrow appears only when there is
+    // something past that edge, and points at where it is.
+    Label {
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 2 }
+        visible: ribbonScroll.overflowing && ribbonScroll.contentX > 1
+        text: "‹"
+        color: Theme.textSecondary
+    }
+    Label {
+        anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 2 }
+        visible: ribbonScroll.overflowing
+                 && ribbonScroll.contentX < ribbonScroll.contentWidth - ribbonScroll.width - 1
+        text: "›"
+        color: Theme.textSecondary
     }
 }

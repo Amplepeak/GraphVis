@@ -75,10 +75,15 @@ Item {
 
     // The panel the rail or the page bar last asked for.
     property int chosenPanel: 0
-    // Whether the tool panel is showing at all. Only a rail that persists can
-    // shut it - on every other layout it is open, because there would be no way
-    // to get it back.
-    property bool sidebarOpen: true
+    // Whether the tool panel is showing at all.
+    //
+    // It used to be a local flag that only a rail layout could clear, because
+    // on the others there would have been no way to get the panel back. There
+    // is one now - a slim strip on the panel's edge, below - so the fold is
+    // offered on every layout, and it lives on the controller so it is still
+    // folded when the program is opened again.
+    readonly property bool sidebarOpen: !root.app.sidebarCollapsed
+    function showSidebar() { root.app.sidebarCollapsed = false }
     // The second panel's title and, on the layouts that summon it, whether
     // anything has asked for it yet.
     readonly property string secondaryTitle: root.spec.secondaryPanel === "data"
@@ -107,13 +112,25 @@ Item {
             root.app.rendererMode = "Qt 2-D"
         }
     }
-    ColumnLayout {
+    // The window's own vertical split, so the strip along the bottom can be
+    // dragged rather than being whatever height this file decided.
+    //
+    // This was a ColumnLayout with the strip pinned to bottomHeight. "I can't
+    // drag the bars to make the graph window bigger" was literally true of it:
+    // on a Data-table layout, 230 px of the window belonged to the table for
+    // good, and the only way to give the figure more was to change layout. The
+    // panes carry their own travel limits, so the strip can be dragged down to
+    // a sliver or up to most of the window, and the figure keeps 160 px
+    // whatever happens.
+    SplitView {
+        id: shellSplit
         anchors.fill: parent
-        spacing: 0
+        orientation: Qt.Vertical
+        handle: GvSplitHandle {}
 
     RowLayout {
-        Layout.fillWidth: true
-        Layout.fillHeight: true
+        SplitView.fillHeight: true
+        SplitView.minimumHeight: 160
         spacing: 0
 
         // The icon rail, OUTSIDE the split.
@@ -126,11 +143,45 @@ Item {
             Layout.fillHeight: true
             visible: root.spec.rail
             currentIndex: root.chosenPanel
-            allowCollapse: root.spec.railPersists
+            // Clicking the current symbol shuts the panel on EVERY rail layout
+            // now, not only the one whose spec said the rail persists: the rail
+            // itself is the way back, so there was never a layout where the
+            // fold could strand somebody.
+            allowCollapse: true
             collapsed: !root.sidebarOpen
-            onPanelChosen: (i) => { root.chosenPanel = i; root.sidebarOpen = true }
-            onCollapseToggled: root.sidebarOpen = !root.sidebarOpen
+            onPanelChosen: (i) => { root.chosenPanel = i; root.showSidebar() }
+            onCollapseToggled: root.app.sidebarCollapsed = !root.app.sidebarCollapsed
             onCommandRequested: root.commandRequested()
+        }
+
+        // The way back, when the tool panel is folded.
+        //
+        // A layout with a rail already has one - the rail is still there with
+        // the panel shut. Every other layout would have nothing at all on
+        // screen, so the fold could never be offered on them; eighteen pixels
+        // of edge with the panel's name down it is what makes it offerable.
+        Rectangle {
+            id: sidebarTab
+            Layout.fillHeight: true
+            implicitWidth: 18
+            visible: root.sidebarDocked && !root.sidebarOpen && !root.spec.rail
+            color: tabHover.hovered ? Theme.surface : Theme.surfaceAlt
+            border.color: Theme.border
+            Label {
+                anchors.centerIn: parent
+                // Rotated so the word fits an eighteen pixel strip. Reading
+                // upwards is the convention every editor's folded panel uses.
+                rotation: -90
+                text: "▸  CONTROLS"
+                color: tabHover.hovered ? Theme.text : Theme.textMuted
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 1
+            }
+            HoverHandler { id: tabHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.showSidebar() }
+            ToolTip.visible: tabHover.hovered
+            ToolTip.text: "Show the controls"
         }
 
         SplitView {
@@ -138,6 +189,11 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             orientation: Qt.Horizontal
+            // The divider people actually reach for. It was the default single
+            // pixel until now; ControlSidebar's inner splits had a visible
+            // handle and this one, between the controls and the figure, did
+            // not.
+            handle: GvSplitHandle {}
 
     // The controls dock can be torn out into its own window, restoring the
     // flexibility GraphVis 17 had. The sidebar keeps its state either way.
@@ -154,8 +210,35 @@ Item {
         // Explicit travel limits on both panes. Without a maximum here and a
         // minimum on the canvas, the handle could not be dragged to the right
         // and panel content was clipped instead of the panel growing.
-        SplitView.minimumWidth:280
-        SplitView.maximumWidth:Math.max(280, root.width - 360)
+        //
+        // 280 was the floor while a squeezed panel overflowed instead of
+        // shrinking; the panels shrink now, and a floor that does not fit is
+        // worse than a narrow panel - on a 900 px window the three-pane
+        // layouts could not fit their own minimums and pushed the last panel
+        // off the right-hand edge of the window entirely.
+        SplitView.minimumWidth:240
+        SplitView.maximumWidth:Math.max(240, root.width - 320)
+
+        // Fold it away. Beside the tear-out button, which is the other thing
+        // this panel can do to get out of the figure's way - the two questions
+        // are "somewhere else" and "not now", and they belong together.
+        headerActions: [
+            ToolButton {
+                id: foldSidebar
+                implicitWidth: 26
+                implicitHeight: 22
+                visible: !sidebarDock.floating
+                ToolTip.visible: foldSidebar.hovered
+                ToolTip.text: "Fold the controls away"
+                onClicked: root.app.sidebarCollapsed = true
+                contentItem: Label {
+                    text: "◂"
+                    color: Theme.textSecondary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        ]
 
         ControlSidebar {
         id:sidebar
@@ -267,7 +350,7 @@ Item {
         floatingWidth: 1040
         floatingHeight: 760
         SplitView.fillWidth: true
-        SplitView.minimumWidth: 360
+        SplitView.minimumWidth: 300
 
         // The figure's controls, in the panel header.
         //
@@ -287,6 +370,40 @@ Item {
                 textColor: Theme.text
             },
             RenderProgressBadge { canvas: plot },
+            // Zoom without a wheel.
+            //
+            // PlotCanvas::zoomBy was written, made Q_INVOKABLE for exactly this,
+            // and never called by anything: the wheel handler uses zoomAt, which
+            // needs a pointer position, so there was no way to zoom from a
+            // trackpad-less machine, a touchscreen without pinch, or a keyboard.
+            // zoomBy zooms about the middle of the figure, which is what a
+            // button means.
+            Button {
+                id: zoomOut
+                text: "−"
+                implicitWidth: 28
+                visible: plot.viewInteractive && plot.pointCount > 0
+                ToolTip.visible: zoomOut.hovered
+                ToolTip.text: "Zoom out about the middle of the figure"
+                onClicked: plot.zoomBy(1.0 / 1.25)
+            },
+            Button {
+                id: zoomIn
+                text: "+"
+                implicitWidth: 28
+                visible: plot.viewInteractive && plot.pointCount > 0
+                ToolTip.visible: zoomIn.hovered
+                ToolTip.text: "Zoom in about the middle of the figure"
+                onClicked: plot.zoomBy(1.25)
+            },
+            // What happens when the full-resolution render lands. This control
+            // existed as its own component and was never placed anywhere - the
+            // setting was reachable only from the View menu, which is the wrong
+            // place for it: it decides something about THIS figure, and it is
+            // only meaningful while a figure is big enough to have a second
+            // render at all, which is exactly what the component already knew
+            // how to ask.
+            FullRenderPolicyBox { app: root.app; canvas: plot },
             UnitSelector { axis: "X"; canvas: plot },
             UnitSelector { axis: "Y"; canvas: plot },
             ColourMapSelector { canvas: plot; app: root.app },
@@ -384,6 +501,11 @@ Item {
                 implicitHeight: 32
                 color: Theme.surfaceAlt
                 border.color: Theme.border
+                // Clipped: a row of buttons that does not fit is laid out past
+                // the end of the band, where it paints over the panel beside
+                // the figure. Six tabs fit in any window this program is usable
+                // in, so clipping is the backstop rather than the behaviour.
+                clip: true
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 8
@@ -404,7 +526,7 @@ Item {
                             checkable: true
                             checked: root.chosenPanel === modelData.panel
                             onClicked: { root.chosenPanel = modelData.panel
-                                         root.sidebarOpen = true }
+                                         root.showSidebar() }
                         }
                     }
                     Item { Layout.fillWidth: true }
@@ -419,9 +541,25 @@ Item {
                 implicitHeight: 32
                 color: Theme.surfaceAlt
                 border.color: Theme.border
-                RowLayout {
+                // Five verbs plus a label is more than a narrow window holds, so
+                // the band flicks sideways instead of laying its last buttons
+                // out past the end of itself and over the panel beside the
+                // figure. `addBand`, not `parent`: a Flickable reparents its
+                // declared children onto its content item, whose width is the
+                // contentWidth being computed here.
+                Flickable {
+                    id: addBand
                     anchors.fill: parent
-                    anchors.leftMargin: 8
+                    contentWidth: addRow.width + 8
+                    contentHeight: height
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    flickableDirection: Flickable.HorizontalFlick
+                RowLayout {
+                    id: addRow
+                    x: 8
+                    width: Math.max(addBand.width - 8, implicitWidth)
+                    height: addBand.height
                     spacing: 4
                     Label {
                         text: "Add"
@@ -448,11 +586,12 @@ Item {
                                     return
                                 }
                                 root.chosenPanel = modelData.panel
-                                root.sidebarOpen = true
+                                root.showSidebar()
                             }
                         }
                     }
                     Item { Layout.fillWidth: true }
+                }
                 }
             }
 
@@ -659,11 +798,15 @@ Item {
     DockPanel {
         id: secondaryDock
         title: root.secondaryTitle
+        // A third pane needs a window wide enough to hold three. Below that it
+        // steps aside rather than being squeezed off the edge - its contents
+        // are all reachable from the main sidebar, so nothing is lost.
         visible: root.spec.secondaryPanel !== ""
                  && (!root.spec.inspectorSummons || root.secondarySummoned)
+                 && root.width >= 820
         SplitView.preferredWidth: root.spec.secondaryWidth
-        SplitView.minimumWidth: 220
-        SplitView.maximumWidth: Math.max(220, root.width - 420)
+        SplitView.minimumWidth: 200
+        SplitView.maximumWidth: Math.max(200, root.width - 380)
         floatingWidth: 380
         floatingHeight: 560
 
@@ -699,7 +842,7 @@ Item {
             Layout.fillHeight: true
             visible: root.spec.railRightToo
             currentIndex: root.chosenPanel
-            onPanelChosen: (i) => { root.chosenPanel = i; root.sidebarOpen = true }
+            onPanelChosen: (i) => { root.chosenPanel = i; root.showSidebar() }
             onCommandRequested: root.commandRequested()
         }
     }
@@ -708,11 +851,19 @@ Item {
     // sidebar; solver and import messages are output and belong under the thing
     // that produced them; and the page bar is the layout's whole navigation.
     Loader {
-        Layout.fillWidth: true
-        Layout.preferredHeight: active
-            ? (root.spec.bottomStrip === root.stripPageBar ? 44 : root.bottomHeight)
-            : 0
+        // A pane of the window split rather than a fixed band. The binding is
+        // the height it OPENS at; SplitView overwrites it the moment the handle
+        // is dragged, which is the point.
+        SplitView.preferredHeight: root.spec.bottomStrip === root.stripPageBar
+                                   ? 44 : root.bottomHeight
+        // A page bar is navigation and has one useful height; everything else
+        // can be dragged down to a title strip and back.
+        SplitView.minimumHeight: root.spec.bottomStrip === root.stripPageBar ? 44 : 28
+        SplitView.maximumHeight: root.spec.bottomStrip === root.stripPageBar
+                                 ? 44 : Math.max(28, root.height - 200)
         active: root.spec.bottomStrip !== root.stripNone
+        // An invisible child is not a pane, so a layout with no strip gets no
+        // second pane and no handle to drag into nothing.
         visible: active
         sourceComponent: {
             switch (root.spec.bottomStrip) {
@@ -751,7 +902,7 @@ Item {
     Component {
         id: bottomPages
         PageBar {
-            onPageChosen: (panel) => { root.chosenPanel = panel; root.sidebarOpen = true }
+            onPageChosen: (panel) => { root.chosenPanel = panel; root.showSidebar() }
         }
     }
     Component {
@@ -780,7 +931,7 @@ Item {
                         font.pixelSize: 11
                         checkable: true
                         checked: root.chosenPanel === modelData.panel
-                        onClicked: { root.chosenPanel = modelData.panel; root.sidebarOpen = true }
+                        onClicked: { root.chosenPanel = modelData.panel; root.showSidebar() }
                     }
                 }
             }

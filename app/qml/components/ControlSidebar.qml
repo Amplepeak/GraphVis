@@ -39,33 +39,18 @@ Rectangle {
     property alias metallic: mapping.metallic
     property alias specular: mapping.specular
     color:Theme.background; border.color:Theme.border
+    // Containment, same reason as DockPanel's content host: a panel in here
+    // that cannot fit lays itself out past the bottom edge, and unclipped that
+    // overflow is painted over the strip below the sidebar.
+    clip: true
 
-    // A handle you can see and hit.
-    //
-    // SplitView's default handle is one pixel of nothing. The library WAS
-    // resizable and nobody could tell: the only clue that the divider could be
-    // dragged was that the cursor changed, over a target one pixel tall. Six
-    // pixels with a grip drawn on it, and a wider hover strip behind it.
+    // A handle you can see and hit. It lives in components/GvSplitHandle.qml
+    // now: this file had the only visible one in the application, which is why
+    // the divider between the sidebar and the figure - the one people actually
+    // reach for - was still the default single pixel.
     Component {
         id: splitHandle
-        Rectangle {
-            id: handleBody
-            implicitWidth: 6
-            implicitHeight: 6
-            color: SplitHandle.pressed ? Theme.accent
-                 : (SplitHandle.hovered ? Theme.borderStrong : Theme.surfaceAlt)
-            Row {
-                anchors.centerIn: parent
-                spacing: 3
-                Repeater {
-                    model: 3
-                    delegate: Rectangle {
-                        width: 2; height: 2; radius: 1
-                        color: SplitHandle.pressed ? Theme.onAccent : Theme.textMuted
-                    }
-                }
-            }
-        }
+        GvSplitHandle {}
     }
 
     ColumnLayout {
@@ -131,6 +116,10 @@ Rectangle {
                         AxisScaleBar { canvas: root.canvas; Layout.fillWidth: true }
                     }
                 }
+                // The range each axis covers, in the inspector too. The
+                // inspector layouts have no tab bar and therefore no Map tab -
+                // a control that lives only there does not exist on them.
+                RangePanel { canvas: root.canvas; Layout.fillWidth: true }
             }
             DockPanel {
                 title: "Graph Library"
@@ -172,10 +161,20 @@ Rectangle {
                 // chrome, same tear-off, and the header doubles as the thing
                 // you grab to shut them.
                 DockPanel {
+                    id: datasetDock
                     title: "Dataset and colours"
-                    // Smaller than it was: 250 px left four rows of a
-                    // seventeen-hundred-entry library visible underneath.
-                    SplitView.preferredHeight: 190
+                    // A SHARE of the sidebar, not a fixed band.
+                    //
+                    // 190 was chosen against a tall sidebar. In a layout with a
+                    // data table along the bottom the sidebar is 400 px, and a
+                    // fixed 190 for two controls left the library - the thing
+                    // the panel exists for - with no room for a single row.
+                    // A third of whatever there is, and never more than the 190
+                    // it wanted, so nothing changes in a tall window.
+                    SplitView.preferredHeight: Math.round(
+                        Math.max(90, Math.min(190, (datasetDock.SplitView.view
+                                                    ? datasetDock.SplitView.view.height
+                                                    : 560) * 0.34)))
                     SplitView.minimumHeight: 26
                     floatingWidth: 420
                     floatingHeight: 340

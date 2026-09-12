@@ -1655,6 +1655,107 @@ ColourMapKind colourMapFor(const QString& name){
 inline QColor colourMap(ColourMapKind table,double t){
     return colourmaps::sample(table,t);
 }
+
+// The ramp this figure is actually drawn from: the person's chosen colours when
+// they have chosen any, and the named map otherwise. One question asked in one
+// place, so the figure, the colour bar and the banding cannot disagree about
+// which ramp is in force.
+inline QColor sampleAt(ColourMapKind table,const PlotStyle& s,double t);
+
+// The same ramp, read through the person's own settings.
+//
+// Every painter that colours by value normalises to 0..1 first and then asks
+// for a colour, so this is the one place a 0..1 becomes a colour and therefore
+// the one place the step count has to be applied. Doing it here rather than at
+// the thirteen call sites is also what keeps the COLOUR BAR honest: the key is
+// drawn through this function too, so a banded figure gets a banded key without
+// anybody having to remember to band it twice.
+//
+// The RANGE cannot be applied here, because by this point the value has already
+// been divided by whatever span the engine chose. It is applied where the value
+// is still a value - see rampPosition.
+// A list of chosen colours, read as a ramp.
+//
+// Interpolated in plain sRGB rather than in a perceptual space. The generated
+// maps are perceptually uniform because they were built to be; a hand-picked
+// set is not going to be whatever is done between the stops, and pretending
+// otherwise by interpolating in Lab would only make the result differ from the
+// swatches the person actually clicked on.
+inline QColor sampleStops(const QVector<QColor>& stops,double t){
+    if(stops.isEmpty()) return QColor(Qt::black);
+    if(stops.size()==1) return stops.first();
+    const double pos=qBound(0.0,t,1.0)*double(stops.size()-1);
+    const int i=qMin(int(stops.size())-2,int(pos));
+    const double f=qBound(0.0,pos-double(i),1.0);
+    const QColor& a=stops.at(i);
+    const QColor& b=stops.at(i+1);
+    return QColor::fromRgbF(a.redF()  +(b.redF()  -a.redF())  *f,
+                            a.greenF()+(b.greenF()-a.greenF())*f,
+                            a.blueF() +(b.blueF() -a.blueF()) *f);
+}
+
+inline QColor sampleAt(ColourMapKind table,const PlotStyle& s,double t){
+    return s.customColours.isEmpty() ? colourmaps::sample(table,t)
+                                     : sampleStops(s.customColours,t);
+}
+
+inline QColor colourMapStyled(ColourMapKind table,const PlotStyle& s,double t){
+    // NaN reaches here only from rampPosition, and only when the person asked
+    // for values outside the colour range to be dropped rather than clamped.
+    // Transparent is how "do not draw this" travels through thirteen call
+    // sites that each set a brush or a pen and none of which can return early:
+    // a transparent brush leaves the background, which is exactly the picture
+    // that was asked for.
+    if(!finite(t)) return s.colourOutOfRangeDropped ? QColor(Qt::transparent)
+                                                    : sampleAt(table,s,0.0);
+    t=qBound(0.0,t,1.0);
+    if(s.colourLevels>=2){
+        // Band k of N covers [k/N,(k+1)/N). With chosen colours, band k IS
+        // colour k - that is what makes "five bands, five colours, set each
+        // one" land exactly. With a named map the band is drawn in the colour
+        // at the MIDDLE of its slice, so the steps are even and the two ends of
+        // the ramp are half-bands rather than one band each of double weight.
+        const int levels=qMin(s.colourLevels,256);
+        const int k=qMin(levels-1,int(t*double(levels)));
+        if(!s.customColours.isEmpty())
+            return s.customColours.at(k%int(s.customColours.size()));
+        t=(double(k)+0.5)/double(levels);
+    }
+    return sampleAt(table,s,t);
+}
+
+// Where a VALUE sits on the ramp, given the range the person asked for.
+//
+// lo and hi are what the engine measured; colourMin and colourMax override
+// either end. Clamped rather than dropped: a point above the top of the chosen
+// range is drawn in the top colour, which reads as "at least this much" and is
+// what a capped scale means everywhere else it is used. Filtering is the axis
+// limits' job, not the colour's.
+inline double rampPosition(const PlotStyle& s,double value,double lo,double hi){
+    const bool capped=!isUnset(s.colourMin)||!isUnset(s.colourMax);
+    double cl=isUnset(s.colourMin)?lo:s.colourMin;
+    double ch=isUnset(s.colourMax)?hi:s.colourMax;
+    if(!finite(cl)||!finite(ch)||!(ch>cl)){ cl=lo; ch=hi; }
+    if(!(ch>cl)) return 0.0;
+    // Dropping only means anything against a range somebody set. Applied to a
+    // range fitted to the data it would drop the two extreme values to
+    // rounding, which is a control that appears to nibble at the figure.
+    if(capped&&s.colourOutOfRangeDropped&&(value<cl||value>ch))
+        return std::numeric_limits<double>::quiet_NaN();
+    return qBound(0.0,(value-cl)/(ch-cl),1.0);
+}
+
+// The person's own limits on top of what a column spans. An unset end keeps the
+// measured one; a pair that does not increase is ignored rather than producing
+// a cube with no depth.
+Bounds withAxisLimits(Bounds b,const PlotAxis& a){
+    if(!b.valid) return b;
+    const double lo=isUnset(a.min)?b.lo:a.min;
+    const double hi=isUnset(a.max)?b.hi:a.max;
+    if(!finite(lo)||!finite(hi)||!(hi>lo)) return b;
+    b.lo=lo; b.hi=hi;
+    return b;
+}
 } // namespace
 
 // Fills unknown cells from their finite neighbours, a few passes outward.
@@ -2590,6 +2691,16 @@ QString QtPlotBackend::explainEmpty(const PlotSpec& chosen,const PlotSpec& prepa
 void QtPlotBackend::drawColourBar(QPainter* p,const Frame& f,const PlotSpec& spec,
                                   double lo,double hi,const QString& caption) const {
     if(!finite(lo)||!finite(hi)) return;
+    // The key says what the COLOURS mean, so when the person has capped the
+    // ramp the key has to read the cap. Every caller passes what the data
+    // spanned; the numbers printed beside the bar are the range those colours
+    // actually cover, which is the only thing that makes a capped figure
+    // readable rather than merely differently coloured.
+    {
+        const double cl=isUnset(spec.style.colourMin)?lo:spec.style.colourMin;
+        const double ch=isUnset(spec.style.colourMax)?hi:spec.style.colourMax;
+        if(finite(cl)&&finite(ch)&&ch>cl){ lo=cl; hi=ch; }
+    }
     const QFont tickFont=font(spec,spec.style.tickSize);
     const QFontMetricsF fm(tickFont,p->device());
     const double barW=qMax(8.0,fm.height()*0.85);
@@ -2617,7 +2728,7 @@ void QtPlotBackend::drawColourBar(QPainter* p,const Frame& f,const PlotSpec& spe
         const double t=1.0-double(i)/double(rows-1);
         p->fillRect(QRectF(bar.left(),bar.top()+double(i)*bar.height()/double(rows),
                            bar.width(),bar.height()/double(rows)+0.6),
-                    colourMap(cmap,t));
+                    colourMapStyled(cmap,spec.style,t));
     }
     p->setBrush(Qt::NoBrush);
     p->setPen(QPen(spec.style.foreground,0.9));
@@ -2671,8 +2782,8 @@ void QtPlotBackend::drawHeatmap(QPainter* p,const Frame& f,const PlotSpec& spec)
         for(int cx=0;cx<g.nx;++cx){
             const double v=g.cells[cy*g.nx+cx];
             if(!finite(v)) continue;     // leave the background showing through
-            const double t=(v-g.vLo)/(g.vHi-g.vLo);
-            p->setBrush(colourMap(cmap,t));
+            const double t=rampPosition(spec.style,v,g.vLo,g.vHi);
+            p->setBrush(colourMapStyled(cmap,spec.style,t));
             // Half a pixel of overlap, or antialiasing leaves seams between
             // cells that read as a grid pattern in the data.
             p->drawRect(QRectF(f.plotArea.left()+cx*cellW,
@@ -2710,7 +2821,7 @@ void QtPlotBackend::drawContour(QPainter* p,const Frame& f,const PlotSpec& spec)
     for(int level=1;level<=kLevels;++level){
         const double frac=double(level)/double(kLevels+1);
         const double iso=g.vLo+(g.vHi-g.vLo)*frac;
-        QPen pen(colourMap(cmap,frac));
+        QPen pen(colourMapStyled(cmap,spec.style,frac));
         pen.setWidthF(qMax(0.6,spec.style.lineWidth));
         p->setPen(pen);
         for(int cy=0;cy<g.ny-1;++cy){
@@ -3147,8 +3258,31 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
     const int n=qMin(xs.size(),qMin(ys.size(),zs.size()));
     if(n<2) return;
 
-    const Bounds bx=boundsOf(xs), by=boundsOf(ys), bz=boundsOf(zs);
+    // What the data spans, then what the person asked to SEE of it.
+    //
+    // The cube used to be fitted to the data and nothing else, so there was no
+    // way to say "VHPR above ten is not what I am looking at" - one outlier at
+    // 160 set the height of the box and everything below it was a layer on the
+    // floor. The limits are applied to the bounds rather than to the points,
+    // which is what makes the cube itself, its tick numbers and the projection
+    // all agree about what the axis now means.
+    const Bounds bx=withAxisLimits(boundsOf(xs),spec.xAxis);
+    const Bounds by=withAxisLimits(boundsOf(ys),spec.yAxis);
+    const Bounds bz=withAxisLimits(boundsOf(zs),spec.zAxis);
     if(!bx.valid||!by.valid||!bz.valid) return;
+
+    // Whether a row is inside the box the person asked for. A point outside it
+    // is DROPPED rather than clamped: a capped axis is a window on the data,
+    // and stacking everything above the cap onto the ceiling would invent a
+    // ridge that is not in the numbers.
+    const auto inBox=[&](double x,double y,double z){
+        return x>=bx.lo&&x<=bx.hi&&y>=by.lo&&y<=by.hi&&z>=bz.lo&&z<=bz.hi;
+    };
+    // Whether any limit is in force at all, so the unlimited case does the same
+    // work it always did.
+    const bool limited=!isUnset(spec.xAxis.min)||!isUnset(spec.xAxis.max)
+                     ||!isUnset(spec.yAxis.min)||!isUnset(spec.yAxis.max)
+                     ||!isUnset(spec.zAxis.min)||!isUnset(spec.zAxis.max);
 
     // Room for the tick numbers and the axis names outside the cube, and no
     // more: the figure is fitted to whatever is left, so a wide canvas gives a
@@ -3188,6 +3322,14 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
                         const double ny=double(iy)/double(g.ny-1)-0.5;
                         return project(proj,nx,ny,bz.norm(v),d);
                     };
+                    // A quad any of whose corners is outside the height the
+                    // person asked to see is not drawn. Clipping the SURFACE
+                    // rather than clamping it leaves a hole where the terrain
+                    // leaves the window, which is the honest picture - clamping
+                    // would draw a flat plateau at the cap that is not in the
+                    // data.
+                    if(limited&&(v00<bz.lo||v00>bz.hi||v10<bz.lo||v10>bz.hi
+                               ||v11<bz.lo||v11>bz.hi||v01<bz.lo||v01>bz.hi)) continue;
                     double d0,d1,d2,d3;
                     QPolygonF shape;
                     shape<<corner(cx,cy,v00,&d0)<<corner(cx+1,cy,v10,&d1)
@@ -3198,14 +3340,14 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
             std::sort(quads.begin(),quads.end(),
                       [](const Quad& a,const Quad& b){ return a.depth<b.depth; });
             for(const Quad& q:quads){
-                const double t=(q.value-g.vLo)/qMax(1e-12,g.vHi-g.vLo);
+                const double t=rampPosition(spec.style,q.value,g.vLo,g.vHi);
                 if(wireframe){
                     p->setBrush(Qt::NoBrush);
-                    QPen mesh(colourMap(cmap,t)); mesh.setWidthF(qMax(0.4,spec.style.lineWidth*0.7));
+                    QPen mesh(colourMapStyled(cmap,spec.style,t)); mesh.setWidthF(qMax(0.4,spec.style.lineWidth*0.7));
                     p->setPen(mesh);
                 }else{
-                    p->setBrush(colourMap(cmap,t));
-                    QPen edge(colourMap(cmap,t).darker(115)); edge.setWidthF(0.3);
+                    p->setBrush(colourMapStyled(cmap,spec.style,t));
+                    QPen edge(colourMapStyled(cmap,spec.style,t).darker(115)); edge.setWidthF(0.3);
                     p->setPen(edge);
                 }
                 p->drawPolygon(q.shape);
@@ -3216,6 +3358,10 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
         bool started=false;
         for(int i=0;i<n;++i){
             if(!finite(xs[i])||!finite(ys[i])||!finite(zs[i])) continue;
+            // Out of the window LIFTS THE PEN. Skipping the point while keeping
+            // the path going would join the two points either side of the gap
+            // with a straight line that is not a path the data ever took.
+            if(limited&&!inBox(xs[i],ys[i],zs[i])){ started=false; continue; }
             const QPointF pt=project(proj,bx.norm(xs[i]),by.norm(ys[i]),bz.norm(zs[i]));
             if(!started){ path.moveTo(pt); started=true; } else path.lineTo(pt);
         }
@@ -3231,6 +3377,7 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
         dots.reserve(n);
         for(int i=0;i<n;++i){
             if(!finite(xs[i])||!finite(ys[i])||!finite(zs[i])) continue;
+            if(limited&&!inBox(xs[i],ys[i],zs[i])) continue;
             double d=0;
             const QPointF pt=project(proj,bx.norm(xs[i]),by.norm(ys[i]),bz.norm(zs[i]),&d);
             dots.append({d,pt,zs[i]});
@@ -3239,8 +3386,8 @@ void QtPlotBackend::draw3D(QPainter* p,const QRectF& target,const PlotSpec& spec
         p->setPen(Qt::NoPen);
         const double base=qMax(2.0,spec.series.at(2).markerSize);
         for(const Dot& dot:dots){
-            const double t=(dot.value-bz.lo)/qMax(1e-12,bz.hi-bz.lo);
-            p->setBrush(colourMap(cmap,t));
+            const double t=rampPosition(spec.style,dot.value,bz.lo,bz.hi);
+            p->setBrush(colourMapStyled(cmap,spec.style,t));
             const double r=base*(0.62+0.38*(dot.depth+0.9));
             p->drawEllipse(dot.at,qMax(0.8,r/2.0),qMax(0.8,r/2.0));
         }
@@ -3317,7 +3464,8 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
             for(int cx=0;cx<out.nx;++cx){
                 const double value=out.cells[cy*out.nx+cx];
                 if(!finite(value)) continue;
-                p->setBrush(colourMap(cmap,(value-out.vLo)/(out.vHi-out.vLo)));
+                p->setBrush(colourMapStyled(cmap,spec.style,
+                            rampPosition(spec.style,value,out.vLo,out.vHi)));
                 p->drawRect(QRectF(f.plotArea.left()+cx*cw,
                                    f.plotArea.bottom()-(cy+1)*ch,cw+0.5,ch+0.5));
             }
@@ -3371,7 +3519,8 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
                     if(!started){ path.moveTo(pt); started=true; } else path.lineTo(pt);
                 }
                 if(!started) continue;
-                QPen pen(colourMap(cmap,qBound(0.0,carried/magMax,1.0)));
+                QPen pen(colourMapStyled(cmap,spec.style,
+                         rampPosition(spec.style,carried,0.0,magMax)));
                 pen.setWidthF(qMax(0.5,spec.style.lineWidth*0.9));
                 p->setPen(pen); p->setBrush(Qt::NoBrush);
                 p->drawPath(path);
@@ -3394,7 +3543,8 @@ void QtPlotBackend::drawVectorField(QPainter* p,const Frame& f,const PlotSpec& s
                 const double length=arrowMax*(mag/magMax);
                 const QPointF dir(u/mag,-v/mag);
                 const QPointF to=from+dir*length;
-                QPen pen(colourMap(cmap,mag/magMax));
+                QPen pen(colourMapStyled(cmap,spec.style,
+                         rampPosition(spec.style,mag,0.0,magMax)));
                 pen.setWidthF(qMax(0.5,spec.style.lineWidth));
                 p->setPen(pen);
                 p->drawLine(from,to);
@@ -7423,8 +7573,9 @@ void QtPlotBackend::drawTernaryContour(QPainter* p,const QRectF& target,
     struct Label { QPointF where; QString text; QColor colour; };
     QVector<Label> labels;
     for(double level:levels){
-        const double t=(highValue>lowValue)?(level-lowValue)/(highValue-lowValue):0.5;
-        QPen pen(colourMap(cmap,t));
+        const double t=(highValue>lowValue)
+                       ? rampPosition(spec.style,level,lowValue,highValue) : 0.5;
+        QPen pen(colourMapStyled(cmap,spec.style,t));
         pen.setWidthF(qMax(1.1,spec.style.lineWidth));
         pen.setCapStyle(Qt::RoundCap);
         p->setPen(pen);
@@ -8195,7 +8346,7 @@ void QtPlotBackend::drawVoronoi(QPainter* p,const Frame& f,const PlotSpec& spec)
         if(shapes[i].size()<3) continue;
         const double t=graded?(std::sqrt(areas[i])-lowRoot)/(highRoot-lowRoot)
                              :0.5;
-        QColor fill=colourMap(cmap,t);
+        QColor fill=colourMapStyled(cmap,spec.style,t);
         fill.setAlphaF(0.88);
         p->setBrush(fill);
         p->setPen(QPen(spec.style.foreground,0.7));
@@ -8701,8 +8852,8 @@ void QtPlotBackend::draw3DField(QPainter* p,const QRectF& target,const PlotSpec&
 
     for(const Glyph& g:glyphs){
         const int i=g.index;
-        const double t=qBound(0.0,magnitude[i]/magMax,1.0);
-        const QColor colour=colourMap(cmap,t);
+        const double t=rampPosition(spec.style,magnitude[i],0.0,magMax);
+        const QColor colour=colourMapStyled(cmap,spec.style,t);
 
         if(volume){
             // Points shaded and sized by the scalar, with the low end faded
@@ -9010,6 +9161,21 @@ PlotSpec& applyLimits(PlotSpec& out,const PlotSpec& in){
     if(!isUnset(in.xAxis.max)) out.xAxis.max=in.xAxis.max;
     if(!isUnset(in.yAxis.min)) out.yAxis.min=in.yAxis.min;
     if(!isUnset(in.yAxis.max)) out.yAxis.max=in.yAxis.max;
+    // The THIRD axis too, now that it has limits worth carrying. draw3D fits
+    // its cube to these, so leaving them behind here would be the rotation bug
+    // again in a new place: the person types a ceiling of ten, the painter
+    // draws the cached spec, and the number they typed changes nothing.
+    if(!isUnset(in.zAxis.min)) out.zAxis.min=in.zAxis.min;
+    if(!isUnset(in.zAxis.max)) out.zAxis.max=in.zAxis.max;
+    // And the colour scale, for the same reason. No rewrite in prepareSpec
+    // reads any of these - they are painting decisions, so they are absent
+    // from the fingerprint - which is exactly why they have to be copied on
+    // afterwards or the cached spec's defaults win.
+    out.style.colourMin=in.style.colourMin;
+    out.style.colourMax=in.style.colourMax;
+    out.style.colourLevels=in.style.colourLevels;
+    out.style.colourOutOfRangeDropped=in.style.colourOutOfRangeDropped;
+    out.style.customColours=in.style.customColours;
     out.annotations=in.annotations;
     out.view3d=in.view3d;
     return out;
@@ -27582,9 +27748,28 @@ void QtPlotBackend::drawPie(QPainter* p,const QRectF& target,const PlotSpec& spe
 
     const double side=qMin(target.width(),target.height())*0.62;
     const QRectF circle(target.center().x()-side/2,target.center().y()-side/2,side,side);
-    static const QColor wedge[]={QColor(0x4f,0x9d,0xf7),QColor(0xf2,0x8e,0x2b),QColor(0x59,0xa1,0x4f),
-                                 QColor(0xe1,0x5f,0x99),QColor(0x76,0xb7,0xb2),QColor(0xed,0xc9,0x48),
-                                 QColor(0xb0,0x7a,0xa1),QColor(0x9c,0x75,0x5f)};
+    // The sector colours.
+    //
+    // These were eight hard-coded QColors and nothing else, so a pie chart was
+    // the one engine in the program that ignored the colour-vision setting
+    // completely: a person who had selected the deuteranopia palette got a
+    // deuteranopia-safe figure for every engine except this one, with nothing
+    // to say so. The chosen colours win where there are any, and the series
+    // palette - which is measured through a dichromat projection, see
+    // ColourVision.h - is what they fall back to.
+    static const QColor kWedge[]={QColor(0x4f,0x9d,0xf7),QColor(0xf2,0x8e,0x2b),QColor(0x59,0xa1,0x4f),
+                                  QColor(0xe1,0x5f,0x99),QColor(0x76,0xb7,0xb2),QColor(0xed,0xc9,0x48),
+                                  QColor(0xb0,0x7a,0xa1),QColor(0x9c,0x75,0x5f)};
+    QVector<QColor> wedge=spec.style.customColours;
+    if(wedge.isEmpty()){
+        // Every series the spec carries, in order - which is where the canvas
+        // put the palette entry for each one - and the built-in list only when
+        // there is nothing else to go on.
+        for(const PlotSeries& ps:spec.series)
+            if(ps.color.isValid()) wedge.append(ps.color);
+    }
+    if(wedge.isEmpty())
+        for(const QColor& c:kWedge) wedge.append(c);
     p->save();
     double start=90.0*16.0;   // start at 12 o'clock, Qt uses 1/16th degrees
     int idx=0;
@@ -27593,7 +27778,7 @@ void QtPlotBackend::drawPie(QPainter* p,const QRectF& target,const PlotSpec& spe
         if(!finite(v)||v<=0) continue;
         const double span=-(v/total)*360.0*16.0;   // clockwise
         p->setPen(QPen(spec.style.background,1.0));
-        p->setBrush(wedge[idx%int(sizeof(wedge)/sizeof(wedge[0]))]);
+        p->setBrush(wedge.at(idx%int(wedge.size())));
         p->drawPie(circle,int(start),int(span));
         start+=span; ++idx;
     }

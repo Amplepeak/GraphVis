@@ -246,5 +246,22 @@ Item {
         id: contentHost
         parent: root.floating ? floatSlot : dockedSlot
         anchors.fill: parent
+        // A panel may not paint outside itself.
+        //
+        // A column layout whose children's MINIMUM heights add up to more than
+        // the height it is given does not shrink them - it lays them out past
+        // its own bottom edge, and with nothing clipping, that overflow paints
+        // straight over whatever is below. That is the reported "overlapping
+        // text": in the Activity rail layout the Graph Library needed 250 px,
+        // the sidebar had 182 to give it, and the last 68 px of the library
+        // were drawn on top of the Datasets strip along the bottom of the
+        // window. The panels underneath were laid out correctly the whole time
+        // - the geometry was right and the painting was wrong.
+        //
+        // Clipping here is the containment; the panels that could overflow have
+        // also had their floors lowered so they shrink instead of being cut.
+        // Popups, menus and tooltips are unaffected: those render in the
+        // window's overlay, not in this item.
+        clip: true
     }
 }
