@@ -294,6 +294,27 @@ def run(name: str, frame, req: dict) -> dict:
         # they reach the panel as that sentence; left alone they reach it as a
         # traceback and a failed request with no reason attached.
         raise OperationError(str(exc)) from exc
+    except (OverflowError, ZeroDivisionError, FloatingPointError,
+            IndexError, AttributeError) as exc:
+        # The numeric-rubbish family, reported as a sentence rather than as a
+        # stack trace about an array the user never saw.
+        #
+        # Found by sweeping every operation with frames of NaN, inf, 1e308 and
+        # nothing: `anova` raised OverflowError("Numerical result out of
+        # range"), `discriminant` raised "index 0 is out of bounds for axis 0
+        # with size 0". Guarding each engine separately is endless - there are
+        # eighty-eight of them and any library update can add another - so the
+        # boundary that already turns ValueError into a message handles these
+        # too.
+        #
+        # The original type and text are kept. A user gets a sentence they can
+        # act on; a developer reading a log still sees exactly what failed,
+        # which is what makes this different from swallowing it.
+        raise OperationError(
+            f"'{name}' could not run on the selected data "
+            f"({type(exc).__name__}: {exc}). This usually means too few rows, "
+            f"a constant column, or values too large to compute with."
+        ) from exc
     payload = jsonable(result)
     if not isinstance(payload, dict):
         payload = {"result": payload}
@@ -735,6 +756,15 @@ def _ops() -> list[Op]:
     # No optional component: one HTTPS GET and one JSON parse, both standard
     # library. The thing that records where a number came from should not be
     # able to be missing.
+    add(Op("latex_figure", "graphvis_science.latex:figure_block",
+           {"image_path": Arg(VALUE, "image_path", required=True,
+                              hint="path of the image you already exported"),
+            "caption": Arg(VALUE, "caption"),
+            "style": Arg(VALUE, "style", default="apa",
+                         hint="apa, ieee, nature or harvard"),
+            "label": Arg(VALUE), "width": Arg(VALUE), "placement": Arg(VALUE),
+            "note": Arg(VALUE), "citation": Arg(VALUE), "dataset": Arg(VALUE)},
+           "LaTeX figure block for an exported image", (), "Citations"))
     add(Op("cite", "graphvis_science.citations:cite",
            {"doi": Arg(VALUE, "doi", required=True,
                            hint="a DOI, e.g. 10.1038/s41586-020-2649-2"),

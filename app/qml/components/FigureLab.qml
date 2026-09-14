@@ -56,6 +56,34 @@ Item {
     property bool yLog: false
     property real tolerance: 45
 
+    // What calibration is still waiting for, as a sentence.
+    //
+    // The two buttons in the right-hand panel are disabled until this is empty,
+    // and until now the only explanation was a tooltip - so a disabled button
+    // looked broken rather than waiting. A control that refuses to act should
+    // say what it is waiting for where the person is already looking.
+    readonly property string missingForCalibration: {
+        if (root.imagePath === "") return "choose a figure above"
+        if (!root.boxDrawn) return "drag a box round the plot area"
+        if (root.asGrid) return ""
+        var need = []
+        if (!root.colourPicked) need.push("the line colour")
+        if (!isFinite(parseFloat(root.xMinText))) need.push("x min")
+        if (!isFinite(parseFloat(root.xMaxText))) need.push("x max")
+        if (!isFinite(parseFloat(root.yMinText))) need.push("y min")
+        if (!isFinite(parseFloat(root.yMaxText))) need.push("y max")
+        if (need.length === 0) return ""
+        if (need.length === 1) return need[0]
+        return need.slice(0, -1).join(", ") + " and " + need[need.length - 1]
+    }
+
+    // Forget the box and everything measured from it, so a mis-drag can be
+    // undone without reloading the figure.
+    function clearSelection() {
+        root.plotBox = Qt.rect(0, 0, 0, 0)
+        root.traceColour = "#00000000"
+    }
+
     // A grid needs only the box: there is no curve to follow and no axis range
     // to map one onto.
     readonly property bool calibrated: root.asGrid
@@ -66,11 +94,26 @@ Item {
                                           && isFinite(parseFloat(root.yMinText))
                                           && isFinite(parseFloat(root.yMaxText)))
 
+    // Reset when the figure genuinely CHANGES - keyed on the path, not on the
+    // `figure` object.
+    //
+    // `figures` is bound to app.literatureFigures, so it re-evaluates on every
+    // literatureChanged emission, and `figure` then hands back a freshly
+    // converted JS object each time. QML compares a `var` by identity, so
+    // onFigureChanged fired on every one of those - a status tick, a note, a
+    // reply from the service - even though the selected figure had not moved.
+    // Each time, it wiped the plot box and the picked colour.
+    //
+    // The visible effect was a box that would not stay drawn: you dragged one,
+    // something unrelated emitted, and the panel went back to telling you to
+    // drag a box round the plot area. Which looked like the drag never worked.
+    //
+    // imagePath is a string, and QML compares strings by value, so this fires
+    // only when a different figure is actually selected.
+    //
     // When the reader has already looked at this figure, its answer fills the
     // fields in rather than being displayed beside them for the person to copy.
-    // A model that has read the axes and then makes you type them out has
-    // saved nobody anything.
-    onFigureChanged: {
+    onImagePathChanged: {
         root.plotBox = Qt.rect(0, 0, 0, 0)
         root.traceColour = "#00000000"
         if (!root.figure) return
@@ -235,9 +278,25 @@ Item {
                     property point startAt: Qt.point(0, 0)
                     property bool dragging: false
 
+                    // Right button as well as left, so the press handler can
+                    // treat a right-click as "undo the box".
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+
                     onPressed: (mouse) => {
+                        // A box drawn slightly wrong had no way back except
+                        // reloading the figure, because every press either
+                        // started a new drag or sampled a colour. Right-click
+                        // and double-click are both what a person tries first.
+                        if (mouse.button === Qt.RightButton) {
+                            root.clearSelection()
+                            mouse.accepted = true
+                            return
+                        }
                         picker.startAt = Qt.point(mouse.x, mouse.y)
                         picker.dragging = false
+                    }
+                    onDoubleClicked: (mouse) => {
+                        if (mouse.button === Qt.LeftButton) root.clearSelection()
                     }
                     onPositionChanged: (mouse) => {
                         if (!picker.pressed) return
@@ -326,8 +385,8 @@ Item {
                           : (root.asGrid
                              ? "Ready — this panel will be read as a grid of values"
                              : (!root.colourPicked
-                                ? "Now click the line you want to read"
-                                : "Now type what the axes run from and to"))
+                                ? "Now click the line you want to read  ·  right-click or double-click to redo the box"
+                                : "Now type what the axes run from and to  ·  right-click or double-click to redo the box"))
                 }
             }
         }

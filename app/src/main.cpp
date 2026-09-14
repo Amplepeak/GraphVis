@@ -7,6 +7,7 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QMutex>
+#include <QThread>
 #include <QQmlApplicationEngine>
 #include <QQmlError>
 #include <QQuickStyle>
@@ -132,10 +133,38 @@ void graphvisMessageHandler(QtMsgType type, const QMessageLogContext& context, c
     case QtCriticalMsg: level = QStringLiteral("CRITICAL"); break;
     case QtFatalMsg: level = QStringLiteral("FATAL"); break;
     }
-    appendStartupLog(QStringLiteral("[%1] %2%3")
+    // WHICH THREAD, for the warnings that are only ever about a thread.
+    //
+    // "Timers cannot be started from another thread" and its relatives are Qt
+    // telling you that an object was touched from somewhere it does not live.
+    // The message names neither the object nor the thread, so a warning in
+    // startup.log says only that it happened - which is where this one has sat
+    // unexplained across several builds.
+    //
+    // Naming the thread is most of the answer. The GUI thread, the Qt Quick
+    // scene-graph render thread and a QtConcurrent pool thread are three very
+    // different bugs, and the first of them is not a bug at all. Cheap enough
+    // to do unconditionally on the handful of messages that match: no symbols,
+    // no backtrace library, no permanent cost.
+    QString where;
+    if(message.contains(QLatin1String("another thread"))
+       ||message.contains(QLatin1String("different thread"))
+       ||message.contains(QLatin1String("Cannot create children"))){
+        const QThread* current = QThread::currentThread();
+        const QThread* gui = QCoreApplication::instance()
+                                 ? QCoreApplication::instance()->thread() : nullptr;
+        const QString name = current ? current->objectName() : QString();
+        where = QStringLiteral("  [thread %1%2%3]")
+                    .arg(QString::number(reinterpret_cast<quintptr>(current),16),
+                         name.isEmpty() ? QString() : QStringLiteral(" \"%1\"").arg(name),
+                         current && current == gui ? QStringLiteral(" = GUI")
+                                                   : QStringLiteral(" != GUI"));
+    }
+    appendStartupLog(QStringLiteral("[%1] %2%3%4")
                          .arg(level, message,
                               context.file ? QStringLiteral("  (%1:%2)").arg(QString::fromUtf8(context.file)).arg(context.line)
-                                           : QString()));
+                                           : QString(),
+                              where));
     if (gPreviousHandler)
         gPreviousHandler(type, context, message);
     else
@@ -211,9 +240,46 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "--selftest-plot needs an output path\n");
                 return 2;
             }
+            // Unbuffered, because this output has to survive the process
+            // dying. CHECK-GRAPHS.bat redirects stdout to a file, which makes
+            // it block-buffered, and a self-test that crashes therefore loses
+            // everything printed since the last 4 KB flush - including the
+            // line naming whatever it was working on when it died.
+            //
+            // That is not hypothetical. A run ended in 0xC00000FD, a stack
+            // overflow, and left an output file cut off mid-word inside an
+            // earlier line: the one thing the tool exists to report, which
+            // engine it was on, was the one thing lost. A diagnostic that
+            // cannot describe its own crash is not a diagnostic.
+            //
+            // The cost is a write syscall per printf, on a run that already
+            // renders hundreds of figures.
+            setvbuf(stdout, nullptr, _IONBF, 0);
+            setvbuf(stderr, nullptr, _IONBF, 0);
+            // --selftest-gallery <dir>, optional and alongside the above.
+            //
+            // The sweep already renders every engine and then discards the
+            // picture. This keeps them, one PNG per engine, which is the only
+            // practical way to look at 434 figures: whether an engine put data
+            // on the page is answered mechanically on every build, but whether
+            // the legend covers the data, or an axis is labelled in the wrong
+            // units, or the thing is readable at 89 mm, is not - and nobody
+            // has yet looked.
+            //
+            // Off unless asked for, so the build check is unchanged and does
+            // not start writing several hundred files.
+            QString galleryDir;
+            const int galleryFlag = args.indexOf(QStringLiteral("--selftest-gallery"));
+            if (galleryFlag >= 0) {
+                if (galleryFlag + 1 >= args.size()) {
+                    fprintf(stderr, "--selftest-gallery needs an output directory\n");
+                    return 2;
+                }
+                galleryDir = args.at(galleryFlag + 1);
+            }
             // Both checks, so a build cannot pass while an engine draws nothing.
             const bool exportOk = graphvis::runPlotSelfTest(args.at(flag + 1));
-            const bool enginesOk = graphvis::runEngineSweep();
+            const bool enginesOk = graphvis::runEngineSweep(galleryDir);
             const bool regressionOk = graphvis::runRegressionChecks();
             // The whole-catalogue property checks: row order, constant columns
             // and ink on the rim, asked of all 434 engines at once. Reporting,

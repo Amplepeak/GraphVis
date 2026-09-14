@@ -118,4 +118,19 @@ except (ValueError, TypeError) as exc:
     check("forecast reply is strict JSON", False, str(exc)[:50])
 
 print(f"\n{ok} passed, {fail} failed")
-sys.exit(1 if fail else 0)
+def test_suite() -> None:
+    """Report this file's result to pytest instead of aborting collection.
+
+    These suites predate pytest: the body above runs its checks at import and
+    then called sys.exit, which made `pytest tests/` abort the whole directory
+    with an INTERNALERROR - so the six oldest and largest suites could only ever
+    be run one file at a time, and CI had to special-case them.
+
+    Running the file directly still behaves exactly as before.
+    """
+    assert fail == 0, (
+        f"{fail} checks failed - run `python tests/test_analysis_ops.py` for the detail")
+
+
+if __name__ == "__main__":
+    sys.exit(1 if fail else 0)

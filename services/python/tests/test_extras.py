@@ -204,10 +204,38 @@ ok("bibtex style returns BibTeX",
 sparse = citations.to_text({"doi": "10.1/x", "title": "Untitled", "authors": []})
 ok("a record with no authors still formats", "Anon." in sparse, sparse[:30])
 
+# The author rule is now per style, because to_text formats per style instead
+# of ignoring the argument. APA 7 lists up to twenty authors and only then
+# elides, which is the actual rule; the old assertion here ("et al." past three)
+# was testing the single generic formatter that every style used to share.
 many = {"doi": "10.1/x", "title": "T", "authors":
         [{"family": f"N{i}", "given": "A"} for i in range(6)]}
-ok("more than three authors becomes et al.", "et al." in citations.to_text(many))
+ok("APA lists six authors rather than eliding them",
+   "et al." not in citations.to_text(many, "apa"))
+ok("IEEE elides past six", "et al." in citations.to_text(
+   {"doi": "10.1/x", "title": "T",
+    "authors": [{"family": f"N{i}", "given": "A"} for i in range(8)]}, "ieee"))
+ok("Nature elides past five", "et al." in citations.to_text(many, "nature"))
+ok("Harvard elides past three", "et al." in citations.to_text(many, "harvard"))
+huge = {"doi": "10.1/x", "title": "T", "authors":
+        [{"family": f"N{i}", "given": "A"} for i in range(25)]}
+ok("APA elides past twenty", "..." in citations.to_text(huge, "apa"))
 ok("the whole thing is JSON-safe", json.dumps(record) is not None)
 
 print(f"\n{passed} passed, {failed} failed, {skipped} skipped")
-sys.exit(1 if failed else 0)
+def test_suite() -> None:
+    """Report this file's result to pytest instead of aborting collection.
+
+    These suites predate pytest: the body above runs its checks at import and
+    then called sys.exit, which made `pytest tests/` abort the whole directory
+    with an INTERNALERROR - so the six oldest and largest suites could only ever
+    be run one file at a time, and CI had to special-case them.
+
+    Running the file directly still behaves exactly as before.
+    """
+    assert failed == 0, (
+        f"{failed} checks failed - run `python tests/test_extras.py` for the detail")
+
+
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

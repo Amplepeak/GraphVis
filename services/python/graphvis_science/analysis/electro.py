@@ -194,6 +194,15 @@ def detect_domain_data(dataset) -> dict:
     mat_keys = list(getattr(dataset, 'matrices', {}) or {})
     aux_keys = list(getattr(dataset, 'aux', {}) or {})
     all_names = df_cols + mat_keys + aux_keys
+    # Only DECLARED parameters, and deliberately not inferred ones. `exclude`
+    # drops a column from the search entirely, on the v17 reasoning that a
+    # column you swept is not the signal you measured. Inferring the same set
+    # from column names would be actively wrong here: the parameter token list
+    # contains "voltage", "current", "frequency" and "potential", which are
+    # exactly the names this function is looking FOR, so a guessed set would
+    # exclude every polarisation and EIS column and detect nothing. A bare
+    # DataFrame declares nothing, so nothing is excluded - which is the right
+    # answer rather than a missing feature.
     params = set(getattr(dataset, 'parameter_columns', ()) or ())
 
     def f(keys):
@@ -229,11 +238,24 @@ def intelligent_visualization_advisor(dataset, literature=None) -> list[tuple[st
         numeric_cols = getattr(dataset, 'numeric_columns', None)
         if numeric_cols is None:
             numeric_cols = [c for c in frame.columns if _pd.api.types.is_numeric_dtype(frame[c])]
+        # Roles, declared if the caller has them and inferred from column
+        # names otherwise. A bare DataFrame declares neither, and the old
+        # getattr defaults made `nparams` zero for every dataset v18 can
+        # produce - so the two-parameter branch below, which is the response
+        # surface case this advisor exists to spot, was unreachable in the
+        # shipped product. The inference is the same name-token rule the
+        # scanner uses; it can only add or withhold a suggestion.
+        declared_params = getattr(dataset, 'parameter_columns', None)
         response_cols = getattr(dataset, 'response_columns', None)
-        if response_cols is None:
-            response_cols = list(numeric_cols)
+        if declared_params is None or response_cols is None:
+            from graphvis_science.analysis.intelligent_scan import column_roles
+            guessed_params, guessed_responses = column_roles(frame)
+            if declared_params is None:
+                declared_params = guessed_params
+            if response_cols is None:
+                response_cols = guessed_responses or list(numeric_cols)
         ncols, nrows = len(numeric_cols), len(frame)
-        nparams = len(getattr(dataset, 'parameter_columns', ()) or ())
+        nparams = len(declared_params or ())
         domain = detect_domain_data(dataset)
 
         if nparams >= 2 and nrows >= 10 and response_cols:

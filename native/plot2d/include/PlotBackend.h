@@ -2,7 +2,7 @@
 // =========================================================================
 // PlotBackend - the renderer adapter layer.
 //
-// Every one of the 318 catalogue engines is written once against this
+// Every one of the 434 catalogue engines is written once against this
 // interface. Backends implement it; the Renderer selector in TopBar.qml
 // chooses which one draws. See docs/PORT-PLAN.md.
 //

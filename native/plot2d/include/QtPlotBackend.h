@@ -108,6 +108,14 @@ public:
     // prepared engine what it needed gives the wrong answer or none. What was
     // actually produced has to come from the prepared one.
     static QString explainEmpty(const PlotSpec& chosen,const PlotSpec& prepared);
+    // The engines drawn in a circle, as ONE list.
+    //
+    // The dispatch in render() names them and so does the interface, which
+    // needs to know whether to offer the angle convention. Two hand-written
+    // lists is how an engine ends up drawn as a polar figure with no way to set
+    // which way round it reads. Stereonet is here because it DERIVES to Polar
+    // Scatter: the chosen engine is what the interface asks about.
+    static bool isPolarEngine(const QString& engine);
 
     // What one engine wants from the mapping, in the only terms the canvas
     // needs: how many columns, and how they arrive.
@@ -123,7 +131,7 @@ public:
     // because the mapping composes exactly as many roles as this asks for: an
     // engine whose requirement is under-stated can never be given enough
     // columns by any action the person takes. That was the state of 53 of the
-    // 203 engines - every one of them a two-column comparison or a field whose
+    // 203 engines then catalogued - each a two-column comparison or a field whose
     // requirement lives in its data rewrite rather than in its painter, which
     // is the half of the code the first version of this function did not read.
     struct ColumnPlan {
@@ -173,17 +181,35 @@ private:
         double xLo=0, xHi=1;  // data-space bounds, already log10 if log
         double yLo=0, yHi=1;
         bool xLog=false, yLog=false;
+        // The right-hand ordinate, when some series asked for one. See
+        // PlotSeries::secondaryAxis: measured only from the series that set
+        // it, so the two quantities stop fighting over one range.
+        double y2Lo=0, y2Hi=1;
+        bool y2Log=false;
+        bool hasY2=false;
     };
     Frame computeFrame(QPainter* p, const QRectF& target, const PlotSpec& spec,
                        QVector<AxisTick>& xTicks, QVector<AxisTick>& yTicks) const;
     // The data-space half of computeFrame, with no painter and no chrome.
     Frame computeRange(const PlotSpec& spec) const;
     QPointF toDevice(const Frame& f, double x, double y) const;
+    // The same, for a series drawn against the right-hand ordinate. Falls back
+    // to the left-hand one when the frame has no second axis, so a caller that
+    // passes `true` on a figure without one is drawn rather than dropped.
+    QPointF toDeviceOn(const Frame& f, double x, double y, bool secondary) const;
+    // The right-hand ordinate's ticks. Computed from the frame rather than
+    // returned alongside the other two, because both the margin measurement in
+    // computeFrame and the drawing in drawChrome need them and a second copy
+    // of the choosing would let the two disagree about where they are.
+    QVector<AxisTick> secondaryTicks(const PlotSpec& spec, const Frame& f) const;
     void drawChrome(QPainter* p, const Frame& f, const PlotSpec& spec,
                     const QVector<AxisTick>& xTicks, const QVector<AxisTick>& yTicks) const;
     void drawLegend(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // The key to a colour-mapped figure: a strip of the map with the value
     // range on it. Drawn in the backend so it reaches the PDF and the SVG too.
+    // Hexagonal binning for "Hexbin Density", which until now shared the 2-D
+    // histogram's square-celled painter and therefore drew the same picture.
+    void drawHexbin(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawColourBar(QPainter* p, const Frame& f, const PlotSpec& spec,
                        double lo, double hi, const QString& caption) const;
     // The title, for the engines that have no axis frame to hang it on: pie,
@@ -208,8 +234,14 @@ private:
 
     void drawLineChart(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawScatter(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The joint scatter plus the two marginal strips. NOT drawScatter
+    // under a second name - see the note on the definition.
+    void drawScatterMarginals(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawBar(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawArea(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The band between adjacent curves. NOT drawArea under a second name -
+    // see the note on the definition for what that alias cost.
+    void drawFillBetween(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawStairs(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawStem(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawHorizontalBar(QPainter* p, const Frame& f, const PlotSpec& spec) const;
@@ -270,6 +302,9 @@ private:
     void drawHeatmap(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawContour(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawViolin(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The cloud, the box and the RAIN. Not drawViolin under a second
+    // name - see the note on the definition.
+    void drawRaincloud(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawPolar(QPainter* p, const QRectF& target, const PlotSpec& spec, bool markersOnly) const;
     void drawForest(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // Orthographic projection rather than the VTK viewport: a catalogue entry
@@ -311,6 +346,9 @@ private:
     void drawHive(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The same edge list as a flow through computed stages.
     void drawAlluvial(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    // Every mapped column against every other. Draws its own panels and its
+    // own frames, so it takes the target rather than a Frame.
+    void drawPlotMatrix(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // The network graph's edge list, laid out on a line.
     void drawArc(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
     // Q, A, P and F against the IUGS igneous rock fields.

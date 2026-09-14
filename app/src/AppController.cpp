@@ -2,6 +2,7 @@
 #include "UiLayouts.h"
 #include "NativeApi.h"
 #include "ColourVision.h"
+#include <cmath>
 #include <QDateTime>
 #include <QTime>
 #include <QCoreApplication>
@@ -57,15 +58,27 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     // avoids the window opening straddled across a two-monitor desktop.
     displayMode_=qBound(0,settings.value(QStringLiteral("ui/displayMode"),1).toInt(),3);
     plotColourVision_=qBound(0,settings.value(QStringLiteral("plot/colourVision"),0).toInt(),4);
+    colourVisionToolbar_=settings.value(QStringLiteral("plot/colourVisionToolbar"),false).toBool();
     plotColourMap_=settings.value(QStringLiteral("plot/colourMap")).toString();
     // Automatic by default. The old behaviour - a notice, every time, for every
     // render however brief - meant the better picture existed and was not being
     // shown until asked for, which is the wrong default for a viewer.
     fullRenderPolicy_=qBound(0,settings.value(QStringLiteral("plot/fullRenderPolicy"),0).toInt(),2);
     fullRenderAskAfterSeconds_=qBound(0.0,settings.value(QStringLiteral("plot/fullRenderAskAfterSeconds"),5.0).toDouble(),600.0);
-    figureTheme_=qBound(0,settings.value(QStringLiteral("plot/figureTheme"),0).toInt(),3);
+    // 4, not 3. The clamp is the list's length, and leaving it at 3 when Custom
+    // was added would have turned every custom background back into White on
+    // the next start - a setting that survives until you close the program is
+    // worse than one that was never offered.
+    figureTheme_=qBound(0,settings.value(QStringLiteral("plot/figureTheme"),0).toInt(),4);
+    {
+        const QColor saved(settings.value(QStringLiteral("plot/figureBackground")).toString());
+        if(saved.isValid()) figureBackground_=saved;
+    }
     plotGridVisible_=settings.value(QStringLiteral("plot/gridVisible"),true).toBool();
     plotGridDensity_=qBound(0,settings.value(QStringLiteral("plot/gridDensity"),0).toInt(),25);
+    plotGridDensityY_=qBound(0,settings.value(QStringLiteral("plot/gridDensityY"),0).toInt(),25);
+    plotPieLabels_=qBound(0,settings.value(QStringLiteral("plot/pieLabels"),0).toInt(),3);
+    plotPolarConvention_=qBound(0,settings.value(QStringLiteral("plot/polarConvention"),0).toInt(),1);
     plotScaleLabels_=settings.value(QStringLiteral("plot/scaleLabels"),true).toBool();
     plotFieldInterpolation_=qBound(0,settings.value(QStringLiteral("plot/fieldInterpolation"),2).toInt(),3);
     plotFieldEstimator_=qBound(-1,settings.value(QStringLiteral("plot/fieldEstimator"),-1).toInt(),16);
@@ -148,6 +161,16 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
         while(componentTail_.size()>300) componentTail_.removeFirst();
         emit componentsChanged();
     });
+    // PowerShell failing to launch at all. startComponentScript used to catch
+    // this by blocking on waitForStarted; now that it does not, this is the
+    // only thing that would report it, and without it the add-ons panel would
+    // sit on "Installing..." for ever with no message.
+    connect(&componentProcess_,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
+        if(error!=QProcess::FailedToStart) return;
+        setStatus(QStringLiteral("Could not run PowerShell: %1").arg(componentProcess_.errorString()));
+        componentMode_.clear();
+        emit componentsChanged();
+    });
     connect(&componentProcess_,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,
             [this](int code,QProcess::ExitStatus){
         const QString mode=componentMode_;
@@ -186,9 +209,17 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
         emit solverChanged();
     });
     connect(&solverProcess_,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
-        // FailedToStart is already reported by runSolver's waitForStarted, and
         // Crashed after a kill is the cancel we asked for.
-        if(error==QProcess::FailedToStart||solverCancelled_) return;
+        if(solverCancelled_) return;
+        // FailedToStart used to be skipped here, because runSolver blocked on
+        // waitForStarted and reported it itself. It no longer blocks, so this
+        // is where a shell that will not launch is reported - and it has to
+        // set solverResult_ as runSolver did, or the panel shows a run that
+        // never began as one still in progress.
+        if(error==QProcess::FailedToStart){
+            setStatus(QStringLiteral("Could not start the engine: %1").arg(solverProcess_.errorString()));
+            solverResult_=QVariantMap{{QStringLiteral("error"),solverProcess_.errorString()}};
+        }
         solverTail_.append(QStringLiteral("[GraphVis] %1").arg(solverProcess_.errorString()));
         emit solverChanged();
     });
@@ -232,22 +263,52 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
         // Deliberately NOT closing stdin or terminating. The service is a loop
         // over stdin and stays up for the next request - see startScienceOp.
     });
+    // The service is started asynchronously, so a request made while it is
+    // still coming up waits here rather than on the GUI thread. See
+    // startScienceOp.
+    connect(&scienceProcess_,&QProcess::started,this,[this]{
+        if(pendingScienceRequest_.isEmpty()) return;
+        const QByteArray line=pendingScienceRequest_;
+        pendingScienceRequest_.clear();
+        if(scienceProcess_.write(line)>=0) return;
+        // Started and immediately unwritable. One restart has already been
+        // spent by this point if it was going to be, so this stops.
+        setStatus(QStringLiteral("Could not reach the science service"));
+        if(scanning_){scanning_=false;emit scanChanged();}
+        pendingScienceOp_.clear();
+        setBusy(false);
+    });
     connect(&scienceProcess_,&QProcess::errorOccurred,this,[this](QProcess::ProcessError){
         setStatus(QStringLiteral("Science service failed: %1").arg(scienceProcess_.errorString()));
         if(scanning_){scanning_=false;emit scanChanged();}
+        // A request queued for a process that never started must not be
+        // delivered to the next one that does.
+        pendingScienceRequest_.clear();
+        scienceRestartPending_=false;
         pendingScienceOp_.clear();
         setBusy(false);});
     // If it dies mid-request, say so and let the next request start a fresh one
     // rather than writing into a dead pipe forever.
     connect(&scienceProcess_,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,
             [this](int code,QProcess::ExitStatus){
+        scienceOutput_.clear();
+        // A write that found a dead pipe killed the service and asked for one
+        // restart. This is where the state has actually settled to NotRunning,
+        // which is the only point at which ensureScienceService will start
+        // anything. The flag is cleared FIRST, so a service that dies again on
+        // the retry falls through to the report below instead of restarting
+        // for ever.
+        if(scienceRestartPending_){
+            scienceRestartPending_=false;
+            if(!pendingScienceRequest_.isEmpty()&&ensureScienceService()) return;
+            pendingScienceRequest_.clear();
+        }
         if(!pendingScienceOp_.isEmpty()){
             setStatus(QStringLiteral("Science service stopped before answering (exit %1)").arg(code));
             if(scanning_){scanning_=false;emit scanChanged();}
             pendingScienceOp_.clear();
             setBusy(false);
         }
-        scienceOutput_.clear();
     });
     refreshState();
     // A loaded-but-mismatched core sets the error text without clearing the
@@ -351,8 +412,13 @@ void AppController::setExperimentalUi(bool value){if(experimentalUi_==value)retu
 void AppController::setWorkspaceMode(const QString& value){if(workspaceMode_==value)return;workspaceMode_=value;emit workspaceModeChanged();}
 
 void AppController::refreshState(){
-    if(!runtime_)return;const QString text=NativeApi::instance().takeString(NativeApi::instance().stateJson(runtime_));
-    const auto doc=QJsonDocument::fromJson(text.toUtf8());if(!doc.isObject())return;const auto o=doc.object();workspaceName_=o.value("workspace_name").toString("Untitled");datasets_.clear();
+    if(!runtime_)return;
+    const QString text=NativeApi::instance().takeString(NativeApi::instance().stateJson(runtime_));
+    const auto doc=QJsonDocument::fromJson(text.toUtf8());
+    if(!doc.isObject())return;
+    const auto o=doc.object();
+    workspaceName_=o.value("workspace_name").toString("Untitled");
+    datasets_.clear();
     for(const QJsonValue v:o.value("datasets").toArray())datasets_.push_back(v.toObject().toVariantMap());
     if(activeDatasetId_.isEmpty()&&!datasets_.isEmpty())activeDatasetId_=datasets_.last().toMap().value("id").toString();
     emit stateChanged();emit activeDatasetChanged();
@@ -734,7 +800,14 @@ void AppController::handleQueryFinished(){
     sqlResult_=queryWatcher_.result();setBusy(false);setStatus(QStringLiteral("DataFusion query complete"));emit sqlResultChanged();
 }
 void AppController::cancelActiveJob(){
-    if(scienceProcess_.state()!=QProcess::NotRunning){scienceProcess_.kill();cancelRequested_=false;setBusy(false);setStatus("Literature analysis cancelled");return;}
+    if(scienceProcess_.state()!=QProcess::NotRunning){
+        // Anything still queued for a service that is being killed is exactly
+        // what the person just cancelled, so it is dropped rather than sent to
+        // the replacement.
+        pendingScienceRequest_.clear();
+        scienceRestartPending_=false;
+        pendingScienceOp_.clear();
+        scienceProcess_.kill();cancelRequested_=false;setBusy(false);setStatus("Literature analysis cancelled");return;}
     if(importWatcher_.isRunning()||queryWatcher_.isRunning()){
         cancelRequested_=true;
         importWatcher_.cancel(); queryWatcher_.cancel();
@@ -1024,7 +1097,7 @@ bool AppController::exportProjectState(const QUrl& url){
 //
 // config/graph_catalogue.json is generated from GraphVis 17's
 // src/graphvis/rendering/graph_library.py and embedded as a QML module
-// resource. It carries all 318 catalogue entries across 30 categories, each
+// resource. It carries all 2116 catalogue entries across 46 categories, each
 // with its rendering engine key, axis-scale variant, advanced flag,
 // description and the filename of its pre-rendered thumbnail.
 //
@@ -1140,8 +1213,8 @@ double AppController::fuzzyScore(const QString& query,const QVariantMap& entry){
     double best=0.0;
     // One compiled regex for the life of the program. This used to construct
     // three of them per catalogue entry, and searchGraphs() calls this for all
-    // 318 entries - so every keystroke in the Graph Library compiled and threw
-    // away nearly a thousand regular expressions.
+    // 2,116 entries - so every keystroke in the Graph Library compiled and
+    // threw away over six thousand regular expressions.
     static const QRegularExpression kWordBreak(QStringLiteral("[^a-z0-9]+"));
     QStringList tokens=engine.split(kWordBreak,Qt::SkipEmptyParts);
     tokens+=name.split(kWordBreak,Qt::SkipEmptyParts);
@@ -1215,6 +1288,29 @@ QString AppController::exportPath(const QString& baseName,const QString& extensi
 // Suite there was only one, and every reply was assumed to be a literature
 // extraction.
 // =========================================================================
+// Starting it does NOT block the interface.
+//
+// This waited up to five seconds on waitForStarted, on the GUI thread, on the
+// first science operation of a session. The timeout is not the cost - spawning
+// a local process is normally tens of milliseconds - but the cost is not
+// bounded by anything the program controls either: the service is a Python
+// interpreter in its own virtual environment, and on a cold cache, or with a
+// virus scanner examining the executable, that spawn is seconds. Whatever it
+// took, the window was frozen for it, and it could not even paint the busy
+// label because setBusy ran afterwards and nothing returned to the event loop
+// in between. The one thing the person could tell was that the program had
+// stopped responding.
+//
+// So the process starts asynchronously and the request waits for it. QProcess
+// emits started() or errorOccurred(FailedToStart), and the handlers for both
+// already exist and already clear the busy state - a failure to start now
+// reports itself through the same path as a service that dies mid-request,
+// instead of through a return value.
+//
+// The one thing to be careful of: a queued request must never be delivered to
+// a LATER process than the one it was queued for. Both handlers therefore drop
+// it, so a start that fails discards the request rather than leaving it to be
+// written into the next service that happens to come up.
 bool AppController::ensureScienceService(){
     if(scienceProcess_.state()!=QProcess::NotRunning) return true;
     const QString exe=scienceServiceExecutable();
@@ -1227,10 +1323,7 @@ bool AppController::ensureScienceService(){
     scienceProcess_.setProgram(exe);
     scienceProcess_.setArguments({});
     scienceProcess_.start();
-    if(!scienceProcess_.waitForStarted(5000)){
-        setStatus(QStringLiteral("Could not start science service: %1").arg(scienceProcess_.errorString()));
-        return false;
-    }
+    // Starting, not started. The caller queues its request; started() sends it.
     return true;
 }
 
@@ -1243,16 +1336,29 @@ bool AppController::startScienceOp(const QJsonObject& request,const QString& op,
     scienceOutput_.clear();
     pendingScienceOp_=op;
     setBusy(true,busyLabel);
-    const qint64 written=scienceProcess_.write(QJsonDocument(request).toJson(QJsonDocument::Compact)+"\n");
-    if(written<0){
-        // The pipe died between the state check and the write. Start a fresh
-        // service and try exactly once more.
+
+    const QByteArray line=QJsonDocument(request).toJson(QJsonDocument::Compact)+"\n";
+    if(scienceProcess_.state()!=QProcess::Running){
+        // Still starting. Held until started() fires, which is also what makes
+        // the busy label appear immediately rather than after the spawn.
+        pendingScienceRequest_=line;
+        return true;
+    }
+
+    if(scienceProcess_.write(line)<0){
+        // The pipe died between the state check and the write. The old code
+        // killed it, waited two seconds for the corpse, restarted and wrote
+        // again; the retry is kept, asynchronously.
+        //
+        // The restart cannot happen here. kill() is asynchronous, so the state
+        // immediately after it is still Running, and ensureScienceService()
+        // returns early on anything that is not NotRunning - it would report
+        // success, start nothing, and leave the request queued for a process
+        // that is on its way out. The restart therefore belongs in finished(),
+        // which by definition runs once the state has settled.
+        pendingScienceRequest_=line;
+        scienceRestartPending_=true;
         scienceProcess_.kill();
-        scienceProcess_.waitForFinished(2000);
-        if(!ensureScienceService()||scienceProcess_.write(QJsonDocument(request).toJson(QJsonDocument::Compact)+"\n")<0){
-            setStatus(QStringLiteral("Could not reach the science service"));
-            pendingScienceOp_.clear(); setBusy(false); return false;
-        }
     }
     return true;
 }
@@ -1607,11 +1713,20 @@ void AppController::refreshAnalysisCatalogue(){
                    QStringLiteral("Reading the analysis catalogue"));
 }
 
-bool AppController::runAnalysis(const QString& kind,const QVariantMap& options){
-    const QString arrow=requireActiveArrow();
-    if(arrow.isEmpty()) return false;
+bool AppController::runAnalysis(const QString& kind,const QVariantMap& options,
+                                bool requiresDataset){
+    QString arrow;
+    if(requiresDataset){
+        arrow=requireActiveArrow();
+        if(arrow.isEmpty()) return false;
+    }else{
+        // Sent when there is one, because an operation that does not need a
+        // dataset is not harmed by being told about it; absent otherwise.
+        arrow=nativeArrowPath();
+    }
     const QString op=QStringLiteral("analysis.")+kind;
-    QJsonObject request{{"op",op},{"arrow_path",arrow}};
+    QJsonObject request{{"op",op}};
+    if(!arrow.isEmpty()) request.insert(QStringLiteral("arrow_path"),arrow);
     // Whatever the caller supplied travels as-is: an operation asks for the
     // columns and settings it needs and ignores the rest.
     for(auto it=options.constBegin();it!=options.constEnd();++it)
@@ -1770,12 +1885,11 @@ bool AppController::startComponentScript(const QStringList& arguments,const QStr
     componentProcess_.setProcessChannelMode(mode==QLatin1String("list")
                                             ? QProcess::SeparateChannels
                                             : QProcess::MergedChannels);
+    // Started, not waited for. A failure to launch arrives on errorOccurred
+    // and is reported there; blocking here froze the window for however long
+    // Windows took to bring PowerShell up, which is not a small number on a
+    // machine that has not run it recently.
     componentProcess_.start(QStringLiteral("powershell.exe"),args);
-    if(!componentProcess_.waitForStarted(5000)){
-        setStatus(QStringLiteral("Could not run PowerShell: %1").arg(componentProcess_.errorString()));
-        componentMode_.clear();
-        return false;
-    }
     emit componentsChanged();
     return true;
 }
@@ -1884,12 +1998,9 @@ bool AppController::runSolver(const QString& command,const QUrl& workdir,const Q
 #else
     solverProcess_.start(QStringLiteral("/bin/sh"),{QStringLiteral("-c"),resolved});
 #endif
-    if(!solverProcess_.waitForStarted(5000)){
-        setStatus(QStringLiteral("Could not start the engine: %1").arg(solverProcess_.errorString()));
-        solverResult_=QVariantMap{{QStringLiteral("error"),solverProcess_.errorString()}};
-        emit solverChanged();
-        return false;
-    }
+    // Started, not waited for: see startScienceOp. A failure to launch the
+    // shell is reported by the errorOccurred handler, which now handles
+    // FailedToStart rather than leaving it to a blocking wait here.
 
     // The run is not allowed to hang the session forever. v17 used the same
     // hour default and the same "kill, then report" behaviour.
@@ -2184,19 +2295,127 @@ QStringList AppController::plotColourVisionNames() const{
 QString AppController::plotColourVisionSummary() const{
     const QStringList names=graphvis::colourVisionNames();
     const QString chosen=names.value(qBound(0,plotColourVision_,names.size()-1));
-    return plotColourVision_==0
-        ? QStringLiteral("Graph colours: %1 - distinguishable for protanopia, deuteranopia and tritanopia").arg(chosen)
-        : QStringLiteral("Graph colours: %1 - series palette fixed for this vision type").arg(chosen);
+    if(plotColourVision_==0)
+        return QStringLiteral("Graph colours: %1 - distinguishable for protanopia, "
+                              "deuteranopia and tritanopia").arg(chosen);
+    // A specialised palette that fails a DIFFERENT deficiency has to say so.
+    //
+    // Measured rather than assumed - see the table in ColourVision.h. The
+    // Protanopia and Deuteranopia palettes each collapse a pair for a tritanope,
+    // and someone choosing one of them is usually being considerate about a
+    // figure other people will read. Leaving that unsaid turns a considerate
+    // choice into a figure a different reader cannot use.
+    const QString risk=graphvis::crossVisionRisk(
+        graphvis::colourVisionFromInt(plotColourVision_));
+    if(!risk.isEmpty())
+        return QStringLiteral("Graph colours: %1 - tuned for this vision, but two of its "
+                              "colours are hard to tell apart under %2. Standard is safe "
+                              "for all three.").arg(chosen,risk);
+    return QStringLiteral("Graph colours: %1 - series palette fixed for this vision type")
+               .arg(chosen);
 }
 
 void AppController::setFigureTheme(int mode){
-    const int clamped=qBound(0,mode,3);
+    const int clamped=qBound(0,mode,4);
     if(figureTheme_==clamped) return;
     figureTheme_=clamped;
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
         .setValue(QStringLiteral("plot/figureTheme"),figureTheme_);
     emit plotDisplayChanged();
     setStatus(QStringLiteral("Figure background: %1").arg(figureThemeNames().value(figureTheme_)));
+}
+
+void AppController::setFigureBackground(const QColor& c){
+    if(!c.isValid()) return;
+    // Picking a colour IS choosing the custom background. Storing a colour while
+    // leaving the preset on Dark would be a picker that appears to do nothing,
+    // which is the failure this whole change exists to fix.
+    if(figureBackground_==c&&figureTheme_==4) return;
+    figureBackground_=c;
+    figureTheme_=4;
+    QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
+    settings.setValue(QStringLiteral("plot/figureBackground"),
+                      figureBackground_.name(QColor::HexRgb));
+    settings.setValue(QStringLiteral("plot/figureTheme"),figureTheme_);
+    emit plotDisplayChanged();
+    setStatus(QStringLiteral("Figure background: %1").arg(figureBackground_.name(QColor::HexRgb)));
+}
+
+// The ink for a custom background, worked out rather than asked for.
+//
+// A figure whose text does not contrast with its ground is unreadable, and a
+// person choosing a background is choosing a ground - not undertaking to find a
+// matching ink for every colour they try. So the background decides: a dark one
+// gets light text, a light one gets dark text, at the contrast the built-in
+// Dark and Light figures already use.
+//
+// Relative luminance rather than plain lightness, because the eye is not
+// equally sensitive to the three primaries: a saturated blue at "50% lightness"
+// is much darker to look at than a yellow at the same figure, and splitting on
+// lightness puts black text on navy.
+static double relativeLuminance(const QColor& c){
+    const auto channel=[](int raw){
+        const double v=raw/255.0;
+        return v<=0.03928?v/12.92:std::pow((v+0.055)/1.055,2.4);
+    };
+    return 0.2126*channel(c.red())+0.7152*channel(c.green())+0.0722*channel(c.blue());
+}
+
+// WCAG 2.x contrast ratio. Used rather than a lightness difference because it
+// is the number that predicts whether text can actually be read.
+static double contrastRatio(const QColor& a,const QColor& b){
+    const double la=relativeLuminance(a),lb=relativeLuminance(b);
+    return (qMax(la,lb)+0.05)/(qMin(la,lb)+0.05);
+}
+
+QColor AppController::figureForeground() const{
+    // Chosen by contrast, not by a lightness threshold.
+    //
+    // The first version of this split on luminance at 0.18 and handed back one
+    // of two fixed inks. A mid grey ground came out at 4.03:1 - under the 4.5
+    // that ordinary text wants - and sweeping the threshold did not help,
+    // because at that ground BOTH inks are poor: the best any fixed pair can
+    // manage there is 4.03. The threshold was not the problem; having only two
+    // inks was.
+    //
+    // So: the better of the two tuned inks when it clears 4.5, and pure black
+    // or white when it does not. Pure black and white are the extremes, so the
+    // fallback is the best contrast that exists for that ground.
+    //
+    // TWO WORST CASES, and they are not the same number. Swept over the whole
+    // RGB cube the worst any background gets is exactly **4.500:1** - at
+    // #645fa0, where a tuned ink only just clears the threshold and is
+    // therefore returned. The **fallback branch** alone bottoms out higher, at
+    // **4.583:1** (#5d60ff), which is the grey where black and white are
+    // equally bad. An earlier version of this comment quoted the second number
+    // as though it were the first; the guard now asserts both, measured.
+    //
+    // This is the property that matters, because the background is whatever
+    // someone picked. There is no longer a fixed list of offered grounds to
+    // check instead - the swatch grid was removed from the panel, and with it
+    // the idea that the safe colours are a set we chose.
+    const QColor bg=figureBackground_;
+    const QColor lightInk(0xdb,0xe6,0xf0);  // the Dark figure's ink
+    const QColor darkInk(0x14,0x18,0x1d);   // the Light and White figures' ink
+    const double onLight=contrastRatio(bg,lightInk);
+    const double onDark=contrastRatio(bg,darkInk);
+    const QColor tuned=(onLight>onDark)?lightInk:darkInk;
+    if(qMax(onLight,onDark)>=4.5) return tuned;
+    return (contrastRatio(bg,QColor(Qt::white))>contrastRatio(bg,QColor(Qt::black)))
+               ? QColor(Qt::white) : QColor(Qt::black);
+}
+
+QColor AppController::figureGridColour() const{
+    // The background moved a little of the way towards the ink, so the grid
+    // stays visible on any ground without ever competing with the data. A fixed
+    // grid colour cannot manage that: #26384f disappears on navy and glares on
+    // cream.
+    const QColor bg=figureBackground_;
+    const QColor ink=figureForeground();
+    const double mix=0.22;
+    return QColor::fromRgbF(bg.redF()  +(ink.redF()  -bg.redF())  *mix,
+                            bg.greenF()+(ink.greenF()-bg.greenF())*mix,
+                            bg.blueF() +(ink.blueF() -bg.blueF()) *mix);
 }
 
 void AppController::setPlotGridVisible(bool on){
@@ -2312,13 +2531,38 @@ void AppController::setPlotScaleLabels(bool on){
 // there was any way to choose differently.
 namespace {
 constexpr int kRecentLimit=12;
+// Ten, because the person asked for ten and because a shortcut list longer
+// than a screen is a second catalogue rather than a shortcut. Separate from
+// kRecentLimit: recent DATASETS are a file menu, where twelve is normal.
+constexpr int kRecentGraphLimit=10;
 
-void promote(QVariantList& list,const QVariantMap& entry,const QString& key){
+void promote(QVariantList& list,const QVariantMap& entry,const QString& key,
+             int limit=kRecentLimit){
     const QString id=entry.value(key).toString();
     for(int i=int(list.size())-1;i>=0;--i)
         if(list.at(i).toMap().value(key).toString()==id) list.removeAt(i);
     list.prepend(entry);
-    while(list.size()>kRecentLimit) list.removeLast();
+    while(list.size()>limit) list.removeLast();
+}
+
+// The one spelling of "which catalogue entry is this", used by the star, by
+// the recents and by the lookup that resolves either back to an entry.
+//
+// All three, because two of them disagreeing is invisible: a star that keys on
+// engine alone lights up on a different category's entry of the same name, and
+// there is nothing on screen to say it did.
+QString graphKey(const QString& category,const QString& engine,const QString& variant){
+    // ASCII unit separator. A null via '\u0000' is formally ill-formed in a C++
+    // character literal - a universal-character-name may not designate a basic
+    // source character - and although gcc accepts it, this is built with MSVC.
+    // 0x1F cannot occur in a category or engine name either way.
+    const QChar sep(0x1f);
+    return category+sep+engine+sep+variant;
+}
+QString graphKeyOf(const QVariantMap& record){
+    return graphKey(record.value(QStringLiteral("category")).toString(),
+                    record.value(QStringLiteral("engine")).toString(),
+                    record.value(QStringLiteral("variant")).toString());
 }
 } // namespace
 
@@ -2326,13 +2570,20 @@ void AppController::loadRecents(){
     const QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
     recentDatasets_=settings.value(QStringLiteral("recent/datasets")).toList();
     recentVisualisations_=settings.value(QStringLiteral("recent/visualisations")).toList();
+    favouriteGraphs_=settings.value(QStringLiteral("graphs/favourites")).toList();
+    // A list written by an older build can be longer than the cap. Trimmed on
+    // load rather than only on the next write, or the extra entries would show
+    // until the person happened to apply a graph.
+    while(recentVisualisations_.size()>kRecentGraphLimit) recentVisualisations_.removeLast();
 }
 
 void AppController::saveRecents(){
     QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
     settings.setValue(QStringLiteral("recent/datasets"),recentDatasets_);
     settings.setValue(QStringLiteral("recent/visualisations"),recentVisualisations_);
+    settings.setValue(QStringLiteral("graphs/favourites"),favouriteGraphs_);
     emit recentsChanged();
+    emit graphShortcutsChanged();
 }
 
 void AppController::rememberDataset(const QString& path,const QString& name){
@@ -2344,16 +2595,93 @@ void AppController::rememberDataset(const QString& path,const QString& name){
     saveRecents();
 }
 
-void AppController::noteVisualisation(const QString& engine,const QString& variant){
+void AppController::noteVisualisation(const QString& engine,const QString& variant,
+                                     const QString& category){
     if(engine.isEmpty()) return;
     QVariantMap entry;
     entry.insert(QStringLiteral("engine"),engine);
     entry.insert(QStringLiteral("variant"),variant);
+    entry.insert(QStringLiteral("category"),category);
     entry.insert(QStringLiteral("label"),variant.isEmpty()
                                              ? engine
                                              : QStringLiteral("%1 · %2").arg(engine,variant));
-    promote(recentVisualisations_,entry,QStringLiteral("label"));
+    // Promoted on the KEY, not on the label, so the same engine in two
+    // categories keeps two places in the list - they are two entries, and the
+    // person who used both wants both back.
+    entry.insert(QStringLiteral("key"),graphKeyOf(entry));
+    promote(recentVisualisations_,entry,QStringLiteral("key"),kRecentGraphLimit);
     saveRecents();
+}
+
+// Records resolved against the catalogue as it stands now.
+//
+// Skipping what no longer resolves is the whole behaviour worth describing: a
+// pack switched off, an entry renamed by a catalogue edit, a variant removed.
+// None of those should be an error and none should leave a blank row - and
+// none should FORGET the record either, because a pack can be switched back on
+// and the star was a deliberate act.
+QVariantList AppController::resolveGraphRecords(const QVariantList& records) const{
+    QVariantList out;
+    if(graphEntries_.isEmpty()) return out;
+    QHash<QString,QVariantMap> byKey;
+    byKey.reserve(int(graphEntries_.size()));
+    for(const QVariant& v:graphEntries_){
+        const QVariantMap e=v.toMap();
+        byKey.insert(graphKey(e.value(QStringLiteral("category")).toString(),
+                              e.value(QStringLiteral("engine")).toString(),
+                              e.value(QStringLiteral("scale")).toString()),e);
+    }
+    for(const QVariant& v:records){
+        const auto it=byKey.constFind(graphKeyOf(v.toMap()));
+        if(it!=byKey.constEnd()) out.append(*it);
+    }
+    return out;
+}
+
+QVariantList AppController::favouriteGraphs() const{
+    return resolveGraphRecords(favouriteGraphs_);
+}
+
+QVariantList AppController::recentGraphs() const{
+    return resolveGraphRecords(recentVisualisations_);
+}
+
+bool AppController::isFavouriteGraph(const QString& category,const QString& engine,
+                                     const QString& variant) const{
+    const QString key=graphKey(category,engine,variant);
+    for(const QVariant& v:favouriteGraphs_)
+        if(graphKeyOf(v.toMap())==key) return true;
+    return false;
+}
+
+void AppController::toggleFavouriteGraph(const QString& category,const QString& engine,
+                                         const QString& variant){
+    if(engine.isEmpty()) return;
+    const QString key=graphKey(category,engine,variant);
+    for(int i=int(favouriteGraphs_.size())-1;i>=0;--i){
+        if(graphKeyOf(favouriteGraphs_.at(i).toMap())!=key) continue;
+        favouriteGraphs_.removeAt(i);
+        saveRecents();
+        setStatus(QStringLiteral("Removed %1 from favourites").arg(engine));
+        return;
+    }
+    QVariantMap record;
+    record.insert(QStringLiteral("category"),category);
+    record.insert(QStringLiteral("engine"),engine);
+    record.insert(QStringLiteral("variant"),variant);
+    // Appended, not prepended: favourites are a shelf the person arranges by
+    // starring things, and a shelf that reorders itself every time you add to
+    // it is one you cannot learn the shape of. Recents are the opposite and
+    // prepend.
+    favouriteGraphs_.append(record);
+    saveRecents();
+    setStatus(QStringLiteral("Starred %1").arg(engine));
+}
+
+void AppController::clearRecentGraphs(){
+    recentVisualisations_.clear();
+    saveRecents();
+    setStatus(QStringLiteral("Recent graphs cleared"));
 }
 
 void AppController::openRecentDataset(const QString& path){
@@ -2386,6 +2714,33 @@ void AppController::setPlotGridDensity(int ticks){
     plotGridDensity_=clamped;
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
         .setValue(QStringLiteral("plot/gridDensity"),plotGridDensity_);
+    emit plotDisplayChanged();
+}
+
+void AppController::setPlotGridDensityY(int ticks){
+    const int clamped=qBound(0,ticks,25);
+    if(plotGridDensityY_==clamped) return;
+    plotGridDensityY_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/gridDensityY"),plotGridDensityY_);
+    emit plotDisplayChanged();
+}
+
+void AppController::setPlotPieLabels(int mode){
+    const int clamped=qBound(0,mode,3);
+    if(plotPieLabels_==clamped) return;
+    plotPieLabels_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/pieLabels"),plotPieLabels_);
+    emit plotDisplayChanged();
+}
+
+void AppController::setPlotPolarConvention(int mode){
+    const int clamped=qBound(0,mode,1);
+    if(plotPolarConvention_==clamped) return;
+    plotPolarConvention_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/polarConvention"),plotPolarConvention_);
     emit plotDisplayChanged();
 }
 
@@ -2424,4 +2779,22 @@ void AppController::setPlotColourVision(int value){
         .setValue(QStringLiteral("plot/colourVision"),plotColourVision_);
     emit plotColourVisionChanged();
     setStatus(plotColourVisionSummary());
+}
+
+void AppController::setPlotColourVisionPreview(bool on){
+    if(colourVisionPreview_==on) return;
+    colourVisionPreview_=on;
+    // No QSettings write: see the property. A simulated view is not a setting.
+    emit plotColourVisionChanged();
+    setStatus(on?QStringLiteral("Showing the figure as this reader sees it. Exports "
+                                "are unaffected.")
+                :QStringLiteral("Back to the real figure."));
+}
+
+void AppController::setColourVisionToolbarVisible(bool on){
+    if(colourVisionToolbar_==on) return;
+    colourVisionToolbar_=on;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/colourVisionToolbar"),colourVisionToolbar_);
+    emit plotColourVisionChanged();
 }

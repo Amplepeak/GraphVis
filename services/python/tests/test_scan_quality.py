@@ -31,16 +31,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from graphvis_science.analysis.intelligent_scan import scan_dataset
+from graphvis_science.analysis.intelligent_scan import column_roles, scan_dataset
 
 
 class _Dataset:
     """What service.py builds for `dataset.scan`, and nothing more.
 
-    Kept deliberately identical to the adapter in the service: it declares
-    `numeric_columns` but neither `parameter_columns` nor `response_columns`,
-    so these tests exercise the path production actually takes rather than a
-    better-informed one that never happens.
+    Kept deliberately identical to the adapter in the service, so these tests
+    exercise the path production actually takes rather than a better-informed
+    one that never happens. When the shim gains an attribute this gains it too
+    - and `test_the_test_double_still_matches_the_service_shim` below fails if
+    the two drift, because a double that is quietly richer than the real thing
+    tests a program nobody runs.
     """
 
     def __init__(self, frame: pd.DataFrame) -> None:
@@ -50,6 +52,7 @@ class _Dataset:
         self.numeric_columns = [str(c) for c in frame.select_dtypes("number").columns]
         self.matrices: dict = {}
         self.volumes: dict = {}
+        self.parameter_columns, self.response_columns = column_roles(frame)
 
 
 def recommendations(frame: pd.DataFrame, budget: float = 8.0) -> list[dict]:
@@ -234,3 +237,95 @@ def test_every_recommendation_carries_a_reason() -> None:
         assert rec["reason"].strip(), rec["graph"]
         assert len(rec["reason"]) > 25, (rec["graph"], rec["reason"])
         assert 0.0 <= rec["score"] <= 1.0
+
+
+# --------------------------------------------------- column roles and advice
+def test_the_test_double_still_matches_the_service_shim() -> None:
+    """`_Dataset` above must expose exactly what `_ArrowDataset` does.
+
+    The shim lives inside a function body in service.py, so it cannot be
+    imported; this reads the attributes it assigns. The point is narrow and
+    worth the awkwardness: every scan test in this file runs against the
+    double, so a double that has an attribute production lacks turns the whole
+    suite into a test of a program that is never shipped. That is precisely
+    what had happened - the shim declared no roles at all while the scanner
+    asked for them - and it is what this stops recurring silently.
+    """
+    import re
+    from pathlib import Path
+
+    service = (Path(__file__).resolve().parents[1] / "graphvis_science"
+               / "service.py").read_text(encoding="utf-8")
+    lines = service.splitlines()
+    start = next((i for i, line in enumerate(lines)
+                  if line.strip() == "class _ArrowDataset:"), None)
+    assert start is not None, "the _ArrowDataset shim has moved or been renamed"
+    # To the next line at or outside the class's own indentation. Stopping at
+    # the first blank line instead would make a blank line inside the class
+    # look like a shim that had lost half its attributes.
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    end = start + 1
+    while end < len(lines):
+        line = lines[end]
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+            break
+        end += 1
+    # Tuple unpacking assigns two names on one line; the pattern sees both.
+    shim = set(re.findall(r"self\.(\w+)\s*(?:[,=]|:\s*\w+\s*=)",
+                          "\n".join(lines[start:end])))
+    double = set(vars(_Dataset(pd.DataFrame({"x": [1.0, 2.0]}))))
+    assert shim == double, (
+        "the scan test double and the service shim have drifted apart, so "
+        "these tests no longer describe the program that ships.\n"
+        f"  only in service.py: {sorted(shim - double) or 'none'}\n"
+        f"  only in the double: {sorted(double - shim) or 'none'}")
+
+
+def test_column_roles_separates_swept_inputs_from_measured_outputs() -> None:
+    frame = pd.DataFrame({"temperature": [1.0], "flow_rate_input": [1.0],
+                          "yield_pct": [1.0], "label": ["a"]})
+    parameters, responses = column_roles(frame)
+    assert "temperature" in parameters
+    assert "yield_pct" in responses
+    # Non-numeric columns are not roles, and no column holds two.
+    assert "label" not in parameters and "label" not in responses
+    assert not set(parameters) & set(responses)
+
+
+def test_a_two_parameter_sweep_is_advised_a_response_surface() -> None:
+    """The advisor's whole reason for existing, on a bare DataFrame.
+
+    `intelligent_visualization_advisor` recommends a heatmap/contour/surface
+    when a dataset has two or more swept parameters and a response. It counted
+    parameters through `getattr(dataset, 'parameter_columns', ())`, which a
+    plain DataFrame does not have - and a plain DataFrame is the only thing
+    v18 ever passes it. So the count was zero for every dataset the shipped
+    program can produce, and this branch never once fired.
+
+    Reverting `nparams` to that getattr makes this test fail, which is the
+    check that it is testing the fix rather than the weather.
+    """
+    from graphvis_science.analysis.electro import intelligent_visualization_advisor
+
+    rng = np.random.default_rng(7)
+    n = 120
+    temperature = rng.uniform(300, 400, n)
+    pressure = rng.uniform(1, 10, n)
+    frame = pd.DataFrame({
+        "temperature": temperature,
+        "pressure": pressure,
+        "conversion_efficiency": 0.4 * temperature - 2.0 * pressure + rng.normal(0, 1, n),
+    })
+    engines = [engine for engine, _ in intelligent_visualization_advisor(frame)]
+    assert "2D Heatmap" in engines, engines
+
+
+def test_the_advisor_does_not_invent_a_sweep_that_is_not_there() -> None:
+    """The negative case: two measured outputs are not two swept parameters."""
+    from graphvis_science.analysis.electro import intelligent_visualization_advisor
+
+    rng = np.random.default_rng(8)
+    frame = pd.DataFrame({"signal_a": rng.normal(size=120),
+                          "signal_b": rng.normal(size=120)})
+    engines = [engine for engine, _ in intelligent_visualization_advisor(frame)]
+    assert "2D Heatmap" not in engines, engines

@@ -142,7 +142,31 @@ def _r_npy(p):
 def _r_npz(p):
     with np.load(p, allow_pickle=False) as z:
         return _frame_from_arrays({k: z[k] for k in z.files})
+# Opening a pickle runs whatever code is inside it. `pd.read_pickle` is not a
+# parser, it is an interpreter, and there is no safe mode for it - which is why
+# the .npy and .npz readers directly above pass allow_pickle=False. The same
+# hazard applies here and could not be switched off the same way, so it is
+# switched off by policy instead.
+#
+# This matters more here than in most programs: GraphVis is built to open data
+# files that came from a paper, a supervisor or a collaborator. "Plot this .pkl
+# for me" is a completely ordinary request and a completely effective way to run
+# code on someone's machine.
+#
+# Set GRAPHVIS_ALLOW_PICKLE=1 to load one anyway, for a file you created.
+ALLOW_PICKLE_ENV = "GRAPHVIS_ALLOW_PICKLE"
+
+
 def _r_pickle(p):
+    import os as _os
+    if _os.environ.get(ALLOW_PICKLE_ENV, "") not in ("1", "true", "TRUE", "yes"):
+        raise ImportError_(
+            "Opening a .pkl file runs any code stored inside it, so GraphVis "
+            "does not open one by default - a pickle from someone else is an "
+            "executable, not a table. If you made this file yourself, set the "
+            f"environment variable {ALLOW_PICKLE_ENV}=1 and try again. "
+            "Otherwise ask for it as .csv, .parquet or .npz, which cannot carry "
+            "code.")
     obj = pd.read_pickle(p)
     if isinstance(obj, pd.DataFrame):
         return obj

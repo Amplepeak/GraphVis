@@ -2,7 +2,7 @@
 //
 // There is a palette in the experimental shell with six hard-coded actions in
 // it, which is a menu with a search field in front of it. This one searches the
-// things there are actually a lot of - 1,359 catalogue entries, the columns of
+// things there are actually a lot of - 2,116 catalogue entries, the columns of
 // the loaded dataset, the six layouts - because that is the case where hunting
 // through a tree is the slow part, and it is the whole premise of the Command
 // bar layout.
@@ -115,7 +115,7 @@ Popup {
             root.canvas.engine = item.id
             root.canvas.variant = item.scale
             root.canvas.title = item.id
-            root.app.noteVisualisation(item.id, item.scale)
+            root.app.noteVisualisation(item.id, item.scale, item.category ? item.category : "")
         }
         root.close()
     }

@@ -248,6 +248,61 @@ MenuBar {
             }
         }
 
+        // Colour vision lives HERE rather than in the sidebar.
+        //
+        // It had a permanent panel above the graph library, which is prime
+        // space in a 400 px sidebar - and it is a setting a small number of
+        // people set once and everyone else never opens. A menu costs nothing
+        // when it is not wanted, and the optional toolbar below is there for
+        // the people who do change it often.
+        Menu {
+            title: "Colour vision"
+            Repeater {
+                model: root.app.plotColourVisionNames
+                delegate: MenuItem {
+                    required property string modelData
+                    required property int index
+                    text: modelData
+                    checkable: true
+                    checked: root.app.plotColourVision === index
+                    onTriggered: root.app.plotColourVision = index
+                }
+            }
+            MenuSeparator {}
+            // What the setting actually did to the figure on screen - including
+            // when the answer is "nothing, that colour map was already safe",
+            // which is the answer whose absence made the setting look broken.
+            MenuItem {
+                enabled: false
+                visible: root.canvas !== null && root.canvas.colourVisionNote !== ""
+                height: visible ? implicitHeight : 0
+                text: root.canvas ? root.canvas.colourVisionNote : ""
+            }
+            MenuSeparator {}
+            // The setting turned into something you can look at.
+            //
+            // Everything else here is a claim the person setting it cannot
+            // check: they have normal colour vision, the figure looks much as
+            // it did, and they reasonably conclude nothing happened. This shows
+            // the figure as the reader it is for actually receives it.
+            Action {
+                text: "Preview as this reader sees it"
+                checkable: true
+                enabled: root.app.plotColourVision > 0
+                checked: root.app.plotColourVisionPreview
+                onTriggered: root.app.plotColourVisionPreview
+                             = !root.app.plotColourVisionPreview
+            }
+            MenuSeparator {}
+            Action {
+                text: "Show the colour-vision toolbar"
+                checkable: true
+                checked: root.app.colourVisionToolbarVisible
+                onTriggered: root.app.colourVisionToolbarVisible
+                             = !root.app.colourVisionToolbarVisible
+            }
+        }
+
         MenuSeparator {}
 
         Action {
@@ -717,7 +772,7 @@ MenuBar {
             Repeater {
                 model: [
                     { name: "Qt 2-D",
-                      why: "The 203 catalogue engines, exported as true vector PDF. The default, and the only one that can export vectors." },
+                      why: "All 434 catalogue engines, exported as true vector PDF. The default, and the only one that can export vectors." },
                     { name: "Rust / WGPU",
                       why: "GPU point cloud for very large scatter and volume data. Draws through a native surface, so it cannot export vectors." },
                     { name: "VTK / PBR",

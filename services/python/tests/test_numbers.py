@@ -29,13 +29,18 @@ The three bugs this suite was written to find, all of which it did:
 """
 from __future__ import annotations
 
+import json
 import math
+import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from graphvis_science.operations import run
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 # --------------------------------------------------------------------- helpers
@@ -570,3 +575,188 @@ def test_function_curve_evaluates_the_expression() -> None:
     y = np.asarray(got["y"], dtype=float)
     assert close(x[0], 0.0, 1e-12) and close(x[-1], 2.0, 1e-12)
     assert np.abs(y - x ** 2).max() < 1e-12
+
+
+# --------------------------------------------------------- degenerate inputs
+#
+# Found by firing six degenerate frames at all 85 non-network operations - 510
+# calls - and looking for exceptions that were not OperationError or a plain
+# ValueError. Seven came back, across three operations. These are the two that
+# were real defects rather than an engine's own clear complaint.
+def test_derivative_refuses_fewer_than_two_points() -> None:
+    """np.gradient on an empty array says nothing the user can act on.
+
+    A single row, or a column that is entirely NaN, reaches np.gradient empty
+    because the non-finite rows have already been dropped - and it raises
+    "index 0 is out of bounds for axis 0 with size 0", which is a true statement
+    about an array the user never saw.
+    """
+    frame = pd.DataFrame({"x": [1.0], "y": [2.0]})
+    with pytest.raises(Exception, match="(?i)at least two points"):
+        run("derivative", frame, {"y": "y", "x": "x"})
+
+    nan_frame = pd.DataFrame({"x": [1.0, 2, 3], "y": [float("nan")] * 3})
+    with pytest.raises(Exception, match="(?i)at least two points"):
+        run("derivative", nan_frame, {"y": "y", "x": "x"})
+
+
+def test_factorial_anova_refuses_duplicate_column_choices() -> None:
+    """The response cannot also be a factor, and a factor cannot repeat.
+
+    Selecting a column twice makes `df[[...]]` return repeated names, so
+    `df[name]` is a DataFrame rather than a Series and patsy fails with
+    "'DataFrame' object has no attribute 'dtype'" - naming neither the response
+    nor the factor. Both mistakes are one click away in a multi-select.
+    """
+    frame = pd.DataFrame({"x": list("aabb") * 3,
+                          "g": list("cd") * 6,
+                          "y": np.arange(12.0)})
+    with pytest.raises(Exception, match="(?i)cannot also be a factor"):
+        run("factorial_anova", frame, {"y": "y", "factors": ["x", "y"]})
+    with pytest.raises(Exception, match="(?i)only be listed once"):
+        run("factorial_anova", frame, {"y": "y", "factors": ["x", "x"]})
+    # And the valid case still works, which is the point of guarding rather
+    # than widening.
+    ok = run("factorial_anova", frame, {"y": "y", "factors": ["x", "g"]})
+    assert "ANOVA" in ok["name"]
+
+
+def test_a_pickle_is_not_opened_without_being_asked_twice() -> None:
+    """Opening a .pkl runs the code inside it.
+
+    `pd.read_pickle` is an interpreter, not a parser, and there is no safe mode
+    - which is why the .npy and .npz readers beside it pass allow_pickle=False.
+    GraphVis exists to open files that came from a paper or a collaborator, so
+    "plot this .pkl for me" is both an ordinary request and an effective way to
+    run code on someone's machine.
+    """
+    import pickle
+    import tempfile
+
+    from graphvis_science.data.importer import ImportError_, import_to_arrow
+
+    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as handle:
+        pickle.dump(pd.DataFrame({"a": [1, 2, 3]}), handle)
+        path = handle.name
+
+    with pytest.raises(ImportError_, match="(?i)runs any code stored inside it"):
+        import_to_arrow(path, path + ".arrow")
+
+
+
+
+# ------------------------------------------------ the catalogue's own counts
+#
+# Comments and menu text quote how big the catalogue is. It grew four times
+# over this port - 318 entries, then 433, then 1,769, then 2,116 - and each
+# round left the previous figure in whichever file had quoted it. By the end
+# the tree asserted, in the present tense and in four places, that there were
+# 318 entries in 30 categories; the Renderer menu told the user that Qt 2-D
+# draws "the 203 catalogue engines"; and a search cap written to mean "all of
+# them" had been raised from 400 to 2,000 against a catalogue of 2,116, so it
+# was already truncating again.
+#
+# A stale count is not cosmetic here. Each of those numbers is the argument
+# for a design decision - why the categories are collapsed, why the search is
+# grouped by engine, why the sidebar is a SplitView - and a reader who checks
+# one, finds it wrong, and has no way to tell which of the others still hold
+# has lost the use of all of them.
+#
+# Two checks. The first is the one that can be exact: the catalogue file
+# states three counts in its header, and they are recounted from its own
+# contents. The second is deliberately a denylist rather than a parser.
+# Deciding from English whether "33 engines have more than one entry" is a
+# claim about the whole catalogue is a losing game - a first attempt at it
+# flagged that line, a QStringLiteral format string reading "%1 categories",
+# and a sentence that had said "then catalogued" one word past where the
+# scanner stopped reading. What can be decided exactly is whether a figure is
+# a size this catalogue has ALREADY outgrown, which is the failure that keeps
+# happening. When the catalogue next grows, its old size joins this list.
+_CATALOGUE = ROOT / "config" / "graph_catalogue.json"
+
+_SUPERSEDED = {
+    "entries": (318, 433, 1359, 1769),
+    "engines": (135, 203, 318, 395, 433),
+    "categories": (30,),
+}
+
+# A figure may be quoted as history. The sentence has to say so, and these are
+# the words that say it - matched over the comment block rather than the line,
+# because a wrapped comment routinely puts "then catalogued" on the next line
+# from the number it qualifies.
+_HISTORICAL = ("then catalogued", "when the catalogue held", "was set when",
+               "used to", "has grown", "had grown", "that was the state",
+               "returned", "then held", "as it stood")
+
+
+@pytest.mark.skipif(not _CATALOGUE.exists(), reason="run from a source tree")
+def test_the_catalogue_header_matches_the_catalogue() -> None:
+    """The file's declared counts, recounted from its own contents.
+
+    The header is what everything else quotes, so it is the one number that
+    has to be checked against the thing itself rather than against another
+    copy of the claim.
+    """
+    catalogue = json.loads(_CATALOGUE.read_text(encoding="utf-8"))
+    entries = [e for c in catalogue["categories"] for e in c.get("entries", [])]
+    assert len(catalogue["categories"]) == catalogue["category_count"]
+    assert len(entries) == catalogue["entry_count"]
+    assert len({e["engine"] for e in entries}) == catalogue["engine_count"]
+
+
+@pytest.mark.skipif(not _CATALOGUE.exists(), reason="run from a source tree")
+def test_no_source_text_quotes_a_size_the_catalogue_has_outgrown() -> None:
+    catalogue = json.loads(_CATALOGUE.read_text(encoding="utf-8"))
+    current = {"entries": catalogue["entry_count"],
+               "engines": catalogue["engine_count"],
+               "categories": catalogue["category_count"]}
+
+    pattern = re.compile(
+        r"([0-9][0-9,]*)\s+(?:catalogue\s+|graph\s+)?(entries|engines|categories)\b")
+    # Code, plus the README - the two places a reader meets a count without
+    # any surrounding discussion of which catalogue is meant.
+    #
+    # docs/PORT-PLAN.md is deliberately out of scope. Its subject IS the
+    # difference between the two catalogues, so it quotes v17's 318 / 30 / 135
+    # and v18's 2,116 / 46 / 434 on adjacent lines, correctly, and every
+    # v17 figure in it trips a denylist that cannot tell them apart. A check
+    # that has to be argued with on every run stops being read; that document
+    # carries the explanation instead, which is the right home for it.
+    roots = ["app/src", "app/qml", "native/plot2d/src", "native/plot2d/include",
+             "README.md"]
+
+    stale: list[str] = []
+    for target in roots:
+        path = ROOT / target
+        sources = [path] if path.is_file() else [
+            p for p in path.rglob("*")
+            if p.suffix in {".cpp", ".h", ".qml", ".md"}]
+        for source in sources:
+            lines = source.read_text(encoding="utf-8", errors="ignore").splitlines()
+            for index, line in enumerate(lines):
+                for match in pattern.finditer(line):
+                    value = int(match.group(1).replace(",", ""))
+                    noun = match.group(2)
+                    if value == current[noun]:
+                        continue
+                    if value not in _SUPERSEDED[noun]:
+                        continue
+                    # The surrounding lines as one sentence. Comment markers
+                    # are stripped before joining, because a wrapped comment
+                    # puts "// " between two words of the phrase being looked
+                    # for - which is how "engines then / catalogued" read as a
+                    # present-tense claim on the first attempt.
+                    window = lines[max(0, index - 1):index + 3]
+                    context = " ".join(
+                        re.sub(r"^\s*(?://+|#+|\*)\s?", "", text)
+                        for text in window).lower()
+                    if any(word in context for word in _HISTORICAL):
+                        continue
+                    stale.append(
+                        f"{source.relative_to(ROOT)}:{index + 1}: {line.strip()}")
+
+    assert not stale, (
+        f"the catalogue holds {current['entries']} entries / "
+        f"{current['engines']} engines / {current['categories']} categories. "
+        "These quote a size it has outgrown, without saying they mean the "
+        "past:\n  " + "\n  ".join(stale[:20]))

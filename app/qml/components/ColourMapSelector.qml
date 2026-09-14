@@ -37,7 +37,25 @@ ComboBox {
 
     visible: !root.autoHide || root.canvas.usesColourMap
     width: root.visible ? root.implicitWidth : 0
-    implicitWidth: 190
+
+    // Wide enough for the longest map name and not a pixel more.
+    //
+    // It was a flat 190, which is wider than every name in the list - "Twilight
+    // Shifted" is the longest - so the control sat there padded out with empty
+    // space on a toolbar where width is the scarce thing. Measured rather than
+    // guessed, because the answer depends on the font the theme is using and a
+    // number typed in here would be wrong on the next theme.
+    FontMetrics { id: nameMetrics; font: root.font }
+    readonly property real widestName: {
+        var w = 0
+        for (var i = 0; i < root.entries.length; ++i)
+            w = Math.max(w, nameMetrics.advanceWidth(root.entries[i].name))
+        return w
+    }
+    // 8 left margin + 34 preview + 6 gap + the name + 30 for the arrow. The
+    // arrow's own width is deliberately NOT read: the indicator is anchored to
+    // this control, so measuring it here would be a binding loop.
+    implicitWidth: 8 + 34 + 6 + Math.ceil(root.widestName) + 30
 
     // A flat model of every map, with its category carried alongside so the
     // delegate can draw a heading on the first entry of each group. Built once:

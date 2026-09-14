@@ -101,11 +101,13 @@ Rectangle {
                 arrowPath: root.app.activeArrowPath
 
                 //   0 follow the theme   1 dark   2 light   3 white
+                //   4 a colour the person picked, its ink derived from it
                 backgroundColor: {
                     switch (root.app.figureTheme) {
                     case 1: return "#111820"
                     case 2: return "#f4f6f9"
                     case 3: return "#ffffff"
+                    case 4: return root.app.figureBackground
                     default: return Theme.background
                     }
                 }
@@ -113,6 +115,7 @@ Rectangle {
                     switch (root.app.figureTheme) {
                     case 1: return "#dbe6f0"
                     case 2: case 3: return "#14181d"
+                    case 4: return root.app.figureForeground
                     default: return Theme.text
                     }
                 }
@@ -121,14 +124,19 @@ Rectangle {
                     case 1: return "#26384f"
                     case 2: return "#d3d9e2"
                     case 3: return "#e2e6ec"
+                    case 4: return root.app.figureGridColour
                     default: return Theme.border
                     }
                 }
                 gridVisible: root.app.plotGridVisible
                 gridDensity: root.app.plotGridDensity
+                gridDensityY: root.app.plotGridDensityY
+                pieLabels: root.app.plotPieLabels
+                polarConvention: root.app.plotPolarConvention
                 scaleLabelsVisible: root.app.plotScaleLabels
                 fieldInterpolation: root.app.plotFieldInterpolation
                 colourVision: root.app.plotColourVision
+                colourVisionPreview: root.app.plotColourVisionPreview
                 colourMap: root.app.plotColourMap
                 fullRenderPolicy: root.app.fullRenderPolicy
                 fullRenderAskAfterSeconds: root.app.fullRenderAskAfterSeconds

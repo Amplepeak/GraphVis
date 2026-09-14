@@ -133,6 +133,20 @@ class AppController final : public QObject {
     // who needs a deuteranopia-safe figure needs it whatever the interface looks
     // like, and needs it to stay set. Persisted; see native/plot2d ColourVision.h.
     Q_PROPERTY(int plotColourVision READ plotColourVision WRITE setPlotColourVision NOTIFY plotColourVisionChanged)
+    // Whether the colour-vision strip is shown above the figure. OFF by
+    // default, deliberately: it used to be a permanent panel in the sidebar,
+    // where it took space from the graph library in every session for a setting
+    // most people never open. The menu is always there; this is for the people
+    // who do change it often, and it is their choice to make rather than ours.
+    Q_PROPERTY(bool colourVisionToolbarVisible READ colourVisionToolbarVisible WRITE setColourVisionToolbarVisible NOTIFY plotColourVisionChanged)
+    // Show the figure as a reader with the chosen deficiency sees it.
+    //
+    // NOT persisted, deliberately. Every other setting here is a property of
+    // the figure and should survive a restart; this one is a way of LOOKING
+    // at the figure, and reopening the program into a simulated view - with
+    // no memory of having asked for one - would be the program lying about
+    // what the plot looks like.
+    Q_PROPERTY(bool plotColourVisionPreview READ plotColourVisionPreview WRITE setPlotColourVisionPreview NOTIFY plotColourVisionChanged)
     Q_PROPERTY(QStringList plotColourVisionNames READ plotColourVisionNames CONSTANT)
     Q_PROPERTY(QString plotColourVisionSummary READ plotColourVisionSummary NOTIFY plotColourVisionChanged)
     // The field colour map and what happens when a full-resolution render
@@ -155,9 +169,41 @@ class AppController final : public QObject {
     // one of those impossible.
     Q_PROPERTY(int figureTheme READ figureTheme WRITE setFigureTheme NOTIFY plotDisplayChanged)
     Q_PROPERTY(QStringList figureThemeNames READ figureThemeNames CONSTANT)
+    // Any colour at all for the figure's background, not only the four presets.
+    //
+    // The presets cover the common cases and cannot cover a house style, a
+    // poster on coloured board, or a slide deck whose background is already
+    // chosen. Selecting a colour here switches figureTheme to Custom; the
+    // preset choice is remembered separately, so going back to Dark and
+    // returning to Custom finds the colour still there.
+    Q_PROPERTY(QColor figureBackground READ figureBackground WRITE setFigureBackground NOTIFY plotDisplayChanged)
+    // Derived from the background rather than chosen: a custom background with
+    // unreadable axis text is not a feature, and asking someone to pick a
+    // matching ink for every background they try is asking them to do the
+    // arithmetic themselves. Exposed so the canvas and the thumbnails agree.
+    Q_PROPERTY(QColor figureForeground READ figureForeground NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QColor figureGridColour READ figureGridColour NOTIFY plotDisplayChanged)
+    // The swatches offered before the full picker: paper whites, neutral greys,
+    // the dark grounds that suit a projected slide, and a few tinted papers.
     // The grid, on its own terms. 0 density means the long-standing default.
     Q_PROPERTY(bool plotGridVisible READ plotGridVisible WRITE setPlotGridVisible NOTIFY plotDisplayChanged)
     Q_PROPERTY(int plotGridDensity READ plotGridDensity WRITE setPlotGridDensity NOTIFY plotDisplayChanged)
+    // The vertical count, separately. 0 follows the horizontal with one
+    // fewer, which is what a single number used to force on both axes.
+    Q_PROPERTY(int plotGridDensityY READ plotGridDensityY WRITE setPlotGridDensityY NOTIFY plotDisplayChanged)
+    // How a pie or donut names its slices. It named them not at all, which
+    // makes a pie a picture of some proportions rather than a figure - and
+    // unlike a line chart there is no axis to fall back on. Both forms are
+    // legitimate and which reads better depends on the figure, so it is a
+    // choice: 0 legend, 1 on the slices, 2 both, 3 neither.
+    Q_PROPERTY(int plotPieLabels READ plotPieLabels WRITE setPlotPieLabels NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList plotPieLabelNames READ plotPieLabelNames CONSTANT)
+    // Which way round a polar figure is measured. A bearing is read from
+    // north clockwise; a polar scatter is mathematical. Neither is right for
+    // every figure, so the operator chooses. 0 keeps what every figure drew
+    // before the choice existed.
+    Q_PROPERTY(int plotPolarConvention READ plotPolarConvention WRITE setPlotPolarConvention NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList plotPolarConventionNames READ plotPolarConventionNames CONSTANT)
     // Numbers on the axes. On by default: an axis with a name and no scale can
     // be looked at and not read.
     Q_PROPERTY(bool plotScaleLabels READ plotScaleLabels WRITE setPlotScaleLabels NOTIFY plotDisplayChanged)
@@ -218,8 +264,9 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList recentVisualisations READ recentVisualisations NOTIFY recentsChanged)
     Q_PROPERTY(bool dataFormatsInstallerAvailable READ dataFormatsInstallerAvailable CONSTANT)
     Q_PROPERTY(QVariantMap smartRenderPlan READ smartRenderPlan NOTIFY smartRenderChanged)
-    // GraphVis 17 graph catalogue: 318 entries in 30 categories, loaded from
-    // config/graph_catalogue.json (embedded as a QML module resource).
+    // GraphVis 17 graph catalogue: 2116 entries in 46 categories, drawn by 434
+    // engines, loaded from config/graph_catalogue.json (embedded as a QML
+    // module resource).
     // Smart Suite / Scan Dataset (GraphVis 17 intelligent_scan), run through
     // the optional Python science service.
     Q_PROPERTY(QVariantList scanRecommendations READ scanRecommendations NOTIFY scanChanged)
@@ -277,6 +324,30 @@ class AppController final : public QObject {
     // about what is installed. All on by default; Core cannot be switched off.
     Q_PROPERTY(QVariantList graphPacks READ graphPacks NOTIFY graphCatalogueChanged)
     Q_PROPERTY(int hiddenEntryCount READ hiddenEntryCount NOTIFY graphCatalogueChanged)
+
+    // Starred graphs, and the ten most recently applied.
+    //
+    // 2,116 entries in 46 categories is a catalogue nobody browses twice: the
+    // person who used a Nyquist plot yesterday should not have to remember
+    // which of forty-six headings it is filed under to get back to it. These
+    // two lists are that shortcut, and they are the top two groups in the
+    // library.
+    //
+    // Both come back as RESOLVED catalogue entries, not as the records that are
+    // stored - so the library draws a starred graph from exactly the same map
+    // it draws any other row from, thumbnail, description and all, with no
+    // second code path that can look different. An entry whose pack has since
+    // been switched off, or whose name has changed, simply does not resolve and
+    // is left out rather than drawn as a blank row.
+    //
+    // They also depend on the CATALOGUE, so both notify on a catalogue change
+    // as well as on their own: switching a pack off has to take its graphs out
+    // of the favourites list on screen without forgetting that they were
+    // starred, because the pack can be switched back on.
+    Q_PROPERTY(QVariantList favouriteGraphs READ favouriteGraphs
+                   NOTIFY graphShortcutsChanged)
+    Q_PROPERTY(QVariantList recentGraphs READ recentGraphs
+                   NOTIFY graphShortcutsChanged)
 public:
     explicit AppController(QObject* parent=nullptr);
     ~AppController() override;
@@ -313,7 +384,17 @@ public:
     // limits, forecast, fft, weibull, regression, pca, doe, advisor, domain.
     // `options` is merged into the request, so a caller passes only what that
     // operation needs (predictors for a regression, bounds for a design).
-    Q_INVOKABLE bool runAnalysis(const QString& kind,const QVariantMap& options=QVariantMap());
+    // `requiresDataset` false for the operations that read no columns -
+    // latex_figure, the unit tools, the DOE designs, uncertainty propagation,
+    // the symbolic function plots. Twenty-three of them, and every one was
+    // unreachable unless some unrelated dataset happened to be open, because
+    // this refused to send anything without an Arrow path. A Function Plot has
+    // no dataset by definition, so its caption could never be generated.
+    //
+    // The service decides what an operation needs, from the registry; this flag
+    // only says whether to insist before asking.
+    Q_INVOKABLE bool runAnalysis(const QString& kind,const QVariantMap& options=QVariantMap(),
+                                 bool requiresDataset=true);
     // Ask the service what it can do. Answered once per session and cached,
     // because it is the same answer every time.
     Q_INVOKABLE void refreshAnalysisCatalogue();
@@ -350,6 +431,9 @@ public:
     void setThemeIndex(int value);
     QVariantList graphCategories() const{return graphCategories_;}
     QVariantList graphPacks() const{return graphPacks_;}
+    QVariantList favouriteGraphs() const;
+    QVariantList resolveGraphRecords(const QVariantList& records) const;
+    QVariantList recentGraphs() const;
     int hiddenEntryCount() const{return hiddenEntryCount_;}
     Q_INVOKABLE bool packEnabled(const QString& id) const;
     Q_INVOKABLE void setPackEnabled(const QString& id,bool on);
@@ -417,6 +501,10 @@ public:
     QVariantList importLog() const{return importLog_;}
     ProjectWorkspace* project() const{return project_;}
     int plotColourVision() const{return plotColourVision_;}
+    bool colourVisionToolbarVisible() const{return colourVisionToolbar_;}
+    bool plotColourVisionPreview() const{return colourVisionPreview_;}
+    void setPlotColourVisionPreview(bool on);
+    void setColourVisionToolbarVisible(bool on);
     QString plotColourMap() const{return plotColourMap_;}
     void setPlotColourMap(const QString& name);
     int fullRenderPolicy() const{return fullRenderPolicy_;}
@@ -432,11 +520,32 @@ public:
     void setFigureTheme(int mode);
     QStringList figureThemeNames() const{
         return {QStringLiteral("Follow the interface theme"),
-                QStringLiteral("Dark"),QStringLiteral("Light"),QStringLiteral("White")};
+                QStringLiteral("Dark"),QStringLiteral("Light"),QStringLiteral("White"),
+                QStringLiteral("Custom colour")};
     }
+    QColor figureBackground() const{return figureBackground_;}
+    void setFigureBackground(const QColor& c);
+    QColor figureForeground() const;
+    QColor figureGridColour() const;
     bool plotGridVisible() const{return plotGridVisible_;}
     void setPlotGridVisible(bool on);
     int plotGridDensity() const{return plotGridDensity_;}
+    int plotGridDensityY() const{return plotGridDensityY_;}
+    int plotPieLabels() const{return plotPieLabels_;}
+    int plotPolarConvention() const{return plotPolarConvention_;}
+    void setPlotPolarConvention(int mode);
+    QStringList plotPolarConventionNames() const{
+        return {QStringLiteral("Mathematical — 0° right, anticlockwise"),
+                QStringLiteral("Compass — 0° north, clockwise")};
+    }
+    void setPlotPieLabels(int mode);
+    QStringList plotPieLabelNames() const{
+        return {QStringLiteral("Legend beside the pie"),
+                QStringLiteral("Labels on the slices"),
+                QStringLiteral("Both"),
+                QStringLiteral("Neither")};
+    }
+    void setPlotGridDensityY(int ticks);
     void setPlotGridDensity(int ticks);
     bool plotScaleLabels() const{return plotScaleLabels_;}
     void setPlotScaleLabels(bool on);
@@ -487,7 +596,21 @@ public:
     // Called by the workspace whenever a catalogue entry is applied, so the
     // list is what was actually DRAWN rather than what was clicked in the
     // library and then abandoned.
-    Q_INVOKABLE void noteVisualisation(const QString& engine,const QString& variant);
+    // `category` is optional for the callers that do not have one to hand, but
+    // without it a recent graph cannot be resolved back to a catalogue entry:
+    // an engine name is not unique across categories - 33 engines have more
+    // than one entry - so the record would match the wrong one or none.
+    Q_INVOKABLE void noteVisualisation(const QString& engine,const QString& variant,
+                                       const QString& category=QString());
+
+    // The star. Keyed on all three, for the reason above and because a scale
+    // variant is a different entry from its parent: starring "Line Chart ·
+    // Semi-Log X" should not star the plain Line Chart.
+    Q_INVOKABLE bool isFavouriteGraph(const QString& category,const QString& engine,
+                                      const QString& variant) const;
+    Q_INVOKABLE void toggleFavouriteGraph(const QString& category,const QString& engine,
+                                          const QString& variant);
+    Q_INVOKABLE void clearRecentGraphs();
     // Re-import a remembered file. Named separately from importDataset because
     // it must cope with the file having been moved or deleted since, and say so
     // rather than failing silently.
@@ -631,6 +754,7 @@ signals:
     void plotDisplayChanged();
     void recentsChanged();
     void graphCatalogueChanged();
+    void graphShortcutsChanged();
     void messageLogChanged();
     void smartRenderChanged();
     void scanChanged();
@@ -655,12 +779,20 @@ private:
     QVariantList importLog_;
     ProjectWorkspace* project_=nullptr;
     int plotColourVision_=0;
+    bool colourVisionToolbar_=false;        // off until asked for; see the property
+    bool colourVisionPreview_=false;        // a view, not a setting; never persisted
     QString plotColourMap_;                 // empty means Viridis
     int fullRenderPolicy_=0;                // 0 automatic, 1 always ask, 2 ask when slow
     double fullRenderAskAfterSeconds_=5.0;
     int figureTheme_=0;                     // follow the interface theme
+    // Kept whichever preset is selected, so switching to Dark and back to
+    // Custom finds the chosen colour still there rather than a default.
+    QColor figureBackground_=QColor(0xff,0xff,0xff);
     bool plotGridVisible_=true;
     int plotGridDensity_=0;                 // 0 = the default 7 x 6
+    int plotGridDensityY_=0;                // 0 = one fewer than across
+    int plotPieLabels_=0;                   // 0 = a legend, which always fits
+    int plotPolarConvention_=0;             // 0 = mathematical, as every figure was
     bool plotScaleLabels_=true;
     int plotFieldInterpolation_=2;          // Linear
     int plotFieldEstimator_=-1;
@@ -696,6 +828,14 @@ private:
     // pandas/pyarrow import before any work began. See AppController.cpp.
     bool ensureScienceService();
     QString pendingScienceOp_;
+    // The request line, held while the service is still starting. The start is
+    // asynchronous so the interface does not freeze for it, which means a
+    // request can be made before there is a pipe to write it to.
+    QByteArray pendingScienceRequest_;
+    // One automatic restart after a write found a dead pipe, performed from
+    // finished() where the process state has settled. Cleared before the retry
+    // so a service that dies again is reported rather than restarted for ever.
+    bool scienceRestartPending_=false;
     // Set while a non-native file is being converted to Arrow by the
     // science service, so the reply knows to import the result.
     QString pendingConvertSource_;
@@ -744,6 +884,11 @@ private:
     static double fuzzyScore(const QString& query,const QVariantMap& entry);
     QVariantList graphCategories_;
     QVariantList graphPacks_;
+    // The stored RECORDS - {category, engine, variant} - not resolved entries.
+    // Storing the resolved entry would freeze a description and a thumbnail
+    // path into the settings file and go stale the first time the catalogue is
+    // edited.
+    QVariantList favouriteGraphs_;
     int hiddenEntryCount_=0;
     QVariantList graphEntries_;
     QString graphPreviewDir_;

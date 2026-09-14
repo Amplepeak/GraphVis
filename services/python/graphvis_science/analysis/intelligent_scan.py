@@ -126,6 +126,42 @@ def _mutual_information(x: np.ndarray, y: np.ndarray, bins: int = 20) -> float:
     return max(0.0, min(1.0, mi / denom))
 
 
+def column_roles(frame: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Split numeric columns into (swept parameters, measured responses).
+
+    GraphVis 17 carried a Dataset object that *declared* these: a run knew
+    which of its columns it had swept and which it had measured. v18 has no
+    Dataset - the native side writes an Arrow file and the service loads a bare
+    DataFrame - so nothing declares anything, and every consumer that asked for
+    `.parameter_columns` got an empty tuple from its own getattr default.
+
+    That was quiet rather than loud. Nothing crashed; instead
+    `intelligent_visualization_advisor` computed `nparams = 0` for every
+    dataset in existence, which made its "two swept parameters and a response"
+    branch - heatmap, contour, response surface - unreachable. The sweep case
+    the advisor was written for was the one case it could never recommend.
+
+    So this infers the split instead of pretending it was declared. The rule is
+    not a new one: it is the same name-token test `_profile_column` already
+    applies to set `parameter_like` and `response_like`, lifted out so both
+    callers use one implementation. A column that reads as both keeps the
+    parameter role, matching how `scan_dataset` resolves the same collision.
+
+    Inference, not truth. A column called `current` in a table where current
+    was measured rather than controlled lands in the wrong list, and nothing
+    here can know the difference from a name. It is used only to *order* and
+    *suggest*, never to compute a reported number.
+    """
+    names = [str(c) for c in frame.columns
+             if pd.api.types.is_numeric_dtype(frame[c])]
+    parameters = [c for c in names
+                  if _semantic_token_match(_norm(c), _PARAMETER_TOKENS)]
+    responses = [c for c in names
+                 if c not in parameters
+                 and _semantic_token_match(_norm(c), _RESPONSE_TOKENS)]
+    return parameters, responses
+
+
 def dataset_fingerprint(dataset: Any) -> str:
     path = str(getattr(dataset, "path", "") or "")
     stat = None

@@ -91,6 +91,15 @@ class CalculusEngine:
     @staticmethod
     def derivative(y: Iterable[float], x: Iterable[float] | None = None, order: int = 1) -> SignalResult:
         xx,yy=_xy(y,x); out=yy.copy()
+        # np.gradient needs two points to form a difference, and _xy has
+        # already dropped the non-finite rows - so one row of data, or a
+        # column that is entirely NaN, arrives here empty and np.gradient
+        # raises "index 0 is out of bounds for axis 0 with size 0". That is a
+        # true statement about an array the user never saw.
+        if xx.size < 2:
+            raise ValueError(
+                "A derivative needs at least two points with finite x and y; "
+                f"this selection has {xx.size}.")
         for _ in range(max(1,int(order))): out=np.gradient(out,xx)
         return SignalResult(f"Derivative order {order}",xx,out)
 

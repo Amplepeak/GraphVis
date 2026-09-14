@@ -130,12 +130,15 @@ set(GRAPHVIS_QML_FILES
   qml/components/FigureLab.qml
   qml/components/BusyOverlay.qml
   qml/components/ExpressionBox.qml
+  qml/components/LatexExport.qml
   qml/components/StatusPill.qml
   qml/components/ActiveDatasetBar.qml
   qml/components/AnnotationLayer.qml
   qml/components/ColourMapSelector.qml
   qml/components/FigureStyleBar.qml
-  qml/components/FullRenderPolicyBox.qml
+  qml/components/FigureBackgroundPicker.qml
+  qml/components/FigureAppearanceBar.qml
+  qml/components/ExportDialog.qml
   qml/components/UnitSelector.qml
   qml/components/SolverPanel.qml
   qml/components/AddOnsPanel.qml
@@ -262,9 +265,37 @@ if(WIN32)
     "${GRAPHVIS_MANIFEST_RC}"
   )
 
+  # 8 MB of stack, reserved, instead of the 1 MB MSVC default.
+  #
+  # This is not precautionary. The engine sweep died with 0xC00000FD, a stack
+  # overflow, on the 57th engine - Beeswarm - and the two engines either side
+  # of it in the same source branch, Dot Plot and Strip Plot, rendered fine.
+  # The only difference between them is depth: Dot Plot and Strip Plot rewrite
+  # to "4D / 5D Scatter" and return, one call into prepareSpecCore; Beeswarm
+  # rewrites to "Swarm" and hands the spec back through prepareSpec, so it
+  # enters prepareSpecCore a second time.
+  #
+  # Two frames, and the stack is gone. `g++ -fstack-usage` puts that function
+  # at 47 KB unoptimised and 11.7 KB at -O1; MSVC's must be far larger, because
+  # nothing else in the path is big enough to account for 1 MB in two calls.
+  # The function has a branch per catalogue engine - 434 of them - and carries
+  # the locals of all of them in one frame, so it grew with the catalogue.
+  # A sweep of 201 engines passed in September; the same sweep of 434 dies.
+  #
+  # Raising the reserve is the honest short-term fix rather than the whole one.
+  # The real problem is one function with a frame that scales with the
+  # catalogue, and the answer to that is to split it - a refactor, not a
+  # one-line change. Until then this buys the headroom the recursion needs.
+  #
+  # It covers the interactive path too, which matters more than the self-test:
+  # PlotCanvas runs the full render on a QtConcurrent pool thread, and a
+  # Windows thread created with a zero stack size takes its reserve from this
+  # same PE header field. Beeswarm from the Graph Library would have taken the
+  # whole application down with no message.
   target_link_options(graphvis PRIVATE
     "/MANIFEST:NO"
     "/MANIFESTUAC:NO"
+    "/STACK:8388608"
   )
 endif()
 

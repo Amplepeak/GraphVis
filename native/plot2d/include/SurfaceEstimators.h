@@ -204,8 +204,19 @@ bool insideHull(const QVector<ScatterPoint>& points, const QVector<int>& hull,
                 double x, double y);
 
 struct Triangle { int a=0,b=0,c=0; };
+// The largest sample this build will triangulate.
+//
+// Bowyer-Watson here is quadratic - see the measurements at its definition -
+// so this is a real limit rather than a defensive one: three thousand samples
+// is about a fifth of a second and twenty-four thousand does not come back.
+// It lives in the header because the callers have to be able to ask BEFORE
+// calling, so that a refusal is a sentence on the figure rather than a blank
+// one.
+constexpr int kDelaunayLimit = 3000;
 // Delaunay triangulation by Bowyer-Watson. Three of the estimators and the
-// hull masking all read it, so it is built once and shared.
+// hull masking all read it, so it is built once and shared. Returns an EMPTY
+// triangulation above kDelaunayLimit; ask first rather than testing the
+// result, so the reason can be said out loud.
 QVector<Triangle> delaunay(const QVector<ScatterPoint>& points);
 
 } // namespace graphvis

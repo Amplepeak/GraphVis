@@ -269,10 +269,33 @@ def dispatch(req: dict) -> dict:
     if op.startswith("analysis."):
         from graphvis_science.operations import OperationError, run
         what = op.split(".", 1)[1]
-        try:
-            df = _load_frame(req["arrow_path"])
-        except (KeyError, OSError) as exc:
-            return {"ok": False, "error": f"could not read the dataset: {exc}"}
+        # Only load a dataset for operations that actually read one.
+        #
+        # Every analysis op required arrow_path, including the ones that touch
+        # no columns at all: latex_figure formats a caption, unit_parse reads a
+        # string, power_ttest takes an effect size, full_factorial takes a level
+        # count. They were unreachable until some unrelated dataset happened to
+        # be open - and a Function Plot has no dataset by definition, so a
+        # formula figure could never have its caption generated.
+        #
+        # The registry already knows: an operation that binds no frame, column
+        # or column-name argument does not read data.
+        from graphvis_science.operations import (COLUMN, COLUMN_OPT, COLUMNS,
+                                                 FRAME, FRAME_COLUMNS, NAME,
+                                                 NAMES, REGISTRY)
+        _data_kinds = {COLUMN, COLUMN_OPT, COLUMNS, NAME, NAMES, FRAME,
+                       FRAME_COLUMNS}
+        _spec = REGISTRY.get(what)
+        _needs_data = _spec is None or any(a.kind in _data_kinds
+                                           for a in _spec.args.values())
+        if _needs_data:
+            try:
+                df = _load_frame(req["arrow_path"])
+            except (KeyError, OSError) as exc:
+                return {"ok": False, "error": f"could not read the dataset: {exc}"}
+        else:
+            import pandas as _pd
+            df = _pd.DataFrame()
         try:
             payload = run(what, df, req)
         except OperationError as exc:
@@ -411,7 +434,13 @@ def dispatch(req: dict) -> dict:
         engine=matlab.engine.start_matlab()
         try:
             engine.cd(workdir, nargout=0)
-            engine.eval("run('%s')"%script.replace(os.sep,"/"), nargout=0)
+            # Quote doubling, not bare interpolation. A path containing a
+            # single quote closed the MATLAB string and appended whatever
+            # followed as code. Running a .m file is already "execute this",
+            # so this is not the main hazard - but a filename should not be
+            # able to mean something other than a filename.
+            _script=script.replace(os.sep,"/").replace("'","''")
+            engine.eval("run('%s')"%_script, nargout=0)
             names=[str(v) for v in (engine.eval("who", nargout=1) or [])]
             series={}
             skipped=[]
@@ -511,7 +540,8 @@ def dispatch(req: dict) -> dict:
         # Smart Suite / Scan Dataset. intelligent_scan.scan_dataset expects a
         # GraphVis 17 Dataset object; the native app has an Arrow file, so adapt
         # the few attributes the scanner actually reads.
-        from graphvis_science.analysis.intelligent_scan import scan_dataset
+        from graphvis_science.analysis.intelligent_scan import (
+            column_roles, scan_dataset)
 
         class _ArrowDataset:
             def __init__(self, path: str, name: str, df):
@@ -521,6 +551,14 @@ def dispatch(req: dict) -> dict:
                 self.numeric_columns = [str(c) for c in df.select_dtypes("number").columns]
                 self.matrices = {}
                 self.volumes = {}
+                # The scanner prioritises declared sweep inputs and measured
+                # outputs when the budget will not cover every column, and the
+                # electrochemical advisor counts the parameters to decide
+                # whether a response-surface recommendation applies at all.
+                # Both read these attributes; neither existed here, so both
+                # silently took the empty default. Inferred from the column
+                # names by the one rule the profiler already uses.
+                self.parameter_columns, self.response_columns = column_roles(df)
 
         class _LiteratureContext:
             # intelligent_scan reads literature entries with getattr(.title,

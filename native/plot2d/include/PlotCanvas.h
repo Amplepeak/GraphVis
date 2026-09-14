@@ -29,6 +29,35 @@ namespace graphvis {
 class PlotCanvas : public QQuickPaintedItem {
     Q_OBJECT
     QML_ELEMENT
+
+// Q_INVOKABLE IN THIS REGION WAS PRIVATE, AND QML WILL NOT CALL A PRIVATE METHOD.
+//
+// This is a `class`, so everything between Q_OBJECT and the first `public:` -
+// nearly three hundred lines of interface declarations - defaulted to private.
+// Q_PROPERTY does not care: moc records properties with no access at all and
+// they worked throughout. Q_INVOKABLE does: moc records the method's C++
+// access, QML's lookup skips anything not public, and the call comes back as
+// "Property 'x' of object PlotCanvas is not a function".
+//
+// Thirteen methods were declared here, and all thirteen are called from QML:
+// setAxisLimits, clearAxisLimits, clearAllLimits, setColourLimits,
+// clearColourLimits, setColourLevels, setCustomColour, addCustomColour,
+// removeCustomColour, clearCustomColours, seedCustomColours,
+// suggestedColourCount and expressionFunctions. So the axis-limit controls,
+// the colour-scale limits, the banding and the whole custom-colours panel were
+// dead at runtime - every button raising a TypeError into the log and doing
+// nothing.
+//
+// Only expressionFunctions was noticed, because it is the one called from a
+// binding that evaluates on load; the other twelve are in click handlers, so
+// they failed silently unless somebody happened to be reading the log with the
+// panel open. Found in graph-check/startup.log, confirmed against the
+// metaobject rather than inferred: moc marks exactly these thirteen Private.
+//
+// Declaring the region public is the fix. It holds only Q_PROPERTY,
+// Q_INVOKABLE and QML_ELEMENT - there is nothing here that was private on
+// purpose.
+public:
     Q_PROPERTY(QString arrowPath READ arrowPath WRITE setArrowPath NOTIFY sourceChanged)
     Q_PROPERTY(QString engine READ engine WRITE setEngine NOTIFY sourceChanged)
     Q_PROPERTY(QString variant READ variant WRITE setVariant NOTIFY sourceChanged)
@@ -118,6 +147,21 @@ class PlotCanvas : public QQuickPaintedItem {
     // which is what it used to be tied to.
     Q_PROPERTY(bool gridVisible READ gridVisible WRITE setGridVisible NOTIFY styleChanged)
     Q_PROPERTY(int gridDensity READ gridDensity WRITE setGridDensity NOTIFY styleChanged)
+    // The vertical, separately. 0 follows gridDensity with one fewer, which is
+    // what a single number used to force on both axes - see
+    // PlotStyle::gridDensityY for why one number was the wrong shape.
+    Q_PROPERTY(int gridDensityY READ gridDensityY WRITE setGridDensityY NOTIFY styleChanged)
+    // How a pie or donut says which slice is which: 0 legend, 1 labels on
+    // the slices, 2 both, 3 neither. It said nothing at all before this.
+    Q_PROPERTY(int pieLabels READ pieLabels WRITE setPieLabels NOTIFY styleChanged)
+    // Which way round a polar figure is measured: 0 mathematical (zero at
+    // the right, anticlockwise), 1 compass (zero at the top, clockwise). A
+    // bearing means the second and a polar scatter means the first, so it is
+    // the operator's choice - see PlotStyle::polarConvention.
+    Q_PROPERTY(int polarConvention READ polarConvention WRITE setPolarConvention NOTIFY styleChanged)
+    // True only while the engine on screen is drawn in a circle, so the
+    // interface can offer the angle convention where it means something.
+    Q_PROPERTY(bool polarEngine READ polarEngine NOTIFY stateChanged)
     // Numbers on the axes. On, because an axis with a name and no scale can be
     // looked at but not read - which is what every 3-D figure was.
     Q_PROPERTY(bool scaleLabelsVisible READ scaleLabelsVisible WRITE setScaleLabelsVisible NOTIFY styleChanged)
@@ -162,6 +206,27 @@ class PlotCanvas : public QQuickPaintedItem {
     // True only while the engine on screen actually colours a field, so the
     // interface can hide the picker on the engines it would do nothing for.
     Q_PROPERTY(bool usesColourMap READ usesColourMap NOTIFY stateChanged)
+    // The map actually PAINTED, which is the chosen one unless a colour-vision
+    // mode replaced it - see setColourVision for why it has to be able to. The
+    // picker goes on showing the chosen map; the figure shows this one, and the
+    // two are allowed to differ only because the interface says so, which is
+    // what colourVisionNote is for.
+    Q_PROPERTY(QString effectiveColourMap READ effectiveColourMap NOTIFY styleChanged)
+    // One sentence for the interface: what the colour-vision setting did to the
+    // colour map, INCLUDING when the answer is "nothing, it was already safe".
+    // Saying nothing in that case is what made the setting look broken.
+    Q_PROPERTY(QString colourVisionNote READ colourVisionNote NOTIFY styleChanged)
+    // Show the figure as a reader with the chosen deficiency actually sees it.
+    //
+    // Everything else about this setting is a claim the person setting it
+    // cannot check, because they have normal colour vision and the figure looks
+    // much as it did. This turns the claim into something to look at. A VIEW
+    // only - it never touches an export, because a PDF drawn through a
+    // dichromat transform is not a safe figure, it is an unreadable one.
+    Q_PROPERTY(bool colourVisionPreview READ colourVisionPreview WRITE setColourVisionPreview NOTIFY styleChanged)
+    // True only while a preview is actually being applied, so the interface can
+    // mark the figure as a simulation rather than the real thing.
+    Q_PROPERTY(bool simulatingColourVision READ simulatingColourVision NOTIFY styleChanged)
 
     // ------------------------------------------------------------------
     // Axis limits and the colour scale, as a THING THE INTERFACE CAN SHOW.
@@ -430,11 +495,33 @@ public:
     // For a QML button or a keyboard shortcut: >1 zooms in, about the centre.
     Q_INVOKABLE void zoomBy(double factor);
     QColor gridColor() const { return spec_.style.gridColor; }
-    QString colourMap() const { return spec_.style.colourMap; }
+    // The CHOSEN map, which is what the picker must go on showing even when a
+    // colour-vision mode is painting a different one. Reading the painted map
+    // back here would make the picker jump to Cividis the moment someone
+    // selected a vision mode, and they would have lost their choice.
+    QString colourMap() const { return chosenColourMap_; }
+    QString effectiveColourMap() const { return spec_.style.colourMap; }
+    QString colourVisionNote() const;
+    bool colourVisionPreview() const { return colourVisionPreview_; }
+    void setColourVisionPreview(bool on);
+    bool simulatingColourVision() const;
+    // Draws a finished image through the dichromat transform for the chosen
+    // mode. Preview path only.
+    void paintSimulated(QPainter* painter,const QRectF& target,const QImage& source) const;
+    // Resolves chosenColourMap_ + colourVision_ into the painted map and the
+    // figure note. Called by every setter that can change either of them.
+    void applyColourVisionToMap();
     bool gridVisible() const { return spec_.style.gridVisible; }
     int gridDensity() const { return spec_.style.gridDensity; }
+    int gridDensityY() const { return spec_.style.gridDensityY; }
+    int pieLabels() const { return spec_.style.pieLabels; }
+    int polarConvention() const { return spec_.style.polarConvention; }
+    bool polarEngine() const { return QtPlotBackend::isPolarEngine(spec_.engine); }
     void setGridVisible(bool on);
     void setGridDensity(int ticks);
+    void setGridDensityY(int ticks);
+    void setPieLabels(int mode);
+    void setPolarConvention(int mode);
     bool scaleLabelsVisible() const { return spec_.style.scaleLabelsVisible; }
     void setScaleLabelsVisible(bool on);
     // True for the engines drawn as a projection into a cube: the 3-D family,
@@ -550,6 +637,17 @@ public:
     // True vector PDF with embedded fonts, drawn by the same backend code.
     Q_INVOKABLE bool exportPdf(const QString& filePath,double widthIn=6.0,double heightIn=4.0,int dpi=600);
     Q_INVOKABLE bool exportPng(const QString& filePath,int width=1600,int height=1000);
+    // The same raster render with the writer's quality dial exposed, and the
+    // option of a transparent ground.
+    //
+    // exportPng above hands the image to QImage::save, which uses the format's
+    // default and offers no way to change it - so a PNG for the web and a PNG
+    // for a 600 dpi plate were written identically, and a JPEG could not be
+    // told to stop being lossy. `quality` is 0-100 the way a person means it:
+    // 100 is best. What that becomes is the format's business - a compression
+    // LEVEL for PNG, where the scale runs the other way.
+    Q_INVOKABLE bool exportRaster(const QString& filePath,int width,int height,
+                                  int quality=90,bool transparent=false);
     Q_INVOKABLE bool exportSvg(const QString& filePath,double widthIn=6.0,double heightIn=4.0);
 
     // One entry point that picks the right one from the file's extension.
@@ -655,6 +753,16 @@ private:
     bool hasView_=false;
     QString cursorText_;
     bool cursorOnPlot_=false;
+    // Where the pointer last was ON the figure, kept after it leaves.
+    //
+    // The zoom buttons had nothing to zoom about, so they zoomed about the
+    // middle - and the middle is almost never what somebody is looking at. The
+    // pointer's own position is, and the reason it has to survive the pointer
+    // LEAVING is that pressing the button is how it leaves: it moves off the
+    // figure and onto the button before the click arrives. Clearing it on
+    // hoverLeave would mean the button never saw anything but the centre.
+    QPointF lastPointerOnPlot_;
+    bool haveLastPointer_=false;
     double cursorX_=0.0, cursorY_=0.0;
     bool annotating_=false;
     QPointF lastPointer_;
@@ -696,6 +804,19 @@ private:
     int pointCount_=0;
     int fullPointCount_=0;
     int colourVision_=0;
+    // The map the PERSON chose, kept apart from spec_.style.colourMap, which
+    // holds the map actually painted. They differ whenever a colour-vision mode
+    // has substituted a safe map, and keeping both is what lets the choice
+    // survive: turn the vision mode off again and the original map comes back,
+    // rather than the substitute having quietly become the selection.
+    QString chosenColourMap_;
+    // Off by default: a simulation shown without being asked for would be a
+    // program lying about what the figure looks like.
+    bool colourVisionPreview_=false;
+    // Set by a style change that needs the rebuild for its own reasons - the
+    // series palette - to stop that rebuild discarding the person's zoom.
+    // Cleared by rebuild() itself, so it can never leak into a data change.
+    bool keepViewOnRebuild_=false;
     // Recomputed in rebuild(), where the prepared spec already exists, so the
     // property is a read rather than a preparation each time QML binds to it.
     bool usesColourMap_=false;

@@ -20,6 +20,28 @@ Item {
     readonly property var canvas: root.app.notebookLayout
                                   ? (notebook.item ? notebook.item.currentCanvas : null)
                                   : plot
+
+    // The figure an action applies to, and an explanation when there is none.
+    //
+    // `canvas` is null in the notebook layout whenever the sheet has not
+    // finished loading or no cell is current, and every handler that used it
+    // began `if (!c) return`. So Apply, a scan recommendation and a mapping
+    // change all did NOTHING AND SAID NOTHING in that state - the button
+    // depressed, the list highlighted the choice, and the figure did not
+    // change. From the outside that is indistinguishable from a broken button,
+    // which is why it kept being reported as "Apply doesn't always work".
+    //
+    // Returning null is still the right behaviour; the silence was not.
+    function targetCanvas(what) {
+        var c = root.canvas
+        if (c) return c
+        root.app.notify(root.app.notebookLayout
+                        ? ("No cell is selected, so there is nowhere to put "
+                           + what + ". Click a cell in the notebook first.")
+                        : ("The figure is not ready yet, so " + what
+                           + " could not be applied. Try again in a moment."))
+        return null
+    }
     // Raised by the Import button in the dataset bar above the graph chooser.
     //
     // This is the whole reason that button did nothing. ActiveDatasetBar
@@ -272,7 +294,7 @@ Item {
             // one of them got a single series, drew a frame with nothing in it,
             // and only Line Chart worked. The canvas composes them according to
             // what the engine actually needs; see PlotCanvas::rebuild.
-            var target = root.canvas
+            var target = root.targetCanvas("the column mapping")
             if (!target) return
             target.xColumn = x
             target.yColumns = y ? [y] : []
@@ -285,7 +307,7 @@ Item {
             // root.canvas, not `plot`: in the notebook the figure being edited
             // is whichever cell is current, and writing to the hidden single
             // canvas meant choosing a graph did nothing visible at all.
-            var c = root.canvas
+            var c = root.targetCanvas(entry.engine)
             if (!c) return
             c.engine = entry.engine
             c.variant = entry.scale ? entry.scale : ""
@@ -293,13 +315,16 @@ Item {
             // Recorded here rather than in the library, so the list under File
             // is what was actually drawn rather than what was clicked and then
             // abandoned.
-            app.noteVisualisation(entry.engine, entry.scale ? entry.scale : "")
+            // The category too, or the recents list cannot find its way back to a
+            // catalogue entry: an engine name is not unique across categories.
+            app.noteVisualisation(entry.engine, entry.scale ? entry.scale : "",
+                                  entry.category ? entry.category : "")
         }
         // A Smart Suite recommendation carries its own mapping, so it selects
         // the graph and the axes together - the point of the scan.
         onScanRecommendation:(graph, mappings)=>{
             app.rendererMode = "Qt 2-D"
-            var t = root.canvas
+            var t = root.targetCanvas(graph)
             if (!t) return
             t.engine = graph
             t.variant = ""
@@ -369,7 +394,6 @@ Item {
                 text: plot.cursorText
                 textColor: Theme.text
             },
-            RenderProgressBadge { canvas: plot },
             // Zoom without a wheel.
             //
             // PlotCanvas::zoomBy was written, made Q_INVOKABLE for exactly this,
@@ -384,7 +408,7 @@ Item {
                 implicitWidth: 28
                 visible: plot.viewInteractive && plot.pointCount > 0
                 ToolTip.visible: zoomOut.hovered
-                ToolTip.text: "Zoom out about the middle of the figure"
+                ToolTip.text: "Zoom out about the last point the pointer was over, or the middle of the figure if it has not been on it yet"
                 onClicked: plot.zoomBy(1.0 / 1.25)
             },
             Button {
@@ -393,20 +417,33 @@ Item {
                 implicitWidth: 28
                 visible: plot.viewInteractive && plot.pointCount > 0
                 ToolTip.visible: zoomIn.hovered
-                ToolTip.text: "Zoom in about the middle of the figure"
+                ToolTip.text: "Zoom in about the last point the pointer was over, or the middle of the figure if it has not been on it yet"
                 onClicked: plot.zoomBy(1.25)
             },
-            // What happens when the full-resolution render lands. This control
-            // existed as its own component and was never placed anywhere - the
-            // setting was reachable only from the View menu, which is the wrong
-            // place for it: it decides something about THIS figure, and it is
-            // only meaningful while a figure is big enough to have a second
-            // render at all, which is exactly what the component already knew
-            // how to ask.
-            FullRenderPolicyBox { app: root.app; canvas: plot },
+            // The full-render policy is NOT here.
+            //
+            // It was, on the reasoning that it decides something about this
+            // figure and belongs near it. That reasoning ignored what it cost:
+            // the combo is 250 px of a row that has to hold the cursor
+            // read-out, the zoom buttons, two unit selectors, the colour map
+            // and the export button - and on an ordinary window it pushed the
+            // export button off the end entirely, so the one control in that
+            // row anybody needs every session was the one that disappeared.
+            //
+            // It is a preference, it is set once, and the View menu already
+            // has it. A thing you choose once does not earn permanent space
+            // beside a thing you use constantly.
             UnitSelector { axis: "X"; canvas: plot },
             UnitSelector { axis: "Y"; canvas: plot },
-            ColourMapSelector { canvas: plot; app: root.app },
+            // The colour-map picker is NOT here any more.
+            //
+            // It is a choice made once for a figure, and it was holding
+            // permanent width in the row that also carries the cursor read-out,
+            // the zoom buttons, two unit selectors and the export button - the
+            // comment above records that an over-wide control in this row once
+            // pushed the export button off the end entirely. It lives in the
+            // sidebar, beside the background and the grid, where the rest of
+            // the figure's appearance is set.
             Button {
                 id: cameraReset
                 text: "Reset camera"
@@ -447,17 +484,22 @@ Item {
             },
             // Last, hard against the pop-out button, which is where the person
             // asked for it.
+            // One button, and the choices behind it.
+            //
+            // It said "Export PDF" and wrote a 6 x 4 inch, 600 dpi PDF with no
+            // way to say otherwise - while PlotCanvas had three export
+            // functions with eight parameters between them and QML called one
+            // of them with none. An SVG, a 300 dpi plate, a slide-sized PNG and
+            // a figure at a journal's exact column width were all already
+            // possible and none of them was reachable.
             Button {
                 id: exportButton
-                text: "Export PDF"
+                text: "Export"
                 enabled: plot.pointCount > 0
                 ToolTip.visible: exportButton.hovered
-                ToolTip.text: "True vector PDF with embedded fonts, drawn by the same backend as the screen"
-                onClicked: {
-                    var target = root.app.exportPath(plot.engine, "pdf")
-                    if (plot.exportPdf(target)) root.app.notify("Exported " + target)
-                    else root.app.notify("PDF export failed")
-                }
+                ToolTip.text: "Format, size and resolution - vector or raster, "
+                            + "drawn by the same backend as the screen"
+                onClicked: exportDialog.open()
             }
         ]
 
@@ -674,6 +716,18 @@ Item {
                     anchors.fill: parent
                     visible: !root.app.notebookLayout
                     spacing: 4
+                // The optional colour-vision strip, above the figure it acts on.
+                //
+                // Off by default and not a default part of the toolbar: it used
+                // to be a permanent sidebar panel, which spent space every
+                // session on a setting most people never open. Turned on from
+                // View > Colour vision, and remembered.
+                ColourVisionBar {
+                    app: root.app
+                    canvas: plot
+                    visible: root.app.colourVisionToolbarVisible
+                    Layout.fillWidth: true
+                }
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -702,11 +756,20 @@ Item {
                         // interface's. A plot going into a paper is white
                         // whatever the person likes to work in.
                         //   0 follow the theme   1 dark   2 light   3 white
+                        //   4 a colour the person picked
+                        //
+                        // Case 4 takes its ink and its grid from the controller
+                        // rather than from a case written here, because both
+                        // are DERIVED from the background - see
+                        // AppController::figureForeground - so that a chosen
+                        // ground cannot end up carrying axis text nobody can
+                        // read.
                         backgroundColor: {
                             switch (root.app.figureTheme) {
                             case 1: return "#111820"
                             case 2: return "#f4f6f9"
                             case 3: return "#ffffff"
+                            case 4: return root.app.figureBackground
                             default: return Theme.background
                             }
                         }
@@ -714,6 +777,7 @@ Item {
                             switch (root.app.figureTheme) {
                             case 1: return "#dbe6f0"
                             case 2: case 3: return "#14181d"
+                            case 4: return root.app.figureForeground
                             default: return Theme.text
                             }
                         }
@@ -722,11 +786,15 @@ Item {
                             case 1: return "#26384f"
                             case 2: return "#d3d9e2"
                             case 3: return "#e2e6ec"
+                            case 4: return root.app.figureGridColour
                             default: return Theme.border
                             }
                         }
                         gridVisible: root.app.plotGridVisible
                         gridDensity: root.app.plotGridDensity
+                        gridDensityY: root.app.plotGridDensityY
+                        pieLabels: root.app.plotPieLabels
+                        polarConvention: root.app.plotPolarConvention
                         scaleLabelsVisible: root.app.plotScaleLabels
                         fieldInterpolation: root.app.plotFieldInterpolation
                         // The scattered estimator and its policies. -1 keeps
@@ -747,6 +815,7 @@ Item {
                         // The series palette follows the persisted plot setting,
                         // never the theme - see components/ColourVisionBar.qml.
                         colourVision: root.app.plotColourVision
+                        colourVisionPreview: root.app.plotColourVisionPreview
                         // The field colour map and the full-render behaviour
                         // belong to the person rather than to a figure, so they
                         // are persisted on the controller and bound down here.
@@ -773,6 +842,26 @@ Item {
                             rightMargin: 12; bottomMargin: 12
                         }
                     }
+                    // The full-resolution progress, at the bottom right of the
+                    // FIGURE - which is where its own comment always said it
+                    // sat, and where it was asked for. It was in the panel
+                    // header instead: a long way from the picture it is about,
+                    // and in a row that has to make space for it whether or not
+                    // a render is running. Here it costs nothing when idle,
+                    // because it is over the figure rather than beside it.
+                    //
+                    // Above the preview notice rather than beside it: the two
+                    // are never wanted at once - one says a render is running,
+                    // the other that one has finished - but sharing a corner
+                    // means neither has to move when the other appears.
+                    RenderProgressBadge {
+                        canvas: plot
+                        anchors {
+                            right: plot.right
+                            bottom: plot.bottom
+                            rightMargin: 12; bottomMargin: 12
+                        }
+                    }
                     }
 
                 }
@@ -790,6 +879,15 @@ Item {
             }
             }
         }
+    }
+
+    // Everything about writing the figure out. At workspace scope rather than
+    // inside the header row, so it is centred on the window and outlives the
+    // button that opens it.
+    ExportDialog {
+        id: exportDialog
+        app: root.app
+        canvas: plot
     }
 
     // A second panel on the OPPOSITE edge, for the layouts that keep browsing
@@ -821,7 +919,7 @@ Item {
                 app: root.app
                 canvas: root.canvas
                 onApplyRequested: {
-                    var t = root.canvas
+                    var t = root.targetCanvas("the column mapping")
                     if (!t) return
                     t.xColumn = xValue
                     t.yColumns = yValue ? [yValue] : []

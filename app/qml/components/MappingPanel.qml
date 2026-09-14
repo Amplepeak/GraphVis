@@ -138,7 +138,15 @@ PanelScroll {
         Layout.fillWidth: true
         Layout.leftMargin: 12
         Layout.rightMargin: 12
+        // Never on the seven formula engines. `columnsRequired` reports a
+        // column plan for every engine including those, so Function Plot came
+        // out as "reads 2 columns and 0 are mapped ... this will be an empty
+        // frame", printed directly beneath a correctly drawn curve. A warning
+        // that contradicts what the user can see is worse than no warning: it
+        // teaches them to stop believing the panel. On these engines the
+        // formula IS the data and no column is read.
         visible: root.canvas && root.canvas.columnsRequired > 0
+                 && !root.canvas.usesExpression
         implicitHeight: needLabel.implicitHeight + 14
         radius: Theme.radius
         readonly property int mapped: {
@@ -216,6 +224,12 @@ PanelScroll {
         delegate:ColumnLayout {
             id: axis
             required property var modelData
+            // The formula engines read no columns, so these four selectors do
+            // nothing at all there - and they keep showing whichever columns
+            // were last mapped from a real dataset, which reads as though the
+            // curve were being drawn from them. A control that cannot affect
+            // the figure should not be offered for it.
+            visible: !(root.canvas && root.canvas.usesExpression)
             Layout.fillWidth:true;Layout.leftMargin:10;Layout.rightMargin:10
             Label{text:axis.modelData.label;color:Theme.textSecondary}
             RowLayout {

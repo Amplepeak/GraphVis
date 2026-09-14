@@ -151,26 +151,118 @@ def to_bibtex(record: dict) -> str:
     return "@article{" + _key(record) + ",\n" + body + "\n}"
 
 
-def to_text(record: dict, style: str = "apa") -> str:
-    """A citation as a line of prose, for a figure caption or a status line."""
-    authors = record.get("authors") or []
+# The styles this understands. A name not in here is refused rather than
+# quietly formatted as something else.
+STYLES = ("apa", "ieee", "nature", "harvard", "bibtex")
+
+
+def _initials(given: str) -> str:
+    """'Johann Sebastian' -> 'H. Y.' - every forename, not just the first."""
+    return " ".join(f"{part[0]}." for part in str(given).split() if part)
+
+
+def _author_list(authors: list[dict], style: str) -> str:
+    """Author names in the order and punctuation the style actually uses."""
     if not authors:
-        names = "Anon."
-    elif len(authors) == 1:
-        names = f"{authors[0]['family']}, {authors[0]['given'][:1]}."
-    elif len(authors) <= 3:
-        names = ", ".join(f"{a['family']}, {a['given'][:1]}." for a in authors)
-    else:
-        names = f"{authors[0]['family']}, {authors[0]['given'][:1]}. et al."
-    year = record.get("year") or "n.d."
-    title = record.get("title") or ""
-    journal = record.get("journal") or ""
-    volume = record.get("volume") or ""
-    pages = record.get("pages") or ""
-    if str(style).lower() == "bibtex":
+        return "Anon."
+    if style == "ieee":
+        # Initials first, "and" before the last, et al. past six.
+        names = [f"{_initials(a.get('given',''))} {a.get('family','')}".strip()
+                 for a in authors]
+        if len(names) > 6:
+            return f"{names[0]} et al."
+        return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    if style == "nature":
+        names = [f"{a.get('family','')}, {_initials(a.get('given',''))}".strip()
+                 for a in authors]
+        if len(names) > 5:
+            return f"{names[0]} et al."
+        return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " & " + names[-1]
+    if style == "harvard":
+        names = [f"{a.get('family','')}, {_initials(a.get('given','')).replace(' ', '')}"
+                 for a in authors]
+        if len(names) > 3:
+            return f"{names[0]} et al."
+        return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    # APA 7: up to 20 authors listed, ampersand before the last.
+    names = [f"{a.get('family','')}, {_initials(a.get('given',''))}".strip() for a in authors]
+    if len(names) > 20:
+        return ", ".join(names[:19]) + ", ... " + names[-1]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + ", & " + names[-1]
+
+
+def to_text(record: dict, style: str = "apa") -> str:
+    """A citation as a line of prose, in the style asked for.
+
+    This used to take `style`, ignore it for everything except "bibtex", and
+    return the same APA-ish string whatever was requested - so a user who chose
+    IEEE got APA with no indication that their choice had done nothing. A
+    parameter that is accepted and silently discarded is worse than one that
+    does not exist, because the output looks like an answer to the question.
+    """
+    key = str(style or "apa").strip().lower()
+    if key not in STYLES:
+        raise CitationError(
+            f"Unknown citation style {style!r}. Choose one of: {', '.join(STYLES)}.")
+    if key == "bibtex":
         return to_bibtex(record)
-    tail = ", ".join(p for p in (journal, volume, pages) if p)
-    return f"{names} ({year}). {title}. {tail}. https://doi.org/{record.get('doi','')}"
+
+    authors = record.get("authors") or []
+    names = _author_list(authors, key)
+    year = record.get("year") or "n.d."
+    title = str(record.get("title") or "").rstrip(".")
+    journal = record.get("journal") or ""
+    volume = str(record.get("volume") or "")
+    issue = str(record.get("issue") or "")
+    pages = str(record.get("pages") or "")
+    doi = record.get("doi") or ""
+
+    if key == "ieee":
+        # A. Author, "Title," Journal, vol. 1, no. 2, pp. 3-4, 2024.
+        bits = [names + ",", f'"{title},"' if title else ""]
+        if journal:
+            bits.append(journal + ",")
+        if volume:
+            bits.append(f"vol. {volume},")
+        if issue:
+            bits.append(f"no. {issue},")
+        if pages:
+            bits.append(f"pp. {pages},")
+        bits.append(f"{year}.")
+        return " ".join(b for b in bits if b)
+
+    if key == "nature":
+        # Author, A. Title. Journal 49, 101-115 (2024).
+        tail = journal
+        if volume:
+            tail += f" {volume}"
+        if pages:
+            tail += f", {pages}"
+        return f"{names} {title}. {tail} ({year})." if tail else f"{names} {title}. ({year})."
+
+    if key == "harvard":
+        # Author, A.A. (2024) 'Title', Journal, 49(3), pp. 101-115.
+        tail = journal
+        if volume:
+            tail += f", {volume}"
+        if issue:
+            tail += f"({issue})"
+        if pages:
+            tail += f", pp. {pages}"
+        return f"{names} ({year}) '{title}', {tail}." if tail else f"{names} ({year}) '{title}'."
+
+    # APA 7: Author, A. A., & Other, B. (2024). Title. Journal, 49(3), 101-115. https://doi.org/...
+    tail = journal
+    if volume:
+        tail += f", {volume}"
+    if issue:
+        tail += f"({issue})"
+    if pages:
+        tail += f", {pages}"
+    out = f"{names} ({year}). {title}. {tail}." if tail else f"{names} ({year}). {title}."
+    if doi:
+        out += f" https://doi.org/{doi}"
+    return out
 
 
 def cite(doi: str, *, style: str = "apa", timeout: float = 12.0) -> dict:

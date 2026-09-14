@@ -132,6 +132,9 @@ EXTRA = {
     "find_dois": {"text": "see doi:10.1038/s41586-020-2649-2 for the method"},
     "cite": {"doi": "10.1038/s41586-020-2649-2"},
     "cite_text": {"text": "see doi:10.1038/s41586-020-2649-2"},
+    # Needs no dataset and no network: it formats a path and a caption.
+    "latex_figure": {"image_path": "out/fig_yield.pdf", "caption": "Yield vs pH",
+                     "style": "ieee"},
 }
 
 # These two ask Crossref. Their offline halves - finding a DOI in text and both
@@ -264,4 +267,19 @@ ok("every required field is exercised by this suite", not untested, str(untested
 if missing_dependency:
     print(f"\nskipped (optional component absent): {', '.join(missing_dependency)}")
 print(f"\n{passed} passed, {failed} failed, {skipped} skipped")
-sys.exit(1 if failed else 0)
+def test_suite() -> None:
+    """Report this file's result to pytest instead of aborting collection.
+
+    These suites predate pytest: the body above runs its checks at import and
+    then called sys.exit, which made `pytest tests/` abort the whole directory
+    with an INTERNALERROR - so the six oldest and largest suites could only ever
+    be run one file at a time, and CI had to special-case them.
+
+    Running the file directly still behaves exactly as before.
+    """
+    assert failed == 0, (
+        f"{failed} checks failed - run `python tests/test_operations.py` for the detail")
+
+
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

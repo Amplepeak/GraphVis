@@ -1,0 +1,119 @@
+# The science service and the numbers it reports.
+#
+# The Windows release workflow runs the acceptance scripts and `cargo test`,
+# and the native audit runs the Rust dead-code scan. Nothing ran
+# `services/python/tests`, which is where the analysis operations, the
+# de-renderer, the reachability guards and the Tier 1 ground-truth checks all
+# live - so the suite that decides whether the reported numbers are correct
+# only ever ran on a developer's machine.
+#
+# Deliberately on Linux and without Qt: every one of these suites is either
+# pure Python or reads the C++ sources as text, so this needs no build and
+# finishes in about a minute. A test that only runs inside a 40-minute
+# Windows release job is a test that stops being run.
+name: Science tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the science package
+        working-directory: services/python
+        run: |
+          python -m pip install --upgrade pip
+          # The extras the test suites import. Deliberately not io_extra or
+          # vlm: those pull astropy, obspy, mne and torch, which add tens of
+          # minutes and are exercised by no test here. Anything they cover is
+          # skipped rather than failed, and the suites report their skips.
+          python -m pip install -e ".[literature,units,uncertainty,symbolic,io,reports]"
+          python -m pip install pytest
+
+      # The whole directory in one command.
+      #
+      # This used to be two steps: the pytest suites named one by one, then the
+      # six older script-style ones run individually - because they ended in a
+      # module-level sys.exit, which made `pytest tests/` abort collection of
+      # everything with an INTERNALERROR. Each now reports through a test_suite
+      # function while still running standalone exactly as before, so the
+      # special case is gone and a new suite is picked up without editing CI.
+      - name: Every suite
+        working-directory: services/python
+        run: python -m pytest tests/ -q
+
+      - name: Every declaration has a definition
+        run: python tools/check_definitions.py
+
+  # The C++ compiles, with warnings treated as information rather than noise.
+  #
+  # This is the check that would have caught the two definitions a clean-up
+  # script deleted as collateral this session. The linker only complains about
+  # a missing definition once something still references it, so the build went
+  # green for everything except the one call site that remained - and a syntax
+  # pass costs a minute against a 40-minute Windows release job.
+  #
+  # Qt 6 from apt rather than the pinned vcpkg build: the versions differ, so
+  # this cannot replace the real build. It catches syntax, type and shadowing
+  # faults within minutes of a push, which is what it is for.
+  cxx-syntax:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Qt 6 headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-declarative-dev qt6-svg-dev
+
+      # Both halves, not just the renderer.
+      #
+      # This checked native/plot2d only, which left app/src - AppController and
+      # everything the interface is made of - compiled by nobody until the
+      # Windows release job. That is where the process handling, the catalogue
+      # loader and the science-service wiring live.
+      #
+      # app/src/main.cpp is the one deliberate exception and is named rather
+      # than quietly dropped: it calls QQmlApplicationEngine::loadFromModule,
+      # which arrived in Qt 6.5, and apt on ubuntu-24.04 carries 6.4. Skipping
+      # it on a missing-header rule would not work - the header is present and
+      # the failure is a missing member - so the exception is explicit and
+      # disappears by itself when the runner's Qt catches up.
+      - name: Syntax and warnings
+        run: |
+          QT=/usr/include/x86_64-linux-gnu/qt6
+          INC="-I app/src -I native/plot2d/include -I $QT -I $QT/QtCore \
+               -I $QT/QtGui -I $QT/QtQuick -I $QT/QtQml -I $QT/QtWidgets \
+               -I $QT/QtSvg -I $QT/QtNetwork -I $QT/QtQuickControls2"
+          failed=0
+          for f in native/plot2d/src/*.cpp app/src/*.cpp; do
+            case "$f" in
+              app/src/main.cpp)
+                echo "skipped $f  (needs Qt 6.5 for loadFromModule; apt has 6.4)"
+                continue;;
+            esac
+            log=$(mktemp)
+            if g++ -fsyntax-only -std=c++20 -fPIC -Wall -Wextra -Wshadow \
+                   $INC "$f" 2>"$log"; then
+              echo "ok      $f  ($(grep -c 'warning:' "$log") warnings)"
+            elif grep -q "fatal error: .*: No such file or directory" "$log"; then
+              # A third-party header this runner does not carry - Arrow, for
+              # one. Reported rather than silently skipped: a gate that quietly
+              # checks nothing is worse than no gate, and worse than a red one.
+              echo "skipped $f  ($(grep -m1 'fatal error' "$log" | sed 's/.*fatal error: //'))"
+            else
+              echo "FAILED  $f"
+              head -20 "$log"
+              failed=1
+            fi
+          done
+          exit $failed

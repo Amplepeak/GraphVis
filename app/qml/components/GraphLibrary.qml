@@ -7,7 +7,7 @@
 pragma ComponentBehavior: Bound
 // Graph Library — the GraphVis 17 catalogue, native.
 //
-// 318 entries across 30 categories come from app.graphCategories, which
+// 2,116 entries across 46 categories come from app.graphCategories, which
 // AppController loads from the embedded config/graph_catalogue.json. Search
 // uses app.searchGraphs(), a port of graph_library.search_entries(). Hovering
 // an entry shows its real pre-rendered GraphVis thumbnail from
@@ -42,10 +42,10 @@ Rectangle {
     // no roles at all, so the problem cannot occur.
     property var rows: []
 
-    // Which categories are open. 433 graphs in 46 categories is a list nobody
+    // Which categories are open. 2,116 graphs in 46 categories is a list nobody
     // scrolls through - the one they want is forty screens down and they do not
     // know which heading it is under. Collapsed by default, so the first thing
-    // on screen is the 46 headings rather than the first 12 of 433 entries.
+    // on screen is the 46 headings rather than the first 12 of 2,116 entries.
     //
     // A search is different: typing a query means the person is looking for a
     // named thing, so every group opens and refresh() below skips headers
@@ -72,6 +72,45 @@ Rectangle {
         var q = searchField.text.trim()
 
         if (q.length === 0 && !advancedToggle.checked) {
+            // Favourites and Recently used, above the catalogue.
+            //
+            // 2,116 entries in 46 categories is a catalogue nobody browses
+            // twice: the person who used a Nyquist plot yesterday should not
+            // have to remember which of forty-six headings it is filed under.
+            // These two groups are that shortcut and they come first, because
+            // a shortcut below the thing it is a shortcut for is not one.
+            //
+            // Only on the tree. A search is already a shortcut, and repeating
+            // a starred graph at the top of its own results would be the same
+            // row twice.
+            var shortcuts = [
+                { name: "★ Favourites", entries: root.app.favouriteGraphs,
+                  empty: "Star a graph to keep it here" },
+                { name: "Recently used", entries: root.app.recentGraphs,
+                  empty: "" }
+            ]
+            for (var sc = 0; sc < shortcuts.length; ++sc) {
+                var group = shortcuts[sc]
+                // An empty Recently used group is not shown at all - there is
+                // nothing to say. An empty Favourites group IS shown once, with
+                // the line that explains the star, because otherwise the
+                // feature has no discoverable starting point.
+                if (group.entries.length === 0 && group.empty === "") continue
+                var scOpen = root.isOpen(group.name)
+                out.push({ header: true, label: group.name,
+                           count: group.entries.length,
+                           open: scOpen, entry: undefined })
+                if (!scOpen) continue
+                if (group.entries.length === 0) {
+                    out.push({ header: false, label: group.empty, count: 0,
+                               open: false, entry: undefined, hint: true })
+                    continue
+                }
+                for (var si = 0; si < group.entries.length; ++si)
+                    out.push({ header: false, label: group.entries[si].engine,
+                               count: 0, open: false, entry: group.entries[si] })
+            }
+
             // No query: the category tree, non-advanced entries only.
             for (var c = 0; c < app.graphCategories.length; ++c) {
                 var cat = app.graphCategories[c]
@@ -91,15 +130,26 @@ Rectangle {
             return
         }
 
-        // 400 was set when the catalogue held 433 entries and meant "all of
-        // them". It now holds 1,769, so a cap of 400 silently truncated the
-        // answer - and the entries it dropped were the ones the fuzzy score
-        // ranked last, which is exactly where a half-remembered name lands.
-        var results = app.searchGraphs(q, advancedToggle.checked, 2000)
+        // No cap, rather than a large one.
+        //
+        // This was 400, set when the catalogue held 433 entries and meaning
+        // "all of them". The catalogue grew to 1,769 and then to 2,116, and a
+        // cap of 400 silently truncated the answer - the entries it dropped
+        // being the ones the fuzzy score ranked last, which is exactly where a
+        // half-remembered name lands. Raising it to 2,000 fixed that day's
+        // symptom and set up the next one: 2,000 is under 2,116, so the same
+        // silent truncation was already waiting on a broad query.
+        //
+        // A number that has to be revised every time the catalogue grows is a
+        // bug on a timer. searchGraphs treats a limit of 0 as no limit, and
+        // nothing downstream needs one: the list is grouped by engine and the
+        // view is virtualised, so the cost is the sort, which is over the
+        // whole catalogue whatever this says.
+        var results = app.searchGraphs(q, advancedToggle.checked, 0)
 
         // Results GROUPED BY ENGINE, base entry first.
         //
-        // 1,406 of the catalogue's 1,769 entries are axis-scale variants - the
+        // 1,503 of the catalogue's 2,116 entries are axis-scale variants - the
         // same engine again with a log, log(x+1), z-score or quantile axis - so
         // an ungrouped search for "line" returned Line Chart's five variants
         // interleaved with five other engines' variants by fuzzy score, and the
@@ -121,7 +171,8 @@ Rectangle {
                 // descriptions for the same drawing code, which is how the
                 // catalogue has always been - and keeping a single `base` per
                 // group silently dropped all but the last of them: a search for
-                // "line" returned 372 entries and drew 361 rows.
+                // "line" returned 372 entries and drew 361 rows in the
+                // catalogue as it stood when this was found.
                 groups[key] = { bases: [], variants: [] }
                 order.push(key)
             }
@@ -156,7 +207,37 @@ Rectangle {
         rows = out
     }
 
-    Component.onCompleted: refresh()
+    Component.onCompleted: {
+        // Both shortcut groups open on first run, so the star is discoverable
+        // without anyone having to expand anything to find out it exists.
+        if (Object.keys(root.openCategories).length === 0) {
+            var first = {}
+            first["★ Favourites"] = true
+            first["Recently used"] = true
+            root.openCategories = first
+        }
+        refresh()
+    }
+
+    // Starring a graph, or applying one, changes what the two groups above
+    // hold. `rows` is a snapshot, so without this the list goes on showing the
+    // state it was built from and the star appears to do nothing.
+    //
+    // The counter is not decoration. Each star's state comes from
+    // app.isFavouriteGraph(), an ordinary invokable with no notify signal, and
+    // a QML binding over a function call is evaluated once and never again -
+    // there is nothing for the engine to watch. Naming this property inside
+    // that binding gives it something, so bumping it here re-evaluates every
+    // star on screen. Rebuilding `rows` alone was not enough: the view reuses
+    // its delegates, so a row that stayed put kept its stale glyph.
+    property int favouritesRevision: 0
+    Connections {
+        target: root.app
+        function onGraphShortcutsChanged() {
+            root.favouritesRevision = root.favouritesRevision + 1
+            root.refresh()
+        }
+    }
 
     // Switching a pack off rebuilds app.graphCategories underneath us. `rows`
     // is a snapshot taken by refresh(), not a live view of the catalogue, so
@@ -302,10 +383,35 @@ Rectangle {
             // rows at the bottom. The scan's own list scrolls inside whatever
             // it gets, so a smaller share costs a row of results rather than
             // hiding anything.
+            // Sized from what the panel actually needs, not from a guess.
+            //
+            // The floor was 180. Measured offscreen, ScanPanel's own minimum is
+            // 194 in a 360 px sidebar - the summary line wraps to two there -
+            // so the floor was below the minimum and the block overflowed its
+            // allowance and painted over the search field beneath it. It also
+            // meant the results list only ever got its 70 px floor: one card,
+            // however many the scan had found. Three found, one visible.
+            //
+            // Now the ask is the chrome plus room for up to three results, and
+            // the share rises only while the section is OPEN - which is exactly
+            // when the person is looking at it, and the case the old comment's
+            // worry about starving the catalogue did not cover.
+            // Both constants measured offscreen rather than estimated: the
+            // chrome above the list is 141, and a recommendation card is 100 -
+            // taller than it looks, because the reason wraps to two lines at
+            // sidebar widths. Three cards are 308 px of content. My first guess
+            // was 68 and would have shown two.
+            // 141 since the Go button was added; 124 before it. Re-measured
+            // rather than left alone, because a chrome constant that no longer
+            // matches the panel is how the overflow this fixed comes back.
+            readonly property int scanChrome: 141
+            readonly property int scanCard: 100
+            readonly property int scanWanted:
+                scanChrome + Math.max(70, scanCard * Math.min(3, root.app.scanRecommendations.length))
             Layout.preferredHeight: scanOpen.checked
-                                    ? Math.max(180, Math.min(320, root.height * 0.4))
+                                    ? Math.min(scanWanted, Math.max(220, root.height * 0.55))
                                     : 0
-            Layout.maximumHeight: scanOpen.checked ? Math.max(180, root.height * 0.45) : 0
+            Layout.maximumHeight: scanOpen.checked ? Math.max(220, root.height * 0.6) : 0
             visible: scanOpen.checked
             app: root.app
             onRecommendationChosen: (graph, mappings) => root.scanApplied(graph, mappings)
@@ -462,8 +568,23 @@ Rectangle {
                     }
                 }
 
+                // The one line under an empty Favourites group. Not a
+                // catalogue row: it has no entry, so it must not be staged, and
+                // it must not offer a star for a graph that is not there.
+                Label {
+                    visible: !entry.modelData.header && entry.modelData.hint === true
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    verticalAlignment: Text.AlignVCenter
+                    text: entry.modelData.label
+                    color: Theme.textMuted
+                    font.pixelSize: 10
+                    font.italic: true
+                    elide: Text.ElideRight
+                }
+
                 Rectangle {
-                    visible: !entry.modelData.header
+                    visible: !entry.modelData.header && entry.modelData.hint !== true
                     anchors.fill: parent; anchors.rightMargin: 4
                     radius: 5
                     color: root.staged && entry.modelData.entry && root.staged.engine === entry.modelData.entry.engine
@@ -508,6 +629,79 @@ Rectangle {
                                   : (entry.modelData.entry && entry.modelData.entry.scale
                                      ? "\u21b3" : "")
                             color: Theme.textMuted; font.pixelSize: 9
+                        }
+
+                        // The star.
+                        //
+                        // Three things had to be right and two of them were
+                        // not, which is why the first version rendered and did
+                        // nothing when clicked:
+                        //
+                        // 1. `starred` calls isFavouriteGraph(), a plain
+                        //    invokable with no notify signal behind it. QML
+                        //    evaluates a binding on a function call ONCE and
+                        //    has no way to know it should ever re-run, so the
+                        //    glyph never changed however many times the
+                        //    favourites changed underneath it. Naming
+                        //    root.favouritesRevision in the binding is what
+                        //    gives QML something it can watch.
+                        //
+                        // 2. `visible: false` means NO INPUT. The star was
+                        //    hidden until the row was hovered, and hit-testing
+                        //    a control whose existence depends on the pointer
+                        //    being in the right place is a race with itself.
+                        //    It is always present now and fades with opacity,
+                        //    which looks the same and is always clickable.
+                        //
+                        // 3. The row has its own tap handler that stages the
+                        //    graph. The star must consume the click rather
+                        //    than merely also handling it, or starring
+                        //    something replaces what the person was looking
+                        //    at. A MouseArea above the row in z does consume
+                        //    it; a TapHandler shares the press.
+                        Item {
+                            id: star
+                            property var pick: entry.modelData.entry
+                            property bool starred: star.pick && root.favouritesRevision >= 0
+                                ? root.app.isFavouriteGraph(star.pick.category,
+                                                            star.pick.engine,
+                                                            star.pick.scale ? star.pick.scale : "")
+                                : false
+                            Layout.preferredWidth: 18
+                            Layout.preferredHeight: 18
+                            z: 2
+                            opacity: star.pick === undefined ? 0.0
+                                     : (star.starred || hover.hovered || starMouse.containsMouse
+                                        ? 1.0 : 0.0)
+                            Behavior on opacity { NumberAnimation { duration: 90 } }
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: star.starred ? "\u2605" : "\u2606"
+                                color: star.starred ? Theme.accent
+                                                    : (starMouse.containsMouse ? Theme.text
+                                                                               : Theme.textMuted)
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: starMouse
+                                anchors.fill: parent
+                                anchors.margins: -3      // a 24px target, not 13
+                                enabled: star.pick !== undefined
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton
+                                ToolTip.visible: starMouse.containsMouse && star.pick !== undefined
+                                ToolTip.text: star.starred ? "Remove from favourites"
+                                                           : "Add to favourites"
+                                onClicked: function(mouse) {
+                                    mouse.accepted = true
+                                    root.app.toggleFavouriteGraph(
+                                        star.pick.category,
+                                        star.pick.engine,
+                                        star.pick.scale ? star.pick.scale : "")
+                                }
+                            }
                         }
                     }
 

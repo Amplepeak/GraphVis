@@ -38,8 +38,17 @@ Rectangle {
 
     Grid {
         anchors.centerIn: parent
+        // Columns only. Setting rows AS WELL over-constrains the Grid: its
+        // capacity is rows*columns, and the two bindings do not update in the
+        // same pass - so as a handle changes orientation there is a moment when
+        // columns is already 1 and rows is still 1, capacity 1, three items.
+        // That is the warning the startup log filled with, once per handle per
+        // layout change.
+        //
+        // With only columns set, Grid derives the rows from the item count:
+        // columns 1 gives three rows, columns 3 gives one. The same two
+        // layouts, and no state in between that can be wrong.
         columns: body.upright ? 1 : 3
-        rows: body.upright ? 3 : 1
         spacing: 3
         Repeater {
             model: 3

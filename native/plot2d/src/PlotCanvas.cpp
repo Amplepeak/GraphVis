@@ -3,6 +3,7 @@
 #include "ArrowTable.h"
 #include "ColourVision.h"
 #include "ColourMaps.h"
+#include "ColourMapSafety.h"
 #include "Expression.h"
 #include "PublicationProfile.h"
 #include "Units.h"
@@ -193,6 +194,12 @@ int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringLi
     const ColourVision vision=colourVisionFromInt(colourVision);
     const QVector<QColor> palette=seriesPalette(vision);
     const QVector<QVector<qreal>> dashes=seriesDashPatterns(vision);
+    // The engines that lay out a whole - treemap, icicle, sunburst, Sankey,
+    // chord - never get a PlotSeries to take a colour from, so without this
+    // they cannot see the colour-vision choice at all. A person's own colours
+    // win over the measured palette, exactly as they do for a ramp.
+    spec.style.categoryPalette=spec.style.customColours.isEmpty()
+                               ?palette:spec.style.customColours;
     int total=0;
     int idx=0;
     for(const QString& yName:yNames){
@@ -394,11 +401,31 @@ void PlotCanvas::setVariant(const QString& v){
     spec_.variant=v; applyVariant(); update(); emit sourceChanged();
 }
 void PlotCanvas::setTitle(const QString& v){
-    if(spec_.title==v) return; spec_.title=v; update(); emit sourceChanged();
+    if(spec_.title==v) return;
+    spec_.title=v; update(); emit sourceChanged();
 }
-void PlotCanvas::setBackgroundColor(const QColor& c){ if(spec_.style.background==c) return; spec_.style.background=c; update(); emit styleChanged(); }
-void PlotCanvas::setForegroundColor(const QColor& c){ if(spec_.style.foreground==c) return; spec_.style.foreground=c; update(); emit styleChanged(); }
-void PlotCanvas::setGridColor(const QColor& c){ if(spec_.style.gridColor==c) return; spec_.style.gridColor=c; update(); emit styleChanged(); }
+// The figure's own colours. All three are painting decisions - the data and
+// the prepared spec are untouched - so each is a repaint plus a re-render, and
+// none of them is a rebuild.
+//
+// The re-render is the part that was missing. update() alone repaints, and
+// paint() then returns immediately with the accepted full-resolution image,
+// which was drawn in the previous colours. Switching the figure theme on a
+// large dataset changed nothing on screen until something else happened to
+// invalidate that image.
+#define GV_FIGURE_COLOUR(Setter,Member)                          \
+void PlotCanvas::Setter(const QColor& c){                        \
+    if(spec_.style.Member==c) return;                            \
+    spec_.style.Member=c;                                        \
+    showingFull_=false;                                          \
+    update();                                                    \
+    scheduleFullRender();                                        \
+    emit styleChanged();                                         \
+}
+GV_FIGURE_COLOUR(setBackgroundColor,background)
+GV_FIGURE_COLOUR(setForegroundColor,foreground)
+GV_FIGURE_COLOUR(setGridColor,gridColor)
+#undef GV_FIGURE_COLOUR
 
 // The map is part of the spec, so changing it has to invalidate the prepared
 // figure the same way a colour change does - update() alone would repaint the
@@ -528,6 +555,38 @@ void PlotCanvas::setGridDensity(int ticks){
     const int clamped=qBound(0,ticks,25);
     if(spec_.style.gridDensity==clamped) return;
     spec_.style.gridDensity=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setGridDensityY(int ticks){
+    const int clamped=qBound(0,ticks,25);
+    if(spec_.style.gridDensityY==clamped) return;
+    spec_.style.gridDensityY=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setPieLabels(int mode){
+    const int clamped=qBound(0,mode,3);
+    if(spec_.style.pieLabels==clamped) return;
+    spec_.style.pieLabels=clamped;
+    // A painting decision, like the grid: the data and the prepared spec are
+    // unchanged, so this is a repaint rather than a rebuild.
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
+void PlotCanvas::setPolarConvention(int mode){
+    const int clamped=qBound(0,mode,1);
+    if(spec_.style.polarConvention==clamped) return;
+    spec_.style.polarConvention=clamped;
     showingFull_=false;
     update();
     scheduleFullRender();
@@ -1064,9 +1123,61 @@ QStringList PlotCanvas::expressionFunctions(){
     return Expression::knownFunctions();
 }
 
+// The chosen map, the colour-vision mode, and the figure note that explains any
+// difference between them, resolved in one place.
+//
+// This exists because colour vision used to stop at the SERIES palette. On a
+// line chart that is the whole figure and the setting worked; on a surface, a
+// heat map, a contour or a vector field there are no series at all - the colour
+// map is the data - so on exactly the plots where a colour-blind reader needs
+// the setting most, it changed nothing. That is the report this answers: a
+// Plasma-coloured surface, and Monochrome selected, and a figure still in full
+// colour.
+//
+// What it does NOT do is silently overrule the person. The chosen map is kept;
+// only the painted one changes, only when the measurement in ColourMapSafety.h
+// says the chosen map fails for that vision, and the substitute keeps the map's
+// role so the figure cannot come to claim something different about the data.
+void PlotCanvas::applyColourVisionToMap(){
+    const ColourVision vision=colourVisionFromInt(colourVision_);
+    const QString chosen=chosenColourMap_.isEmpty()?QStringLiteral("Viridis")
+                                                   :chosenColourMap_;
+    spec_.style.colourMap=colourmaps::mapIsSafeFor(chosen,vision)
+                              ? chosenColourMap_
+                              : colourmaps::safeSubstituteFor(chosen,vision);
+    // A substitution that costs something says so ON THE FIGURE, not only in
+    // the panel - the person reading the exported PDF is not the person who
+    // chose the setting.
+    spec_.figureNote=colourmaps::substitutionNote(chosen,vision);
+}
+
+QString PlotCanvas::colourVisionNote() const {
+    const ColourVision vision=colourVisionFromInt(colourVision_);
+    if(vision==ColourVision::Standard) return QString();
+    const QString chosen=chosenColourMap_.isEmpty()?QStringLiteral("Viridis")
+                                                   :chosenColourMap_;
+    const QStringList names=colourVisionNames();
+    const QString mode=names.value(colourVision_).section(QLatin1Char(' '),0,0);
+    if(!usesColourMap())
+        return tr("%1: series colours only - this engine does not colour a field.")
+                   .arg(mode);
+    if(colourmaps::mapIsSafeFor(chosen,vision)){
+        // The answer a person gets when they pick a vision mode and the picture
+        // does not move. Without it the setting reads as broken, which is the
+        // whole reason this string exists.
+        return tr("%1: %2 already passes for this vision, so the colour map is "
+                  "unchanged.").arg(mode,chosen);
+    }
+    const QString note=colourmaps::substitutionNote(chosen,vision);
+    const QString swap=tr("%1: %2 does not pass, so the figure is drawn in %3.")
+                           .arg(mode,chosen,spec_.style.colourMap);
+    return note.isEmpty()?swap:(swap+QLatin1Char(' ')+note);
+}
+
 void PlotCanvas::setColourMap(const QString& name){
-    if(spec_.style.colourMap==name) return;
-    spec_.style.colourMap=name;
+    if(chosenColourMap_==name) return;
+    chosenColourMap_=name;
+    applyColourVisionToMap();
     // This called rebuild(), which is guarded by `dirty_` and returns
     // immediately unless something set it - and nothing here did. So choosing a
     // colour map changed the spec and then did nothing at all: no repaint, no
@@ -1221,9 +1332,37 @@ void PlotCanvas::setColourVision(int mode){
     const int clamped=qBound(0,mode,4);
     if(colourVision_==clamped) return;
     colourVision_=clamped;
+    // The SAME bug setColourMap above was fixed for, in four more setters.
+    //
+    // This set dirty_ and repainted, and paint() returns early with the
+    // accepted full-resolution image whenever one matches the generation - so
+    // on any dataset big enough to have a second render, which is every dataset
+    // this setting matters on, the figure went on being drawn in the OLD
+    // palette. Choosing a colour-vision mode appeared to do nothing at all.
+    //
+    // Rotating the figure is what made it seem to work: cameraMoved() drops
+    // showingFull_, so the live preview comes back with the new palette, and
+    // the render that lands when the rotation stops has it too. The setting was
+    // reaching the renderer the whole time; the picture on screen was a
+    // photograph of the previous one.
+    //
+    // And the fix above was still not enough, which is the report that followed
+    // it: a 3-D surface with Monochrome selected stayed in full colour. The
+    // repaint was reaching the renderer correctly by then - there was simply
+    // nothing for it to change. A surface has no series, so a setting that only
+    // touched the series palette had no way to reach the picture at all. The
+    // colour map is the data on that engine, so the setting has to reach the
+    // colour map; applyColourVisionToMap is where that happens.
+    applyColourVisionToMap();
+
+    // Unlike a colour map, this one DOES need the rebuild: the series colours
+    // are assigned there. Hence keepViewOnRebuild_ - see rebuild().
+    keepViewOnRebuild_=true;
     dirty_=true;
-    emit styleChanged();
+    showingFull_=false;
     update();
+    scheduleFullRender();
+    emit styleChanged();
 }
 
 // The transform belongs to the DATA, so unlike the grid or the colour map this
@@ -1477,11 +1616,20 @@ void PlotCanvas::rebuild(){
     // of dataset, engine or mapped columns would open the next figure already
     // clipped to a range that means nothing in it - and with no visible reason
     // why, since the range came from a plot that is no longer on screen.
-    if(hasView_){
+    // A STYLE change must not throw the zoom away.
+    //
+    // The rule below is right for a data change - a zoom belongs to the figure
+    // it was made on - but rebuild() is also what re-derives the series
+    // colours, so choosing a colour-vision palette ran it and silently reset a
+    // zoom the person had dragged. The comment further down about limit*_
+    // already noticed that "a style change - a colour map, a grid toggle - can
+    // trigger one"; this is the other half of that observation.
+    if(hasView_&&!keepViewOnRebuild_){
         hasView_=false;
         spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
         spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
     }
+    keepViewOnRebuild_=false;
     spec_.series.clear();
     // Annotations are deliberately NOT cleared here, unlike the zoom above.
     // A zoom is a view of a figure and means nothing on the next one; a note is
@@ -1691,9 +1839,121 @@ private:
 };
 } // namespace
 
+// SHOWING THE FIGURE AS THE READER IT IS FOR ACTUALLY SEES IT.
+//
+// Everything else about colour vision is a claim: the palette is measured, the
+// colour map is substituted, the panel explains itself - and the person setting
+// it has normal colour vision, sees a figure that looks much as it did, and
+// reasonably concludes the setting does nothing. That was the report, three
+// times, and the first two answers were real bugs while the third was not.
+//
+// Simulation converts the claim into something you can look at. It is the same
+// Machado, Oliveira & Fernandes (2009) transform the colour maps were measured
+// with, applied to the finished pixels, so what appears is the figure as a
+// protanope, deuteranope or tritanope receives it - two mustard lines that
+// looked distinct a moment ago, sitting on top of each other.
+//
+// A VIEW, never an export. The figure on disk must be the real one: an exported
+// PDF drawn through a dichromat transform is not a colour-blind-safe figure, it
+// is a figure nobody can read properly. So this lives in paint() and nowhere
+// near exportPdf, exportRaster or the full-resolution render that feeds them.
+namespace {
+// Severity 1.0, in linear sRGB. Rows of the 3x3, flattened.
+const double kSimProtan[9]={ 0.152286, 1.052583,-0.204868,
+                             0.114503, 0.786281, 0.099216,
+                            -0.003882,-0.048116, 1.051998};
+const double kSimDeutan[9]={ 0.367322, 0.860646,-0.227968,
+                             0.280085, 0.672501, 0.047413,
+                            -0.011820, 0.042940, 0.968881};
+const double kSimTritan[9]={ 1.255528,-0.076749,-0.178779,
+                            -0.078411, 0.930809, 0.147602,
+                             0.004733, 0.691367, 0.303900};
+
+// Rec.709 luma, which is what a monochrome reader is left with.
+void simulateInPlace(QImage& img,int mode){
+    const double* m=nullptr;
+    switch(mode){
+    case 1: m=kSimProtan; break;
+    case 2: m=kSimDeutan; break;
+    case 3: m=kSimTritan; break;
+    case 4: break;                 // monochrome, handled below
+    default: return;
+    }
+    // Built once rather than per pixel: the transform is in LINEAR light, so
+    // every channel needs a gamma round trip and 8-bit inputs only have 256
+    // possible values.
+    static double toLinear[256];
+    static bool ready=false;
+    if(!ready){
+        for(int i=0;i<256;++i){
+            const double c=i/255.0;
+            toLinear[i]=c<=0.04045?c/12.92:std::pow((c+0.055)/1.055,2.4);
+        }
+        ready=true;
+    }
+    const auto toSrgb=[](double c){
+        c=qBound(0.0,c,1.0);
+        const double v=c<=0.0031308?12.92*c:1.055*std::pow(c,1.0/2.4)-0.055;
+        return int(qBound(0.0,v*255.0+0.5,255.0));
+    };
+    if(img.format()!=QImage::Format_ARGB32&&img.format()!=QImage::Format_RGB32)
+        img=img.convertToFormat(QImage::Format_ARGB32);
+    for(int y=0;y<img.height();++y){
+        QRgb* row=reinterpret_cast<QRgb*>(img.scanLine(y));
+        for(int x=0;x<img.width();++x){
+            const QRgb p=row[x];
+            const double r=toLinear[qRed(p)],g=toLinear[qGreen(p)],b=toLinear[qBlue(p)];
+            if(!m){
+                const int y709=toSrgb(0.2126*r+0.7152*g+0.0722*b);
+                row[x]=qRgba(y709,y709,y709,qAlpha(p));
+                continue;
+            }
+            row[x]=qRgba(toSrgb(m[0]*r+m[1]*g+m[2]*b),
+                         toSrgb(m[3]*r+m[4]*g+m[5]*b),
+                         toSrgb(m[6]*r+m[7]*g+m[8]*b),qAlpha(p));
+        }
+    }
+}
+} // namespace
+
+void PlotCanvas::setColourVisionPreview(bool on){
+    if(colourVisionPreview_==on) return;
+    colourVisionPreview_=on;
+    // A repaint, not a rebuild: the figure is unchanged and only the pixels
+    // shown are passed through the transform.
+    update();
+    emit styleChanged();
+}
+
+bool PlotCanvas::simulatingColourVision() const {
+    return colourVisionPreview_&&colourVision_>0;
+}
+
+void PlotCanvas::paintSimulated(QPainter* painter,const QRectF& target,
+                                const QImage& source) const {
+    QImage seen=source;
+    simulateInPlace(seen,colourVision_);
+    painter->drawImage(target,seen,QRectF(QPointF(0,0),QSizeF(seen.size())));
+}
+
 void PlotCanvas::renderTo(QPainter* painter,const QRectF& target){
     // Every backend selection still exports through Qt: a rasterising backend
     // cannot emit vectors. See docs/PORT-PLAN.md, rule 2.
+    if(simulatingColourVision()){
+        // Drawn into an image first, because the transform needs finished
+        // pixels. Only on the preview path - see the note above about exports.
+        const qreal dpr=window()?window()->effectiveDevicePixelRatio():1.0;
+        QImage buffer(QSize(qMax(1,int(target.width()*dpr)),
+                            qMax(1,int(target.height()*dpr))),
+                      QImage::Format_ARGB32);
+        buffer.setDevicePixelRatio(dpr);
+        buffer.fill(spec_.style.background);
+        QPainter into(&buffer);
+        qtBackend_.render(&into,QRectF(0,0,target.width(),target.height()),spec_);
+        into.end();
+        paintSimulated(painter,target,buffer);
+        return;
+    }
     qtBackend_.render(painter,target,spec_);
 }
 
@@ -1869,6 +2129,9 @@ void PlotCanvas::updateCursor(const QPointF& pos){
         cursorY_=yLog?std::pow(10.0,vy):vy;
         if(std::isfinite(cursorX_)&&std::isfinite(cursorY_)){
             cursorOnPlot_=true;
+            // Remembered for the zoom buttons. See lastPointerOnPlot_.
+            lastPointerOnPlot_=pos;
+            haveLastPointer_=true;
             // Significant figures from the SPAN on screen, not from the value:
             // at full extent four figures is noise, and zoomed a thousandfold
             // into a transient four figures is the entire reason for zooming.
@@ -1911,12 +2174,32 @@ void PlotCanvas::hoverLeaveEvent(QHoverEvent* e){
 }
 
 void PlotCanvas::zoomBy(double factor){
-    zoomAt(interactionArea().center(),factor);
+    // About the last point the pointer was over, not the middle of the frame.
+    //
+    // Zooming about the centre means the feature somebody is looking at slides
+    // away from under them as they zoom in on it, and they have to pan it back
+    // - every step, on every click. The wheel has always zoomed about the
+    // pointer, through zoomAt; the buttons could not, because a button has no
+    // pointer position of its own. So the canvas keeps the last one that was
+    // over the figure, which is where the person was looking immediately
+    // before they reached for the button.
+    //
+    // Falls back to the centre when the pointer has never been on the figure -
+    // a keyboard, or a fresh window - which is the old behaviour and the only
+    // sensible answer when nothing is known.
+    const QRectF area=interactionArea();
+    const QPointF about=(haveLastPointer_&&area.contains(lastPointerOnPlot_))
+                            ? lastPointerOnPlot_ : area.center();
+    zoomAt(about,factor);
 }
 
 void PlotCanvas::resetView(){
     if(!hasView_) return;
     hasView_=false;
+    // Back to knowing nothing about where the person was looking, so the next
+    // zoom from a reset figure is about the middle rather than about a corner
+    // they happened to pass over three views ago.
+    haveLastPointer_=false;
     spec_.xAxis.min=unsetValue(); spec_.xAxis.max=unsetValue();
     spec_.yAxis.min=unsetValue(); spec_.yAxis.max=unsetValue();
     // A TYPED limit is a view too, so Reset view clears it. The alternative -
@@ -2071,6 +2354,11 @@ void PlotCanvas::paint(QPainter* painter){
     // The accepted full-resolution render, if there is one and it still matches
     // the current settings. Anything else falls through to the live preview.
     if(showingFull_&&!fullImage_.isNull()&&readyGeneration_==generation_){
+        // The accepted render goes through the simulation too, or turning the
+        // preview on would appear to do nothing on exactly the datasets big
+        // enough to have a full render - which is the same shape of bug this
+        // whole setting has been bitten by twice already.
+        if(simulatingColourVision()){ paintSimulated(painter,target,fullImage_); return; }
         painter->drawImage(target,fullImage_,QRectF(QPointF(0,0),QSizeF(fullImage_.size())));
         return;
     }
@@ -2130,7 +2418,11 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("background"),spec_.style.background.name(QColor::HexArgb)},
         {QStringLiteral("foreground"),spec_.style.foreground.name(QColor::HexArgb)},
         {QStringLiteral("grid"),spec_.style.gridColor.name(QColor::HexArgb)},
-        {QStringLiteral("colourMap"),spec_.style.colourMap},
+        // The CHOSEN map, not the painted one. Saving the painted map would
+        // bake a colour-vision substitution into the figure permanently: reopen
+        // it with the vision mode off and the substitute would have become the
+        // selection, with no way left to tell it from a deliberate choice.
+        {QStringLiteral("colourMap"),chosenColourMap_},
         {QStringLiteral("annotations"),annotations()},
         // The engine's constants. Written as a map of key to number, so a
         // figure saved with four masses reopens with them and a figure from an
@@ -2166,6 +2458,15 @@ QVariantMap PlotCanvas::figureState() const {
         // The chosen colours, as hex. A figure whose whole point is the palette
         // somebody built for it has not been saved if it reopens in viridis.
         {QStringLiteral("customColours"),customColours()},
+        // WHICH WAY ROUND THE ANGLES GO, and how a pie names its slices.
+        //
+        // These two travel with the FIGURE and not with the application,
+        // because a notebook can hold a wind rose and a polar scatter side by
+        // side and they are read in opposite directions - the reason the
+        // convention was made a setting at all. An application-wide value would
+        // have made the second figure wrong whenever the first was right.
+        {QStringLiteral("polarConvention"),spec_.style.polarConvention},
+        {QStringLiteral("pieLabels"),spec_.style.pieLabels},
     };
 }
 
@@ -2208,7 +2509,23 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     // Absent in a figure saved before the map was a choice, and absent is
     // exactly right: those figures were all drawn with Viridis, which is what
     // an empty string means.
-    spec_.style.colourMap=state.value(QStringLiteral("colourMap")).toString();
+    chosenColourMap_=state.value(QStringLiteral("colourMap")).toString();
+    // Resolved rather than assigned, because the restored figure has to obey
+    // the colour-vision mode in force NOW, not the one in force when it was
+    // saved - the setting belongs to the reader, not to the file.
+    applyColourVisionToMap();
+
+    // See figureState: these belong to the figure rather than to the
+    // application. A file written before they existed carries neither, and the
+    // canvas keeps what it has - which is the default each of them had.
+    const auto number=[&state](const char* key,int fallback){
+        const QVariant v=state.value(QString::fromLatin1(key));
+        bool ok=false;
+        const int n=v.toInt(&ok);
+        return (v.isValid()&&ok)?n:fallback;
+    };
+    setPolarConvention(number("polarConvention",spec_.style.polarConvention));
+    setPieLabels(number("pieLabels",spec_.style.pieLabels));
 
     // The engine's constants, from the file where the file has them and from
     // the engine's own declaration where it does not - a figure saved before
@@ -2219,14 +2536,14 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     if(!savedParams.isEmpty()){
         const QVector<QtPlotBackend::EngineParameter> declared=
             QtPlotBackend::engineParameters(spec_.engine);
-        for(const QtPlotBackend::EngineParameter& d:declared){
-            const QVariant v=savedParams.value(d.key);
+        for(const QtPlotBackend::EngineParameter& param:declared){
+            const QVariant v=savedParams.value(param.key);
             bool ok=false;
             const double number=v.toDouble(&ok);
             // Clamped and checked, because a .gvfig is a file on disk that
             // someone may have edited by hand.
             if(!ok||number!=number) continue;
-            spec_.parameters.insert(d.key,qBound(d.minimum,number,d.maximum));
+            spec_.parameters.insert(param.key,qBound(param.minimum,number,param.maximum));
         }
         engineParams_.insert(spec_.engine,spec_.parameters);
         // After the values, not before: adoptEngineParameters above emitted the
@@ -2275,8 +2592,8 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
         const QVariant v=state.value(QString::fromLatin1(key));
         if(!v.isValid()||v.isNull()) return fallback;
         bool ok=false;
-        const double d=v.toDouble(&ok);
-        return (ok&&d==d)?d:fallback;
+        const double number=v.toDouble(&ok);
+        return (ok&&number==number)?number:fallback;
     };
     spec_.xAxis.min=limit("xMin",unsetValue());
     spec_.xAxis.max=limit("xMax",unsetValue());
@@ -2362,6 +2679,41 @@ bool PlotCanvas::exportPng(const QString& filePath,int width,int height){
     qtBackend_.render(&painter,QRectF(0,0,image.width(),image.height()),full);
     painter.end();
     return image.save(filePath);
+}
+
+bool PlotCanvas::exportRaster(const QString& filePath,int width,int height,
+                              int quality,bool transparent){
+    if(filePath.isEmpty()) return false;
+    rebuild();
+    if(spec_.series.isEmpty()) return false;
+    const PlotSpec full=specWithFullData();
+    QImage image(qMax(16,width),qMax(16,height),QImage::Format_ARGB32_Premultiplied);
+    // A transparent ground is for dropping a figure onto a slide that is not
+    // white. Only the BACKGROUND goes: the ink, the grid and the axis furniture
+    // are all still drawn, so the figure is the same figure with nothing behind
+    // it. Formats that cannot carry an alpha channel flatten it themselves, and
+    // the dialog does not offer the option for those.
+    image.fill(transparent?QColor(Qt::transparent):full.style.background);
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing,true);
+    painter.setRenderHint(QPainter::TextAntialiasing,true);
+    const FullQuality fullQuality(qtBackend_);
+    qtBackend_.render(&painter,QRectF(0,0,image.width(),image.height()),full);
+    painter.end();
+
+    QImageWriter writer(filePath);
+    const QByteArray format=writer.format().toLower();
+    if(format=="png"){
+        // PNG's dial is a COMPRESSION LEVEL, 0 (none, largest) to 9, and Qt
+        // takes it as 0-100 on that inverted scale. Handing it a quality
+        // straight through would write the biggest files when the person asked
+        // for the best picture - and PNG is lossless either way, so "best"
+        // only ever meant "smallest that still decodes quickly".
+        writer.setCompression(qBound(0,(100-qBound(0,quality,100))/11,9));
+    }else{
+        writer.setQuality(qBound(0,quality,100));
+    }
+    return writer.write(image);
 }
 
 QStringList PlotCanvas::exportFormats() const {

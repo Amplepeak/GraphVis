@@ -461,6 +461,19 @@ Rectangle {
                                     ? "Read the calibrated figure into a table of numbers"
                                     : "Calibrate a figure in the middle of the window first"
                             }
+                            // Why the button above is grey. It was explained
+                            // only by a tooltip, so a disabled button looked
+                            // like a broken one - the commonest reading of a
+                            // control that will not respond.
+                            Label {
+                                Layout.fillWidth: true
+                                visible: root.analysed && !lab.calibrated
+                                         && lab.missingForCalibration !== ""
+                                text: "Still needs " + lab.missingForCalibration + "."
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
+                            }
                             Button {
                                 id: compareButton
                                 text: "Compare with active dataset"
@@ -483,6 +496,18 @@ Rectangle {
                                     ? "Import the traced series as a dataset and open it in Visualize, "
                                     + "beside whatever is already loaded"
                                     : "Read a figure first — this imports the numbers that came out of it"
+                            }
+                            // Same reasoning as above. This one is waiting on a
+                            // different thing - a reconstruction that has
+                            // actually produced rows - and saying which removes
+                            // the guess.
+                            Label {
+                                Layout.fillWidth: true
+                                visible: !compareButton.enabled && !root.app.busy && root.analysed
+                                text: "Runs once 'Reconstruct graph' has produced a table."
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
                             }
                             Button { text: "Send extracted data to workspace"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
                         }

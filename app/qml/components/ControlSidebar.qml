@@ -107,7 +107,7 @@ Rectangle {
                     Layout.fillWidth: true
                     onImportRequested: root.importRequested()
                 }
-                ColourVisionBar { app: root.app; canvas: root.canvas; Layout.fillWidth: true }
+                FigureAppearanceBar { app: root.app; canvas: root.canvas; Layout.fillWidth: true }
                 GvGroupBox {
                     title: "Axes"
                     Layout.fillWidth: true
@@ -143,7 +143,7 @@ Rectangle {
             // shared.
             //
             // The settings above the chooser have a fixed appetite and the
-            // library has none - it holds 433 entries - so a fixed division
+            // library has none - it holds 2,116 entries - so a fixed division
             // squeezed the list down to three visible rows and clipped the
             // first of them. A SplitView gives it a handle: drag the settings
             // shut when picking a graph, drag them open when setting one up.
@@ -189,10 +189,16 @@ Rectangle {
                             Layout.fillWidth: true
                             onImportRequested: root.importRequested()
                         }
-                        // Colour vision, the field colour map and the figure's
-                        // own background: all three change what every graph
-                        // below will look like.
-                        ColourVisionBar {
+                        // The field colour map, the figure's background and
+                        // its grid: all three change what every graph below
+                        // will look like.
+                        //
+                        // Colour vision used to be here too and is not any
+                        // more - it is a setting for very few people and it was
+                        // holding permanent space in a 400 px sidebar. It moved
+                        // to View > Colour vision, with an optional strip above
+                        // the figure for anyone who changes it often.
+                        FigureAppearanceBar {
                             app: root.app
                             canvas: root.canvas
                             Layout.fillWidth: true
@@ -200,7 +206,7 @@ Rectangle {
                     }
                 }
 
-                // 433 catalogue entries browsed through a 400 px sidebar. Torn
+                // 2,116 catalogue entries browsed through a 400 px sidebar. Torn
                 // out, the library gets a window of its own and the canvas keeps
                 // the width; the grid, the search text and the staged entry
                 // survive the trip because the item is reparented, not rebuilt.

@@ -30,3 +30,21 @@ backups/
 Thumbs.db
 desktop.ini
 graph-check/
+
+# Where files delivered from a Claude session land. Not just clutter: it holds
+# second copies of latex.py, operations.py, science-tests.yml and test_fuzz.py,
+# and a stale QtPlotBackend.cpp 300 KB smaller than the real one. A duplicate
+# of a source file in the tree is the same fault as the .egg-info above - a
+# search comes back with two answers and one of them is wrong.
+Claude outputs/
+
+# The 434-figure gallery, regenerated from the binary by MAKE-GALLERY.bat and
+# by the sweep. Reproducible, binary, and every file changes at once.
+gallery/
+
+# Scaffolding for the first commit - the read-only reporter, the commit script
+# and the message it reads. Ignored so they cannot commit themselves, and safe
+# to delete once the commit is made.
+GIT-STATUS.bat
+COMMIT.bat
+commit-message.txt

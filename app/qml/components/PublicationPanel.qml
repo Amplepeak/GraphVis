@@ -248,6 +248,18 @@ PanelScroll {
         }
     }
 
+    // The block that goes round the image. See LatexExport.qml.
+    GvGroupBox {
+        title: "LaTeX figure"
+        Layout.fillWidth: true
+        LatexExport {
+            anchors.fill: parent
+            app: root.app
+            canvas: root.canvas
+            profileName: root.profileName
+        }
+    }
+
     GvGroupBox {
         title: "Reproducibility"
         Layout.fillWidth: true

@@ -5,7 +5,18 @@
 #include <QString>
 
 namespace graphvis {
-bool runEngineSweep();
+// The sweep renders every catalogue engine and asks whether each put data on
+// the page. It already has the picture in hand and then throws it away.
+//
+// `galleryDir`, when given, keeps them: one PNG per engine, numbered in sweep
+// order. That is the whole of what the remaining visual pass needs. "Did it
+// draw something" is answerable by a machine and is answered on every build;
+// "is the legend covering the data, is that axis labelled in the wrong units,
+// is this readable at 89 mm" is not, and there has been no way to look at 434
+// figures without opening each one by hand.
+//
+// Empty by default, so the check that runs on every build is unchanged.
+bool runEngineSweep(const QString& galleryDir=QString());
 // Targeted regression checks for defects that a "did it draw anything" sweep
 // cannot see: a stale prepared-spec cache, bars positioned by array index
 // instead of by their x value, and a waterfall rewritten onto geometry the

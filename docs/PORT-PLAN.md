@@ -4,17 +4,32 @@ Decision (6 Sep 2026): port GraphVis 17 completely to the native C++/QML/Rust
 stack. This supersedes `reference/gv17-docs/FRAMEWORK_MIGRATION_RESEARCH.md`,
 which recommended an incremental PySide6 + QML shell over the existing Python
 domain layer instead. That trade-off is recorded here deliberately: the native
-route costs far more work, and the 135 engines are written
+route costs far more work, and GraphVis 17's 135 engines are written
 against Matplotlib's Axes API across 473 call sites in `render_core.py` and
 `plotting_engine.py`. The publication profiles themselves are portable:
 `core/publication.py` is pure data (dpi, font family, pt sizes, line widths,
 mm figure widths), not Matplotlib logic.
 
+> **Two catalogues, two sets of numbers.** GraphVis 17's catalogue holds 318
+> entries in 30 categories drawn by 135 engines — executing
+> `reference/gv17-src/graphvis/rendering/graph_library.py` gives exactly those
+> three figures. GraphVis 18's has since grown to **2,116 entries in 46
+> categories drawn by 434 engines**, through added domain packs and axis-scale
+> variants.
+>
+> Those v17 figures were copied into four source comments and a menu string
+> that were describing **v18** — so the program told the reader it had 318
+> entries and that Qt 2-D drew "the 203 catalogue engines", both of which
+> stopped being true without anyone changing them. `test_numbers.py` now
+> recounts the catalogue's declared header against its own contents and fails
+> if any present-tense claim in the source quotes a size the catalogue has
+> outgrown. Where a figure below describes v17, it says so.
+
 ## What has to move
 
 | Area | GraphVis 17 | Size | v18 status |
 |---|---|---|---|
-| Graph catalogue | `rendering/graph_library.py` | 37 KB, 318 entries / 30 categories / 135 engines | **ported** — `config/graph_catalogue.json` |
+| Graph catalogue | `rendering/graph_library.py` | 37 KB, 318 entries / 30 categories / 135 engines | **ported and extended** — `config/graph_catalogue.json`, now 2,116 / 46 / 434 |
 | Thumbnails | `assets/graph_previews*` | 318 x 3 sets | **ported** — `assets/` |
 | Plotting engine | `rendering/render_core.py`, `plotting_engine.py` | 231 KB + 168 KB | not started |
 | Surface estimation | `rendering/surface_estimators.py` | 59 KB | not started |
@@ -30,7 +45,7 @@ Roughly 22,000 lines of Python have no native equivalent yet.
 
 ## Renderer decision (settled 6 Sep 2026): adapter layer, two backends
 
-The 135 catalogue engines are written **once** against a single internal
+All 434 catalogue engines are written **once** against a single internal
 drawing interface, `PlotBackend`. Backends implement that interface. The
 existing `Renderer` selector in `TopBar.qml`, bound to
 `AppController::rendererMode`, chooses which one draws.
@@ -80,12 +95,16 @@ rewriting engines.
 ## Order of work
 
 **Phase 1 — catalogue and library UI. Done.**
-`config/graph_catalogue.json` (318 entries), all thumbnails, `AppController`
+`config/graph_catalogue.json` (318 entries at the time; 2,116 now), all
+thumbnails, `AppController`
 catalogue loader with a port of `graph_library.fuzzy_score`, and a
 `GraphLibrary.qml` panel with search, categories, thumbnails and the
 GraphVis 17 stage-then-Apply behaviour.
 
-**Phase 2 — the engine tiers. Done: all 318 catalogue entries, 135 engines.**
+**Phase 2 — the engine tiers. Done: every catalogue entry draws.** That was
+318 entries and 135 engines when the phase closed; the catalogue has since
+grown to 2,116 entries and 434 engines, and the sweep below covers all of
+them.
 
 Every engine in the GraphVis 17 catalogue draws, and every one is verified to
 put data on the page by an automated sweep that runs on each build. Nothing in

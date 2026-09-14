@@ -152,3 +152,164 @@ def test_the_histogram_and_the_box_plot_use_the_same_quantile() -> None:
         "an uninterpolated quantile has come back: " + ", ".join(crude) +
         " - use quantileOf so every panel reports the same quartiles"
     )
+
+
+@pytest.mark.skipif(not BACKEND.exists(), reason="run from a source tree")
+def test_no_painter_invents_its_own_categorical_colours() -> None:
+    """A `draw*` painter must take its colours from the figure's palette.
+
+    PlotCanvas chooses a categorical palette measured through a dichromat
+    projection and hands it to every series it builds. The engines that lay out
+    a WHOLE rather than a set of series - chord, alluvial, circos, icicle, hive,
+    mosaic, and the geology ternaries - never see a series, and each had grown
+    its own `QColor::fromHsvF` hue wheel. The effect was that switching to the
+    Deuteranopia palette changed the line charts and left those engines drawing
+    exactly the rainbow the setting exists to avoid, with nothing on screen
+    saying the setting had not applied.
+
+    They now go through `categoryColour`, which reads `style.categoryPalette`
+    and falls back to the original arithmetic when no palette is set. This keeps
+    it that way: hue arithmetic inside a painter is the shape of the bug.
+
+    `prepareSpecCore` is deliberately not covered. It builds PlotSeries rather
+    than painting, and those colours are a separate question from this one.
+    """
+    source = BACKEND.read_text(encoding="utf-8", errors="ignore")
+    code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    code = re.sub(r"//[^\n]*", "", code)
+
+    # The whole file, not only the painters. `prepareSpecCore` builds the
+    # PlotSeries that several engines are drawn from, and eighteen of its
+    # branches picked their own hues too - so a figure could be coloured past
+    # the palette before any painter ran. Both halves now go through
+    # categoryColour, which makes the invariant simple enough to state: the
+    # single fallback inside that helper is the only place in the renderer that
+    # may call QColor::fromHsvF.
+    outside_helper = re.sub(
+        r"QColor categoryColour\(.*?\n\}", "", code, flags=re.S)
+    stray = outside_helper.count("QColor::fromHsvF") + outside_helper.count("QColor::fromHslF")
+    assert stray == 0, (
+        f"{stray} call(s) to QColor::fromHsvF outside categoryColour(). Hue "
+        "arithmetic in a painter or a prepare branch cannot see the "
+        "colour-vision setting.")
+
+    offenders: list[str] = []
+    for match in re.finditer(r"^\w[\w:<>,\s\*&]*\bQtPlotBackend::(draw\w+)\s*\([^;{]*\)"
+                             r"\s*(?:const\s*)?\{", code, re.M):
+        name = match.group(1)
+        depth, index, body_start = 0, match.end() - 1, match.end() - 1
+        while index < len(code):
+            if code[index] == "{":
+                depth += 1
+            elif code[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        body = code[body_start:index]
+        hits = body.count("QColor::fromHsvF") + body.count("QColor::fromHslF")
+        if hits:
+            offenders.append(f"{name} ({hits})")
+
+    assert not offenders, (
+        "painters building their own hues instead of using categoryColour(), so "
+        "the colour-vision setting does not reach them: " + ", ".join(offenders)
+    )
+
+
+LOG_SHIM = textwrap.dedent("""
+    #include <QString>
+    #include <QVector>
+    #include <cmath>
+    #include <limits>
+    #include <cstdio>
+
+    // Only the names logTicks reaches for. No tick arithmetic is written here:
+    // formatTick decides decimals from the step it is handed, which is the
+    // behaviour the fix depends on, so it is reproduced exactly as the real one
+    // reads rather than simplified.
+    struct AxisTick { double value=0.0; QString label; bool minor=false; };
+    static bool gvFinite(double v){ return std::isfinite(v); }
+    #define finite gvFinite
+    static QString superscript(int e){ return QStringLiteral("^")+QString::number(e); }
+    static QString formatTick(double v,double step){
+        const int decimals = step<1.0 ? qMax(0,int(std::ceil(-std::log10(step)))) : 0;
+        return QString::number(v,'f',decimals);
+    }
+    static QVector<AxisTick> linearTicks(double,double,int){ return {}; }
+""")
+
+LOG_MAIN = textwrap.dedent("""
+    int main(){
+        const double cases[][2]={
+            {2.0,9.0},{20.0,90.0},{1.5,9.0},{0.02,0.09},{3.0,7.0},
+            {1.0,1000.0},{0.5,50.0},{1e-3,1e3},
+        };
+        for(const auto& c:cases){
+            const QVector<AxisTick> t=logTicks(std::log10(c[0]),std::log10(c[1]));
+            int labelled=0;
+            for(const AxisTick& a:t) if(!a.label.isEmpty()) ++labelled;
+            printf("%g %g %d %d\\n",c[0],c[1],int(t.size()),labelled);
+        }
+        return 0;
+    }
+""")
+
+
+@pytest.mark.skipif(not BACKEND.exists(), reason="run from a source tree")
+@pytest.mark.skipif(shutil.which("g++") is None, reason="no C++ compiler")
+def test_a_log_axis_always_carries_at_least_one_label(tmp_path: Path) -> None:
+    """A logarithmic axis must put numbers on itself, at every range.
+
+    `logTicks` puts major ticks on whole decades and unlabelled minors at
+    2..9 inside each. Data spanning LESS than one decade without crossing a
+    power of ten — 2 to 9, 20 to 90, 0.02 to 0.09 — therefore produced eight
+    minor ticks and **not one label**. The figure drew, the axis line drew,
+    the axis title drew, and nothing said what any position along it meant.
+
+    This was found by looking at the engine gallery: `EIS: Bode` sets its own
+    logarithmic frequency axis, and a sweep inside one decade came out with a
+    bare axis captioned "frequency". It reaches much further than one engine —
+    the catalogue carries 245 "Logarithmic Scale" entries, 243 "Semi-Log X"
+    and 246 "Semi-Log Y", and real data sitting inside a single decade is
+    entirely ordinary.
+
+    The ranges below deliberately mix sub-decade, multi-decade and
+    decade-crossing cases, so a fix that labelled the minors by breaking the
+    decade labels would fail here too.
+    """
+    source = BACKEND.read_text(encoding="utf-8", errors="ignore")
+    # The class qualifier goes: the function is compiled free-standing, and it
+    # calls linearTicks and formatTick unqualified inside its own body anyway.
+    body = extract(source, "logTicks").replace("QtPlotBackend::", "")
+    program = LOG_SHIM + body + LOG_MAIN
+
+    cpp = tmp_path / "logticks.cpp"
+    cpp.write_text(program, encoding="utf-8")
+    binary = tmp_path / "logticks"
+    qt = "/usr/include/x86_64-linux-gnu/qt6"
+    build = subprocess.run(
+        ["g++", "-O1", "-std=c++20", "-fPIC", "-o", str(binary), str(cpp),
+         "-I", qt, "-I", f"{qt}/QtCore", "-lQt6Core"],
+        capture_output=True, text=True)
+    if build.returncode != 0:
+        # Only a MISSING QT is a skip. Anything else is a real failure, and
+        # reporting it as a skip is how a check quietly stops checking - the
+        # first version of this test did exactly that, reporting "no Qt 6
+        # headers" for a compile error that had nothing to do with headers.
+        if "QtCore" in build.stderr and "No such file" in build.stderr:
+            pytest.skip("no Qt 6 headers to compile against")
+        raise AssertionError(
+            "the extracted logTicks did not compile:\n" + build.stderr[:1500])
+
+    out = subprocess.run([str(binary)], capture_output=True, text=True, check=True)
+    bare: list[str] = []
+    for line in out.stdout.strip().splitlines():
+        lo, hi, total, labelled = line.split()
+        assert int(total) > 0, f"no ticks at all for {lo}..{hi}"
+        if int(labelled) == 0:
+            bare.append(f"{lo}..{hi}")
+
+    assert not bare, (
+        "logarithmic axis ranges that produce ticks but no labels, leaving the "
+        "reader an axis with no numbers on it: " + ", ".join(bare))

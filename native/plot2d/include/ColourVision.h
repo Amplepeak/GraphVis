@@ -25,13 +25,49 @@ namespace graphvis {
 // distinguishable, colour-blind-safe rotation" - measured 3.6 under protanopia.
 // It was not safe. That is why these are generated and checked rather than
 // chosen by eye.
+// Each palette is measured against ALL THREE deficiencies, not only its own.
+//
+// The figures here used to be one per palette - the score for the deficiency it
+// was built for - and that silence was being read as a conclusion. The
+// outstanding-work note said "a palette specialised for one deficiency is
+// unsafe for another", which was a guess nobody had checked. Measured with
+// tools/measure_colourmap_cvd.py it is true of two of the three and false of
+// the third:
+//
+//                 normal  protan  deutan  tritan   worst cross-pair
+//   Standard        39.0    24.5    23.5    26.5   safe for all three
+//   Protanopia      38.7    29.7    27.7     6.7   #66d3c0 / #6bccfd under tritan
+//   Deuteranopia    32.0    12.6    28.2     7.9   #f9acb6 / #ffa1f4 under tritan
+//   Tritanopia      45.6    16.2    17.9    29.9   safe for all three
+//   Monochrome      13.0    13.0    13.0    13.0   colour carries nothing anyway
+//
+// So Protanopia and Deuteranopia each collapse a pair for a tritanope - both
+// times a pair the deficiency they were built for separates perfectly well.
+// That matters because a figure in a paper is read by people with all three,
+// and choosing one of those two to be considerate produces a figure some other
+// reader cannot use. plotColourVisionSummary says so when one is selected.
+//
+// Standard is safe for all three, which is why it is the default and why it is
+// named for no deficiency at all.
 enum class ColourVision {
-    Standard = 0,      // normal 39.0  protan 24.8  deutan 24.1  tritan 25.4
-    Protanopia = 1,    // protan 34.7
-    Deuteranopia = 2,  // deutan 32.1
-    Tritanopia = 3,    // tritan 30.7
-    Monochrome = 4,    // greyscale, worst pair 13.0, backed by dash patterns
+    Standard = 0,
+    Protanopia = 1,
+    Deuteranopia = 2,
+    Tritanopia = 3,
+    Monochrome = 4,    // greyscale, backed by dash patterns
 };
+
+// The deficiency this palette FAILS, or empty when it is safe for all three.
+// Measured, not asserted - see the table above.
+inline QString crossVisionRisk(ColourVision mode){
+    switch(mode){
+    case ColourVision::Protanopia:
+    case ColourVision::Deuteranopia:
+        return QStringLiteral("tritanopia");
+    default:
+        return QString();
+    }
+}
 
 inline ColourVision colourVisionFromInt(int value){
     return (value >= 0 && value <= 4) ? static_cast<ColourVision>(value) : ColourVision::Standard;
@@ -72,9 +108,28 @@ inline QVector<QColor> seriesPalette(ColourVision mode){
     }
 }
 
-// Monochrome needs a second channel. Dash patterns are in pen-width units.
+// A SECOND CHANNEL, for every colour-vision mode and not only Monochrome.
+// Dash patterns are in pen-width units.
+//
+// This used to return nothing except in Monochrome, on the reasoning that a
+// dichromat still receives hue and so needs no help beyond a tuned palette.
+// Rendered and simulated, that reasoning does not survive contact with a real
+// figure: six series of the Standard palette put through the protanope
+// transform leave series 2 and series 5 as two near-identical mustards, and the
+// Protanopia palette - the one tuned for that reader - still hands them three
+// blues. Eight colours can be made pairwise distinct in CIELAB and still fail
+// as eight thin lines on a dark ground, because a 2-pixel stroke carries far
+// less colour signal than the patch the measurement was made on.
+//
+// So hue stops being the only thing telling two lines apart the moment somebody
+// says their colour vision needs accommodating. A dash pattern survives every
+// deficiency, every simulation, a greyscale print and a photocopy.
+//
+// Standard returns nothing, deliberately: it is the default, it is safe for all
+// three dichromacies, and dashing every figure by default would be this
+// program deciding what everyone's plots look like.
 inline QVector<QVector<qreal>> seriesDashPatterns(ColourVision mode){
-    if(mode!=ColourVision::Monochrome) return {};
+    if(mode==ColourVision::Standard) return {};
     return {
         {},                    // solid
         {6,3},                 // dashed

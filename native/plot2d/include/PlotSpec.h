@@ -5,7 +5,7 @@
 // This is the contract every catalogue engine is written against, and the only
 // thing a PlotBackend is given. It deliberately mirrors GraphVis 17's
 // rendering/render_core.py PlotSpec and core/publication.py PublicationProfile
-// so the 318 catalogue entries can be ported without redesigning their inputs.
+// so the 2116 catalogue entries can be ported without redesigning their inputs.
 //
 // Nothing here refers to Qt painting, wgpu or VTK: the same spec must be
 // renderable by any backend, and must survive being written to a vector PDF.
@@ -13,6 +13,7 @@
 #include <QColor>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <limits>
 
@@ -42,6 +43,29 @@ struct PlotSeries {
     // applying the moment anyone changed it on screen.
     bool lineWidthExplicit = false;
     bool markerSizeExplicit = false;
+    // A CLOSED OUTLINE THAT IS A SOLID, not a loop of line.
+    //
+    // Two engines draw their bars as closed polylines on a Line Chart rather
+    // than through drawBar, because drawBar reads each series as a GROUP and
+    // stands them side by side - hand it a cumulative line and it comes back
+    // as a second row of bars. The blocks that construction produced were
+    // hollow: a Pareto chart of outlined rectangles, which is a chart nobody
+    // draws, because the length of a bar is read from the ink in it.
+    bool fillClosed = false;
+    // DRAWN AGAINST THE RIGHT-HAND AXIS, not the left one.
+    //
+    // Several engines derive a second quantity of a completely different scale
+    // from the same columns: a removal PERCENTAGE beside a concentration, the
+    // POWER beside a cell voltage, a PHASE beside a gain, a cumulative SHARE
+    // beside a count. Drawn against one ordinate the larger quantity takes the
+    // axis and the smaller becomes a flat line along the bottom - a
+    // polarisation curve whose voltage is a straight line at zero because the
+    // power reaches sixty.
+    //
+    // This says the series belongs to a second ordinate with its own range,
+    // drawn up the right-hand side. Set by the engine, because the engine is
+    // what knows that the quantity it derived is not the one it was given.
+    bool secondaryAxis = false;
     // Set only by the Monochrome colour-vision mode, where colour cannot carry
     // the series on its own. Empty means a solid line. Units are pen widths, so
     // the pattern scales with lineWidth and survives PDF export unchanged.
@@ -91,6 +115,30 @@ struct PlotAxis {
     // those numbers means. It compiled as a narrowing error here; it would not
     // have on a field of the same type.
     int transform = AxisLinear;
+
+    // CATEGORIES, when the positions on this axis are not a scale.
+    //
+    // The tick chooser picks round numbers, which is right for a measurement
+    // and wrong for a category: a confusion matrix came out with ticks at 0.5,
+    // 1.5 and 2.5, and there is no class 1.5. The cells sit at integer indices,
+    // so every label between them names something that does not exist.
+    //
+    // Empty means "choose ticks from the range", which is what every axis did
+    // before and what nearly all of them still do. When these are set they are
+    // the whole tick list: a value to place the tick at, and the text to write
+    // under it, because an engine that indexes its categories 0..n-1 still has
+    // to label them with what they actually were.
+    //
+    // Below `transform` for the same reason `transform` is last - a positional
+    // initialiser must not silently acquire a new meaning - and after it
+    // because these two are the fields most likely to grow.
+    // Explicitly defaulted, and that matters: thirty-odd sites brace-
+    // initialise this struct positionally and stop before these two, which
+    // makes -Wmissing-field-initializers fire at every one of them. A member
+    // with its own default initialiser is not "missing" from such a list, so
+    // the = {} is what keeps the build at zero warnings.
+    QVector<double> tickValues = {};
+    QStringList tickLabels = {};
 };
 
 // Typography and geometry, taken straight from a GraphVis 17 publication
@@ -118,6 +166,48 @@ struct PlotStyle {
     // rather than a count - asking for 12 on a range of 0 to 1 gives steps of
     // 0.1, not 0.0833.
     int gridDensity = 0;
+    // And the same for the vertical, separately.
+    //
+    // One number drove both axes, with the vertical derived as "one fewer" -
+    // which is a fine DEFAULT ratio and a poor rule. The two axes of a figure
+    // are rarely the same shape: a wide time series wants many ticks across and
+    // few up, and a tall profile wants the reverse, and neither could be asked
+    // for. 0 means "follow gridDensity, one fewer", so every figure made before
+    // this existed still reads exactly as it did.
+    int gridDensityY = 0;
+    // HOW A PIE OR DONUT SAYS WHICH SLICE IS WHICH.
+    //
+    // It said nothing at all. A pie was drawn as coloured wedges with no names
+    // and no key, which makes it a picture of some proportions rather than a
+    // figure anybody can read - and unlike a line chart there is no axis to
+    // fall back on.
+    //
+    // Both forms are legitimate and which is better depends on the figure, so
+    // this is a choice rather than a default nobody can change: labels sit on
+    // the slices and read well when there are few and their names are short; a
+    // legend keeps the circle clean and copes with many slices and long names.
+    //
+    //   0  Legend beside the pie  (the default: it always fits)
+    //   1  Labels on the slices
+    //   2  Both
+    //   3  Neither
+    int pieLabels = 0;
+
+    // WHICH WAY ROUND A POLAR FIGURE IS MEASURED.
+    //
+    // The painter drew zero at three o'clock and increased anticlockwise, which
+    // is the mathematical convention and correct for a polar line or scatter.
+    // It is not what a bearing means: a wind rose, a compass and a stereonet
+    // are read from NORTH, clockwise, and drawn the mathematical way they come
+    // out rotated a quarter turn and mirrored.
+    //
+    // Neither convention is right for every figure, so it is the operator's
+    // choice rather than a rule this file invents. Default 0, which is exactly
+    // what every figure drew before this existed.
+    //
+    //   0  Mathematical - 0 degrees at the right, increasing anticlockwise
+    //   1  Compass      - 0 degrees at the top, increasing clockwise
+    int polarConvention = 0;
     int dpi = 100;
     double figureWidthIn = unsetValue();
     double figureHeightIn = unsetValue();
@@ -196,6 +286,23 @@ struct PlotStyle {
     // made rather than here.
     QVector<QColor> customColours;
 
+    // The categorical cycle this figure should use, in order, already chosen
+    // for the reader's colour vision.
+    //
+    // PlotCanvas computes seriesPalette(vision) and gives it to every series it
+    // builds - but the engines that lay out a WHOLE rather than a set of series
+    // never see a PlotSeries to take a colour from. Treemap, icicle, sunburst,
+    // Sankey, chord and the rest generated their own hues with
+    // QColor::fromHsvF, so the colour-vision setting did nothing on any of
+    // them: someone switching to the Deuteranopia palette watched those engines
+    // carry on drawing the same rainbow they could not read.
+    //
+    // Filled by PlotCanvas - from customColours when the user has picked their
+    // own, otherwise from the measured palette. Empty means nobody set one, and
+    // the painters fall back to the hue arithmetic they used before, so a spec
+    // built by hand still draws.
+    QVector<QColor> categoryPalette;
+
     // What to do with the cells of a gridded field that no sample landed in.
     //
     //   0  None     leave them empty - the background shows through
@@ -272,6 +379,19 @@ struct PlotAnnotation {
     // Empty means the figure's foreground colour, so a note follows the theme
     // unless it was deliberately given a colour of its own.
     QColor color;
+    // PUT THERE BY THE ENGINE, not by the person.
+    //
+    // applyLimits refreshes the painting decisions on a cached prepared spec
+    // from the caller's, annotations among them, because none of them is in
+    // the fingerprint. That was written when only a caller could make one. Four
+    // rewrites now do - the ternary corners, the VFA peak, the waffle
+    // percentages and the animated line's step numbers - and every one of them
+    // was being overwritten by the caller's list, which is normally empty. The
+    // engines were producing notes that reached nothing.
+    //
+    // So the two are told apart: a derived note survives the refresh, a
+    // caller's is replaced by the caller's current list.
+    bool derived = false;
 };
 
 // Where the camera is, for the engines drawn as a projection rather than
@@ -315,10 +435,53 @@ struct PlotSpec {
     PlotStyle style;
     PlotView3D view3d;
     bool legendVisible = true;
+    // Whether a RECTANGULAR FRAME belongs round this figure at all.
+    //
+    // `engineHasAxes` answers that for an engine drawn by its own painter - a
+    // pie, a polar plot, a Piper diagram. It cannot answer it for an engine
+    // that REWRITES onto one that does have axes: a ternary scatter becomes a
+    // Line Chart so that drawLineChart can draw its triangle and its points,
+    // and the frame decision was then taken on the name "Line Chart". The
+    // triangle came out inside a box ruled 0.0 to 1.0 on both sides, measuring
+    // nothing that appears in the diagram.
+    //
+    // So a rewrite that produces its OWN coordinate system says so here, and
+    // the flag travels with the spec through however many derivations follow.
+    bool framed = true;
+    // Whether one unit on x must be the same length as one unit on y.
+    //
+    // Mohr's circle is a CIRCLE: its radius is the maximum shear stress and
+    // you read it by looking at how round it is. Both axes carry the same
+    // quantity in the same unit, so a frame that fits each to its own range
+    // draws it as an ellipse - and there is nothing in the picture to say the
+    // distortion is the frame's rather than the material's. The same is true
+    // of an impedance locus, a shaft orbit, a hodograph and a Poincare plot.
+    //
+    // Set by the engine, applied in computeRange by widening whichever range
+    // is short of the other. Widening rather than cropping, because cropping
+    // would hide data to keep a shape.
+    bool equalAspect = false;
+    // The right-hand ordinate: its label, and whether it is logarithmic.
+    // Its RANGE is measured from the series that asked for it, exactly as the
+    // left-hand one is measured from the series that did not. Unused - and no
+    // axis drawn - unless some series sets `secondaryAxis`.
+    PlotAxis y2Axis;
     // Notes on the figure. Drawn last, over everything, and clipped to the plot
     // area - a note whose anchor has been zoomed out of view must not appear
     // among the axis labels.
     QVector<PlotAnnotation> annotations;
+
+    // One line under the figure saying what this picture CANNOT show.
+    //
+    // Unlike an annotation it is not anchored to a point and is not about the
+    // data: it is about the figure itself - a colour map substituted for a
+    // colour-vision mode that can no longer mark a diverging centre, an
+    // estimator whose assumption the data does not meet, a projection that had
+    // to drop a dimension. Limits like those were recorded only in the
+    // catalogue entry, where a reader holding the exported PDF never sees them.
+    //
+    // Exported with the figure, deliberately, for that same reason.
+    QString figureNote;
 
     // Constants an engine needs that are NOT per-row data.
     //

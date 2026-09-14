@@ -136,6 +136,19 @@ class StatisticalEngine:
     def factorial_anova(df: pd.DataFrame, response: str, factors: Sequence[str], repeated_subject: str | None = None) -> StatisticalResult:
         if response not in df or any(f not in df for f in factors):
             raise KeyError("Response/factor columns not found.")
+        # Selecting a column twice makes df[[...]] return a frame with repeated
+        # names, so df[name] is a DataFrame rather than a Series and patsy
+        # fails deep inside with "'DataFrame' object has no attribute 'dtype'"
+        # - a sentence that names neither the response nor the factor. Both
+        # mistakes are one click away in a multi-select.
+        if response in factors:
+            raise ValueError(
+                f"'{response}' is the response, so it cannot also be a factor. "
+                "Choose factors from the other columns.")
+        duplicates = [f for i, f in enumerate(factors) if f in factors[:i]]
+        if duplicates:
+            raise ValueError(
+                f"Each factor can only be listed once; '{duplicates[0]}' appears twice.")
         work = df[[response, *factors] + ([repeated_subject] if repeated_subject else [])].dropna().copy()
         try:
             import statsmodels.api as sm
