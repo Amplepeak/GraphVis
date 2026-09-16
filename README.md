@@ -6,6 +6,7 @@
 
 GraphVis is a Qt/QML desktop application backed by a precompiled Rust/WGPU/DataFusion/Arrow core and native VTK rendering. Public releases are built so end users do **not** need Rust, Cargo, CMake, Python, or a developer toolchain.
 
+
 ## Downloaded a public release?
 
 ### Windows
@@ -44,8 +45,14 @@ See **[`docs/INSTALL_AND_BUILD.md`](docs/INSTALL_AND_BUILD.md)** for the root la
 
 ## Licence
 
+Copyright (C) 2026 amplepeak
+
 GraphVis is free software under the **GNU General Public License, version 3 or
 later**. See [`LICENSE`](LICENSE) for the full text.
+
+That choice is deliberate. Anyone may charge for a copy, but whoever does must
+hand over the source under the same licence, so the person who paid can pass it
+on for free. Nobody can take GraphVis closed, including its author.
 
 The bundled third-party libraries keep their own licences, reproduced in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). Regenerate that file after
