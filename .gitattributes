@@ -1,0 +1,42 @@
+# Line endings, decided here rather than by whichever machine last touched a
+# file.
+#
+# Twenty-one tracked files were stored with CRLF and the rest with LF, because
+# they were written on Windows and nothing told git to normalise them. On its
+# own that is invisible. It stops being invisible the moment somebody on Linux
+# clones the repository: their editor writes LF, git reports the whole file as
+# changed, and a one-line fix arrives as a pull request that rewrites eight
+# hundred lines. That is the kind of noise that makes a project look
+# unmaintainable to the first person who tries to help.
+#
+# So: everything is stored as LF, and the files that genuinely need CRLF on
+# Windows get it on checkout.
+* text=auto eol=lf
+
+# cmd.exe is the reason these are excepted. A .bat file with LF endings can
+# mis-parse multi-line constructs on older Windows shells, and these scripts are
+# the entry point for anyone building on Windows - the one place where a subtle
+# failure costs the most. PowerShell is less fussy but shares the convention.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Never touched. Git's own detection usually gets these right; naming them means
+# it cannot get them wrong.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tgz   binary
+*.7z    binary
+*.dll   binary
+*.exe   binary
+*.so    binary
+*.lib   binary
+*.arrow binary
+*.parquet binary
+*.lnk   binary
