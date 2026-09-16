@@ -1,8 +1,12 @@
 #pragma once
+#include "ColourMaps.h"
 #include <QColor>
+#include <cmath>
+#include <limits>
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <QHash>
 
 namespace graphvis {
 
@@ -139,5 +143,116 @@ inline QVector<QVector<qreal>> seriesDashPatterns(ColourVision mode){
         {3,3},                 // short dash
     };
 }
+
+// =========================================================================
+// COLOUR MATHS, shared by everything that has to reason about what a reader
+// actually receives: the figure preview that simulates a whole image, and the
+// advice and substitution in ColourMapAdvice.h.
+//
+// The VERDICT on whether a reader can use a given map is NOT here - see the
+// note further down, and colourmaps::mapIsSafeFor.
+//
+// This block used to carry a second measurement and its own flagging rule (a
+// worst-collapse ratio and floor, with a table of numbers justifying it). The
+// reasoning was sound and it was still wrong to have: the generated table in
+// ColourMapSafety.h answers the same question, scores each map against the
+// reading task its role exists for, and adds a lightness-monotonicity
+// requirement a worst-pair distance cannot express. Two answers to one question
+// disagreed on 48 of 252 map-and-reader pairs and the disagreement was visible
+// in the interface - maps greyed out as unusable were painted anyway, and maps
+// offered as fine were substituted away.
+//
+// worstCollapse survives below because it is a useful MEASUREMENT and the
+// generator and the palette notes above are expressed in it. It is no longer a
+// verdict, and nothing in the program branches on it.
+// =========================================================================
+namespace detail {
+
+// Machado, Oliveira & Fernandes (2009). The same matrices PlotCanvas simulates
+// a whole figure with - one copy, because two would be two ideas of what a
+// protanope sees.
+inline const double* visionMatrix(ColourVision mode){
+    static const double kProtan[9]={ 0.152286, 1.052583,-0.204868,
+                                     0.114503, 0.786281, 0.099216,
+                                    -0.003882,-0.048116, 1.051998};
+    static const double kDeutan[9]={ 0.367322, 0.860646,-0.227968,
+                                     0.280085, 0.672501, 0.047413,
+                                    -0.011820, 0.042940, 0.968881};
+    static const double kTritan[9]={ 1.255528,-0.076749,-0.178779,
+                                    -0.078411, 0.930809, 0.147602,
+                                     0.004733, 0.691367, 0.303900};
+    switch(mode){
+    case ColourVision::Protanopia:   return kProtan;
+    case ColourVision::Deuteranopia: return kDeutan;
+    case ColourVision::Tritanopia:   return kTritan;
+    default:                         return nullptr;
+    }
+}
+
+inline double toLinearChannel(double c){
+    return c<=0.04045?c/12.92:std::pow((c+0.055)/1.055,2.4);
+}
+inline double toSrgbChannel(double c){
+    c=qBound(0.0,c,1.0);
+    return c<=0.0031308?12.92*c:1.055*std::pow(c,1.0/2.4)-0.055;
+}
+
+struct LabColour { double l,a,b; };
+
+inline LabColour labOf(double r,double g,double b){
+    const double R=toLinearChannel(r),G=toLinearChannel(g),B=toLinearChannel(b);
+    double x=(0.4124*R+0.3576*G+0.1805*B)/0.95047;
+    double y=(0.2126*R+0.7152*G+0.0722*B);
+    double z=(0.0193*R+0.1192*G+0.9505*B)/1.08883;
+    const auto f=[](double t){ return t>0.008856?std::cbrt(t):(7.787*t+16.0/116.0); };
+    x=f(x); y=f(y); z=f(z);
+    return {116.0*y-16.0,500.0*(x-y),200.0*(y-z)};
+}
+
+inline LabColour asSeenBy(const QColor& c,ColourVision mode){
+    const double* m=visionMatrix(mode);
+    if(!m) return labOf(c.redF(),c.greenF(),c.blueF());
+    const double r=toLinearChannel(c.redF());
+    const double g=toLinearChannel(c.greenF());
+    const double b=toLinearChannel(c.blueF());
+    return labOf(toSrgbChannel(m[0]*r+m[1]*g+m[2]*b),
+                 toSrgbChannel(m[3]*r+m[4]*g+m[5]*b),
+                 toSrgbChannel(m[6]*r+m[7]*g+m[8]*b));
+}
+
+inline double labDistance(const LabColour& p,const LabColour& q){
+    const double dl=p.l-q.l,da=p.a-q.a,db=p.b-q.b;
+    return std::sqrt(dl*dl+da*da+db*db);
+}
+
+// The closest pair of values at least a fifth of the range apart, as this
+// reader receives them.
+inline double worstCollapse(const QString& map,ColourVision mode){
+    constexpr int kSamples=33;
+    const auto* table=colourmaps::tableFor(map);
+    QVector<LabColour> seen;
+    seen.reserve(kSamples);
+    for(int i=0;i<kSamples;++i)
+        seen.append(asSeenBy(colourmaps::sample(table,double(i)/(kSamples-1)),mode));
+    double worst=std::numeric_limits<double>::max();
+    for(int i=0;i<kSamples;++i)
+        for(int j=i+1;j<kSamples;++j){
+            if(double(j-i)/(kSamples-1)<0.2) continue;
+            worst=qMin(worst,labDistance(seen[i],seen[j]));
+        }
+    return worst<std::numeric_limits<double>::max()?worst:0.0;
+}
+
+} // namespace detail
+
+// The question "can this reader use this map" is answered in ONE place, and it
+// is not here: colourmaps::mapIsSafeFor, from the generated table in
+// ColourMapSafety.h, with the wording and the substitute in ColourMapAdvice.h.
+//
+// A second measurement used to live at this point - worstCollapse against a
+// floor - and it drove the greying-out of the map chooser while mapIsSafeFor
+// drove the substitution that changes the actual figure. They disagreed on 48
+// of 252 map-and-reader pairs. The detail helpers above stay because the
+// preview simulation and the palette notes use them; the verdict does not.
 
 } // namespace graphvis

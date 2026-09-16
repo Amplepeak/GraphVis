@@ -28,9 +28,13 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from graphvis_science.runtime import LITERATURE_DIR, literature_dir
+from graphvis_science.runtime import LITERATURE_DIR, get_logger
+
+LOG = get_logger("literature_extractor")
 # The path is known at import time; the folder is only created when something
-# actually writes to it. See runtime.literature_dir().
+# actually writes to it - `save_extraction` does its own makedirs. Nothing in
+# runtime does a mkdir, because a redirected or offline Documents folder used
+# to make importing this module raise and report the whole add-on broken.
 LITERATURE_DATASET_DIR = str(LITERATURE_DIR)
 
 _NUM = r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?"
@@ -139,7 +143,7 @@ def _read_pdf_pdfplumber(path, progress, *, deadline=None, cancelled=None):
         with pdfplumber.open(path) as pdf:
             meta_title = (pdf.metadata or {}).get("Title", "") or ""
     except Exception:
-        pass
+        LOG.debug("no PDF metadata title for %s", path, exc_info=True)
     return "\n".join(text), tables, n_pages, meta_title
 
 
@@ -166,7 +170,7 @@ def _read_pdf_pymupdf(path, progress, *, deadline=None, cancelled=None):
                     if rows and len(rows) >= 2:
                         tables.append((i, rows))
             except Exception:
-                pass
+                LOG.debug("table detection failed on a page of %s", path, exc_info=True)
     meta_title = (doc.metadata or {}).get("title", "") or ""
     doc.close()
     return "\n".join(text), tables, n_pages, meta_title
@@ -479,9 +483,97 @@ def save_extraction(ext: LiteratureExtraction, output_dir: str | None = None) ->
         with open(os.path.join(target, f"{title}_extraction.json"), "w", encoding="utf-8") as fh:
             json.dump(side, fh, indent=2, ensure_ascii=False)
     except Exception:
-        pass
+        LOG.debug("could not write the extraction summary for %s", title, exc_info=True)
     ext.saved_paths = saved
     return saved
+
+
+def plottability(df) -> dict:
+    """How much of this table can actually be drawn.
+
+    WHY THIS EXISTS
+    ---------------
+    "Send extracted data to workspace" took the FIRST of the extracted
+    datasets and imported it. A paper yielded twelve, and the first was a
+    reference list: pdfplumber had read a block of prose as a table, so the
+    columns came out as clipped word fragments ("nvironme", "y and E") and the
+    one column that looked numeric was a run of publication years. The figure
+    drew a single point, and the person reasonably reported that the button did
+    not work.
+
+    It had worked exactly as written. "First" is not a choice, it is the
+    absence of one, and in a PDF the first thing that parses as a table is very
+    often the thing that is not data.
+
+    What makes a table drawable is not its kind, its name or its position: it
+    is whether at least two of its columns are numbers, on enough rows to make
+    a line. That is measured here rather than guessed, with the SAME coercion
+    the plotting path uses, so a table this calls drawable is one the canvas
+    can draw.
+
+    A column counts as numeric when at least four fifths of its non-empty cells
+    parse as finite numbers - not all of them, because a real table of results
+    carries the occasional "n/a", "<0.01" or footnote marker and throwing the
+    whole column away for one of those would reject the data and keep the
+    reference list.
+    """
+    import pandas as pd
+
+    numeric_names, rows_per_column = [], {}
+    for name in df.columns:
+        # dropna FIRST, then stringify.
+        #
+        # The other way round turns a genuinely missing cell into the string
+        # "None" or "nan", which is then counted as a present non-numeric cell -
+        # so a column of numbers with a few gaps in it was scored as prose. An
+        # own test caught this: two float columns with real gaps reported zero
+        # numeric columns between them.
+        #
+        # A cell that is EMPTY is absent. A cell that says "n/a" or carries a
+        # footnote marker is present and not a number, which is what the four
+        # fifths rule is there to tolerate.
+        filled = df[name].dropna().astype(str).str.strip()
+        filled = filled[filled != ""]
+        if len(filled) == 0:
+            continue
+        coerced = pd.to_numeric(filled, errors="coerce")
+        good = int(coerced.notna().sum())
+        if good >= 0.8 * len(filled) and good >= 2:
+            numeric_names.append(str(name))
+            rows_per_column[str(name)] = good
+
+    # Rows where at least TWO numeric columns are both present, which is what a
+    # point on a figure needs. Counted on the frame rather than summed per
+    # column, so a table whose two numeric columns never overlap scores zero.
+    plottable = 0
+    if len(numeric_names) >= 2:
+        block = df[numeric_names].apply(pd.to_numeric, errors="coerce")
+        plottable = int((block.notna().sum(axis=1) >= 2).sum())
+
+    # HOW MANY COLUMNS HAVE A NAME.
+    #
+    # Reported alongside the numbers because the numbers alone chose a table of
+    # contents. Twelve tables out of a 69-page thesis arrived with headers like
+    # "demic", "i", "of Fi", "List of E", "4.1.5", "col_13" - pdfplumber
+    # reading a contents page, a running head or a fragment of body text, with
+    # no header row to find. col_N is its own placeholder for exactly that.
+    #
+    # The decision is made in AppController, on the saved file, because the
+    # add-on is installed as a copy and may be older than the app. This is the
+    # same measurement so the two agree about what they are looking at.
+    named = 0
+    for name in df.columns:
+        text = str(name).strip()
+        if len(text) < 3 or text.startswith("col_"):
+            continue
+        try:
+            float(text)
+        except ValueError:
+            named += 1
+    return {"numeric_columns": len(numeric_names),
+            "numeric_names": numeric_names,
+            "named_columns": named,
+            "plottable_rows": plottable}
 
 
 def load_extraction_sidecars() -> list[dict]:
@@ -494,7 +586,7 @@ def load_extraction_sidecars() -> list[dict]:
                 with open(os.path.join(LITERATURE_DATASET_DIR, f), encoding="utf-8") as fh:
                     out.append(json.load(fh))
             except Exception:
-                pass
+                LOG.debug("skipping unreadable extracted dataset %s", f, exc_info=True)
     return out
 
 
@@ -670,7 +762,7 @@ def extract_literature(path: str, extract_dataset: bool = True, ocr: bool = True
                     if len(numeric.columns) >= 2:
                         tables.append((None, [list(df.columns)] + df.values.tolist()))
             except Exception:
-                pass
+                LOG.debug("read_html found nothing usable in %s", path, exc_info=True)
             methods.append("html")
         except Exception as exc:
             ext.warnings.append(f"HTML read failed: {exc}")

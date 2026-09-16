@@ -13,7 +13,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
 
-import numpy as np
 import pandas as pd
 
 from graphvis_science.runtime import get_logger

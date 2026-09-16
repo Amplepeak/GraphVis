@@ -181,9 +181,35 @@ def dispatch(req: dict) -> dict:
                 # failed on looks exactly like a figure it had nothing to say
                 # about, and the difference is usually a bad key.
                 "error":str(fig.diagnostics.get("vlm_error","")) if fig.diagnostics else ""})
+        # WHAT EACH TABLE IS, AND WHETHER IT CAN BE DRAWN.
+        #
+        # This used to send the name, the row count and the column names, and
+        # nothing else - so neither the interface nor the controller could tell
+        # a table of measurements from a reference list that happened to parse
+        # as a table. "Send extracted data to workspace" then took the first of
+        # them, which is how a figure of publication years with one point on it
+        # reached the canvas.
+        #
+        # kind and hint were already on the dataset and were being dropped here;
+        # plottability is measured. saved_paths is a parallel list and pairing
+        # by index is a bug waiting to happen, so each entry now carries its own
+        # path.
+        from graphvis_science.literature.extractor import plottability
         datasets=[]
-        for d in getattr(result,"datasets",[]):
-            datasets.append({"name":getattr(d,"name","dataset"),"rows":len(d.df),"columns":list(map(str,d.df.columns))})
+        for i,d in enumerate(getattr(result,"datasets",[])):
+            try:
+                score=plottability(d.df)
+            except Exception as exc:
+                score={"numeric_columns":0,"numeric_names":[],"plottable_rows":0,
+                       "error":str(exc)}
+            datasets.append({"name":getattr(d,"name","dataset"),
+                             "rows":len(d.df),
+                             "columns":list(map(str,d.df.columns)),
+                             "kind":getattr(d,"kind","table"),
+                             "hint":getattr(d,"kind_hint","generic"),
+                             "page":getattr(d,"source_page",0),
+                             "path":getattr(d,"saved_path","") or "",
+                             **score})
         return {"ok":True,"title":getattr(result,"title",""),"datasets":datasets,"text_chars":len(getattr(result,"text","")),"saved_paths":list(getattr(result,"saved_paths",[]) or []),"parameters":dict(getattr(result,"parameters",{}) or {}),"semantic_context":dict(getattr(result,"semantic_context",{}) or {}),"warnings":list(getattr(result,"warnings",[]) or []),"figures":figures,"reader":reader}
 
     if op=="literature.vlm_test":
@@ -249,9 +275,37 @@ def dispatch(req: dict) -> dict:
         # core reads Arrow/CSV/Parquet itself; everything else arrives here.
         from graphvis_science.data.importer import import_to_arrow, ImportError_, ALL_EXT
         try:
-            return import_to_arrow(req["path"], req.get("out_dir") or "")
+            # `geometry` reaches the geospatial readers and nothing else. It
+            # defaults to the behaviour every caller had before it existed.
+            return import_to_arrow(req["path"], req.get("out_dir") or "",
+                                   req.get("geometry") or "points")
         except ImportError_ as exc:
             return {"ok": False, "error": str(exc), "supported": list(ALL_EXT)}
+    if op=="io.export":
+        # WRITING A DATASET BACK OUT. The importer has 149 readers and had no
+        # writers at all, which the manual stated as a limitation: "a dataset
+        # on disk is read and never written back". That is still true of the
+        # SOURCE file - nothing here edits what was imported - but a cleaned,
+        # converted or derived dataset can now be saved somewhere the person
+        # chooses.
+        from graphvis_science.data.exporter import (ExportError, export_arrow,
+                                                    export_frame, ALL_EXT)
+        try:
+            if req.get("arrow_path"):
+                return export_arrow(req["arrow_path"], req["path"],
+                                    columns=req.get("columns"),
+                                    overwrite=bool(req.get("overwrite")))
+            frame = _load_frame(req["arrow_path"] if req.get("arrow_path")
+                                else req["source"])
+            return export_frame(frame, req["path"],
+                                columns=req.get("columns"),
+                                overwrite=bool(req.get("overwrite")))
+        except ExportError as exc:
+            return {"ok": False, "error": str(exc), "supported": list(ALL_EXT)}
+        except KeyError as exc:
+            return {"ok": False,
+                    "error": f"io.export needs {exc} as well as a path to write"}
+
     # ------------------------------------------------------------------ analysis
     # One dispatch for every analysis operation, declared in
     # graphvis_science/operations.py.
@@ -464,7 +518,7 @@ def dispatch(req: dict) -> dict:
                         skipped.append(f"{var} ({value.ndim}-D)")
         finally:
             try: engine.quit()
-            except Exception: pass
+            except Exception: pass  # shutdown: the engine is going away regardless of what quit() says
 
         if not series:
             return {"ok":True,"arrow_path":"","columns":0,

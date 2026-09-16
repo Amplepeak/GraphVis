@@ -174,6 +174,7 @@ def fit_asymptote(x, y) -> dict:
         pred = _exp_sat(xs, *popt)
         candidates.append(("exp_sat", float(popt[0]), _r2(yc, pred), pred, popt))
     except Exception:
+        # a fit that does not converge is not a candidate; the others still stand
         pass
     if increasing and np.all(yc >= 0):
         try:
@@ -182,6 +183,7 @@ def fit_asymptote(x, y) -> dict:
             pred = _michaelis(xs + 1e-12, *popt)
             candidates.append(("michaelis", float(popt[0]), _r2(yc, pred), pred, popt))
         except Exception:
+            # as above - a Michaelis fit that fails is simply not offered
             pass
     if not candidates:
         return {"found": False}

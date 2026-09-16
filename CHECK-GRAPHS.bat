@@ -26,8 +26,28 @@ echo Using %EXE%
 echo Using %EXE% > "%OUT%\summary.txt"
 
 echo.
+REM An optional gallery directory, so the pictures can be KEPT.
+REM
+REM The sweep draws all 434 engines and then throws the pictures away;
+REM --selftest-gallery is the flag that saves them. Without this argument
+REM BUILD-AND-CHECK.bat had to call this script and then MAKE-GALLERY.bat,
+REM and MAKE-GALLERY runs exactly the same --selftest-plot with the flag
+REM added - so every run rendered all 434 engines TWICE, once to check them
+REM and once to look at them, for about a minute of duplicated work on every
+REM build.
+REM
+REM Passing the directory here does both in one pass. MAKE-GALLERY.bat is
+REM unchanged and still works on its own; this script with no argument
+REM behaves exactly as it always did.
 echo [1/3] Rendering every engine to a PDF...
-"%EXE%" --selftest-plot "%OUT%\selftest.pdf" > "%OUT%\selftest-output.txt" 2>&1
+if not "%~1"=="" (
+  echo   ... and keeping every figure in "%~1"
+  if exist "%~1" rmdir /s /q "%~1" 2>nul
+  mkdir "%~1" 2>nul
+  "%EXE%" --selftest-plot "%OUT%\selftest.pdf" --selftest-gallery "%~1" > "%OUT%\selftest-output.txt" 2>&1
+) else (
+  "%EXE%" --selftest-plot "%OUT%\selftest.pdf" > "%OUT%\selftest-output.txt" 2>&1
+)
 set RC=%ERRORLEVEL%
 echo   exit code %RC%
 echo selftest exit code %RC% >> "%OUT%\summary.txt"

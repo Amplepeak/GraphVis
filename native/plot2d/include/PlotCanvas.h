@@ -73,9 +73,29 @@ public:
     // of the visualisations don't show".
     Q_PROPERTY(QString zColumn READ zColumn WRITE setZColumn NOTIFY sourceChanged)
     Q_PROPERTY(QString colorColumn READ colorColumn WRITE setColorColumn NOTIFY sourceChanged)
+    // A COLUMN AGAINST ITS OWN AXIS ON THE RIGHT.
+    //
+    // The secondary-axis machinery - range, ticks, log, label, per-series
+    // placement - has been complete for a long time, and eight engines used it
+    // internally: a Pareto's cumulative percent, a Bode phase, an X-bar chart's
+    // range. What there was no way to do was the ordinary thing, which is to
+    // say "temperature on the left, pressure on the right" about two columns of
+    // your own data. The whole feature was reachable only by choosing one of
+    // those eight specific graphs.
+    //
+    // Empty means one y axis, which is the default and the common case.
+    Q_PROPERTY(QString y2Column READ y2Column WRITE setY2Column NOTIFY sourceChanged)
+    // Whether the role is worth offering for the engine now chosen. See
+    // QtPlotBackend::honoursSecondaryAxis: measured by handing the engine a
+    // series that asks for the right-hand axis and seeing whether it comes back
+    // still asking, rather than by consulting a list of engine names.
+    Q_PROPERTY(bool supportsSecondaryAxis READ supportsSecondaryAxis NOTIFY stateChanged)
     // How many columns the current engine actually wants, so the interface can
     // say so next to the axis rows rather than leaving it to be discovered.
     Q_PROPERTY(int columnsRequired READ columnsRequired NOTIFY stateChanged)
+    // sourceChanged, which is what every column setter emits - so the count
+    // updates the moment a mapping reaches the canvas.
+    Q_PROPERTY(int columnsMapped READ columnsMapped NOTIFY sourceChanged)
     // Display units. The column label carries the source unit - "Pressure
     // [kPa]" - and setting a target unit rescales what is drawn without
     // touching the data or re-importing anything. Empty means "as imported".
@@ -159,6 +179,11 @@ public:
     // bearing means the second and a polar scatter means the first, so it is
     // the operator's choice - see PlotStyle::polarConvention.
     Q_PROPERTY(int polarConvention READ polarConvention WRITE setPolarConvention NOTIFY styleChanged)
+    // What the legend does with a label too long for its box: 0 elide, 1 wrap.
+    // The box is capped so a long label cannot cover the figure; whether the
+    // label is then cut or allowed to run onto a second line is a reading
+    // preference - see PlotStyle::legendLabels.
+    Q_PROPERTY(int legendLabels READ legendLabels WRITE setLegendLabels NOTIFY styleChanged)
     // True only while the engine on screen is drawn in a circle, so the
     // interface can offer the angle convention where it means something.
     Q_PROPERTY(bool polarEngine READ polarEngine NOTIFY stateChanged)
@@ -193,6 +218,13 @@ public:
     Q_PROPERTY(int fieldKrigingVariogram READ fieldKrigingVariogram WRITE setFieldKrigingVariogram NOTIFY styleChanged)
     Q_PROPERTY(double fieldLoessFraction READ fieldLoessFraction WRITE setFieldLoessFraction NOTIFY styleChanged)
     Q_PROPERTY(int fieldResolution READ fieldResolution WRITE setFieldResolution NOTIFY styleChanged)
+    // Lines across the wireframe - see PlotStyle::meshDensity. Separate from
+    // fieldResolution because how many lines you can see through is not how
+    // finely the surface was sampled.
+    Q_PROPERTY(int meshDensity READ meshDensity WRITE setMeshDensity NOTIFY styleChanged)
+    // Whether this engine draws a wireframe, so the control can be offered
+    // where it does something and greyed where it does not.
+    Q_PROPERTY(bool wireframeEngine READ wireframeEngine NOTIFY stateChanged)
 
     // 0 Standard, 1 Protanopia, 2 Deuteranopia, 3 Tritanopia, 4 Monochrome.
     // Owned by AppController and persisted, so it survives theme changes and
@@ -353,6 +385,14 @@ public:
     // means nothing. QML uses it to decide whether to offer the affordance.
     Q_PROPERTY(bool viewInteractive READ viewInteractive NOTIFY stateChanged)
     Q_PROPERTY(bool viewZoomed READ viewZoomed NOTIFY stateChanged)
+    // True where the figure can be moved WITHIN its frame instead: no axis
+    // range to slide, no camera to turn, so a drag and a wheel translate and
+    // scale the drawing itself. Exactly the engines viewInteractive excludes
+    // and view3D does not claim.
+    Q_PROPERTY(bool frameInteractive READ frameInteractive NOTIFY stateChanged)
+    // Whether that view has actually been moved, so the interface can offer a
+    // way back only when there is something to go back from.
+    Q_PROPERTY(bool frameMoved READ frameMoved NOTIFY stateChanged)
 
     // Cursor readout.
     //
@@ -364,6 +404,13 @@ public:
     // noise; zoomed a thousandfold into a transient it is the whole point.
     Q_PROPERTY(QString cursorText READ cursorText NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorOnPlot READ cursorOnPlot NOTIFY cursorChanged)
+    // The cursor's DATA coordinates. Exposed because addAnnotation() takes
+    // data coordinates and its own comment tells the caller to "use
+    // cursorX/cursorY" - and the only caller is QML, which could not see
+    // them. The advice was unfollowable for as long as they were plain
+    // accessors.
+    Q_PROPERTY(double cursorX READ cursorX NOTIFY cursorChanged)
+    Q_PROPERTY(double cursorY READ cursorY NOTIFY cursorChanged)
 
     // Annotations.
     //
@@ -386,9 +433,32 @@ public:
     QStringList yColumns() const { return yColumns_; }
     QString zColumn() const { return zColumn_; }
     QString colorColumn() const { return colorColumn_; }
+    QString y2Column() const { return y2Column_; }
+    bool supportsSecondaryAxis() const {
+        // A multi-column engine reads its mapped columns as series 0, 1 and 2 -
+        // a heatmap's x, y and value - so "this column on the right" is not a
+        // question that means anything there, whatever the probe says.
+        return !QtPlotBackend::columnPlan(spec_.engine).asSeries
+               && qtBackend_.honoursSecondaryAxis(spec_.engine);
+    }
     int columnsRequired() const { return QtPlotBackend::columnsRequired(spec_.engine); }
+    // How many of the four mapped roles the canvas actually holds.
+    //
+    // Here rather than in QML because MappingPanel was counting them itself,
+    // from its own reading of xColumn, yColumns, zColumn and colorColumn - a
+    // second implementation of a question this object can answer, and the two
+    // disagreed in front of the user: a correctly drawn heat map with
+    // "reads 3 columns and 0 are mapped" printed beside it. The panel now asks
+    // the object that draws the figure, so the sentence cannot contradict the
+    // picture it is sitting next to.
+    int columnsMapped() const {
+        return (xColumn_.isEmpty()?0:1)+yColumns_.size()
+              +(zColumn_.isEmpty()?0:1)+(colorColumn_.isEmpty()?0:1)
+              +((y2Column_.isEmpty()||yColumns_.contains(y2Column_))?0:1);
+    }
     void setZColumn(const QString& v);
     void setColorColumn(const QString& v);
+    void setY2Column(const QString& v);
     QString xUnit() const { return xUnit_; }
     QString yUnit() const { return yUnit_; }
     QString xSourceUnit() const;
@@ -433,11 +503,9 @@ public:
             || spec_.engine.startsWith(QLatin1String("Implicit"));
     }
     QString expressionError() const { return expressionError_; }
-    bool logX() const { return spec_.xAxis.log10; }
     bool logY() const { return spec_.yAxis.log10; }
     QString message() const { return message_; }
     QString notice() const { return notice_; }
-    bool engineSupported() const { return engineSupported_; }
     int pointCount() const { return pointCount_; }
     QColor backgroundColor() const { return spec_.style.background; }
     QColor foregroundColor() const { return spec_.style.foreground; }
@@ -471,6 +539,8 @@ public:
 
     bool viewInteractive() const;
     bool viewZoomed() const { return hasView_; }
+    bool frameInteractive() const;
+    bool frameMoved() const { return spec_.frameView.active(); }
     QString cursorText() const { return cursorText_; }
     bool cursorOnPlot() const { return cursorOnPlot_; }
     double cursorX() const { return cursorX_; }
@@ -516,12 +586,14 @@ public:
     int gridDensityY() const { return spec_.style.gridDensityY; }
     int pieLabels() const { return spec_.style.pieLabels; }
     int polarConvention() const { return spec_.style.polarConvention; }
+    int legendLabels() const { return spec_.style.legendLabels; }
     bool polarEngine() const { return QtPlotBackend::isPolarEngine(spec_.engine); }
     void setGridVisible(bool on);
     void setGridDensity(int ticks);
     void setGridDensityY(int ticks);
     void setPieLabels(int mode);
     void setPolarConvention(int mode);
+    void setLegendLabels(int mode);
     bool scaleLabelsVisible() const { return spec_.style.scaleLabelsVisible; }
     void setScaleLabelsVisible(bool on);
     // True for the engines drawn as a projection into a cube: the 3-D family,
@@ -539,7 +611,10 @@ public:
     Q_INVOKABLE void rotateByPixels(double dx,double dy);
     // Repaint now, and schedule the expensive render only once the drag is over.
     void cameraMoved();
-    Q_INVOKABLE void zoom3DBy(double factor);
+    // `about` is where on the item the gesture happened, so the point under
+    // the pointer stays under it. A null point means the centre, which is what
+    // a button with no position gets.
+    Q_INVOKABLE void zoom3DBy(double factor,const QPointF& about=QPointF());
     Q_INVOKABLE void resetCamera();
     // How the unsampled cells of a gridded field are estimated, and how fine
     // that grid is. See PlotStyle::fieldInterpolation.
@@ -583,6 +658,10 @@ public:
     Q_INVOKABLE static QStringList fieldResponseSpaceNames();
     void setFieldInterpolation(int mode);
     int fieldResolution() const { return spec_.style.fieldResolution; }
+    int meshDensity() const { return spec_.style.meshDensity; }
+    bool wireframeEngine() const { return spec_.engine==QStringLiteral("3D Mesh")
+                                       ||spec_.engine==QStringLiteral("Function Mesh"); }
+    void setMeshDensity(int lines);
     void setFieldResolution(int cells);
     bool usesColourMap() const { return usesColourMap_; }
     QVariantList axisRanges() const;
@@ -601,7 +680,21 @@ public:
     // The same names grouped into the eight categories GraphVis 17 used, as
     // [{name, maps: [...]}, ...]. Eighty four names in one list is a list to
     // scroll, not a choice to make.
-    Q_INVOKABLE static QVariantList colourMapCategories();
+    // NOT static any more: the list depends on the colour-vision setting, so
+    // it has to be able to read it. See the note on the implementation.
+    Q_INVOKABLE QVariantList colourMapCategories() const;
+    // WHY THIS MAP IS GREYED OUT, measured rather than listed.
+    //
+    // Empty when the map is usable by the colour-vision mode currently set on
+    // this canvas; otherwise one sentence for the tooltip. The measurement
+    // lives in ColourVision.h and runs over the map's own table, so a map
+    // added to ColourMaps.h is judged the moment it exists - a hand-written
+    // list of "bad maps" would go stale against the generated one and nothing
+    // would notice.
+    //
+    // Not static, unlike its neighbours: the answer depends on which reader
+    // this canvas is set up for.
+    Q_INVOKABLE QString colourMapWarning(const QString& map) const;
     // A base64 PNG strip of one map, for showing beside its name: nobody knows
     // what "Gist Ncar" looks like from the words.
     Q_INVOKABLE static QString colourMapPreview(const QString& name,int width=96,int height=14);
@@ -746,9 +839,56 @@ private:
     bool currentView(double& xLo,double& xHi,bool& xLog,
                      double& yLo,double& yHi,bool& yLog) const;
     void updateCursor(const QPointF& pos);
+    // The MOUSE cursor, which is a different question from updateCursor's
+    // coordinate readout despite the name they share. See the definition.
+    void refreshCursor();
     void panByPixels(double dx,double dy);
     void zoomAt(const QPointF& pos,double factor);
-    void commitView();       // write the view onto the axes and redraw
+    // The OTHER kind of view: the drawing moved inside its frame, for the
+    // sixty-six engines with no axis range to slide. See PlotFrameView.
+    void panFrameByPixels(double dx,double dy);
+    void zoomFrameAt(const QPointF& pos,double factor);
+    // The x range the figure is about to be DRAWN in, when it has been zoomed,
+    // in the unit the axis is labelled in. The preview's point budget is spent
+    // inside it rather than across the whole column - see the note above
+    // buildPlotSeries in the .cpp for the report this comes from.
+public:
+    struct ViewWindow {
+        bool set=false;
+        double lo=0.0,hi=0.0;
+        bool usable() const { return set&&hi>lo&&lo==lo&&hi==hi; }
+    };
+private:
+    // asSeries engines are excluded: they grid their mapped columns and a grid
+    // takes its extent from the data it is handed.
+    ViewWindow windowForDrawing(bool asSeries) const;
+    // And so is every engine whose x axis is not the mapped x column - a
+    // histogram's bin values, a violin's slot number. See the definition.
+    bool xAxisIsMappedColumn() const;
+    QHash<QString,bool> windowUsable_;
+
+    // The dataset, read once for the whole application and kept until the FILE
+    // changes. See the note on the definition: a zoom now rebuilds the series,
+    // and rebuilding used to re-read the whole Arrow file.
+    //
+    // The canvas keeps a reference to whichever table it last drew from, so a
+    // worker still reading one cannot have it freed when the person opens a
+    // different dataset.
+    const ArrowTable& loadedTable() const;
+    mutable std::shared_ptr<const ArrowTable> table_;
+    // What the last rebuild decided about the engine, so the full-resolution
+    // render asks the same question rather than a second copy of it.
+    bool resolvedAsSeries_=false;
+
+    // Write the view onto the axes and redraw.
+    //
+    // Gesture means "more of this is coming": draft quality on, the expensive
+    // render held back until the idle timer says the gesture has stopped.
+    // Settled means a single deliberate change - Reset view - which should have
+    // its full-resolution render started at once. See the note on commitView
+    // for the report this distinction comes from.
+    enum class View { Settled, Gesture };
+    void commitView(View how=View::Settled);
     QRectF interactionArea() const;
     bool hasView_=false;
     QString cursorText_;
@@ -795,6 +935,7 @@ private:
     QStringList yColumns_;
     QString zColumn_;
     QString colorColumn_;
+    QString y2Column_;
     QString xUnit_;
     QString yUnit_;
     QStringList available_;
@@ -854,13 +995,26 @@ private:
     bool dirty_=true;
 
     // ---- full-resolution render, off the GUI thread
-    void scheduleFullRender();
+    // Whether a pending render should keep the picture already on screen.
+    //
+    // Every caller but one is an EDIT - a column, an engine, a colour map -
+    // after which the rendered image is a picture of the previous settings and
+    // has to go. A resize is the exception: the image is still a correct
+    // picture of this figure, drawn at the wrong size, and discarding it is
+    // what made the figure vanish for the length of a splitter drag.
+    enum class Retain { Nothing, RenderedImage };
+    void scheduleFullRender(Retain retain=Retain::Nothing);
     void startFullRender();
     void handleFullRenderFinished();
     void invalidateFullRender();
 
     QString resolvedX_;
     QStringList resolvedY_;
+    // Which of resolvedY_ went on the right-hand axis, so that the
+    // full-resolution render composes the same figure as the preview. A
+    // preview with two axes and a final render with one is precisely the
+    // shape of defect this file has been bitten by before.
+    QString resolvedY2_;
     QImage fullImage_;
     QFutureWatcher<QImage> fullWatcher_;
     QTimer fullDebounce_;
@@ -874,6 +1028,11 @@ private:
     // another render nobody will see.
     bool interacting_=false;
     QTimer interactionIdle_;
+    // A splitter drag, which is a resize and not a gesture on the canvas, so
+    // neither dragging_ nor interacting_ covers it. Without this the figure was
+    // redrawn at full quality at every intermediate size.
+    QTimer resizeIdle_;
+    bool resizing_=false;
     // Drives the progress readout, and only runs while a render is in flight.
     QTimer* progressTick_=nullptr;
     QElapsedTimer fullTimer_;

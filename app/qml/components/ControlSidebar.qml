@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -25,7 +26,10 @@ Rectangle {
     // Raised by the dataset bar's Import button, so the shell opens the file
     // dialog it already owns instead of this panel growing one of its own.
     signal importRequested()
-    signal applyMapping(string x,string y,string z,string color,real size,real alpha,bool invert,int voxelBins,bool smartRender,int smartProfile)
+    // y2 is last because it was added last, and because everything before it is
+    // what the VTK viewport and the renderer settings read - the second
+    // ordinate is a 2-D figure's business alone.
+    signal applyMapping(string x,string y,string z,string color,real size,real alpha,bool invert,int voxelBins,bool smartRender,int smartProfile,string y2)
     // Emitted when a catalogue entry is staged and applied from the Graph Library.
     signal graphSelected(var entry)
     // Smart Suite recommendation: graph plus the mapping the scanner chose.
@@ -34,6 +38,9 @@ Rectangle {
     property alias mappingY: mapping.yValue
     property alias mappingZ: mapping.zValue
     property alias mappingColor: mapping.colorValue
+    // The right-hand ordinate, exposed like the other four so a caller can
+    // read the staged mapping without waiting for the signal.
+    property alias mappingY2: mapping.y2Value
     property alias vtkMode: mapping.vtkMode
     property alias roughness: mapping.roughness
     property alias metallic: mapping.metallic
@@ -226,7 +233,7 @@ Rectangle {
             }
             ProjectPanel { app:root.app }
             DataWorkspace { app:root.app }
-            MappingPanel { id:mapping; app:root.app; canvas:root.canvas; onApplyRequested:root.applyMapping(xValue,yValue,zValue,colorValue,pointSize,pointOpacity,invertOpacity,voxelBins,smartRender,smartProfile) }
+            MappingPanel { id:mapping; app:root.app; canvas:root.canvas; onApplyRequested:root.applyMapping(xValue,yValue,zValue,colorValue,pointSize,pointOpacity,invertOpacity,voxelBins,smartRender,smartProfile,y2Value) }
             AnalysisPanel { app:root.app }
             SolverPanel { app:root.app }
             LiteraturePanel { app:root.app }

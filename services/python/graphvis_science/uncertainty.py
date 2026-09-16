@@ -62,7 +62,10 @@ def propagate(expression: str, inputs: Mapping[str, Any]) -> dict:
     filesystem. It is then evaluated on `uncertainties` numbers, which do the
     first-order propagation and keep the correlations between terms.
     """
-    uncertainties = _module()
+    # Called for the guard it raises when the add-on is absent, not for a
+    # value: the expression below is evaluated through SymPy on numbers
+    # `_values` already built, so nothing here reads the module.
+    _module()
     numbers = _values(inputs)
 
     try:

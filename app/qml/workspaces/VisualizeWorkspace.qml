@@ -1,3 +1,22 @@
+// NO `pragma ComponentBehavior: Bound` HERE, and it is not an oversight.
+//
+// The linter asks for one - twenty-nine "Unqualified access" warnings in this
+// file are a delegate reading `root.…`, and ScanPanel.qml and NotebookCanvas.qml
+// both carry the pragma with a note saying why it matters. Adding it here on
+// Qt 6.4 breaks two Loaders: the notebook's, and one at the top of the shell in
+// the DEFAULT shape. Both report `Loader.Error` while their component reports
+// Ready with an empty errorString, and neither logs anything - the notebook
+// view is simply absent, with no message.
+//
+// Measured, not assumed: tests/qml/tst_workspace_loads.qml fails on both
+// counts the moment the pragma is added, and passes without it. Whether a newer
+// Qt behaves differently is not something this container can answer, so the
+// pragma waits for someone who can check it on the build Qt.
+//
+// What the pragma would buy is real and worth coming back for: without it those
+// accesses resolve only through the old unbound context lookup, which is slower
+// at every evaluation and breaks the moment a model role shares a name with an
+// outer id.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -17,9 +36,160 @@ Item {
     // current; with one canvas it is that canvas. Everything above this - the
     // sidebar, the menu bar, the Publish workspace - asks for `canvas` and does
     // not need to know which layout is showing.
+    // THE OPEN FIGURES.
+    //
+    // One row per figure: what its tab says, and whether it is locked against
+    // being closed. The figures themselves are the FigureCanvas items below;
+    // this is the order they are shown in and the state the tab bar draws.
+    //
+    // One list, owned here. The tab bar is handed it and reports what was done
+    // to it rather than keeping a copy, and the menu asks this same list - so
+    // the bar, the menu and the canvas cannot come to disagree about which
+    // figures exist, which is the fault this program has now produced four
+    // separate times.
+    ListModel {
+        id: figures
+        ListElement { title: "Figure 1"; locked: false; floating: false }
+    }
+    readonly property int figureCount: figures.count
+    property int figureIndex: 0
+
+    // The figure everything in this file acts on.
+    //
+    // `plot` was the id of the single canvas. It is now the CURRENT one, which
+    // is what every existing reference to it already meant - so all of them
+    // keep working unchanged, and none of them has to know there is more than
+    // one figure. It falls back to figure zero rather than to null, because a
+    // null here would break fifty-two bindings at once.
+    readonly property var plot: root.figureIndex > 0
+                                && extraFigures.itemAt(root.figureIndex - 1)
+                                ? extraFigures.itemAt(root.figureIndex - 1)
+                                : figure0
+
+    function addFigure() {
+        figures.append({ "title": "Figure " + (figures.count + 1),
+                         "locked": false, "floating": false })
+        root.refreshFigureTitles()
+        root.figureIndex = figures.count - 1
+    }
+    function selectFigure(i) {
+        if (i < 0 || i >= figures.count) return
+        root.figureIndex = i
+        // A floated figure is not in the workspace to be shown, so selecting
+        // its tab has to raise its window. Without this, clicking the tab of a
+        // figure you have floated appears to do nothing at all.
+        if (figures.get(i).floating) {
+            var w = figureWindows.objectAt(i)
+            if (w) { w.raise(); w.requestActivate() }
+        }
+    }
+    function toggleFigureLock(i) {
+        if (i < 0 || i >= figures.count) return
+        figures.setProperty(i, "locked", !figures.get(i).locked)
+        root.refreshFigureTitles()
+    }
+    function closeFigure(i) {
+        if (i < 0 || i >= figures.count) return
+        // A locked figure refuses, and SAYS it refused. Silently doing nothing
+        // is indistinguishable from a broken button - the lesson this file
+        // already records about targetCanvas returning null.
+        if (figures.get(i).locked) {
+            root.app.notify("“" + figures.get(i).title + "” is locked. Unlock it "
+                            + "from its star, or right-click the tab, to close it.")
+            return
+        }
+        // Never none: with nothing open there is no figure for the controls to
+        // act on and no way back, which is the same reason the notebook keeps
+        // its last cell.
+        if (figures.count <= 1) {
+            root.app.notify("This is the only figure open, so there would be "
+                            + "nothing to draw on. Add another first.")
+            return
+        }
+        // Unfloat first: removing the row destroys the window, and the figure
+        // has to be back in the workspace before that happens or it is
+        // reparented into nothing.
+        if (figures.get(i).floating) figures.setProperty(i, "floating", false)
+        figures.remove(i)
+        root.refreshFigureTitles()
+        root.figureIndex = Math.max(0, Math.min(root.figureIndex, figures.count - 1))
+    }
+    // The live canvas for a row. Figure zero is the inline one; the rest come
+    // from the repeater. Returns null rather than guessing when the repeater
+    // has not built the item yet, and every caller checks.
+    function figureItem(i) {
+        if (i === 0) return figure0
+        return extraFigures.itemAt(i - 1)
+    }
+    // Into its own window, and back. The figure MOVES - see FigureWindow.qml
+    // for why it is not copied.
+    function toggleFigureFloat(i) {
+        if (i < 0 || i >= figures.count) return
+        figures.setProperty(i, "floating", !figures.get(i).floating)
+    }
+
+    function moveFigure(from, to) {
+        if (from === to || from < 0 || to < 0) return
+        if (from >= figures.count || to >= figures.count) return
+        figures.move(from, to, 1)
+        root.refreshFigureTitles()
+        // The SELECTION follows the figure, not the position: dragging the tab
+        // you are working on must not switch you to a different figure.
+        if (root.figureIndex === from) root.figureIndex = to
+        else if (from < root.figureIndex && to >= root.figureIndex) root.figureIndex--
+        else if (from > root.figureIndex && to <= root.figureIndex) root.figureIndex++
+    }
+    // One window per floated figure.
+    //
+    // An Instantiator rather than a Repeater, because a Window is not an Item
+    // and a Repeater can only hold Items. `active` on the delegate is what
+    // creates and destroys the window, so an unfloated figure costs nothing.
+    Instantiator {
+        id: figureWindows
+        model: figures
+        delegate: FigureWindow {
+            required property int index
+            required property bool floating
+            // The title comes from figureTitleList, not from the model role.
+            //
+            // Two things rule out the obvious spellings. `required property
+            // string title` collides with Window's own `title` - the text in
+            // its title bar - which qmllint catches. And `model.title` throws
+            // "ReferenceError: model is not defined" at runtime, because
+            // declaring ANY required property puts a delegate into
+            // required-properties mode, and Qt then stops injecting the
+            // implicit `model` object it would otherwise provide.
+            //
+            // figureTitleList is the array the workspace already maintains for
+            // the Figures menu, so this needs nothing new and cannot disagree
+            // with what the menu and the tab bar show.
+            figure: root.figureItem(index)
+            figureTitle: index < root.figureTitleList.length
+                         ? root.figureTitleList[index] : ""
+            visible: floating
+            onDocked: root.toggleFigureFloat(index)
+        }
+    }
+
+    // What the MENU lists, kept as a plain array rather than offered as a
+    // function.
+    //
+    // A ListModel signals that its count changed but not that a row's contents
+    // did, so a menu bound to a function over the model would be right when a
+    // figure was added and stale when one was renamed or locked. Refreshed
+    // explicitly by every mutator below, which is the only way this stays in
+    // step - and it has to stay in step, because the whole point of the menu
+    // copy is that it is the same list of figures as the bar.
+    property var figureTitleList: ["Figure 1"]
+    function refreshFigureTitles() {
+        var out = []
+        for (var i = 0; i < figures.count; ++i) out.push(figures.get(i).title)
+        root.figureTitleList = out
+    }
+
     readonly property var canvas: root.app.notebookLayout
                                   ? (notebook.item ? notebook.item.currentCanvas : null)
-                                  : plot
+                                  : root.plot
 
     // The figure an action applies to, and an explanation when there is none.
     //
@@ -42,6 +212,32 @@ Item {
                            + " could not be applied. Try again in a moment."))
         return null
     }
+
+    // THE MAPPED COLUMNS REACHING THE FIGURE - in one place, because there are
+    // two mapping panels.
+    //
+    // The sidebar has one and the docked secondary panel has another, and each
+    // used to carry its own copy of these five assignments. That is this
+    // project's most expensive recurring shape: one question with two
+    // implementations, which drift. It has already cost this exact block once -
+    // `yColumns = y ? [y] : []` threw Z and Colour away, so a multi-column
+    // engine got one series and drew an empty frame, and only Line Chart
+    // worked. Fixing it in one copy would have left the other still broken.
+    //
+    // At depth 1 for the same reason openExport is: a function declared inside
+    // a nested item is not reachable from the file's root, and QML says nothing
+    // about it at load time - the call simply does nothing when it happens.
+    function writeMapping(x, y, z, c, y2) {
+        var t = root.targetCanvas("the column mapping")
+        if (!t) return
+        t.xColumn = x
+        t.yColumns = y ? [y] : []
+        t.zColumn = z ? z : ""
+        t.colorColumn = c ? c : ""
+        // Empty means one ordinate, which is the default and the common case.
+        t.y2Column = y2 ? y2 : ""
+    }
+
     // Raised by the Import button in the dataset bar above the graph chooser.
     //
     // This is the whole reason that button did nothing. ActiveDatasetBar
@@ -53,6 +249,32 @@ Item {
     // The Ribbon's Find-a-graph button and the Command bar's hint both open the
     // window's palette, which the shell owns.
     signal commandRequested()
+
+    // The one way in, for everything that wants to export.
+    //
+    // ON THE ROOT, which is the whole of why this is here and not beside the
+    // dialog it opens. It was written four levels down, inside the nested
+    // SplitView the dialog is declared in, so it was not a member of this
+    // component at all - `typeof workspace.openExport` was `undefined`. Every
+    // route to Export was dead again, which is exactly what the note below
+    // records this function being written to fix:
+    //
+    //   * the header button, `onClicked: root.openExport()`, and the same call
+    //     in `onExportRequested`, both raise "not a function" when pressed;
+    //   * Main.qml guards its File > Export with
+    //     `if (shellLoader.item && shellLoader.item.openExport)`, which is
+    //     false, so that menu item silently does nothing at all.
+    //
+    // The linter said so - "Member 'openExport' not found on type
+    // 'VisualizeWorkspace'", twice - among sixteen warnings of the same wording
+    // that are Loader false positives, because a Loader's `item` is a QObject
+    // to a static reader. Reading it as another of those is how it survived.
+    //
+    // The dialog itself stays where it is: it anchors `centerIn: Overlay.overlay`,
+    // so it centres on the window wherever it is declared, and an id is visible
+    // across the whole file regardless of depth. Only the function needed to
+    // move, and only because a caller has to be able to NAME it.
+    function openExport() { exportDialog.open() }
 
     // The window shape, read as a RECORD rather than decided by a chain of
     // `layout === n` tests. See app/src/UiLayouts.h: the six shapes this file
@@ -120,7 +342,7 @@ Item {
     // itself, so a click on the figure is enough to start editing it.
     Connections {
         target: root.canvas
-        enabled: root.spec.inspectorSummons && root.canvas !== null
+        enabled: !!(root.spec.inspectorSummons && root.canvas !== null)
         function onSourceChanged() { root.secondarySummoned = true }
     }
 
@@ -274,9 +496,9 @@ Item {
                      || root.spec.sidebarMode === root.modeStack
         currentTab: root.chosenPanel
         onCurrentTabChanged: root.chosenPanel = sidebar.currentTab
-        canvas: plot
+        canvas: root.plot
         onImportRequested: root.importRequested()
-        onApplyMapping:(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)=>{
+        onApplyMapping:(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile,y2)=>{
             app.applyMapping(x,y,z,c,size,alpha,invert,voxelBins,smartRender,smartProfile)
             // vtkLoader.item is a QObject as far as any static check can tell:
             // GraphVis.VTK is a separate, lazily-loaded module. The guard on
@@ -286,20 +508,7 @@ Item {
             if(app.rendererMode==="VTK / PBR" && vtkLoader.item && vtkLoader.item.reload)
                 vtkLoader.item.reload()
             // qmllint enable missing-property
-            // ALL four mapped roles, not just two.
-            //
-            // This used to be `plot.yColumns = y ? [y] : []`, which threw Z and
-            // Colour away. A multi-column engine reads its inputs as series -
-            // a heatmap's x, y and value, a 3-D scatter's x, y and z - so every
-            // one of them got a single series, drew a frame with nothing in it,
-            // and only Line Chart worked. The canvas composes them according to
-            // what the engine actually needs; see PlotCanvas::rebuild.
-            var target = root.targetCanvas("the column mapping")
-            if (!target) return
-            target.xColumn = x
-            target.yColumns = y ? [y] : []
-            target.zColumn = z ? z : ""
-            target.colorColumn = c ? c : ""
+            root.writeMapping(x, y, z, c, y2)
         }
         // Applying a catalogue entry switches to the 2-D renderer and draws it.
         onGraphSelected:(entry)=>{
@@ -365,10 +574,10 @@ Item {
         // contains is just a panel title.
         title: root.app.rendererMode !== "Qt 2-D"
                ? "Canvas"
-               : (plot.pointCount > 0
-                  ? "Canvas · " + plot.message
-                    + (plot.showingFullRender ? " · full resolution"
-                                              : (plot.previewIsExact ? "" : " · preview"))
+               : (root.plot.pointCount > 0
+                  ? "Canvas · " + root.plot.message
+                    + (root.plot.showingFullRender ? " · full resolution"
+                                              : (root.plot.previewIsExact ? "" : " · preview"))
                   : "Canvas")
         floatable: root.app.rendererMode === "Qt 2-D"
         headerVisible: root.spec.canvas !== root.canvasZen
@@ -389,9 +598,39 @@ Item {
             // What is under the pointer, and only while there is something
             // under it. First because it changes constantly and the eye should
             // not have to hunt for it.
+            // One button, and the choices behind it.
+            //
+            // It said "Export PDF" and wrote a 6 x 4 inch, 600 dpi PDF with no
+            // way to say otherwise - while PlotCanvas had three export
+            // functions with eight parameters between them and QML called one
+            // of them with none. An SVG, a 300 dpi plate, a slide-sized PNG and
+            // a figure at a journal's exact column width were all already
+            // possible and none of them was reachable.
+            //
+            // FIRST IN THE ROW, because the row scrolls.
+            //
+            // The header actions sit in a Flickable that pins them right while
+            // they fit and left once they do not - so on a narrow canvas the
+            // LAST ones are the ones past the edge, behind a small chevron.
+            // Export was last. The source here has a note admitting this button
+            // had been pushed off-screen before, and it was put back at the end
+            // of the row anyway.
+            //
+            // It is also the only one of these whose absence loses work rather
+            // than convenience: a zoom button you cannot reach is an
+            // inconvenience, an export you cannot reach is a figure you cannot
+            // get out.
+            Button {
+                id: exportButton
+                text: "Export"
+                enabled: root.plot.pointCount > 0
+                ToolTip.visible: exportButton.hovered
+                ToolTip.text: "Format, size, resolution and where it goes — Ctrl+E"
+                onClicked: root.openExport()
+            },
             StatusPill {
-                visible: plot.cursorOnPlot
-                text: plot.cursorText
+                visible: root.plot.cursorOnPlot
+                text: root.plot.cursorText
                 textColor: Theme.text
             },
             // Zoom without a wheel.
@@ -406,19 +645,27 @@ Item {
                 id: zoomOut
                 text: "−"
                 implicitWidth: 28
-                visible: plot.viewInteractive && plot.pointCount > 0
+                // frameInteractive as well: those engines have no axis range
+                // to zoom, but the drawing itself can now be magnified inside
+                // its frame, and zoomBy routes to whichever of the two the
+                // figure actually has. A wheel that zooms and a + button
+                // beside it that does not is a gap nobody reports, because
+                // they assume they have misread the button.
+                visible: (root.plot.viewInteractive || root.plot.frameInteractive)
+                         && root.plot.pointCount > 0
                 ToolTip.visible: zoomOut.hovered
                 ToolTip.text: "Zoom out about the last point the pointer was over, or the middle of the figure if it has not been on it yet"
-                onClicked: plot.zoomBy(1.0 / 1.25)
+                onClicked: root.plot.zoomBy(1.0 / 1.25)
             },
             Button {
                 id: zoomIn
                 text: "+"
                 implicitWidth: 28
-                visible: plot.viewInteractive && plot.pointCount > 0
+                visible: (root.plot.viewInteractive || root.plot.frameInteractive)
+                         && root.plot.pointCount > 0
                 ToolTip.visible: zoomIn.hovered
                 ToolTip.text: "Zoom in about the last point the pointer was over, or the middle of the figure if it has not been on it yet"
-                onClicked: plot.zoomBy(1.25)
+                onClicked: root.plot.zoomBy(1.25)
             },
             // The full-render policy is NOT here.
             //
@@ -433,8 +680,8 @@ Item {
             // It is a preference, it is set once, and the View menu already
             // has it. A thing you choose once does not earn permanent space
             // beside a thing you use constantly.
-            UnitSelector { axis: "X"; canvas: plot },
-            UnitSelector { axis: "Y"; canvas: plot },
+            UnitSelector { axis: "X"; canvas: root.plot },
+            UnitSelector { axis: "Y"; canvas: root.plot },
             // The colour-map picker is NOT here any more.
             //
             // It is a choice made once for a figure, and it was holding
@@ -447,59 +694,48 @@ Item {
             Button {
                 id: cameraReset
                 text: "Reset camera"
-                visible: plot.view3D
+                visible: root.plot.view3D
                 ToolTip.visible: cameraReset.hovered
                 ToolTip.text: "Back to the starting angle. Drag the figure to turn it, "
                             + "wheel or pinch to zoom, double-click to reset."
-                onClicked: plot.resetCamera()
+                onClicked: root.plot.resetCamera()
             },
             Button {
                 id: viewReset
                 text: "Reset view"
-                visible: plot.viewZoomed
+                // frameMoved as well, and without it this button never
+                // appeared on the sixty-six axis-less engines: viewZoomed is
+                // about an axis range and those figures never set one, so the
+                // figure could be dragged halfway out of its frame with no
+                // visible way back.
+                visible: root.plot.viewZoomed || root.plot.frameMoved
                 ToolTip.visible: viewReset.hovered
-                ToolTip.text: "Fit the axes back to the data. Double-click or double-tap the figure does the same."
-                onClicked: plot.resetView()
+                ToolTip.text: root.plot.frameMoved && !root.plot.viewZoomed
+                              ? "Put the figure back in the middle of its frame at its "
+                                + "original size. Double-click or double-tap does the same."
+                              : "Fit the axes back to the data. Double-click or double-tap the figure does the same."
+                onClicked: root.plot.resetView()
             },
             Button {
                 id: annotateButton
-                text: plot.annotating ? "Stop annotating"
-                                      : (plot.annotationCount > 0
-                                         ? "Notes (" + plot.annotationCount + ")"
+                text: root.plot.annotating ? "Stop annotating"
+                                      : (root.plot.annotationCount > 0
+                                         ? "Notes (" + root.plot.annotationCount + ")"
                                          : "Annotate")
                 checkable: true
-                checked: plot.annotating
-                visible: plot.viewInteractive && plot.pointCount > 0
+                checked: root.plot.annotating
+                visible: root.plot.viewInteractive && root.plot.pointCount > 0
                 ToolTip.visible: annotateButton.hovered
                 ToolTip.text: "Add a note to the figure. Notes are anchored to a data "
                             + "point, so they stay put through a zoom, and they export "
                             + "into the PDF as real selectable text."
-                onClicked: plot.annotating = annotateButton.checked
+                onClicked: root.plot.annotating = annotateButton.checked
             },
             Button {
                 id: clearNotes
                 text: "Clear notes"
-                visible: plot.annotationCount > 0
-                onClicked: plot.clearAnnotations()
-            },
-            // Last, hard against the pop-out button, which is where the person
-            // asked for it.
-            // One button, and the choices behind it.
-            //
-            // It said "Export PDF" and wrote a 6 x 4 inch, 600 dpi PDF with no
-            // way to say otherwise - while PlotCanvas had three export
-            // functions with eight parameters between them and QML called one
-            // of them with none. An SVG, a 300 dpi plate, a slide-sized PNG and
-            // a figure at a journal's exact column width were all already
-            // possible and none of them was reachable.
-            Button {
-                id: exportButton
-                text: "Export"
-                enabled: plot.pointCount > 0
-                ToolTip.visible: exportButton.hovered
-                ToolTip.text: "Format, size and resolution - vector or raster, "
-                            + "drawn by the same backend as the screen"
-                onClicked: exportDialog.open()
+                visible: root.plot.annotationCount > 0
+                onClicked: root.plot.clearAnnotations()
             }
         ]
 
@@ -524,6 +760,7 @@ Item {
                 app: root.app
                 canvas: root.canvas
                 onGraphSearchRequested: root.commandRequested()
+                onExportRequested: root.openExport()
             }
 
             // Tableau's shelves: the mapping as permanent chrome, so "what is
@@ -676,7 +913,7 @@ Item {
                 currentIndex: root.app.rendererMode==="Qt 2-D" ? 2 : (root.app.rendererMode==="VTK / PBR" ? 1 : 0)
                 Item {
                     WindowContainer { anchors.fill:parent; window:root.app.viewportWindow }
-                    StatusPill { anchors{right:parent.right;bottom:parent.bottom;margins:12} text:"Rust / WGPU · persistent direct surface" }
+                    StatusPill { anchors{right:parent.right;bottom:parent.bottom;margins:12} text:"Native WGPU · persistent direct surface" }
                 }
                 Loader {
                     id:vtkLoader
@@ -706,6 +943,30 @@ Item {
                         visible: root.app.notebookLayout
                         active: root.app.notebookLayout
                         sourceComponent: notebookComponent
+                        // A LOADER THAT FAILS SAYS SO. Its sibling vtkLoader
+                        // below has had this since it shipped; this one did
+                        // not, and a Loader whose component will not build sets
+                        // status to Error, logs NOTHING, and leaves the middle
+                        // of the window empty. From the outside that is
+                        // indistinguishable from the notebook simply having no
+                        // figures in it - the same complaint this file already
+                        // records about a signal with no receiver.
+                        //
+                        // Not hypothetical. Adding `pragma ComponentBehavior:
+                        // Bound` to this file - which the linter asks for, and
+                        // which ScanPanel and NotebookCanvas both carry - puts
+                        // this Loader into exactly that state on Qt 6.4: the
+                        // component reports Ready with an empty errorString and
+                        // the Loader reports Error, with nothing logged
+                        // anywhere. The notebook view was simply absent. The
+                        // only way to find out was to read `status` from a
+                        // test, which is why this handler is here now and why
+                        // the pragma is not.
+                        onStatusChanged: {
+                            if (status === Loader.Error)
+                                root.app.notify("The notebook view could not be built. "
+                                                + "See the GraphVis startup log for QML details.")
+                        }
                     }
                     Component {
                         id: notebookComponent
@@ -716,6 +977,27 @@ Item {
                     anchors.fill: parent
                     visible: !root.app.notebookLayout
                     spacing: 4
+                // THE OPEN FIGURES, as tabs. Above the figure, below the
+                // panel header, which is where they were asked for.
+                //
+                // Foldable by its own caret and switchable from View, both
+                // remembered: a person who works on one figure at a time
+                // should not have to look at a strip that always says
+                // "Figure 1".
+                FigureTabBar {
+                    id: figureTabs
+                    Layout.fillWidth: true
+                    visible: root.app.figureTabsVisible
+                    model: figures
+                    currentIndex: root.figureIndex
+                    onSelected: (i) => root.selectFigure(i)
+                    onCloseRequested: (i) => root.closeFigure(i)
+                    onLockToggled: (i) => root.toggleFigureLock(i)
+                    onFloatToggled: (i) => root.toggleFigureFloat(i)
+                    onReordered: (from, to) => root.moveFigure(from, to)
+                    onAddRequested: root.addFigure()
+                }
+
                 // The optional colour-vision strip, above the figure it acts on.
                 //
                 // Off by default and not a default part of the toolbar: it used
@@ -724,7 +1006,7 @@ Item {
                 // View > Colour vision, and remembered.
                 ColourVisionBar {
                     app: root.app
-                    canvas: plot
+                    canvas: root.plot
                     visible: root.app.colourVisionToolbarVisible
                     Layout.fillWidth: true
                 }
@@ -747,98 +1029,68 @@ Item {
                                ? Math.min(parent.width - 48, (parent.height - 48) * 1.4)
                                : parent.width
                         height: figureBox.centred ? parent.height - 48 : parent.height
-                    PlotCanvas {
-                        id: plot
+                    // FIGURE ZERO. Always present, never destroyed, and the
+                    // reason `plot` below can never be null: fifty-two
+                    // bindings in this file read `plot.something`, and a
+                    // `plot` that is null while the tab bar is building its
+                    // items would break every one of them at startup - which
+                    // is exactly the class of silent breakage that cost a
+                    // morning yesterday.
+                    FigureCanvas {
+                        id: figure0
+                        app: root.app
+                        visible: root.figureIndex === 0
                         anchors.fill: parent
                         anchors.margins: 6
-                        arrowPath: root.app.activeArrowPath
-                        // The figure's own background, which need not be the
-                        // interface's. A plot going into a paper is white
-                        // whatever the person likes to work in.
-                        //   0 follow the theme   1 dark   2 light   3 white
-                        //   4 a colour the person picked
+                        // The figure this session was showing before it
+                        // restarted itself to change the scene graph. Empty
+                        // in every other case, and TAKEN rather than read, so
+                        // it cannot reapply itself over later work.
                         //
-                        // Case 4 takes its ink and its grid from the controller
-                        // rather than from a case written here, because both
-                        // are DERIVED from the background - see
-                        // AppController::figureForeground - so that a chosen
-                        // ground cannot end up carrying axis text nobody can
-                        // read.
-                        backgroundColor: {
-                            switch (root.app.figureTheme) {
-                            case 1: return "#111820"
-                            case 2: return "#f4f6f9"
-                            case 3: return "#ffffff"
-                            case 4: return root.app.figureBackground
-                            default: return Theme.background
-                            }
+                        // Deferred by a tick: the canvas has to have its
+                        // arrowPath and its columns before a state referring to
+                        // them means anything.
+                        //
+                        // Stays HERE rather than moving into FigureCanvas: it
+                        // restores the one figure that was open, so it belongs
+                        // to whichever figure the workspace calls that one, not
+                        // to every figure made from the component.
+                        Component.onCompleted: Qt.callLater(function() {
+                            var pending = root.app.takePendingFigureState()
+                            if (pending && Object.keys(pending).length > 0)
+                                figure0.applyFigureState(pending)
+                        })
+                    }
+
+                    // Figures one and up. Created on demand, hidden rather
+                    // than destroyed when another tab is current, because
+                    // destroying a canvas takes its engine, its mapping, its
+                    // camera, its zoom and its notes with it - the same
+                    // reasoning the notebook loader above already follows.
+                    Repeater {
+                        id: extraFigures
+                        model: Math.max(0, root.figureCount - 1)
+                        FigureCanvas {
+                            required property int index
+                            app: root.app
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            visible: root.figureIndex === index + 1
                         }
-                        foregroundColor: {
-                            switch (root.app.figureTheme) {
-                            case 1: return "#dbe6f0"
-                            case 2: case 3: return "#14181d"
-                            case 4: return root.app.figureForeground
-                            default: return Theme.text
-                            }
-                        }
-                        gridColor: {
-                            switch (root.app.figureTheme) {
-                            case 1: return "#26384f"
-                            case 2: return "#d3d9e2"
-                            case 3: return "#e2e6ec"
-                            case 4: return root.app.figureGridColour
-                            default: return Theme.border
-                            }
-                        }
-                        gridVisible: root.app.plotGridVisible
-                        gridDensity: root.app.plotGridDensity
-                        gridDensityY: root.app.plotGridDensityY
-                        pieLabels: root.app.plotPieLabels
-                        polarConvention: root.app.plotPolarConvention
-                        scaleLabelsVisible: root.app.plotScaleLabels
-                        fieldInterpolation: root.app.plotFieldInterpolation
-                        // The scattered estimator and its policies. -1 keeps
-                        // the grid-filling path above.
-                        fieldEstimator: root.app.plotFieldEstimator
-                        fieldExtrapolation: root.app.plotFieldExtrapolation
-                        fieldValuePolicy: root.app.plotFieldValuePolicy
-                        fieldResponseSpace: root.app.plotFieldResponseSpace
-                        fieldNeighbours: root.app.plotFieldNeighbours
-                        fieldIdwPower: root.app.plotFieldIdwPower
-                        fieldSmoothing: root.app.plotFieldSmoothing
-                        fieldFootprint: root.app.plotFieldFootprint
-                        fieldBridging: root.app.plotFieldBridging
-                        fieldBridgeMaxCells: root.app.plotFieldBridgeMaxCells
-                        fieldInvalidDisplay: root.app.plotFieldInvalidDisplay
-                        fieldKrigingVariogram: root.app.plotFieldKrigingVariogram
-                        fieldLoessFraction: root.app.plotFieldLoessFraction
-                        // The series palette follows the persisted plot setting,
-                        // never the theme - see components/ColourVisionBar.qml.
-                        colourVision: root.app.plotColourVision
-                        colourVisionPreview: root.app.plotColourVisionPreview
-                        // The field colour map and the full-render behaviour
-                        // belong to the person rather than to a figure, so they
-                        // are persisted on the controller and bound down here.
-                        // Assigned rather than bound in the other direction:
-                        // ColourMapSelector writes to app.plotColourMap, which
-                        // then reaches the canvas through this binding.
-                        colourMap: root.app.plotColourMap
-                        fullRenderPolicy: root.app.fullRenderPolicy
-                        fullRenderAskAfterSeconds: root.app.fullRenderAskAfterSeconds
                     }
                     // Placing and editing notes. Only the part that has to ask a
                     // person what a note says: the canvas stores and draws them,
                     // so the PDF export and the self-test need none of this.
-                    AnnotationLayer { canvas: plot }
+                    AnnotationLayer { canvas: root.plot }
                     // Bottom right of the figure. It used to have to sit above
                     // the floating control row to avoid landing on the Export
                     // button; with the controls in the header there is nothing
                     // below it to clear.
                     PreviewReadyNotice {
-                        canvas: plot
+                        canvas: root.plot
                         anchors {
-                            right: plot.right
-                            bottom: plot.bottom
+                            right: root.plot.right
+                            bottom: root.plot.bottom
                             rightMargin: 12; bottomMargin: 12
                         }
                     }
@@ -855,10 +1107,10 @@ Item {
                     // the other that one has finished - but sharing a corner
                     // means neither has to move when the other appears.
                     RenderProgressBadge {
-                        canvas: plot
+                        canvas: root.plot
                         anchors {
-                            right: plot.right
-                            bottom: plot.bottom
+                            right: root.plot.right
+                            bottom: root.plot.bottom
                             rightMargin: 12; bottomMargin: 12
                         }
                     }
@@ -871,7 +1123,7 @@ Item {
                     Layout.leftMargin: 6
                     Layout.rightMargin: 6
                     Layout.bottomMargin: 6
-                    text: plot.notice
+                    text: root.plot.notice
                     warning: true
                 }
                 }
@@ -887,8 +1139,25 @@ Item {
     ExportDialog {
         id: exportDialog
         app: root.app
-        canvas: plot
+        // THE FIGURE BEING EDITED, not the hidden single canvas.
+        //
+        // This was bound to `plot`, so in the Notebook layout - where the
+        // figure you are working on is whichever cell is current and `plot` is
+        // hidden - Export wrote out the invisible one.
+        canvas: root.canvas ? root.canvas : root.plot
     }
+
+    // (`openExport` used to be declared here, four levels inside this
+    // SplitView, where nothing outside the file could name it. It is on the
+    // root now - see the note there. The dialog stays: it centres on the
+    // window's overlay wherever it is declared.)
+    //
+    // The history the moved function's note refers to: there were four routes
+    // to Export and three of them were dead ends - the ribbon button and the
+    // command palette both just said "Use File > Save figure as...", and File >
+    // Save figure as... opened a bare file chooser with no size, no dpi and no
+    // format, a different and worse dialog from the one the header button
+    // opened. They all arrive at the one function now.
 
     // A second panel on the OPPOSITE edge, for the layouts that keep browsing
     // and editing visible at once rather than making them take turns. Figma's
@@ -918,14 +1187,11 @@ Item {
             MappingPanel {
                 app: root.app
                 canvas: root.canvas
-                onApplyRequested: {
-                    var t = root.targetCanvas("the column mapping")
-                    if (!t) return
-                    t.xColumn = xValue
-                    t.yColumns = yValue ? [yValue] : []
-                    t.zColumn = zValue ? zValue : ""
-                    t.colorColumn = colorValue ? colorValue : ""
-                }
+                // The same function the sidebar's mapping panel uses. These two
+                // panels are the same panel in two places, and they used to
+                // carry two copies of this block - which is how the sidebar
+                // gained Z and Colour and the docked one kept dropping them.
+                onApplyRequested: root.writeMapping(xValue, yValue, zValue, colorValue, y2Value)
             }
         }
         Component {

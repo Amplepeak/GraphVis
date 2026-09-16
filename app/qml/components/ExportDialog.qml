@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 // Everything about writing the figure out, in one place.
 //
 // There was one button that said "Export PDF" and wrote a 6 x 4 inch, 600 dpi
@@ -15,6 +16,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import GraphVis
 
 Popup {
@@ -37,6 +39,27 @@ Popup {
                                   || formats.currentText === "tif"
                                   || formats.currentText === "tiff"
                                   || formats.currentText === "bmp"
+    // The folder an export defaults to - the last one used, or
+    // ~/Documents/GraphVis/exports until there has been one. Held here rather
+    // than read from the controller on every binding so that Save as… can
+    // change it for this export without committing to it until it is written.
+    //
+    // DELIBERATELY NOT a binding to app.exportDirectory, and that is worth a
+    // line because it looks like one that has been forgotten. A binding here
+    // would be destroyed by the first Save as… anyway - that is what assigning
+    // to a bound property does - so declaring one would mean the property was
+    // live until the user touched it and dead afterwards, which is the worst
+    // of both and impossible to reason about from the declaration. Instead it
+    // is plain state with exactly one rule: set from the controller whenever
+    // the dialog opens, below.
+    property string folder: ""
+    readonly property string defaultStem:
+        (canvas && canvas.engine ? canvas.engine : "figure")
+            .replace(/[^A-Za-z0-9._-]+/g, "_")
+    readonly property string targetPath:
+        root.folder + "/" + (nameField.text.length > 0 ? nameField.text : root.defaultStem)
+        + "." + formats.currentText
+    readonly property bool willReplace: app.fileExists(root.targetPath)
     readonly property bool canBeTransparent: formats.currentText === "png"
                                           || formats.currentText === "webp"
                                           || formats.currentText === "tif"
@@ -291,6 +314,66 @@ Popup {
 
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
+            // --------------------------------------------------- where it goes
+            //
+            // WHICH WAS NEVER ASKED, AND NEVER SHOWN. Every export went to a
+            // hard-coded ~/Documents/GraphVis/exports under a name made from
+            // the engine, and silently replaced the previous file of the same
+            // engine and extension. "I exported it and I do not know where it
+            // went" is the correct reaction to a dialog that asks how many dots
+            // per inch and not where to put them.
+            //
+            // The folder is shown, it defaults to the last one used, and Save
+            // as… opens a real chooser. The file name is editable, because a
+            // name derived from the engine means every figure of the same kind
+            // lands on top of the last one.
+            Label {
+                text: "WHERE"
+                color: Theme.textMuted
+                font.pixelSize: 10
+                font.letterSpacing: 1
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                TextField {
+                    id: nameField
+                    Layout.fillWidth: true
+                    text: root.defaultStem
+                    selectByMouse: true
+                    placeholderText: "file name"
+                }
+                Label {
+                    text: "." + formats.currentText
+                    color: Theme.textSecondary
+                }
+                Button {
+                    text: "Save as…"
+                    onClicked: saveAs.open()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Label {
+                    Layout.fillWidth: true
+                    text: root.folder
+                    color: Theme.textMuted
+                    font.pixelSize: 10
+                    elide: Text.ElideMiddle
+                    // The whole path, for one that has been elided.
+                    ToolTip.visible: folderHover.hovered
+                    ToolTip.text: root.folder
+                    HoverHandler { id: folderHover }
+                }
+                Label {
+                    visible: root.willReplace
+                    text: "replaces a file already there"
+                    color: Theme.warning !== undefined ? Theme.warning : Theme.textSecondary
+                    font.pixelSize: 10
+                }
+            }
+
             // ----------------------------------------------------- summary
             RowLayout {
                 Layout.fillWidth: true
@@ -338,7 +421,10 @@ Popup {
     // drift apart in what they are given.
     function writeIt() {
         var ext = formats.currentText
-        var target = root.app.exportPath(root.canvas.engine, ext)
+        // The path the person can SEE in the dialog, not one computed again
+        // somewhere else. Two ideas of where the file goes is how a dialog
+        // comes to name one folder and write to another.
+        var target = root.targetPath
         var ok = false
         if (ext === "pdf")
             ok = root.canvas.exportPdf(target, root.widthIn, root.heightIn, root.dpi)
@@ -348,8 +434,43 @@ Popup {
             ok = root.canvas.exportRaster(target, root.pixelsWide, root.pixelsHigh,
                                           qualitySlider.value,
                                           root.canBeTransparent && transparentBox.checked)
-        root.app.notify(ok ? ("Exported " + target)
+        root.app.notify(ok ? ("Exported to " + target)
                            : (ext.toUpperCase() + " export failed"))
-        if (ok) root.close()
+        // Remembered only on success, and only after the write: a folder that
+        // could not be written to is not a folder to default to next time.
+        if (ok) {
+            root.app.rememberExportDirectory(root.folder)
+            root.close()
+        }
+    }
+
+    // Reset to the remembered folder each time the dialog opens, so a Save as…
+    // that was cancelled does not leave the next export pointing somewhere the
+    // person did not choose. This is the ONE place `folder` gets its value
+    // from the controller - see the declaration.
+    onOpened: root.folder = root.app.exportDirectory
+
+    // ...and once at creation, because the path row and the replace warning are
+    // bound to `folder` and are evaluated when the dialog's contents are built,
+    // which happens before onOpened. Without this they would flash an empty
+    // folder and ask fileExists() about a path with no directory in it.
+    Component.onCompleted: root.folder = root.app.exportDirectory
+
+    FileDialog {
+        id: saveAs
+        title: "Export the figure to…"
+        fileMode: FileDialog.SaveFile
+        currentFolder: root.app.suggestedExportUrl(root.defaultStem,
+                                                   formats.currentText)
+        onAccepted: {
+            var chosen = root.app.localPathOf(selectedFile)
+            var cut = Math.max(chosen.lastIndexOf("/"), chosen.lastIndexOf("\\"))
+            if (cut > 0) {
+                root.folder = chosen.substring(0, cut)
+                var base = chosen.substring(cut + 1)
+                var dot = base.lastIndexOf(".")
+                nameField.text = dot > 0 ? base.substring(0, dot) : base
+            }
+        }
     }
 }

@@ -27,6 +27,25 @@ Item {
     property bool headerVisible: true
     property bool floating: false
     onFloatableChanged: if (!root.floatable) root.floating = false
+    // FOLDED TO ITS OWN TITLE STRIP.
+    //
+    // GvGroupBox has folded since it was written, because a sidebar is four
+    // hundred pixels wide and the group you want is usually below the fold.
+    // The panels those groups sit INSIDE could not fold at all - so the way to
+    // get "Dataset and colours" out of the way of the Graph Library was to drag
+    // a splitter shut, which does not stay shut when the window is resized, or
+    // to tear the panel into a window, which is a bigger commitment than
+    // "not now".
+    //
+    // Same rule as the group boxes, one level up: click the caret and the panel
+    // is its header until it is clicked again.
+    property bool collapsible: true
+    property bool collapsed: false
+    // Restored rather than remembered as a number: a panel that is folded while
+    // floating would otherwise dock back at 26 pixels tall.
+    onFloatingChanged: if (root.floating) root.collapsed = false
+    readonly property int headerHeight: !root.headerVisible ? 0
+                                      : (headerActionRow.children.length > 0 ? 34 : 26)
     // Smaller than the window it came out of, and small enough to sit beside
     // it rather than over it. 820x620 was most of a laptop screen for a panel
     // holding six controls, so a torn-out dock buried the figure it was there
@@ -57,7 +76,6 @@ Item {
     property alias headerActions: headerActionRow.data
 
     implicitWidth: 240
-    implicitHeight: 240
 
     ColumnLayout {
         anchors.fill: parent
@@ -69,8 +87,7 @@ Item {
             // Tall enough for a combo box when the header carries controls, and
             // back to GraphVis 17's 26 px strip when it does not.
             visible: root.headerVisible
-            implicitHeight: !root.headerVisible ? 0
-                          : (headerActionRow.children.length > 0 ? 34 : 26)
+            implicitHeight: root.headerHeight
             color: Theme.surfaceAlt
             border.color: Theme.border
 
@@ -184,6 +201,26 @@ Item {
                     color: Theme.textSecondary
                 }
                 ToolButton {
+                    id: foldButton
+                    // Not while floating: a window folded to a title bar is a
+                    // window you cannot get anything back out of.
+                    visible: root.collapsible && !root.floating
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    ToolTip.visible: foldButton.hovered
+                    ToolTip.text: root.collapsed ? "Unfold " + root.title
+                                                 : "Fold " + root.title + " away"
+                    onClicked: root.collapsed = !root.collapsed
+                    contentItem: Label {
+                        // Points the way it will go, which is the only thing
+                        // that tells a caret from a decoration.
+                        text: root.collapsed ? "▸" : "▾"
+                        color: Theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                ToolButton {
                     visible: root.floatable
                     implicitWidth: 26
                     implicitHeight: 22
@@ -206,6 +243,11 @@ Item {
             id: dockedSlot
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // Hidden rather than merely zero-height: a clipped item is still
+            // under the pointer and goes on taking clicks and wheel events from
+            // whatever the person can actually see - the same reason
+            // GvGroupBox hides its content item rather than trusting clip.
+            visible: !root.collapsed
 
             Label {
                 anchors.centerIn: parent
@@ -239,6 +281,48 @@ Item {
 
         Item { id: floatSlot; anchors.fill: parent }
     }
+
+    // FOLDING HAS TO REACH THE LAYOUT, or the panel keeps its share of the
+    // split and folds into empty space.
+    //
+    // Through Binding with `when`, not by assigning the attached properties
+    // directly: every use site already binds its own SplitView.preferredHeight
+    // and minimumHeight, and a plain assignment here would break those
+    // bindings permanently - the panel would never get its size back on
+    // unfolding. RestoreBindingOrValue puts the use site's binding back the
+    // moment this one stops applying.
+    //
+    // Only in a VERTICAL split. Folding is a vertical idea - the header runs
+    // across the top - so in a horizontal split the panel gives up its content
+    // and keeps its column, which is the honest result rather than a title
+    // squashed into a 26 px column.
+    readonly property bool foldingTheSplit: root.collapsed && !root.floating
+        && root.SplitView.view !== null
+        && root.SplitView.view.orientation === Qt.Vertical
+    Binding {
+        target: root
+        property: "SplitView.maximumHeight"
+        value: root.headerHeight
+        when: root.foldingTheSplit
+        restoreMode: Binding.RestoreBindingOrValue
+    }
+    Binding {
+        target: root
+        property: "SplitView.minimumHeight"
+        value: root.headerHeight
+        when: root.foldingTheSplit
+        restoreMode: Binding.RestoreBindingOrValue
+    }
+    // The same for a plain ColumnLayout, where the panel is sized by Layout
+    // attached properties instead.
+    Binding {
+        target: root
+        property: "Layout.maximumHeight"
+        value: root.headerHeight
+        when: root.collapsed && !root.floating && root.SplitView.view === null
+        restoreMode: Binding.RestoreBindingOrValue
+    }
+    implicitHeight: root.collapsed && !root.floating ? root.headerHeight : 240
 
     // The content lives in exactly one place at a time. anchors.fill re-resolves
     // against whichever slot is the current parent, so no manual geometry.

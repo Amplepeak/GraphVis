@@ -37,6 +37,12 @@ NAME = "name"            # a column name, passed through as a string
 NAMES = "names"          # a list of column names
 FRAME = "frame"          # the whole DataFrame
 VALUE = "value"          # a JSON value passed straight through
+# A FILE ON DISK, passed through exactly as VALUE is - the distinction is
+# for the interface, not for the dispatch. `figure_parity` wants two images
+# and the panel built a text box for each, so reaching a finished feature
+# meant typing an absolute path from memory. A field declared PATH gets a
+# file chooser instead, and the registry stays the one place that says so.
+PATH = "path"
 FRAME_COLUMNS = "frame_columns"   # the frame narrowed to the named columns
 
 
@@ -188,8 +194,6 @@ class OperationError(ValueError):
 
 
 def _column(frame, name, *, required):
-    import numpy as np
-
     if name in (None, ""):
         if required:
             raise OperationError("this operation needs a column to be chosen")
@@ -201,8 +205,6 @@ def _column(frame, name, *, required):
 
 def bind(op: Op, frame, req: dict) -> dict:
     """The keyword arguments for one call, built from the request."""
-    import numpy as np
-
     kwargs: dict[str, Any] = {}
     for param, spec in op.args.items():
         key = spec.key or param
@@ -250,7 +252,8 @@ def bind(op: Op, frame, req: dict) -> dict:
                 raise OperationError(f"columns not in this dataset: {', '.join(missing)}")
             kwargs[param] = list(names)
             continue
-        # VALUE
+        # VALUE and PATH. A path is a value as far as the call is concerned;
+        # only the interface treats them differently.
         if raw is None:
             if spec.default is not None:
                 kwargs[param] = spec.default
@@ -340,9 +343,12 @@ def catalogue() -> list[dict]:
     for op in REGISTRY.values():
         fields = [{"key": spec.key or param,
                    "hint": spec.hint,
-                   "required": True}
+                   "required": True,
+                   # Says which control to build, not what to do with the
+                   # answer. See PATH.
+                   "path": spec.kind == PATH}
                   for param, spec in op.args.items()
-                  if spec.kind == VALUE and spec.required]
+                  if spec.kind in (VALUE, PATH) and spec.required]
         out.append({"id": op.name, "label": op.summary, "needs": list(op.needs),
                     "group": op.group, "fields": fields})
     return out
@@ -481,6 +487,30 @@ def _ops() -> list[Op]:
             "bounds": Arg(VALUE), "bootstrap": Arg(VALUE),
             "random_state": Arg(VALUE)},
            "Fit one registered model, with bootstrap intervals", ("x", "y"), "Fitting"))
+    # A FORMULA THE PERSON TYPES. `CurveFittingEngine.custom` was complete and
+    # unreachable: it takes a callable and a JSON request cannot carry one. The
+    # adapter parses the text with the same validated SymPy parser the function
+    # plots use, so this exposes a fit rather than an eval.
+    add(Op("fit_custom", "graphvis_science.adapters:fit_custom_formula",
+           {"x": Arg(COLUMN, "x"), "y": Arg(COLUMN, "y"),
+            "formula": Arg(VALUE, "formula", required=True,
+                           hint='a formula in x and your parameters, '
+                                'e.g. a*exp(-k*x)+c'),
+            "parameters": Arg(VALUE, "parameters", required=True,
+                              hint='the names to fit, e.g. ["a","k","c"]'),
+            "initial": Arg(VALUE), "bounds": Arg(VALUE)},
+           "Fit a formula you type", ("x", "y"), "Fitting"))
+    # Re-plot a published figure from your own data and get a measured
+    # difference rather than an opinion. The metrics existed and nothing
+    # called them.
+    add(Op("figure_parity", "graphvis_science.adapters:figure_parity",
+           {"reference_image": Arg(PATH, "reference_image", required=True,
+                                   hint="the published figure, as an image"),
+            "candidate_image": Arg(PATH, "candidate_image", required=True,
+                                   hint="your own export of the same figure"),
+            "reference_values": Arg(VALUE), "candidate_values": Arg(VALUE),
+            "relative_tolerance": Arg(VALUE)},
+           "Compare a re-plot against the figure it came from", (), "Literature"))
     add(Op("global_linear", "graphvis_science.adapters:global_linear_pairs",
            {"datasets": Arg(VALUE, "datasets", required=True,
                                 hint='[{"x": [...], "y": [...]}, ...]'),

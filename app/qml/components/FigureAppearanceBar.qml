@@ -56,9 +56,17 @@ ColumnLayout {
     // The map the figure is actually being PAINTED in, when a colour-vision
     // mode has replaced the chosen one. Silence here is what made the setting
     // look broken, so the substitution is stated where the map is chosen.
+    //
+    // NOT SHOWN while custom colours are in use, because it would not be true:
+    // the painter takes custom colours ahead of the map and never consults the
+    // map at all, so "drawn in Cividis" described a map that was not on the
+    // figure. That is worse than saying nothing - it is the panel and the
+    // picture disagreeing, in the one place a person looks to find out which
+    // colours they are getting.
     Label {
         Layout.fillWidth: true
         visible: root.canvas !== null
+                 && !root.canvas.usingCustomColours
                  && root.canvas.effectiveColourMap !== root.canvas.colourMap
         wrapMode: Text.WordWrap
         font.pixelSize: 9
@@ -67,6 +75,17 @@ ColumnLayout {
               ? "Drawn in " + root.canvas.effectiveColourMap + " for the colour-vision "
                 + "setting. Your choice is kept."
               : ""
+    }
+
+    // And what IS true instead: the map is not painting this figure.
+    Label {
+        Layout.fillWidth: true
+        visible: root.canvas !== null && root.canvas.usingCustomColours
+        wrapMode: Text.WordWrap
+        font.pixelSize: 9
+        color: Theme.warning
+        text: "Your own colours are painting this figure, so the map above is not "
+            + "in use and a colour-vision mode cannot reach it."
     }
 
     // How a pie or donut names its slices. Shown only on those two engines:
@@ -122,6 +141,32 @@ ColumnLayout {
                         + "compass, a stereonet. A polar line or scatter is "
                         + "mathematical: zero to the right, increasing anticlockwise. "
                         + "Neither is right for every figure, so this is yours to set."
+        }
+    }
+
+    // What a legend does with a label too long for its box. Not conditional on
+    // the engine: any figure that names more than one series can hit it.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 8
+        Label {
+            text: "Long legend labels"
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeSmall
+        }
+        ComboBox {
+            id: legendLabelBox
+            Layout.fillWidth: true
+            Layout.maximumWidth: 260
+            model: root.app.plotLegendLabelNames
+            currentIndex: root.app.plotLegendLabels
+            onActivated: root.app.plotLegendLabels = legendLabelBox.currentIndex
+            ToolTip.visible: legendLabelBox.hovered
+            ToolTip.text: "A legend box is capped at a third of the plot width, so a "
+                        + "long name has to give way somewhere. Shortening keeps the "
+                        + "box small and loses the end of the name; wrapping keeps the "
+                        + "whole name and grows the box downward. Which one is right "
+                        + "depends on your labels, so it is yours to set."
         }
     }
 

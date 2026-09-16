@@ -32,24 +32,64 @@ RECORD = {
 
 
 # ------------------------------------------------------------- citation styles
+# Styles that produce the SAME reference-list entry, by design rather than by
+# accident. Each pair is a documented relationship, not a bug:
+#
+#   ama / jama                     JAMA follows the AMA Manual of Style.
+#   nlm / vancouver                Vancouver IS the ICMJE/NLM reference format.
+#   cse-citation-name / -sequence  The two CSE numeric systems differ in how the
+#                                  reference LIST is ordered, not in how one
+#                                  entry is written.
+#   alwd / bluebook                ALWD deliberately matches Bluebook citation
+#                                  form for a journal article.
+#
+# Named here so the "every style is distinct" check can still catch two rows
+# that collide because one was copied and not finished - which is the failure
+# the original four-style version of this test was written for.
+SAME_BY_DESIGN = (
+    frozenset({"ama", "jama"}),
+    frozenset({"nlm", "vancouver"}),
+    frozenset({"cse-citation-name", "cse-citation-sequence"}),
+    frozenset({"alwd", "bluebook"}),
+)
+
+
 def test_every_style_produces_a_different_string() -> None:
-    """The regression test. One output for four styles was the bug."""
+    """The regression test. One output for four styles was the bug.
+
+    It is now fifty-one styles from one table, so the risk has changed shape:
+    not a style argument that is ignored, but a row copied from its neighbour
+    and not finished. Either way two styles come out identical, and either way
+    this fails - except for the pairs above, which are identical on purpose.
+    """
     rendered = {s: to_text(RECORD, s) for s in STYLES if s != "bibtex"}
-    assert len(set(rendered.values())) == len(rendered), rendered
+    groups: dict[str, set] = {}
+    for key, text in rendered.items():
+        groups.setdefault(text, set()).add(key)
+    unexpected = [sorted(keys) for keys in groups.values()
+                  if len(keys) > 1 and frozenset(keys) not in SAME_BY_DESIGN]
+    assert not unexpected, (
+        f"these styles render identically and are not a documented pair: "
+        f"{unexpected}")
 
 
 def test_apa_puts_the_year_in_brackets_after_the_authors() -> None:
     out = to_text(RECORD, "apa")
     assert out.startswith("Bach, J. S., & Smith, J. (2024).")
-    assert "49(3), 101-115" in out
+    # An EN DASH in the page range. APA sets one, and a hyphen there is the
+    # commonest thing a copy editor changes back.
+    assert "49(3), 101\u2013115" in out
     assert out.endswith("https://doi.org/10.1000/xyz")
 
 
 def test_ieee_puts_initials_first_and_the_title_in_quotes() -> None:
     out = to_text(RECORD, "ieee")
-    assert out.startswith('J. S. Bach and J. Smith, "')
-    assert "vol. 49" in out and "no. 3" in out and "pp. 101-115" in out
-    assert out.rstrip().endswith("2024.")
+    # No comma before "and" with exactly two authors: a serial comma needs a
+    # series. IEEE was rendering "J. S. Bach, and J. Smith" when the flag that
+    # asks for the comma in a list of three was applied to a list of two.
+    assert out.startswith("J. S. Bach and J. Smith, \u201c")
+    assert "vol. 49" in out and "no. 3" in out and "pp. 101\u2013115" in out
+    assert out.rstrip().endswith("doi: 10.1000/xyz.")
 
 
 def test_nature_puts_the_year_last_in_brackets() -> None:
@@ -61,8 +101,9 @@ def test_nature_puts_the_year_last_in_brackets() -> None:
 def test_harvard_quotes_the_title_and_uses_pp() -> None:
     out = to_text(RECORD, "harvard")
     assert "(2024)" in out
-    assert "'Coupling dark fermentation and microbial electrolysis'" in out
-    assert "pp. 101-115" in out
+    # Typographic single quotes, which is what British Harvard sets.
+    assert "\u2018Coupling dark fermentation and microbial electrolysis\u2019" in out
+    assert "pp. 101\u2013115" in out
 
 
 def test_initials_cover_every_forename() -> None:
@@ -71,8 +112,14 @@ def test_initials_cover_every_forename() -> None:
 
 
 def test_an_unknown_style_is_refused() -> None:
+    """A name that is not in the table is refused, not quietly formatted.
+
+    This used to pass "vancouver", which was a good choice when four styles
+    were understood and is a bad one now that Vancouver is among them - a test
+    for "unknown" has to name something that will stay unknown.
+    """
     with pytest.raises(CitationError, match="(?i)unknown citation style"):
-        to_text(RECORD, "vancouver")
+        to_text(RECORD, "not-a-real-style")
 
 
 # ------------------------------------------------------------------- escaping

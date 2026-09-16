@@ -12,7 +12,6 @@ peer review, because a plot of pressure against temperature looks fine.
 from __future__ import annotations
 
 import re
-from typing import Any
 
 _UNIT_IN_LABEL = re.compile(r"(?:\[([^\]]+)\]|\(([^()]+)\))\s*$")
 

@@ -22,9 +22,11 @@ Item {
     // underneath needs every press, including the one that places a note.
     visible: root.canvas.annotating || editor.visible
 
-    // Where the editor sits, and which note it is editing (-1 for a new one).
-    property real placeX: 0
-    property real placeY: 0
+    // Which note is being edited (-1 for a new one), and where in DATA space
+    // it sits. There were placeX/placeY here for positioning the editor at the
+    // pointer; nothing ever read them, so the editor has always been placed by
+    // its own anchors and they were removed rather than left to imply
+    // behaviour that does not exist.
     property real dataX: 0
     property real dataY: 0
     property int editingIndex: -1
@@ -34,10 +36,6 @@ Item {
         function onAnnotationRequested(x, y) {
             root.dataX = x
             root.dataY = y
-            // The pointer position, not the data position: the editor is a
-            // piece of interface and belongs where the person is looking.
-            root.placeX = Math.max(4, Math.min(root.width - field.width - 4,
-                                               root.canvas.mapToItem(root, 0, 0).x + 0))
             root.editingIndex = -1
             editor.open()
         }

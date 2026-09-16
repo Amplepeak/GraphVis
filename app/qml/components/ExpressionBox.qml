@@ -35,8 +35,13 @@ ColumnLayout {
             || e === "Implicit Surface" || e === "Implicit Function") return "x and y"
         return "x"
     }
-    readonly property bool parametric: root.canvas
-                                       && String(root.canvas.engine || "") === "Function 3D Parametric"
+    // !!( ), because `canvas` is a var that starts null and `a && b` yields A
+    // when A is falsy - so before the canvas is wired this assigned null into a
+    // bool. Third instance of that class; the first was found by the build
+    // report from the running program, this one by the passive audit.
+    readonly property bool parametric:
+        !!(root.canvas
+           && String(root.canvas.engine || "") === "Function 3D Parametric")
 
     RowLayout {
         Layout.fillWidth: true
@@ -139,7 +144,7 @@ ColumnLayout {
     // What is wrong, from the compiler rather than from a guess here.
     Label {
         Layout.fillWidth: true
-        visible: root.canvas && String(root.canvas.expressionError || "") !== ""
+        visible: !!(root.canvas && String(root.canvas.expressionError || "") !== "")
         text: root.canvas ? String(root.canvas.expressionError || "") : ""
         color: Theme.warning
         font.pixelSize: 10
@@ -147,8 +152,8 @@ ColumnLayout {
     }
     Label {
         Layout.fillWidth: true
-        visible: root.canvas && String(root.canvas.expressionError || "") === ""
-                 && String(root.canvas.expression || "").trim() === ""
+        visible: !!(root.canvas && String(root.canvas.expressionError || "") === ""
+                    && String(root.canvas.expression || "").trim() === "")
         text: "Empty draws the engine's example formula, so there is always "
             + "something on screen to edit."
         color: Theme.textMuted

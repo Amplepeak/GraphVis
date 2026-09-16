@@ -8,6 +8,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import GraphVis
 
 // The Analysis tab.
@@ -321,7 +322,7 @@ PanelScroll {
                 delegate: ItemDelegate {
                     required property var modelData
                     Layout.fillWidth: true
-                    highlighted: root.selected && root.selected.id === modelData.id
+                    highlighted: !!(root.selected && root.selected.id === modelData.id)
                     text: modelData.label
                     onClicked: {
                         root.selected = modelData
@@ -364,11 +365,41 @@ PanelScroll {
                         text: field.modelData.key
                         color: Theme.textSecondary; font.pixelSize: 11
                     }
-                    TextField {
+                    RowLayout {
                         Layout.fillWidth: true
-                        placeholderText: field.modelData.hint
-                        text: root.fieldValues[field.modelData.key] || ""
-                        onTextChanged: root.setField(field.modelData.key, text)
+                        spacing: 6
+                        TextField {
+                            Layout.fillWidth: true
+                            placeholderText: field.modelData.hint
+                            text: root.fieldValues[field.modelData.key] || ""
+                            onTextChanged: root.setField(field.modelData.key, text)
+                        }
+                        // A FIELD THAT WANTS A FILE GETS A FILE CHOOSER.
+                        //
+                        // `figure_parity` was registered, catalogued and listed
+                        // here, and still out of reach: both its inputs are
+                        // images on disk, and the only way to give it one was to
+                        // type an absolute path from memory into a text box. The
+                        // registry says which fields are paths - see PATH in
+                        // operations.py - so this is one control built from that
+                        // answer rather than a list of field names kept here.
+                        Button {
+                            id: browse
+                            visible: field.modelData.path === true
+                            text: "Choose…"
+                            onClicked: chooser.open()
+                            ToolTip.visible: browse.hovered
+                            ToolTip.text: "Pick the file for " + field.modelData.key
+                        }
+                    }
+                    FileDialog {
+                        id: chooser
+                        title: "Choose the file for " + field.modelData.key
+                        // The text box is still the value. This writes into it
+                        // rather than keeping a second copy, so a path that was
+                        // typed and one that was chosen are the same thing.
+                        onAccepted: root.setField(field.modelData.key,
+                                                  root.app.localPathOf(selectedFile))
                     }
                 }
             }

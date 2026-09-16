@@ -32,6 +32,10 @@ PanelScroll {
     property string yValue: ""
     property string zValue: ""
     property string colorValue: ""
+    // The column drawn against the right-hand axis, or empty for one y axis.
+    // Optional in a way the other four are not: X and Y are what a figure is,
+    // and a second ordinate is something you ask for.
+    property string y2Value: ""
 
     // The staged selection, keyed by axis. There used to be a second, hidden
     // set of combo boxes holding the committed values, and only each row's own
@@ -55,6 +59,7 @@ PanelScroll {
         root.yValue = root.stagedFor("y")
         root.zValue = root.stagedFor("z")
         root.colorValue = root.stagedFor("c")
+        root.y2Value = root.stagedFor("y2")
     }
     // A new dataset has different columns, so the staged mapping starts again
     // from the first four rather than pointing at columns that no longer exist.
@@ -64,9 +69,31 @@ PanelScroll {
             "x": cols.length > 0 ? cols[0] : "",
             "y": cols.length > 1 ? cols[1] : (cols.length > 0 ? cols[0] : ""),
             "z": cols.length > 2 ? cols[2] : "",
-            "c": cols.length > 3 ? cols[3] : ""
+            "c": cols.length > 3 ? cols[3] : "",
+            // NOT filled from the columns. A second ordinate changes what the
+            // figure claims - two quantities, two scales, and a reader who has
+            // to check which axis each line belongs to - so it appears only
+            // when someone asks for it, unlike the four roles above, which a
+            // figure needs before it can draw anything at all.
+            "y2": ""
         }
-        root.commit()
+        // apply(), NOT commit(). commit() only copies the staged values into
+        // the xValue/yValue/zValue/colorValue properties the combo boxes show;
+        // applyRequested() is what carries them to the canvas.
+        //
+        // So this filled the four dropdowns with the first four columns of a
+        // newly opened dataset and never told the figure about any of them. The
+        // panel read "reads 3 columns and 0 are mapped" while displaying four
+        // column names, which is precisely as contradictory as it sounds, and
+        // the figure drew from an empty mapping until the person happened to
+        // change a dropdown by hand - at which point stage() called apply() and
+        // everything started working, with nothing to suggest why.
+        //
+        // With no dataset there is nothing to apply and nowhere to apply it, so
+        // that case still only commits: applying then would put "the figure is
+        // not ready yet" in the status bar every time the panel is built.
+        if(cols.length > 0) root.apply()
+        else root.commit()
     }
     Component.onCompleted: root.resetStaging()
     Connections {
@@ -118,7 +145,7 @@ PanelScroll {
         Layout.fillWidth: true
         Layout.leftMargin: 8
         Layout.rightMargin: 8
-        visible: root.canvas && root.canvas.usesExpression
+        visible: !!(root.canvas && root.canvas.usesExpression)
         ColumnLayout {
             anchors.fill: parent
             ExpressionBox { canvas: root.canvas; Layout.fillWidth: true }
@@ -145,20 +172,20 @@ PanelScroll {
         // that contradicts what the user can see is worse than no warning: it
         // teaches them to stop believing the panel. On these engines the
         // formula IS the data and no column is read.
-        visible: root.canvas && root.canvas.columnsRequired > 0
-                 && !root.canvas.usesExpression
+        visible: !!(root.canvas && root.canvas.columnsRequired > 0 && !root.canvas.usesExpression)
         implicitHeight: needLabel.implicitHeight + 14
         radius: Theme.radius
-        readonly property int mapped: {
-            if (!root.canvas) return 0
-            var n = 0
-            if (String(root.canvas.xColumn || "") !== "") ++n
-            if (root.canvas.yColumns && root.canvas.yColumns.length > 0) n += root.canvas.yColumns.length
-            if (String(root.canvas.zColumn || "") !== "") ++n
-            if (String(root.canvas.colorColumn || "") !== "") ++n
-            return n
-        }
-        readonly property bool short_: root.canvas && mapped < root.canvas.columnsRequired
+        // Asked of the canvas, not recounted here. This was four separate
+        // reads of xColumn, yColumns, zColumn and colorColumn assembled into a
+        // second opinion, and it printed "0 are mapped" beside a heat map drawn
+        // correctly from four columns.
+        readonly property int mapped: root.canvas ? root.canvas.columnsMapped : 0
+        // !!( ), because `a && b` yields A when A is falsy and `canvas`
+        // defaults to null - so before the canvas is wired this assigned null
+        // into a bool. The same fault as GraphLibrary's unverified flag, found
+        // by the same sweep after the build report reported that one.
+        readonly property bool short_: !!(root.canvas
+                                          && mapped < root.canvas.columnsRequired)
         color: short_ ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.14)
                       : Qt.rgba(Theme.positive.r, Theme.positive.g, Theme.positive.b, 0.10)
         border.color: short_ ? Theme.warning : Theme.positive
@@ -219,17 +246,37 @@ PanelScroll {
         }
     }
 
+    // What "none" reads as in the one row that allows it. A literal rather than
+    // an empty entry, because an unlabelled blank line in a dropdown looks like
+    // a rendering fault.
+    readonly property string noneLabel: "— none —"
+
     Repeater {
-        model:[{label:"X axis",key:"x"},{label:"Y axis",key:"y"},{label:"Z axis",key:"z"},{label:"Colour / response",key:"c"}]
+        model:[{label:"X axis",key:"x",optional:false},
+               {label:"Y axis",key:"y",optional:false},
+               {label:"Z axis",key:"z",optional:false},
+               {label:"Colour / response",key:"c",optional:false},
+               // THE RIGHT-HAND ORDINATE. Last, because it is the one role a
+               // figure does not need, and offered only where the engine will
+               // actually honour it - see PlotCanvas::supportsSecondaryAxis,
+               // which measures that rather than keeping a list of engines.
+               {label:"Right-hand Y axis",key:"y2",optional:true}]
         delegate:ColumnLayout {
             id: axis
             required property var modelData
-            // The formula engines read no columns, so these four selectors do
+            // Named so a test can find this row and ask whether it is showing.
+            // "The control appears only where it works" is a claim about a
+            // specific row, and there is no other way to make it from outside.
+            objectName: "mapRow_" + axis.modelData.key
+            // The formula engines read no columns, so these selectors do
             // nothing at all there - and they keep showing whichever columns
             // were last mapped from a real dataset, which reads as though the
             // curve were being drawn from them. A control that cannot affect
-            // the figure should not be offered for it.
+            // the figure should not be offered for it. The same rule is what
+            // hides the second ordinate on the engines that ignore it.
             visible: !(root.canvas && root.canvas.usesExpression)
+                     && (!axis.modelData.optional
+                         || (root.canvas && root.canvas.supportsSecondaryAxis))
             Layout.fillWidth:true;Layout.leftMargin:10;Layout.rightMargin:10
             Label{text:axis.modelData.label;color:Theme.textSecondary}
             RowLayout {
@@ -237,11 +284,22 @@ PanelScroll {
                 ComboBox {
                     id: combo
                     Layout.fillWidth: true
-                    model: root.app.activeColumns
+                    // An optional role needs a way back to "no second axis".
+                    // Without one, choosing a column would be a decision the
+                    // person could not undo without reloading the dataset.
+                    model: axis.modelData.optional
+                           ? [root.noneLabel].concat(root.app.activeColumns || [])
+                           : root.app.activeColumns
                     // Bound to the staged value, so the box always shows
                     // what Apply would commit - including after a reset.
-                    currentIndex: (root.app.activeColumns || []).indexOf(root.stagedFor(axis.modelData.key))
-                    onActivated: root.stage(axis.modelData.key, currentText)
+                    currentIndex: {
+                        var staged = root.stagedFor(axis.modelData.key)
+                        var cols = root.app.activeColumns || []
+                        if (!axis.modelData.optional) return cols.indexOf(staged)
+                        return staged === "" ? 0 : cols.indexOf(staged) + 1
+                    }
+                    onActivated: root.stage(axis.modelData.key,
+                                            currentText === root.noneLabel ? "" : currentText)
                 }
             }
         }
@@ -284,7 +342,7 @@ PanelScroll {
     // different fault from the camera not working and now looks different too.
     GvGroupBox {
         title:"View angle"
-        visible:root.canvas && root.canvas.view3D
+        visible: !!(root.canvas && root.canvas.view3D)
         Layout.fillWidth:true;Layout.margins:8
         ColumnLayout {
             anchors.fill:parent
@@ -367,7 +425,7 @@ PanelScroll {
     // entirely on the engines that declare none, which is nearly all of them.
     GvGroupBox {
         title:"Engine settings"
-        visible:root.canvas && root.canvas.engineParameters.length>0
+        visible: !!(root.canvas && root.canvas.engineParameters.length>0)
         Layout.fillWidth:true;Layout.margins:8
         ColumnLayout {
             anchors.fill:parent

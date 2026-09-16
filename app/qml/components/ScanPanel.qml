@@ -10,17 +10,45 @@ pragma ComponentBehavior: Bound
 // Runs GraphVis 17's intelligent_scan over the active dataset through the
 // optional Python science service, and turns each recommendation into a
 // one-click action: stage that catalogue graph with the axis mapping the
-// scanner chose. Ported behaviour, including the thinking budget - a longer
-// budget widens column breadth and pair sampling rather than just waiting.
+// scanner chose. Ported behaviour, including the thinking time maximum - a
+// longer maximum widens column breadth and pair sampling rather than just
+// waiting. It is called a maximum rather than a budget because it is a ceiling
+// the scan stops at, not an allowance it sets out to spend: a scan that runs
+// out of things to try returns early with the best answer it found.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import GraphVis
 
 ColumnLayout {
     id: root
     required property var app
     signal recommendationChosen(string graph, var mappings)
+
+    // THE RESULTS LIST CAN LEAVE THE SIDEBAR.
+    //
+    // Reported as "need to be bigger to see more graphs here". In a 360 px
+    // sidebar this list gets whatever is left after the controls above it,
+    // which is three cards at a time out of a scan that routinely returns
+    // twenty or more - and the note next door explains why it cannot simply be
+    // given more: a layout handed less than its children's minimum does not
+    // shrink them, it draws them over the panel below.
+    //
+    // THE LIST MOVES, IT IS NOT COPIED. Same design as FigureWindow, and for
+    // the reason recorded there at length: a second list built from the same
+    // model looks identical until something changes, and then one of them is
+    // showing a scan that no longer exists. `parent` is a BINDING here, and
+    // `anchors.fill: parent` follows it, so the one live ListView fills the
+    // slot in the sidebar while it lives there and fills the window while it
+    // lives here, with nothing to keep in step by hand.
+    property bool listFloating: false
+    // The one list, named so a test can hold it and watch where it goes. There
+    // is no other way to ask: once it is floating it is a child of a Window's
+    // content item and no longer anywhere under this panel, so a search of the
+    // panel's children finds nothing and "it was copied" and "it was moved"
+    // look the same from outside.
+    readonly property alias resultsList: recList
 
     spacing: Theme.gap
 
@@ -120,7 +148,10 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.gap
-        Label { text: "Thinking budget"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
+        // "Thinking time maximum", not "budget". A budget reads as an
+        // allowance that will be spent; this is a ceiling the scanner stops
+        // at, and it returns the best answer found so far whenever it stops.
+        Label { text: "Thinking time maximum"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
         ComboBox {
             id: budgetBox
             Layout.fillWidth: true
@@ -153,7 +184,7 @@ ColumnLayout {
             onClicked: root.app.scanDataset(root.budgets[budgetBox.currentIndex].seconds,
                                             useLiterature.checked)
         }
-        // A scan of the same data, budget and paper is cached and comes back
+        // A scan of the same data, maximum and paper is cached and comes back
         // instantly. Rescan forces the work to be redone.
         Button {
             text: "Rescan"
@@ -176,6 +207,17 @@ ColumnLayout {
             ToolTip.visible: hovered
             ToolTip.text: "Delete every cached scan for this project"
             onClicked: root.app.clearScanCache()
+        }
+        Button {
+            text: root.listFloating ? "⇲" : "⇱"
+            implicitWidth: 34
+            checkable: true
+            checked: root.listFloating
+            ToolTip.visible: hovered
+            ToolTip.text: root.listFloating
+                          ? "Put the results back in the sidebar"
+                          : "Open the results in a window you can move and resize"
+            onClicked: root.listFloating = !root.listFloating
         }
     }
 
@@ -205,7 +247,11 @@ ColumnLayout {
         }
     }
 
-    ListView {
+    // THE SLOT THE LIST SITS IN while it is docked. It holds the place in this
+    // layout whether or not the list is in it, which is what keeps the controls
+    // above from jumping up the panel the moment the window opens.
+    Item {
+        id: listSlot
         Layout.fillWidth: true
         Layout.fillHeight: true
         // Low enough that the whole block fits inside the share the library
@@ -213,80 +259,137 @@ ColumnLayout {
         // taller than its own allowance, so the buttons above it were pushed
         // out of the panel instead of the list shrinking.
         Layout.minimumHeight: 70
-        clip: true
-        spacing: 4
-        model: root.app.scanRecommendations
-        ScrollBar.vertical: ScrollBar {}
 
-        delegate: Rectangle {
-            id: rec
-            required property var modelData
-            width: ListView.view.width
-            height: body.implicitHeight + 14
-            radius: Theme.radius
-            color: hover.hovered ? Theme.surfaceAlt : "transparent"
-            border.color: hover.hovered ? Theme.borderStrong : Theme.border
+        Label {
+            anchors.centerIn: parent
+            width: parent.width - 16
+            visible: root.listFloating
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeSmall
+            text: "The results are in their own window."
+        }
 
-            ColumnLayout {
-                id: body
-                anchors.fill: parent
-                anchors.margins: 7
-                spacing: 2
+        // BOTH OF THESE LIVE IN THE SLOT, not beside it in the ColumnLayout.
+        //
+        // A layout manages its own children, and writing the list as a child of
+        // one - even a list that reparents itself away on its very next line -
+        // gives the layout an item it is entitled to position and size.
+        // The linter reports exactly that - "Detected anchors on an item that
+        // is managed by a layout. This is undefined behavior." - and it came
+        // out as three warnings for one mistake. `listSlot` is a plain Item, so
+        // what is written inside it is nobody else's business.
+        //
+        // (The tool's name is left out of this comment on purpose: a comment
+        // that opens with it is read as a lint DIRECTIVE, and every word after
+        // it came back as "unknown category".)
+        //
+        // The window the list moves into. Built with the panel and shown on
+        // demand, so the list has somewhere to go the first time the button is
+        // pressed, rather than a component being constructed under the hands of
+        // whoever pressed it.
+        Window {
+            id: popOut
+            title: "Scan results — GraphVis"
+            width: 760
+            height: 620
+            minimumWidth: 360
+            minimumHeight: 240
+            color: Theme.background
+            visible: root.listFloating
+            // Closed from the window's own titlebar rather than from the button.
+            // Without this the property stays true, the binding keeps the list
+            // parented to a hidden window, and the sidebar shows an empty slot with
+            // the results nowhere at all.
+            onClosing: root.listFloating = false
+        }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label {
+        ListView {
+            id: recList
+            // NOT a child of the layout, in either state. Docked, its parent is the
+            // slot above; floating, it is the window's content item. Neither is the
+            // ColumnLayout, which is why this carries no Layout attached properties
+            // - they would be read by nothing and would look like the thing sizing
+            // it. `anchors.fill: parent` is what sizes it, in both homes, because
+            // the anchor is a binding on a parent that changes.
+            parent: root.listFloating ? popOut.contentItem : listSlot
+            anchors.fill: parent
+            clip: true
+            spacing: 4
+            model: root.app.scanRecommendations
+            ScrollBar.vertical: ScrollBar {}
+
+            delegate: Rectangle {
+                id: rec
+                required property var modelData
+                width: ListView.view.width
+                height: body.implicitHeight + 14
+                radius: Theme.radius
+                color: hover.hovered ? Theme.surfaceAlt : "transparent"
+                border.color: hover.hovered ? Theme.borderStrong : Theme.border
+
+                ColumnLayout {
+                    id: body
+                    anchors.fill: parent
+                    anchors.margins: 7
+                    spacing: 2
+
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: rec.modelData.graph
-                        color: Theme.text
-                        font.bold: true
-                        font.pixelSize: Theme.fontSizeBody
-                        elide: Text.ElideRight
-                    }
-                    // Confidence, as the scanner scored it.
-                    Rectangle {
-                        implicitWidth: scoreLabel.implicitWidth + 10
-                        implicitHeight: scoreLabel.implicitHeight + 4
-                        radius: 3
-                        color: rec.modelData.source === "literature" ? Theme.accent : Theme.surfaceAlt
-                        border.color: Theme.border
                         Label {
-                            id: scoreLabel
-                            anchors.centerIn: parent
-                            text: Math.round(Number(rec.modelData.score) * 100) + "%"
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: rec.modelData.source === "literature" ? Theme.onAccent : Theme.textSecondary
+                            Layout.fillWidth: true
+                            text: rec.modelData.graph
+                            color: Theme.text
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeBody
+                            elide: Text.ElideRight
+                        }
+                        // Confidence, as the scanner scored it.
+                        Rectangle {
+                            implicitWidth: scoreLabel.implicitWidth + 10
+                            implicitHeight: scoreLabel.implicitHeight + 4
+                            radius: 3
+                            color: rec.modelData.source === "literature" ? Theme.accent : Theme.surfaceAlt
+                            border.color: Theme.border
+                            Label {
+                                id: scoreLabel
+                                anchors.centerIn: parent
+                                text: Math.round(Number(rec.modelData.score) * 100) + "%"
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: rec.modelData.source === "literature" ? Theme.onAccent : Theme.textSecondary
+                            }
                         }
                     }
-                }
-                Label {
-                    Layout.fillWidth: true
-                    text: {
-                        var m = rec.modelData.mappings || {}
-                        var parts = []
-                        if (m.x) parts.push("X " + m.x)
-                        if (m.y) parts.push("Y " + m.y)
-                        if (m.z) parts.push("Z " + m.z)
-                        return parts.join("   ")
+                    Label {
+                        Layout.fillWidth: true
+                        text: {
+                            var m = rec.modelData.mappings || {}
+                            var parts = []
+                            if (m.x) parts.push("X " + m.x)
+                            if (m.y) parts.push("Y " + m.y)
+                            if (m.z) parts.push("Z " + m.z)
+                            return parts.join("   ")
+                        }
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeSmall
+                        elide: Text.ElideRight
                     }
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeSmall
-                    elide: Text.ElideRight
+                    Label {
+                        Layout.fillWidth: true
+                        text: rec.modelData.reason || ""
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
                 }
-                Label {
-                    Layout.fillWidth: true
-                    text: rec.modelData.reason || ""
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSizeSmall
-                    wrapMode: Text.WordWrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
-                }
-            }
 
-            HoverHandler { id: hover }
-            TapHandler {
-                onTapped: root.recommendationChosen(rec.modelData.graph, rec.modelData.mappings || ({}))
+                HoverHandler { id: hover }
+                TapHandler {
+                    onTapped: root.recommendationChosen(rec.modelData.graph, rec.modelData.mappings || ({}))
+                }
             }
         }
     }

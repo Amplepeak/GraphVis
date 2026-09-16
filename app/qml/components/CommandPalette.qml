@@ -20,6 +20,7 @@ Popup {
 
     signal importRequested()
     signal literatureRequested()
+    signal exportRequested()
 
     anchors.centerIn: Overlay.overlay
     // Overlay.overlay, not `parent`: a Popup's parent is whatever it was
@@ -101,7 +102,7 @@ Popup {
             else if (item.id === "data") root.app.workspaceMode = "Data"
             else if (item.id === "analysis") root.app.workspaceMode = "Analysis"
             else if (item.id === "publish") root.app.workspaceMode = "Publish"
-            else if (item.id === "export") root.app.notify("Use File ▸ Save figure as…")
+            else if (item.id === "export") root.exportRequested()
             else if (item.id === "resetview" && root.canvas) {
                 if (root.canvas.view3D) root.canvas.resetCamera()
                 else root.canvas.resetView()

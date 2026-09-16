@@ -21,7 +21,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from graphvis_science.citations import STYLES, to_text
+from graphvis_science import citation_styles
+from graphvis_science.citations import to_latex
 
 
 class LatexError(ValueError):
@@ -111,12 +112,12 @@ def figure_block(image_path: str,
         # treating it as one would put an @article block inside a \caption.
         raise LatexError(
             "BibTeX is a bibliography format, not a figure style. "
-            "Choose apa, ieee, nature or harvard - the BibTeX entry is returned "
-            "alongside the block for your .bib file.")
-    if key not in STYLES:
-        raise LatexError(
-            f"Unknown citation style {style!r}. "
-            f"Choose one of: {', '.join(s for s in STYLES if s != 'bibtex')}.")
+            "Choose a citation style - the BibTeX entry is returned alongside "
+            "the block for your .bib file.")
+    try:
+        chosen = citation_styles.lookup(key)
+    except citation_styles.StyleError as exc:
+        raise LatexError(str(exc)) from exc
     if not str(image_path).strip():
         raise LatexError("A figure block needs the path of a saved image.")
 
@@ -133,24 +134,44 @@ def figure_block(image_path: str,
     source = ""
     if citation:
         try:
-            source = escape(to_text(dict(citation), key))
+            # ESCAPED FIRST, FORMATTED SECOND. The formatter adds \textit{...}
+            # where the style italicises, and escaping after that would turn
+            # its braces into \{ \} and print the markup instead of applying
+            # it. Escaping the record's own prose first is what leaves the
+            # formatter's braces alone.
+            safe = {k: v for k, v in dict(citation).items()}
+            for field in ("title", "journal", "publisher"):
+                if safe.get(field):
+                    safe[field] = escape(safe[field])
+            safe["authors"] = [
+                {"family": escape(a.get("family", "")),
+                 "given": escape(a.get("given", ""))}
+                for a in (citation.get("authors") or [])
+            ]
+            source = to_latex(safe, key)
         except Exception as exc:                        # noqa: BLE001
             raise LatexError(f"The citation could not be formatted: {exc}") from exc
 
     lines = [f"\\begin{{figure}}[{placement}]", "  \\centering"]
 
-    if key == "apa":
-        # APA 7: the number and title sit ABOVE the image; the note goes below.
+    # WHICH SIDE THE CAPTION GOES, asked of the style table rather than tested
+    # against one name. It was `key == "apa"`, which was true of the four
+    # styles this understood and is not true of fifty: several of the
+    # author-date styles caption above, and a new one that does would have been
+    # silently captioned below.
+    if chosen.caption_above:
+        # APA 7 and its relatives: the number and title sit ABOVE the image;
+        # the note goes below.
         lines.append(f"  \\caption{{{caption_text}}}")
         lines.append(f"  \\label{{fig:{key_label}}}")
         lines.append(f"  \\includegraphics[width={width}\\linewidth]{{{graphic}}}")
         below = " ".join(p for p in (_sentence(note_text),
                                      (f"Data from {source}" if source else "")) if p)
         if below:
-            lines.append(f"  \\par\\vspace{{2pt}}")
+            lines.append("  \\par\\vspace{2pt}")
             lines.append(f"  \\begin{{flushleft}}\\footnotesize \\textit{{Note.}} {below}\\end{{flushleft}}")
     else:
-        # IEEE, Nature and Harvard all caption below the image.
+        # Everything else captions below the image.
         lines.append(f"  \\includegraphics[width={width}\\linewidth]{{{graphic}}}")
         full = _sentence(caption_text)
         if source:
@@ -169,7 +190,8 @@ def figure_block(image_path: str,
         "style": key,
         "graphic": graphic,
         "reference": f"Figure~\\ref{{fig:{key_label}}}",
-        "caption_above": key == "apa",
+        "caption_above": chosen.caption_above,
+        "style_label": chosen.label,
         # \includegraphics needs this in the preamble, and forgetting it is the
         # commonest reason a pasted block does not build.
         "preamble": "\\usepackage{graphicx}",
@@ -177,5 +199,6 @@ def figure_block(image_path: str,
     if citation:
         from graphvis_science.citations import to_bibtex
         out["bibtex"] = to_bibtex(dict(citation))
+        from graphvis_science.citations import to_text
         out["citation_text"] = to_text(dict(citation), key)
     return out

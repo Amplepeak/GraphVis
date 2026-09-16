@@ -15,7 +15,6 @@ public:
     Q_INVOKABLE void resetCamera();
     Q_INVOKABLE void setPointStyle(double pointSize,double opacity,bool invertOpacity);
     Q_INVOKABLE void requestNativeFrame();
-    QString lastError() const { return lastError_; }
     QVariantMap lastMappingResult() const { return lastMappingResult_; }
 signals:
     void nativeStatusChanged(const QString& status);
@@ -33,6 +32,10 @@ protected:
     void wheelEvent(QWheelEvent*) override;
 private:
     void ensureRenderer();
+    // Free the native surface and allow a new one to be created. Called from
+    // the destructor and, crucially, when the platform surface is about to be
+    // destroyed under this window.
+    void releaseRenderer();
     void pushCamera();
     // Touch, handled rather than left to Qt's mouse synthesis. Synthesis gives
     // a one-finger drag and nothing else: zoom is bound to the wheel and pan
@@ -41,6 +44,10 @@ private:
     bool handleTouch(class QTouchEvent* e);
     bool handleNativeGesture(class QNativeGestureEvent* e);
     void* runtime_{}; void* renderer_{};
+    // Whether the surface has been attempted. ensureRenderer is called from
+    // four places and used to retry a failing creation on every one of them,
+    // for the life of the window - see the note there.
+    bool attemptedRenderer_=false;
     float az_=-40.f, el_=25.f, panX_=0.f, panY_=0.f, zoom_=1.f;
     QPointF lastMouse_; Qt::MouseButton dragButton_=Qt::NoButton; QString lastError_; QVariantMap lastMappingResult_;
     // The same reader the 2-D figure uses, so "a second finger landed" cannot

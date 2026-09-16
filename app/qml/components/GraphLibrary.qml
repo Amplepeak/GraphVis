@@ -609,14 +609,79 @@ Rectangle {
                             visible: status === Image.Ready
                         }
                         ColumnLayout {
+                            id: entryText
                             Layout.fillWidth: true; spacing: 0
-                            Label {
-                                text: entry.modelData.label + (entry.modelData.entry && entry.modelData.entry.scale ? " · " + entry.modelData.entry.scale : "")
-                                color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true
+                            // AN ENGINE NOBODY HAS MEASURED SAYS SO.
+                            //
+                            // The catalogue carries a `verified` flag written
+                            // by tools/mark_verified_engines.py from the
+                            // evidence - a measured check in PlotSelfTest.cpp,
+                            // or membership of the audited baseline - and never
+                            // by hand; a flag that disagrees with the evidence
+                            // fails a test.
+                            //
+                            // Shown rather than hidden. An engine that draws
+                            // and has not been checked is still worth offering
+                            // to somebody who wants to look at it; what would
+                            // be wrong is offering it in the same voice as the
+                            // 434 that went through the audit. So: the name in
+                            // red, and the word said out loud where the
+                            // description goes, which is the line a person
+                            // reads before clicking.
+                            //
+                            // `=== false` rather than `!== true`: an older
+                            // catalogue with no flag at all must not paint the
+                            // whole library red.
+                            //
+                            // WRAPPED IN !!( ), and that is not decoration.
+                            //
+                            // `a && b` in JavaScript evaluates to A when A is
+                            // falsy, not to false - so when this delegate is
+                            // built before its entry exists, which happens on
+                            // every rebuild of the list, the expression is
+                            // `undefined` and QML refuses to assign it to a
+                            // bool: "Unable to assign [undefined] to bool",
+                            // twenty-four times in one session.
+                            //
+                            // Caught by the first real run of the build report
+                            // on the machine this shipped to, in QML I had
+                            // written the day before. qmllint passes it and
+                            // --selftest-ui does not reach it, because the
+                            // delegate is only built once the library is
+                            // populated.
+                            readonly property bool unverified:
+                                !!(entry.modelData.entry
+                                   && entry.modelData.entry.verified === false)
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 5
+                                Label {
+                                    text: entry.modelData.label + (entry.modelData.entry && entry.modelData.entry.scale ? " · " + entry.modelData.entry.scale : "")
+                                    color: entryText.unverified ? Theme.danger : Theme.text
+                                    font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true
+                                }
+                                Rectangle {
+                                    visible: entryText.unverified
+                                    Layout.preferredHeight: tag.implicitHeight + 2
+                                    Layout.preferredWidth: tag.implicitWidth + 8
+                                    radius: 2
+                                    color: "transparent"
+                                    border.color: Theme.danger
+                                    border.width: 1
+                                    Label {
+                                        id: tag
+                                        anchors.centerIn: parent
+                                        text: "unverified"
+                                        color: Theme.danger
+                                        font.pixelSize: 9
+                                    }
+                                }
                             }
                             Label {
-                                text: entry.modelData.entry ? entry.modelData.entry.description : ""
-                                color: Theme.textMuted; font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true
+                                text: entryText.unverified
+                                      ? "Unverified — nothing measures this engine yet"
+                                      : (entry.modelData.entry ? entry.modelData.entry.description : "")
+                                color: entryText.unverified ? Theme.danger : Theme.textMuted
+                                font.pixelSize: 10; elide: Text.ElideRight; Layout.fillWidth: true
                             }
                         }
                         Label {

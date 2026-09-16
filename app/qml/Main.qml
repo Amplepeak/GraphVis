@@ -22,7 +22,11 @@ ApplicationWindow {
     // position first. Visibility is driven only through `visibility` - setting
     // `visible` as well makes Qt warn about conflicting properties.
     width:1640;height:1000;visibility:Window.Hidden;minimumWidth:1120;minimumHeight:720
-    title:"GraphVis 18 — "+app.workspaceName
+    // One property, built in AppController from whatever the window is really
+    // showing. It used to be "GraphVis 18 — " + workspaceName, and
+    // workspaceName mirrors a native-core field nothing sets - so every session
+    // was titled "Untitled", including sessions with a named project open.
+    title: app.windowTitle
     color:Theme.background
 
     // One palette for the whole window.
@@ -181,6 +185,77 @@ ApplicationWindow {
         onActivated: root.app.displayMode = root.modeWindowed
     }
 
+    // THE INTERFACE THEME FOLLOWS THE COLOUR-VISION SETTING.
+    //
+    // Eight themes are built for a deficiency and nothing connected them to the
+    // setting, so choosing Protanopia tuned the figure's colours and left the
+    // application itself in whatever theme happened to be on.
+    //
+    // Three things make this behave rather than merely fire:
+    //
+    //  - LIGHTNESS IS KEPT. Someone working in a dark theme who asks for
+    //    protanopia gets the dark protanopia theme. Throwing them onto a white
+    //    interface would be answering a question they did not ask.
+    //  - THE OLD THEME COMES BACK. Remembered on the controller, so it survives
+    //    the restart that the persisted theme would otherwise outlive.
+    //  - A THEME THEY PICK WHILE IN A MODE IS THEIRS. Setting the theme by hand
+    //    clears the debt, so turning the mode off later does not undo a choice
+    //    they made after it was on.
+    //
+    // plotColourVisionChanged is shared with the preview toggle and the
+    // toolbar's visibility, so the mode is compared against the last one seen
+    // rather than assumed to have changed.
+    QtObject {
+        id: visionTheme
+        property int lastVision: root.app.plotColourVision
+        property int lastTheme: root.app.themeIndex
+        // Moved into Theme.qml, because the theme picker needs the same
+        // mapping and two copies of a five-element list are two answers to one
+        // question. Kept as an alias so the call sites below read unchanged.
+        readonly property var kinds: Theme.visionKinds
+    }
+    Connections {
+        target: root.app
+        function onThemeIndexChanged() {
+            // A theme chosen BY HAND while a mode is on becomes the theme to
+            // keep. Without this, picking one and then leaving the mode threw
+            // that choice away.
+            if (root.app.themeIndex === visionTheme.lastTheme) return
+            visionTheme.lastTheme = root.app.themeIndex
+            if (root.app.plotColourVision !== 0)
+                root.app.themeBeforeColourVision = -1
+        }
+        function onPlotColourVisionChanged() {
+            var now = root.app.plotColourVision
+            if (now === visionTheme.lastVision) return
+            var was = visionTheme.lastVision
+            visionTheme.lastVision = now
+
+            if (now === 0) {
+                // Back to standard: restore, if there is anything owed.
+                var back = root.app.themeBeforeColourVision
+                if (back >= 0 && back < Theme.themeCount) {
+                    visionTheme.lastTheme = back
+                    root.app.themeIndex = back
+                }
+                root.app.themeBeforeColourVision = -1
+                return
+            }
+
+            var wanted = Theme.themeForVision(visionTheme.kinds[now] || "",
+                                              Theme.themeLightAt(root.app.themeIndex))
+            // Monochrome maps to ACHROMATOPSIA, which is the same request in
+            // the theme catalogue's vocabulary - "no colour vision" - and does
+            // have a tagged family, so it switches like the other three. The
+            // -1 branch is for a mode added later with no theme built for it,
+            // where leaving the interface alone beats picking arbitrarily.
+            if (wanted < 0 || wanted === root.app.themeIndex) return
+            if (was === 0) root.app.themeBeforeColourVision = root.app.themeIndex
+            visionTheme.lastTheme = wanted
+            root.app.themeIndex = wanted
+        }
+    }
+
     FileDialog{id:importDialog;title:"Import scientific dataset";nameFilters:root.app.importNameFilters();onAccepted:root.app.importDataset(selectedFile)}
 
     // Ctrl+K, in every layout - and the primary control in the Command bar one,
@@ -191,6 +266,12 @@ ApplicationWindow {
         canvas: shellLoader.item ? shellLoader.item.canvas : null
         onImportRequested: importDialog.open()
         onLiteratureRequested: literatureDialog.open()
+        // Through the same door as everything else - see the note on
+        // onExportRequested above.
+        onExportRequested: {
+            if (shellLoader.item && shellLoader.item.openExport)
+                shellLoader.item.openExport()
+        }
     }
     Shortcut { sequences: ["Ctrl+K"]; onActivated: palette.open() }
 
@@ -266,10 +347,40 @@ ApplicationWindow {
     menuBar: MainMenuBar {
         app: root.app
         canvas: shellLoader.item ? shellLoader.item.canvas : null
+        // The open figures, from whichever shell is loaded. Guarded the same
+        // way `canvas` above is: a shell without figures simply has none, and
+        // the Figures menu comes out empty rather than erroring.
+        figureTitles: shellLoader.item && shellLoader.item.figureTitleList
+                      ? shellLoader.item.figureTitleList : []
+        figureIndex: shellLoader.item && shellLoader.item.figureIndex !== undefined
+                     ? shellLoader.item.figureIndex : 0
+        onFigureSelected: (i) => {
+            if (shellLoader.item && shellLoader.item.selectFigure)
+                shellLoader.item.selectFigure(i)
+        }
+        onFigureAddRequested: {
+            if (shellLoader.item && shellLoader.item.addFigure)
+                shellLoader.item.addFigure()
+        }
         onImportRequested: importDialog.open()
         onLiteratureRequested: literatureDialog.open()
         onAddOnsRequested: addOnsDialog.open()
+        // ONE EXPORT DIALOG, NOT TWO.
+        //
+        // This opened a bare file chooser: no format, no size, no dpi, no
+        // warning before replacing a file - a different and worse dialog from
+        // the one the canvas header's Export button opens, reached by a
+        // different menu. Two dialogs for one job is two things to keep in
+        // step, and the weaker one was the one in the File menu where people
+        // look first.
+        //
+        // The workspace owns the real one because it owns the canvas; the
+        // fallback is kept for a shell that has no export of its own.
         onExportRequested: {
+            if (shellLoader.item && shellLoader.item.openExport) {
+                shellLoader.item.openExport()
+                return
+            }
             var c = shellLoader.item ? shellLoader.item.canvas : null
             if (c) saveFigureDialog.currentFile = root.app.suggestedExportUrl(c.engine, "pdf")
             saveFigureDialog.open()

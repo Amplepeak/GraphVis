@@ -53,11 +53,58 @@ Item {
         root.openGroup = (root.openGroup === name) ? "" : name
     }
 
+    // ---- themes this colour-vision mode cannot carry -------------------
+    //
+    // MEASURED, not assumed. tools/measure_theme_cvd.py simulates each theme's
+    // positive, warning and danger colours through each deficiency; those
+    // three carry an outcome by hue, so two of them becoming one colour does
+    // not look worse, it misreports what happened.
+    //
+    // The answer is lopsided and worth knowing before reading the code: all
+    // 108 themes carry protanopia, deuteranopia and tritanopia, so in those
+    // modes this filter removes nothing at all. FOUR carry achromatopsia. With
+    // hue gone only luminance is left, and a palette picks three signals of
+    // similar lightness on purpose so none of them shouts - which leaves 104
+    // themes showing positive and warning 2.3 dE76 apart, the just-noticeable
+    // difference, which is to say the same colour.
+    //
+    // So this is very nearly a monochrome-only feature, and writing it as one
+    // would have been wrong anyway: the rule is the measurement, and a theme
+    // added tomorrow that fails tritanopia is then handled without a change
+    // here.
+    readonly property string visionKind:
+        root.app ? Theme.visionKindAt(root.app.plotColourVision) : ""
+
+    // Changing the mode starts the question again. Carrying "show all" across
+    // a switch from monochrome to protanopia would leave the override set for
+    // a mode the person never overrode.
+    onVisionKindChanged: root.showAll = false
+
+    // HIDDEN, NOT FORBIDDEN. A person may well set Monochrome to check a
+    // figure while wanting to keep working in their own theme, and a picker
+    // that simply refuses is a picker they fight. The default is the safe set
+    // because that is what the setting asked for; the way back is one click
+    // and it is on screen, with the count, so 4 entries where there were 108
+    // reads as a decision rather than as a broken list.
+    property bool showAll: false
+    readonly property bool filtering: root.visionKind !== "" && !root.showAll
+    readonly property int hiddenCount:
+        root.visionKind === ""
+            ? 0 : Theme.themeCount - Theme.indicesCarrying(root.visionKind).length
+
     readonly property var rows: {
         var out = []
         for (var g = 0; g < Theme.groups.length; ++g) {
             var groupName = Theme.groups[g]
-            var members = Theme.indicesInGroup(groupName)
+            var all = Theme.indicesInGroup(groupName)
+            var members = []
+            for (var k = 0; k < all.length; ++k)
+                if (!root.filtering || Theme.themeCarries(all[k], root.visionKind))
+                    members.push(all[k])
+            // A group with nothing left in it is dropped rather than shown
+            // empty: under monochrome that is three of the four groups, and
+            // three headers opening onto nothing is worse than three fewer
+            // headers.
             if (members.length === 0) continue
             var expanded = (root.openGroup === groupName)
             out.push({ header: true, label: groupName, count: members.length,
@@ -76,9 +123,15 @@ Item {
         padding: 6
         onClicked: popup.opened ? popup.close() : popup.open()
         ToolTip.visible: hovered
-        ToolTip.text: Theme.cvd !== ""
-                      ? "Theme: " + Theme.name + " - designed for " + Theme.cvdLabelCurrent
-                      : "Theme - " + Theme.themeCount + " available in " + Theme.groups.length + " groups"
+        ToolTip.text: root.filtering && root.hiddenCount > 0
+                      ? "Theme: " + Theme.name + " — "
+                        + (Theme.themeCount - root.hiddenCount)
+                        + " of " + Theme.themeCount
+                        + " shown, the ones whose status colours stay apart for "
+                        + Theme.cvdLabel(root.visionKind)
+                      : (Theme.cvd !== ""
+                         ? "Theme: " + Theme.name + " - designed for " + Theme.cvdLabelCurrent
+                         : "Theme - " + Theme.themeCount + " available in " + Theme.groups.length + " groups")
 
         contentItem: RowLayout {
             spacing: 8
@@ -279,6 +332,60 @@ Item {
                 }
             }
 
+            // ---- what was hidden, and the way back ----------------------
+            //
+            // Both halves matter. The COUNT, because a list that went from 108
+            // entries to 4 with no explanation reads as a fault. The REASON,
+            // because "not available" invites a bug report and "positive and
+            // warning are the same shade without colour" does not. And the
+            // BUTTON, because this is advice about the mode the person set,
+            // not a rule about what they may look at.
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: hiddenNote.implicitHeight + 14
+                visible: root.hiddenCount > 0
+                radius: 5
+                color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.05)
+                border.color: Theme.border
+
+                ColumnLayout {
+                    id: hiddenNote
+                    anchors.fill: parent
+                    anchors.margins: 7
+                    spacing: 5
+
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeSmall
+                        text: root.filtering
+                              ? root.hiddenCount + " theme"
+                                + (root.hiddenCount === 1 ? "" : "s")
+                                + " hidden. In them, two of the colours that "
+                                + "report an outcome — worked, warning, failed "
+                                + "— arrive as the same shade for "
+                                + Theme.cvdLabel(root.visionKind) + "."
+                              : "Showing all " + Theme.themeCount
+                                + ". " + root.hiddenCount + " of them cannot "
+                                + "keep their status colours apart for "
+                                + Theme.cvdLabel(root.visionKind) + "."
+                    }
+                    Button {
+                        Layout.alignment: Qt.AlignLeft
+                        flat: true
+                        padding: 3
+                        text: root.filtering
+                              ? "Show all " + Theme.themeCount + " anyway"
+                              : "Show only the " + (Theme.themeCount - root.hiddenCount)
+                                + " that carry it"
+                        onClicked: {
+                            root.showAll = !root.showAll
+                            root.openGroup = ""
+                        }
+                    }
+                }
+            }
         }
     }
 }

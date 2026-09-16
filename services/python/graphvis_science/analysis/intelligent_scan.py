@@ -930,6 +930,7 @@ def clear_scan_checkpoint(dataset: Any, cache_dir: str | Path,
     try:
         checkpoint_path(cache_dir, dataset, literature_fingerprint(literature)).unlink(missing_ok=True)
     except Exception:
+        # no checkpoint is a cold start, not a failure - the scan simply runs from scratch
         pass
 
 

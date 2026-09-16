@@ -47,6 +47,44 @@ PanelScroll {
         onAccepted: root.app.importDataset(selectedFile)
     }
 
+    // WRITING ONE BACK OUT, which nothing could do.
+    //
+    // The importer has 149 readers and had no writer at all - the manual said
+    // so - which meant a cleaned column, a converted unit or a derived ratio
+    // could leave this program only as a picture.
+    //
+    // A SAVE dialog, not an open one. `fileMode: FileDialog.SaveFile` is what
+    // makes the platform ask about replacing a file, and the writer refuses to
+    // replace one anyway unless told to; `overwrite` below is true because by
+    // this point the person has already been asked by their own file manager.
+    FileDialog {
+        id: writeDialog
+        title: "Write dataset out"
+        fileMode: FileDialog.SaveFile
+        // From the same registry the writer dispatches on, so the filter list
+        // and what can actually be written cannot disagree.
+        nameFilters: root.app.exportNameFilters()
+        onAccepted: root.app.exportDataset(selectedFile, [], true)
+    }
+
+    // A SECOND import, not a checkbox on the first one.
+    //
+    // The ordinary geospatial import keeps one row per feature at a point
+    // inside it - right for a geo scatter, and the one thing a choropleth
+    // cannot use, because a shape cannot be recovered from its centroid. This
+    // reads the outlines instead: one row per vertex, the feature's own
+    // columns repeated beside them.
+    //
+    // The two produce tables with DIFFERENT ROWS from the same file. Making it
+    // a setting on one import would leave the meaning of a row depending on a
+    // tick nobody can see afterwards.
+    FileDialog {
+        id: outlinesDialog
+        title: "Add region outlines"
+        nameFilters: ["Geospatial regions (*.geojson *.shp *.gpkg)"]
+        onAccepted: root.app.importRegionBoundaries(selectedFile)
+    }
+
 
     Label {
         text: "Datasets"
@@ -81,10 +119,36 @@ PanelScroll {
                       ? "Release to import"
                       : "Drag datasets here - drop as many as you like"
             }
-            Button {
+            RowLayout {
                 Layout.alignment: Qt.AlignHCenter
-                text: "Add dataset…"
-                onClicked: addDialog.open()
+                spacing: Theme.gap
+                Button {
+                    text: "Add dataset…"
+                    onClicked: addDialog.open()
+                }
+                Button {
+                    text: "Write dataset out…"
+                    // Nothing to write before something is open, and a button
+                    // that opens a dialog which then refuses is worse than one
+                    // that is plainly not available yet.
+                    enabled: root.app.activeDatasetId !== "" && !root.app.busy
+                    ToolTip.visible: hovered
+                    ToolTip.text: root.app.activeDatasetId === ""
+                                ? "Open a dataset first."
+                                : "Save this dataset - including columns you have "
+                                + "derived or converted - as CSV, Excel, Parquet "
+                                + "and more. The file it was imported from is "
+                                + "never changed."
+                    onClicked: writeDialog.open()
+                }
+                Button {
+                    text: "Add region outlines…"
+                    ToolTip.visible: hovered
+                    ToolTip.text: "GeoJSON, shapefile or GeoPackage, read as the "
+                                + "region boundaries a choropleth is drawn from "
+                                + "rather than one point per region."
+                    onClicked: outlinesDialog.open()
+                }
             }
             Label {
                 Layout.alignment: Qt.AlignHCenter

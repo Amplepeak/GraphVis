@@ -7,9 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-import pandas as pd
 from scipy.optimize import least_squares
-from scipy.signal import find_peaks, peak_widths
+from scipy.signal import find_peaks
 
 
 @dataclass

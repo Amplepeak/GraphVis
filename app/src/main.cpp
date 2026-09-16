@@ -8,6 +8,8 @@
 #include <QIcon>
 #include <QMutex>
 #include <QThread>
+#include <QAtomicInt>
+#include <QTimer>
 #include <QQmlApplicationEngine>
 #include <QQmlError>
 #include <QQuickStyle>
@@ -77,9 +79,12 @@ QString reportUnexpectedExit(){
             << "\nThe previous session wrote this journal and never removed it, which means it\n"
                "did not reach its own shutdown. The journal follows.\n\n"
             << contents;
-        // The startup log of the run that died is the other half of the story,
-        // and the next few lines of this run are about to overwrite it.
-        QFile previous(dir + QStringLiteral("/startup.log"));
+        // The startup log of the run that died is the other half of the story.
+        // It is read from startup.previous.log, which main() renames it to
+        // before writing this session's - see the note there. Reading
+        // startup.log itself, which is what this did, returns the log of the
+        // session writing this report.
+        QFile previous(dir + QStringLiteral("/startup.previous.log"));
         if(previous.open(QIODevice::ReadOnly | QIODevice::Text)){
             out << "\n--- startup.log from that session ---\n"
                 << QString::fromUtf8(previous.readAll());
@@ -123,8 +128,17 @@ void appendStartupLog(const QString& line)
     out.flush();
 }
 
+// EVERY WARNING THE INTERFACE PRODUCES WHILE IT STARTS, counted.
+//
+// Not a second log: the handler below already writes them all. This is the
+// count, so --selftest-ui can fail the build on them instead of leaving them in
+// a file for somebody to notice. See the flag for what that is worth.
+QAtomicInt gStartupWarnings{0};
+
 void graphvisMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)
 {
+    if (type == QtWarningMsg || type == QtCriticalMsg)
+        gStartupWarnings.fetchAndAddOrdered(1);
     QString level;
     switch (type) {
     case QtDebugMsg: level = QStringLiteral("DEBUG"); break;
@@ -294,6 +308,23 @@ int main(int argc, char *argv[])
                            + QStringLiteral("/18.4/logs");
     QDir().mkpath(logDir);
     gStartupLogPath = logDir + QStringLiteral("/startup.log");
+    // THE LAST SESSION'S LOG, KEPT BEFORE THIS ONE OVERWRITES IT.
+    //
+    // reportUnexpectedExit() reads startup.log to attach "the startup log of
+    // the run that died", and its own comment said "the next few lines of this
+    // run are about to overwrite it". They were not about to - they already
+    // had. The truncating write below used to happen FIRST, a dozen lines
+    // before the report was generated, so every unexpected-exit report ever
+    // written carried the log of the session doing the reporting, timestamped
+    // milliseconds AFTER the crash it was supposed to explain. Both reports on
+    // this machine show exactly that, and it is why two crashes went
+    // undiagnosed.
+    //
+    // Renamed rather than copied-on-crash: the previous session's log is worth
+    // having whether or not it died, and a rename cannot half-succeed.
+    const QString previousLogPath = logDir + QStringLiteral("/startup.previous.log");
+    QFile::remove(previousLogPath);
+    QFile::rename(gStartupLogPath, previousLogPath);
     {
         QFile f(gStartupLogPath);
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
@@ -384,6 +415,58 @@ int main(int argc, char *argv[])
     splash.setStage(QStringLiteral("Ready"),1.0);
     splash.finish();
     appendStartupLog(QStringLiteral("Main QML window created successfully; entering event loop"));
+
+    // --selftest-ui
+    //
+    // THE ONE CHECK NOTHING ELSE HERE PERFORMS: it opens the interface.
+    //
+    // Every other check in this project drives the backend directly. 320 guards
+    // and a 434-engine sweep run without a window ever existing, and a QML
+    // binding is only evaluated when one does. Everything that reached the user
+    // in one week was invisible to all of them and visible within seconds of
+    // launching the program:
+    //
+    //   Theme.fontSizeLarge          a property that does not exist
+    //   root.Window.width            a property not on that type
+    //   FigureTabBar.qml             a file the build had never been told about
+    //   colourMapWarning             declared, never defined
+    //   resetStaging                 staged a mapping and never applied it
+    //
+    // The first four are a name resolving to nothing. QML resolves names at
+    // runtime, so none of them is a syntax error and qmllint passes them all.
+    //
+    // So: load the interface, let it settle, and fail if it complained. It runs
+    // under -platform offscreen from BUILD-AND-CHECK, needs no display, and
+    // takes about a second.
+    //
+    // It is deliberately NOT a test of behaviour. It cannot click anything and
+    // it would not have caught the mapping bug above, which needs a dataset and
+    // a panel. It catches the broken-name class, which is four of the five and
+    // the cheapest to catch.
+    if (QCoreApplication::arguments().contains(QStringLiteral("--selftest-ui"))) {
+        // Two turns of the event loop, then a moment: bindings evaluate when
+        // the component completes, but a Loader, an Instantiator and anything
+        // deferred by Qt.callLater land a turn or two later - and the figure
+        // restore in VisualizeWorkspace is exactly that.
+        QCoreApplication::processEvents();
+        QTimer::singleShot(1200, &app, [&app]{
+            QCoreApplication::processEvents();
+            const int warnings = gStartupWarnings.loadAcquire();
+            if (warnings > 0) {
+                fprintf(stderr,
+                        "--selftest-ui: the interface produced %d warning(s) "
+                        "while starting.\nThey are in:\n  %s\n"
+                        "A QML name that resolves to nothing is not a syntax "
+                        "error and qmllint does not see it.\n",
+                        warnings, qPrintable(gStartupLogPath));
+                app.exit(3);
+                return;
+            }
+            fprintf(stderr, "--selftest-ui: interface loaded, no warnings.\n");
+            app.exit(0);
+        });
+    }
+
     const int rc = app.exec();
     appendStartupLog(QStringLiteral("Application event loop exited with code %1").arg(rc));
     // A clean exit, so nothing is left for the next launch to find.

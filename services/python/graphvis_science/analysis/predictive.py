@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 from scipy import stats
@@ -50,6 +49,7 @@ def forecast_series(x, y, extension: float = 0.20, confidence: float = 0.95) -> 
             pred_train = np.exp(loga + b * x); pred_grid = np.exp(loga + b * grid)
             candidates.append(("Exponential", pred_train, pred_grid, 2))
         except Exception:
+            # a power-law fit needs positive y; where it fails the other models remain
             pass
     if not candidates:
         raise ValueError("No predictive model could be fitted.")

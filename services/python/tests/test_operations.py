@@ -14,6 +14,8 @@ is run here for real and its reply is required to carry something.
 """
 from __future__ import annotations
 
+import pathlib
+
 import json
 import math
 import sys
@@ -70,6 +72,23 @@ def frame():
 DF = frame()
 
 # What each operation needs, beyond the columns its `needs` already names.
+def _parity_image() -> str:
+    """A small PNG on disk, written once, for the parity check to compare.
+
+    Generated rather than committed: a fixture image in the tree is a second
+    thing to keep in step with what the comparison expects, and this one only
+    has to exist and be readable.
+    """
+    import tempfile
+
+    from PIL import Image
+
+    path = pathlib.Path(tempfile.gettempdir()) / "graphvis_parity_fixture.png"
+    if not path.exists():
+        Image.new("RGB", (32, 24), (90, 120, 200)).save(path)
+    return str(path)
+
+
 EXTRA = {
     "t_test": {"y2": "y2"},
     "cohen_d": {"y2": "y2"},
@@ -135,6 +154,17 @@ EXTRA = {
     # Needs no dataset and no network: it formats a path and a caption.
     "latex_figure": {"image_path": "out/fig_yield.pdf", "caption": "Yield vs pH",
                      "style": "ieee"},
+    # A formula the person typed. Exponential decay, which the suite's x and y
+    # columns fit well enough to exercise the call - the point here is that the
+    # text becomes a callable and the parameters come back named, not that any
+    # particular curve is the right model for this fixture.
+    "fit_custom": {"formula": "a*exp(-k*x)+c", "parameters": ["a", "k", "c"],
+                   "initial": [1.0, 0.1, 0.0]},
+    # Two images and no dataset. Written by the check itself, because a fixture
+    # image checked into the tree would be a second thing to keep in step with
+    # what the comparison expects.
+    "figure_parity": {"reference_image": _parity_image(),
+                      "candidate_image": _parity_image()},
 }
 
 # These two ask Crossref. Their offline halves - finding a DOI in text and both

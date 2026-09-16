@@ -1,0 +1,1056 @@
+{
+ "note": "The hand-written half of the manual. tools/make_help.py merges this with reference topics generated from the program's own tables and writes config/help_topics.json, which is what ships. Any number in a body here is a {placeholder} filled from those same tables - write {engines}, never 440 - so the prose cannot drift from the program. A placeholder the generator does not know is a hard error.",
+ "sections": [
+  {
+   "id": "start",
+   "title": "Getting started",
+   "blurb": "What this is, and how to get a figure on screen."
+  },
+  {
+   "id": "window",
+   "title": "The window, part by part",
+   "blurb": "Every bar, rail, panel and menu, and what each one does."
+  },
+  {
+   "id": "data",
+   "title": "Data",
+   "blurb": "Getting data in, and deciding what goes where."
+  },
+  {
+   "id": "graphs",
+   "title": "Choosing a graph",
+   "blurb": "{entries} entries, {engines} engines, and how to find the one you want."
+  },
+  {
+   "id": "axes",
+   "title": "Axes and the view",
+   "blurb": "Scales, limits, zoom, labels and annotation."
+  },
+  {
+   "id": "colour",
+   "title": "Colour",
+   "blurb": "Colour maps, keys, custom colours and colour vision."
+  },
+  {
+   "id": "fields",
+   "title": "Estimating a field",
+   "blurb": "Turning scattered measurements into a surface, and what that costs you."
+  },
+  {
+   "id": "analysis",
+   "title": "Analysis and solvers",
+   "blurb": "Fits, statistics, external solvers and automatic suggestions."
+  },
+  {
+   "id": "literature",
+   "title": "Literature",
+   "blurb": "Reading papers, and getting numbers back out of their figures."
+  },
+  {
+   "id": "publish",
+   "title": "Exporting and publishing",
+   "blurb": "Getting a figure out of GraphVis and into something else."
+  },
+  {
+   "id": "project",
+   "title": "Projects and files",
+   "blurb": "Where your work lives and what is saved."
+  },
+  {
+   "id": "setup",
+   "title": "Setup and performance",
+   "blurb": "Renderers, add-ons, speed and settings."
+  },
+  {
+   "id": "trouble",
+   "title": "When something looks wrong",
+   "blurb": "The things that catch people out, and what each one actually means."
+  },
+  {
+   "id": "reference",
+   "title": "Reference",
+   "blurb": "The full lists, generated from the program itself."
+  }
+ ],
+ "topics": [
+  {
+   "id": "start-what",
+   "section": "start",
+   "kind": "concept",
+   "title": "What GraphVis is",
+   "keywords": "about what is overview introduction purpose intro scientific plotting",
+   "see_also": [
+    "start-ideas",
+    "start-first",
+    "gr-library"
+   ],
+   "body": "GraphVis is a scientific plotting program. You give it a table of numbers and it draws a figure; it ships {engines} different kinds of figure, arranged as {entries} catalogue entries across {categories} categories, and it is built to produce figures that go into papers, theses and reports rather than figures that look good on a slide.<br><br><b>Three things it does that a general charting tool does not.</b><br><br><b>1. It knows what a journal wants.</b> {publisher_profiles} publisher specifications are built in - column width in millimetres, text size in points at final size, resolution floor - and a figure is re-rendered at those measurements, not shrunk to them. See <i>Publication profiles</i>.<br><br><b>2. It says what it has and has not checked.</b> Every engine is swept on each build to prove it puts data on the page, but a picture can be unique and still be wrong. An engine is only marked <i>verified</i> once something measures the claim it actually makes. See <i>Verified and unverified</i>.<br><br><b>3. It works offline.</b> Nothing about drawing a figure needs a network. The optional add-ons are optional in the real sense: without them you can still open a CSV and export a vector PDF.<br><br><b>What it is not.</b> It is not a spreadsheet and not a statistics package. It will fit curves and run standard tests, but it does not try to be R. It does not edit your data files: a dataset on disk is read and never written back."
+  },
+  {
+   "id": "start-ideas",
+   "section": "start",
+   "kind": "concept",
+   "title": "Four words you need: dataset, column, engine, figure",
+   "keywords": "concept model vocabulary dataset column engine figure terms glossary basics",
+   "see_also": [
+    "data-columns",
+    "gr-engines",
+    "pr-figures"
+   ],
+   "body": "Almost every confusion in GraphVis comes from mixing up these four.<br><br><b>A dataset</b> is a table you imported - rows and columns, exactly as it was in the file. GraphVis holds it in memory in Arrow format. Several datasets can be open at once; one of them is <i>active</i>, shown in the bar above the figure, and that is the one the controls act on.<br><br><b>A column</b> is one field of that table. A column is either numeric or it is not, and that single fact decides more than anything else in the program: <b>only numeric columns can be drawn</b>. A column of region names is invisible to an engine. See <i>Columns and types</i>.<br><br><b>An engine</b> is one kind of figure - a scatter, a Kaplan-Meier curve, a Moody diagram, a choropleth. It is a piece of drawing code, and it decides what it needs: how many columns, what they mean, whether it has axes at all. There are {engines} of them.<br><br><b>A figure</b> is an engine plus a dataset plus every choice you made - which column went where, the scale, the colours, the limits, the labels, the notes you drew on it. A figure is the thing you save and the thing you export. The window can hold several at once, as tabs.<br><br>So: a dataset is what you have, an engine is how to draw it, and a figure is one particular drawing of it. Changing the engine on a figure keeps your column choices where it can; changing the dataset does not throw the figure away either."
+  },
+  {
+   "id": "start-first",
+   "section": "start",
+   "kind": "task",
+   "title": "Make your first figure",
+   "keywords": "first figure create plot draw new chart start begin tutorial getting started",
+   "see_also": [
+    "data-import",
+    "gr-library",
+    "data-mapping",
+    "pub-export"
+   ],
+   "body": "<b>1. Get some data in.</b> <b>File ▸ Import dataset…</b>, or drag a file onto the window. A CSV works with nothing installed. When it loads, its name appears in the bar above the figure and its columns appear in the mapping panel.<br><br><b>2. Pick a graph.</b> Open the graph library (the ◠ icon on the rail, or the Graphs tab of the controls panel). Type what you want in the search box - <i>scatter</i>, <i>histogram</i>, <i>survival</i> - or browse the categories. Click one.<br><br><b>3. Look at what it drew.</b> GraphVis maps columns automatically so a figure appears immediately rather than leaving you with an empty canvas and a form to fill in. It guesses from the column types and names, and it is often right and sometimes not.<br><br><b>4. Fix the mapping.</b> In the mapping panel, set X and Y (and Z, and colour, if the engine reads them) to the columns you meant. There is no Apply button anywhere - the figure redraws as you change things, on purpose.<br><br><b>5. Make it readable.</b> Give the axes labels and the figure a title. Choose a scale if a linear one is wrong - a spread of five orders of magnitude wants a log axis. Set the limits if the interesting part is squeezed into a corner.<br><br><b>6. Export it.</b> <b>Publish</b>, choose a profile, and export. For anything going into a document, export PDF or SVG rather than PNG: those are vector, so the figure stays sharp at any size.<br><br>Nothing in this sequence is destructive. Your file on disk is read once and never written to."
+  },
+  {
+   "id": "start-tour",
+   "section": "start",
+   "kind": "concept",
+   "title": "A tour of the window",
+   "keywords": "tour window layout overview parts screen where what is this first look",
+   "see_also": [
+    "win-menu",
+    "win-sidebar",
+    "win-workspaces",
+    "win-layouts"
+   ],
+   "body": "What you see depends on the layout - there are {layouts} of them and they rearrange the window completely. This describes the default.<br><br><b>Across the top</b>, the menu bar (File, Edit, View, Options, Figures, Help) and below it the workspace bar: <b>Home, Read literature, Visualize, Data, Analysis, Publish</b>. A workspace is a mode; choosing one changes what the whole window is for.<br><br><b>Above the figure</b>, the active dataset bar: which dataset the controls are acting on, with a button to import another and a way to switch between them.<br><br><b>Down one side</b>, the controls panel. In the default layout it has eight tabs - Graphs, Project, Data, Map, Analysis, Solver, Literature, Publish - and everything you can do to a figure is in one of them. Some layouts replace the tabs with a rail of symbols, or with one long scrolling column.<br><br><b>The middle</b> is the figure. Scroll to zoom, drag to pan, and <b>View ▸ Reset the figure's view</b> to put it back.<br><br><b>Along the bottom</b>, the status strip: what the program is doing, what dataset is loaded, and a badge while a full-resolution render is running.<br><br><b>Everywhere</b>, <b>Ctrl+K</b> opens the command palette, which finds a graph, a column, a layout or an action by name. If a layout has hidden the control you want, this is the way back to it - it works in every layout including the ones with no bars at all."
+  },
+  {
+   "id": "win-menu",
+   "section": "window",
+   "kind": "reference",
+   "title": "The menu bar, menu by menu",
+   "keywords": "menu bar file edit view options figures help commands where is",
+   "see_also": [
+    "win-palette",
+    "win-layouts",
+    "col-vision",
+    "fi-method"
+   ],
+   "body": "<b>File</b> — Import dataset, open literature, the recent lists for both, save a figure, quit. <i>Clear recent files</i> empties the two lists; it deletes nothing on disk.<br><br><b>Edit</b> — Undo and redo, and <i>Clear notes on the figure</i>, which removes annotations you have drawn without touching the data or the mapping.<br><br><b>View</b> — the big one, and the one worth reading properly.<br>&nbsp;&nbsp;· <i>Reset the figure's view</i> undoes zoom and pan.<br>&nbsp;&nbsp;· <i>Reset the 3-D camera</i> does the same for a rotatable figure.<br>&nbsp;&nbsp;· <i>Fit the axes back to the data</i> discards limits you set and re-fits to what is actually there.<br>&nbsp;&nbsp;· <i>Toolbar / Controls panel / Workspace bar</i> show and hide those.<br>&nbsp;&nbsp;· <i>Interface theme</i> changes the application's colours; <i>Figure background</i> changes the figure's, which is a different question and is exported with it.<br>&nbsp;&nbsp;· <i>Colour vision</i> chooses the series palette, previews the figure as a reader with that deficiency sees it, and tells you when the palette you picked is unsafe for a <i>different</i> deficiency.<br>&nbsp;&nbsp;· <i>Grid</i>, <i>Grid density</i>, <i>Numbers on the axes</i>.<br>&nbsp;&nbsp;· <i>Estimating a field</i> - a whole submenu, covered in its own section. This is where an unexpected-looking contour or heat map usually comes from.<br>&nbsp;&nbsp;· <i>Layout</i> - {layouts} arrangements of the window in {layout_groups} families.<br>&nbsp;&nbsp;· <i>Window</i> - windowed, maximised, fullscreen, borderless.<br><br><b>Options</b> — full-resolution render and when to ask before one, colour-blind mode, the renderer, graph packs, the experimental interface, and add-ons.<br><br><b>Figures</b> — the figures open in this window, adding one, and showing the figure strip.<br><br><b>Help</b> — this manual, and direct links into the topics people ask for most."
+  },
+  {
+   "id": "win-sidebar",
+   "section": "window",
+   "kind": "reference",
+   "title": "The controls panel and its eight tabs",
+   "keywords": "sidebar controls panel tabs graphs project data map analysis solver literature publish",
+   "see_also": [
+    "gr-library",
+    "data-mapping",
+    "an-panel",
+    "pub-export"
+   ],
+   "body": "Everything you can do to a figure is in one of eight panels. In the default layout they are tabs; on a rail layout they are the symbols down the edge; in the Inspector layout they are one long scrolling column with no tabs at all. Same panels either way.<br><br><b>◠ Graphs</b> — the catalogue. Search or browse {entries} entries, see which suit the data you have loaded, and click to apply one.<br><br><b>▤ Project</b> — the datasets, figures and saved work in the current project folder, rescanned on every start.<br><br><b>▦ Data</b> — the table itself. The columns, their types, how many rows, how many are missing. This is where you find out that the column you wanted is text.<br><br><b>✛ Map</b> — which column goes on which axis, plus point size, opacity and the per-axis scales. No Apply button: it applies as you change it.<br><br><b>∿ Analysis</b> — fits, statistics and derived columns. The list is built from the analysis service's own registry, so every operation shown can actually be run.<br><br><b>⚙ Solver</b> — running an external solver (MATLAB, ANSYS, COMSOL, or any command line) and picking up whatever files it produced.<br><br><b>❑ Literature</b> — papers, and what they say about this data.<br><br><b>⇱ Publish</b> — journal profiles and export.<br><br>Panels the current figure cannot use are still listed; they tell you why rather than vanishing, because a control that disappears is a control you spend five minutes hunting for."
+  },
+  {
+   "id": "win-workspaces",
+   "section": "window",
+   "kind": "concept",
+   "title": "The six workspaces",
+   "keywords": "workspace mode home literature visualize data analysis publish rail spine switch",
+   "see_also": [
+    "win-sidebar",
+    "lit-what",
+    "pub-export"
+   ],
+   "body": "A workspace is a mode for the whole window. The figure survives the switch; everything around it is replaced.<br><br><b>⌂ Home</b> — where you land. Recent work, and the way in to a project or a file.<br><br><b>▣ Read literature</b> — a paper on one side and what GraphVis has extracted from it on the other.<br><br><b>◈ Visualize</b> — the figure and its controls. Where most of the work happens.<br><br><b>▤ Data</b> — the table, in full, with the columns and their types.<br><br><b>Σ Analysis</b> — fits, statistics and derived columns, with room to see the results.<br><br><b>↗ Publish</b> — profiles and export, with the figure shown at the size it will actually be.<br><br>The bar across the top selects them. Some layouts replace that bar with a <b>spine</b> of symbols down one edge instead - same six, less width, and a marker bar down the edge of the current one rather than a tint, so it is visible to a reader who cannot see the tint. In a layout with neither, <b>Ctrl+K</b> reaches all six by name."
+  },
+  {
+   "id": "win-palette",
+   "section": "window",
+   "kind": "task",
+   "title": "The command palette (Ctrl+K)",
+   "keywords": "command palette ctrl+k search find action shortcut quick jump",
+   "see_also": [
+    "win-layouts",
+    "gr-library",
+    "tb-missing"
+   ],
+   "body": "<b>Ctrl+K</b>, from anywhere. Type part of what you want and it finds it: a graph out of the catalogue, a column in the active dataset, a layout, a workspace, or an action off a menu.<br><br>Two reasons to learn it.<br><br><b>It is faster than the catalogue</b> for a graph you already know the name of. <i>kaplan</i> gets you there in four keystrokes.<br><br><b>It is the way back</b> from a layout that has hidden something. The Bare and Zen layouts have no top bar, no rail and no panel; the palette still works, and it is deliberately the one control that every layout keeps."
+  },
+  {
+   "id": "win-layouts",
+   "section": "window",
+   "kind": "concept",
+   "title": "Layouts: changing the shape of the window",
+   "keywords": "layout arrange window shape rail inspector zen notebook dock rearrange interface",
+   "see_also": [
+    "ref-layouts",
+    "win-palette",
+    "tb-missing"
+   ],
+   "body": "<b>View ▸ Layout.</b> {layouts} arrangements in {layout_groups} families, each modelled on a program that does it well - an activity rail like VS Code, a tree and inspector like most scientific software, a notebook like Jupyter, a zen mode with nothing but the figure.<br><br><b>What a layout changes:</b> which panels exist, where they sit, whether there is a tab bar, whether there is a top bar at all, and whether the data table gets a permanent strip along the bottom.<br><br><b>What it does not change:</b> anything about your data, your figure, or what is saved. Switching is free and reversible, so trying one costs you nothing.<br><br><b>The one thing to know before you try the extreme ones.</b> Bare, Zen and Command bar remove almost all permanent controls. That is the point of them - they are for reading, presenting and the last look before export. <b>Ctrl+K</b> still works, and <b>View ▸ Layout</b> is still on the menu, so you are never stuck.<br><br>The full list with descriptions is in <i>Window layouts</i> under Reference."
+  },
+  {
+   "id": "win-themes",
+   "section": "window",
+   "kind": "concept",
+   "title": "Interface theme and figure background",
+   "keywords": "theme dark light background colour appearance style figure background white",
+   "see_also": [
+    "col-bg",
+    "pub-export",
+    "col-vision"
+   ],
+   "body": "These are two separate settings and mixing them up is the single most common export surprise.<br><br><b>View ▸ Interface theme</b> changes the colours of the <i>application</i> - the panels, the menus, the text. It is about your eyes at 11 pm. It is not part of any figure and it is never exported.<br><br><b>View ▸ Figure background</b> changes the colour of the <i>figure</i>. It is part of the figure, it is saved with it, and it <b>is</b> exported.<br><br>So a dark interface with a white figure is normal and usually what you want: a journal wants a figure on white. If you work in a dark interface and want the figure to match on screen, set the figure background dark too - and then remember to set it back before you export, or set the publication profile, which does it for you."
+  },
+  {
+   "id": "win-figures",
+   "section": "window",
+   "kind": "concept",
+   "title": "Several figures at once",
+   "keywords": "figure tab strip multiple compare add figure window notebook side by side",
+   "see_also": [
+    "start-ideas",
+    "win-layouts",
+    "pr-figures"
+   ],
+   "body": "One window can hold several figures. <b>Figures ▸ Add a figure</b> makes a new one; the Figures menu lists them, and <b>Figures ▸ Show the figure strip</b> puts a row of thumbnails on screen so you can see them all.<br><br>Each figure keeps its own engine, its own column mapping, its own scales and limits and its own annotations. They can share a dataset or use different ones.<br><br>If you want to see two figures <b>at the same time</b> rather than switching between them, use the <b>Notebook</b> layout, which stacks them as a document. That is the layout to reach for when you are comparing two treatments, or the same measurement on a linear and a log axis."
+  },
+  {
+   "id": "win-status",
+   "section": "window",
+   "kind": "reference",
+   "title": "The status strip and the busy indicators",
+   "keywords": "status bar busy progress badge spinner waiting render pill notice",
+   "see_also": [
+    "set-perf",
+    "tb-slow"
+   ],
+   "body": "<b>The status strip</b> along the bottom says what just happened and what is loaded. Errors appear here first.<br><br><b>The busy overlay</b> covers the figure while something long is running - an import, an analysis, a solver. It names the job. The application is not frozen; it is waiting for that job, and the job can be cancelled.<br><br><b>The render badge</b> appears while a full-resolution render is being produced in the background. The figure on screen is a fast preview until it finishes; the badge is telling you the sharp one is still coming. See <i>Performance</i>.<br><br><b>Plot notices</b> appear on the figure itself when the engine has something to say - a column it could not use, a value it had to drop, a scale it refused to apply. These are worth reading. A notice is the difference between a figure that is wrong and a figure that told you why."
+  },
+  {
+   "id": "win-keys",
+   "section": "window",
+   "kind": "reference",
+   "title": "Keyboard and mouse",
+   "keywords": "keyboard shortcut mouse wheel drag scroll zoom pan keys ctrl",
+   "see_also": [
+    "ax-zoom",
+    "win-palette"
+   ],
+   "body": "<b>Ctrl+K</b> — command palette.<br><b>Ctrl+L</b> — open literature.<br><b>Ctrl+O</b> — import a dataset.<br><b>Ctrl+Z</b> / <b>Ctrl+Y</b> — undo, redo.<br><b>Ctrl+Q</b> — quit.<br><br><b>On the figure:</b><br>Scroll wheel — zoom about the pointer.<br>Drag — pan.<br>Drag on a 3-D figure — rotate the camera.<br>Double-click — reset the view.<br><br><b>Drag files onto the window</b> to import them. Several at once is fine; they queue."
+  },
+  {
+   "id": "data-import",
+   "section": "data",
+   "kind": "task",
+   "title": "Importing data",
+   "keywords": "import open add dataset file csv drag drop load read format queue",
+   "see_also": [
+    "ref-formats",
+    "data-columns",
+    "set-science",
+    "tb-addon"
+   ],
+   "body": "<b>File ▸ Import dataset…</b>, the Import button on the dataset bar, or drag files onto the window.<br><br><b>What loads with nothing installed:</b> {builtin_formats}. These are read by the native core directly and are the fastest path in.<br><br><b>Everything else</b> - {formats} extensions in all, from MATLAB and HDF5 to CTD casts, FITS, mass spec and dive logs - is converted by the optional <b>Science add-on</b>. The file is read, converted to Arrow and handed to exactly the same code that loads a CSV, so what you get is identical whichever door it came in by. If the add-on is not installed, GraphVis says so and names it; it does not fail silently.<br><br><b>Several files at once</b> queue and import one after another. The import log records what happened to each one, including the ones that failed and why.<br><br><b>What import does not do.</b> It does not modify the file. It does not move or copy it either, unless you are in a managed project. The dataset in memory is a read of the file at that moment - if you edit the file afterwards, import it again."
+  },
+  {
+   "id": "data-columns",
+   "section": "data",
+   "kind": "concept",
+   "title": "Columns, types, and why a text column vanishes",
+   "keywords": "column type numeric text string missing not listed empty categorical dropdown",
+   "see_also": [
+    "data-mapping",
+    "tb-nocolumn",
+    "data-boundaries"
+   ],
+   "body": "This is the single most useful thing to understand about GraphVis, because it explains most of the moments where something is missing.<br><br><b>An engine can only read a numeric column.</b> When the figure asks the table for a column, anything that will not convert to a floating-point number comes back empty. A column of region names, treatment labels or sample IDs reaches the engine as nothing at all - not as an error, as nothing.<br><br>So: <b>a column of text will not appear as a choice for X or Y</b>, and if something has gone wrong such that it does, the figure will be blank rather than wrong.<br><br><b>What to do about it.</b><br><br>· If the column is <i>meant</i> to be numbers and is not, something in it is not a number - a stray unit, a comma as a decimal point, an <i>n/a</i>, a footnote marker. The Data panel shows the type it was read as; fix the file and import again.<br><br>· If the column is genuinely labels, you need a numeric column that says the same thing. This is why datasets that name things usually carry an ID column beside the name - the label is for you, the ID is for the engine. A choropleth reads exactly this way: the region name is not what colours the map, the region number is.<br><br>· Dates are a common case. A date column read as text draws nothing; read as a number (a timestamp, or days since a start) it draws fine.<br><br><b>Missing values</b> are a separate matter. A numeric column with gaps is still numeric; the gaps are dropped from the figure, and the Data panel says how many there were."
+  },
+  {
+   "id": "data-mapping",
+   "section": "data",
+   "kind": "task",
+   "title": "The mapping panel: which column goes where",
+   "keywords": "map mapping axis x y z colour column assign apply point size opacity",
+   "see_also": [
+    "data-columns",
+    "gr-columns",
+    "ax-scales"
+   ],
+   "body": "<b>Map</b> in the controls panel, or the ✛ on the rail.<br><br><b>The axis rows.</b> X, Y, and Z where the engine has one. Each is a list of the numeric columns in the active dataset. Beside each is the scale for that axis - linear, log, log(1+x), z-score, quantile - so you can put a log ordinate against a linear abscissa without leaving the panel.<br><br><b>Colour.</b> Where the engine shades by a value, this is the column it shades by. It needs the colour key to be readable; see <i>The colour key</i>.<br><br><b>Point size and opacity.</b> For scatter-like engines. Opacity is what makes a cloud of a hundred thousand points readable - at full opacity it is a solid blob, at a tenth you can see where the density is. <i>Invert opacity</i> flips which end of the range is transparent.<br><br><b>There is no Apply button</b>, anywhere in this panel, on purpose. There used to be nine of them - one per axis row, one on point size, one on opacity - and a panel with nine Apply buttons is a panel where you are never sure which of your changes have taken effect. Everything applies as you change it.<br><br><b>Automatic mapping.</b> When you choose an engine, GraphVis fills the slots from your columns so a figure appears immediately. It guesses from types, names and how many distinct values each column has. It is a guess: check it."
+  },
+  {
+   "id": "data-series",
+   "section": "data",
+   "kind": "task",
+   "title": "Several series on one figure",
+   "keywords": "series multiple lines y columns overlay compare legend two lines group",
+   "see_also": [
+    "data-mapping",
+    "ax-labels",
+    "col-vision"
+   ],
+   "body": "Choose several Y columns against one X and you get several series on one figure, each in its own colour, named in the legend by its column name.<br><br><b>Give the columns the names you want in the legend</b> before you import, if you can. The legend takes the column name verbatim - it is the honest thing to do, and it is why a column called <i>col_3</i> produces a legend entry called <i>col_3</i>.<br><br><b>The palette</b> comes from the colour-vision setting, not from the colour map. Colour maps are for shading a quantity; the series palette is for telling two lines apart, and those are different jobs with different requirements. The standard palette is measured distinguishable under protanopia, deuteranopia and tritanopia.<br><br><b>If your data is in long form</b> - one row per observation, with a column saying which group it belongs to - that is one Y column, not several, and the grouping column has to be numeric for the engine to see it. See <i>Columns and types</i>."
+  },
+  {
+   "id": "data-table",
+   "section": "data",
+   "kind": "reference",
+   "title": "The data table, and what it tells you",
+   "keywords": "data table view rows columns inspect types missing count preview browse",
+   "see_also": [
+    "data-columns",
+    "data-sql",
+    "tb-nothing"
+   ],
+   "body": "The <b>Data</b> panel, or the Data workspace for the full-window version. Some layouts keep a strip of it along the bottom permanently, which is the right shape for a table and the reason those layouts exist.<br><br>It shows the rows, and for each column: the name, the type it was read as, how many values are present and how many are missing.<br><br><b>Read it first when a figure looks wrong.</b> Three of the four common causes are visible here - a column that is text when you thought it was numbers, a column that is almost all missing, and a column whose range is nothing like what you expected because of one bad row."
+  },
+  {
+   "id": "data-sql",
+   "section": "data",
+   "kind": "task",
+   "title": "Querying with SQL",
+   "keywords": "sql query filter select where subset join duckdb question",
+   "see_also": [
+    "data-expressions",
+    "data-table"
+   ],
+   "body": "You can run SQL against the active dataset and plot the result. Use it to filter to a subset, aggregate to one row per group, or join to another table before drawing.<br><br>The result becomes a dataset in its own right, so it appears in the dataset bar and can be mapped and plotted like any other. The original is untouched.<br><br><b>When to reach for this rather than axis limits.</b> Limits change what is <i>shown</i>; a query changes what <i>exists</i>. If you want to exclude the outliers from a fit, you want a query. If you just do not want to look at them, you want limits."
+  },
+  {
+   "id": "data-expressions",
+   "section": "data",
+   "kind": "task",
+   "title": "Derived columns and expressions",
+   "keywords": "expression derived column calculate formula compute new column maths ratio",
+   "see_also": [
+    "data-sql",
+    "data-units",
+    "an-panel"
+   ],
+   "body": "An expression makes a new numeric column out of the ones you have - a ratio, a difference, a log, a normalisation, a unit conversion done by hand.<br><br>The new column behaves exactly like an imported one: it appears in the mapping lists, it can go on any axis, it can be the colour column. It exists in the dataset in memory, not in your file.<br><br><b>Where this matters most</b> is making a plottable column out of an unplottable one. If you have a text column with a handful of levels and you need them on an axis, an expression that turns each level into a number is the way to do it."
+  },
+  {
+   "id": "data-units",
+   "section": "data",
+   "kind": "concept",
+   "title": "Units",
+   "keywords": "unit units convert si metric imperial dimension label axis",
+   "see_also": [
+    "ax-labels",
+    "data-expressions"
+   ],
+   "body": "Where a column has a unit, GraphVis can carry it and convert between units of the same dimension, and the axis label shows it.<br><br><b>A unit is not a guess.</b> GraphVis does not infer a unit from a column name; it uses what you tell it. That is deliberate - a column called <i>depth</i> could be metres or feet, and a program that assumed would eventually assume wrong on a figure someone published.<br><br>Some engines have their own units baked into what they mean. A Dalitz plot's axes are squared masses, so masses in GeV/c² give axes in GeV²/c⁴; the engine assumes no particular unit and the numbers are yours."
+  },
+  {
+   "id": "data-boundaries",
+   "section": "data",
+   "kind": "task",
+   "title": "Region boundaries and choropleths",
+   "keywords": "choropleth map region boundary geojson shapefile shp gpkg polygon outline geographic",
+   "see_also": [
+    "data-columns",
+    "col-maps",
+    "set-science"
+   ],
+   "body": "A choropleth colours regions by a value - counties by incidence, countries by yield. It needs two things a normal dataset does not have: the outline of each region, and a value per region.<br><br><b>1. Import the boundaries.</b> GeoJSON, Shapefile and GeoPackage are read by the Science add-on and converted to a table with one row per vertex: region name, longitude, latitude, a numeric region id, the attributes that came with the file, and a ring number. The ring number is what keeps an island separate from the mainland it belongs to.<br><br><b>2. Map the columns.</b> The engine reads longitude, latitude, the numeric <b>region id</b> and the value, with the ring optional. Note that it is the <i>id</i>, not the name - the region name is a text column and an engine cannot see text. See <i>Columns and types</i>.<br><br><b>3. Read the result.</b> Regions with no value are drawn hatched grey rather than left white, because white is a colour on the scale and an unfilled region would read as a low value. The colour key beside the map is what makes the fills mean anything.<br><br><b>If the outlines draw but the colours are wrong</b>, the usual cause is that the value table and the boundary table disagree about which id is which region. Check a couple by hand before you trust the picture."
+  },
+  {
+   "id": "data-batch",
+   "section": "data",
+   "kind": "task",
+   "title": "Processing a folder of files",
+   "keywords": "batch folder many files bulk process automate loop directory",
+   "see_also": [
+    "data-import",
+    "an-solver",
+    "pub-repro"
+   ],
+   "body": "GraphVis can scan a folder, optionally into subfolders, and run the same operation over every file it recognises.<br><br>Use it when an instrument has produced ninety runs and you want the same figure of each, or one figure of all of them. The scan lists what it found and what it will skip before it starts.<br><br>Files it cannot read are reported rather than passed over quietly, which matters when the reason is a missing add-on package and not a bad file."
+  },
+  {
+   "id": "gr-library",
+   "section": "graphs",
+   "kind": "task",
+   "title": "Finding a graph among {entries} entries",
+   "keywords": "library catalogue search find graph browse choose picker suggest which chart",
+   "see_also": [
+    "gr-engines",
+    "gr-packs",
+    "gr-scan",
+    "ref-categories"
+   ],
+   "body": "<b>The Graphs panel</b>, the ◠ on the rail, or <b>Ctrl+K</b>.<br><br><b>Search by what you want, not by what it is called.</b> The search looks at the name, the description and the category, and it is fuzzy, so approximate spelling is fine. Type <i>distribution</i>, <i>survival</i>, <i>fatigue</i>, <i>map</i>.<br><br><b>Browse by category</b> if you do not know the word. {categories} categories, listed in full under <i>Every graph category</i> in Reference.<br><br><b>Narrow it first.</b> {entries} entries is too many to scroll, and two controls exist to shorten the list:<br>&nbsp;&nbsp;· <b>Graph packs</b> (<b>Options ▸ Graph packs</b>) switch whole subject areas off. If you never plot aircraft, turn Engineering off and {entries} becomes a much smaller number.<br>&nbsp;&nbsp;· <b>Advanced</b> hides the specialised variants of each engine, leaving the plain ones.<br><br><b>Each entry shows</b> a thumbnail, a one-line description, and whether it is verified. Entries suited to the data you currently have loaded are surfaced first.<br><br><b>Clicking one applies it immediately</b>, with the columns mapped automatically, so you can try five in ten seconds. Nothing is committed and nothing is lost by trying."
+  },
+  {
+   "id": "gr-engines",
+   "section": "graphs",
+   "kind": "concept",
+   "title": "Engines, entries and variants",
+   "keywords": "engine entry variant catalogue count difference 440 2122 why so many scale",
+   "see_also": [
+    "ax-scales",
+    "ref-categories",
+    "gr-verified"
+   ],
+   "body": "The numbers look contradictory until you see the distinction: <b>{engines} engines, {entries} catalogue entries</b>.<br><br><b>An engine is a piece of drawing code.</b> Line Chart is one engine. Kaplan-Meier is one engine.<br><br><b>An entry is an engine at one scale.</b> <i>Line Chart</i>, <i>Line Chart · Semi-Log Y</i> and <i>Line Chart · Quantile Scale</i> are three entries and one engine. There are {scales} scales, which is where most of the multiplication comes from.<br><br>This matters in two practical ways.<br><br><b>You do not have to find the right entry.</b> Pick the plain engine and set the scale in the mapping panel; the result is identical. The entries exist so that searching for <i>log</i> finds something.<br><br><b>An entry is not a promise of a different picture.</b> If an engine ignores the scale - because it has no axes, like a pie chart - its scale variants draw the same thing. The catalogue lists what is offered, not what is distinct."
+  },
+  {
+   "id": "gr-verified",
+   "section": "graphs",
+   "kind": "concept",
+   "title": "Verified and unverified engines",
+   "keywords": "verified unverified check measured trust correct tested sweep quality",
+   "see_also": [
+    "gr-engines",
+    "tb-unverified"
+   ],
+   "body": "Every engine is swept on each build. The sweep renders all {engines} of them and proves two things: that ink reached the page, and that no two engines produce the same picture. That catches a blank figure and a copy-and-paste engine.<br><br><b>It does not catch a figure that is wrong.</b> A dial whose needle ignores its scale draws a perfectly good unique picture. So does a rank chart that ranks backwards, and a choropleth squeezed into a corner of the frame. The sweep is a proof of life, not a proof of correctness, and treating it as one is how a wrong figure ships.<br><br><b>So an engine is marked verified only once something measures the claim it makes.</b> That the ranks come out in the right order. That the colours follow the value - the choropleth check renders two regions twice with the values swapped and requires the colours to swap. That the widths carry the totals.<br><br>Currently {verified} of {entries} entries are verified and {unverified} are not.<br><br>An unverified engine is not broken and is not hidden. It is labelled, because finding out from a figure you have already put in a paper is the outcome this is here to prevent."
+  },
+  {
+   "id": "gr-packs",
+   "section": "graphs",
+   "kind": "task",
+   "title": "Graph packs",
+   "keywords": "pack packs enable disable subject area shorten list core engineering earth life physics",
+   "see_also": [
+    "ref-packs",
+    "gr-library"
+   ],
+   "body": "<b>Options ▸ Graph packs.</b> {packs} packs, each a subject area, each showing how many entries it contributes.<br><br>Turning a pack off shortens the catalogue. It uninstalls nothing, downloads nothing and cannot lose you a figure you have already made - a figure built from a pack you later switch off still draws.<br><br>This is worth doing on day one. Most people use one or two subject areas and search a list that is mostly someone else's field.<br><br>The full list with counts is under <i>Graph packs</i> in Reference."
+  },
+  {
+   "id": "gr-columns",
+   "section": "graphs",
+   "kind": "concept",
+   "title": "When an engine needs more than X and Y",
+   "keywords": "columns needed four vector field choropleth series extra slots how many required",
+   "see_also": [
+    "data-mapping",
+    "data-boundaries",
+    "tb-nothing"
+   ],
+   "body": "Most engines read two columns. A good many do not, and this is where an unexpected figure usually comes from.<br><br><b>A vector field reads four</b> - x, y, and the two components of the vector at that point.<br><b>A choropleth reads four or five</b> - longitude, latitude, region id, value, and optionally a ring number.<br><b>A candlestick reads five.</b> A forest plot reads an estimate and two interval bounds. A ternary plot reads three parts.<br><br><b>How GraphVis handles it.</b> When you choose one of these, it fills the extra slots from your columns in order, so a figure appears rather than an empty frame with a form. If it guessed wrong the picture will look wrong in an obvious way - arrows pointing nowhere, a map with one region filled - and the fix is in the mapping panel.<br><br><b>The thing to check</b> is the <i>order</i> of the columns rather than which ones. For an engine that reads columns as a series, column one is the first slot, column two the second, and so on; a dataset whose columns are in a different order from the one the engine expects produces a figure that is drawn correctly from the wrong inputs."
+  },
+  {
+   "id": "gr-params",
+   "section": "graphs",
+   "kind": "concept",
+   "title": "Engines with settings of their own",
+   "keywords": "parameter setting constant dalitz forest pooled mass control extra engine specific",
+   "see_also": [
+    "ref-engine-parameters",
+    "gr-columns"
+   ],
+   "body": "A few engines need a number that your data cannot supply, and those appear as extra controls when the engine is chosen.<br><br>Two examples show why this cannot be automatic.<br><br><b>A Dalitz plot</b> needs the masses of the decaying particle and its three daughters. Those are physics, not columns - the engine cannot read them off your data, and without them there is no allowed region to draw.<br><br><b>A forest plot's pooled estimate</b> is off by default, and the setting answers two questions at once. The pooling itself is unambiguous. What is not knowable from the data is <i>where the null line belongs</i>: a risk ratio has no effect at 1, a difference in means has no effect at 0, and the engine sees three columns of numbers with nothing to say which it is holding. Drawing that line in the wrong place puts every study on the wrong side of no effect, which is worse than drawing no line.<br><br>So where GraphVis cannot know, it asks rather than guesses. The full list is in Reference."
+  },
+  {
+   "id": "gr-scan",
+   "section": "graphs",
+   "kind": "task",
+   "title": "Letting GraphVis suggest a graph",
+   "keywords": "scan smart suggest recommend automatic intelligent what should i plot budget",
+   "see_also": [
+    "gr-library",
+    "an-panel",
+    "set-science"
+   ],
+   "body": "<b>Scan dataset</b> looks at the columns you have - their types, ranges, how many distinct values, how they relate to each other - and recommends catalogue graphs with a column mapping already chosen. One click applies a recommendation.<br><br><b>The thinking time maximum</b> is the control that matters. A longer maximum does not mean waiting for the same answer; it widens how many columns are considered and how many pairs are sampled, so a longer one genuinely looks at more. It is a ceiling rather than a wait: the scanner stops early when it has run out of things to try, and returns the best answer it found.<br><br><b>Treat the results as suggestions.</b> The scanner knows the shape of your data and nothing about what it means. It will suggest a perfectly sensible scatter of two columns that have no business being plotted against each other.<br><br>Scanning uses the Science add-on. Results are cached, so re-scanning the same dataset with the same maximum is immediate."
+  },
+  {
+   "id": "gr-3d",
+   "section": "graphs",
+   "kind": "concept",
+   "title": "3-D figures and the camera",
+   "keywords": "3d three dimensional rotate camera surface volume vtk perspective",
+   "see_also": [
+    "set-renderers",
+    "ax-zoom"
+   ],
+   "body": "Surface, mesh and volume engines draw in three dimensions. Drag to rotate, scroll to zoom, and <b>View ▸ Reset the 3-D camera</b> to put the viewpoint back.<br><br><b>A 3-D figure is for showing shape, not for reading values.</b> Perspective makes a bar at the back smaller than an identical bar at the front, and a surface hides whatever is behind it. If the point of the figure is that the reader can recover a number from it, a contour plot or a heat map does that job and a surface does not.<br><br><b>Which renderer draws it</b> matters here more than anywhere else. The Qt 2-D painter draws a projected 3-D figure and can export it as vector. VTK gives you real lighting and physically based materials, which shows shape far better, and cannot export vector. See <i>Which renderer should I use?</i>"
+  },
+  {
+   "id": "ax-scales",
+   "section": "axes",
+   "kind": "concept",
+   "title": "Axis scales, and when each one is right",
+   "keywords": "scale log logarithmic semilog z-score quantile linear axis transform choose",
+   "see_also": [
+    "ref-scales",
+    "data-mapping",
+    "tb-onepixel"
+   ],
+   "body": "Each axis has a scale, set per axis in the mapping panel. {scales} combinations are offered in the catalogue as named variants, but the setting is the same one.<br><br><b>Linear</b> — the default. Equal distances are equal differences.<br><br><b>Logarithmic</b> — equal distances are equal <i>ratios</i>. Right when your data spans orders of magnitude. <b>It cannot show zero or a negative number</b>, and those points simply disappear from the figure - which is the most common way a log axis misleads.<br><br><b>Log(1+x)</b> — exists for exactly that problem. It behaves like a log axis at the top of the range and like a linear one near zero, so a column that legitimately reaches zero can still be drawn on something log-like.<br><br><b>Z-score</b> — standard deviations from the mean. This is how you put two columns in different units on one pair of axes and have the comparison mean something. The numbers on the axis are no longer your numbers.<br><br><b>Quantile</b> — position in the sorted sample. Use it when a column is mostly one value with a long tail: on a linear axis the body is one pixel wide, on a quantile axis it fills the figure. It deliberately distorts distance, so it is a tool for seeing structure, not for reading values off.<br><br><b>A scale changes how the axis is marked, never your data.</b> Nothing is written and the figure can be put straight back."
+  },
+  {
+   "id": "ax-limits",
+   "section": "axes",
+   "kind": "concept",
+   "title": "Axis limits and colour range are different things",
+   "keywords": "limit range axis colour scale clip crop exclude min max confusing difference",
+   "see_also": [
+    "col-bar",
+    "data-sql",
+    "ax-zoom"
+   ],
+   "body": "They sit next to each other in the Range panel, they look similar, and they do opposite things. This is worth thirty seconds.<br><br><b>Axis limits decide which points are drawn.</b> Capping an axis at ten removes everything above ten from the figure. It is a statement about what you are looking at, and a reader cannot tell from the figure that anything was removed unless you say so.<br><br><b>The colour range decides how the points that are drawn are shaded.</b> It moves nothing and hides nothing. It decides whether the body of your distribution gets the whole colour ramp or the bottom eighth of it - which, when one outlier is stretching the scale, is the difference between a heat map you can read and a uniformly dark rectangle.<br><br>They are reported together, so they are offered together and kept apart.<br><br><b>A row per axis the engine actually reads.</b> A line chart shows two, a 3-D scatter three, a pie chart none. The panel asks the figure what axes it has rather than assuming, so a control you were expecting and cannot find usually means this engine does not have that axis.<br><br><b>To undo limits:</b> <b>View ▸ Fit the axes back to the data</b>."
+  },
+  {
+   "id": "ax-zoom",
+   "section": "axes",
+   "kind": "task",
+   "title": "Zoom, pan and putting the view back",
+   "keywords": "zoom pan scroll wheel drag reset view fit navigate move around lost treemap sankey network chord move drag frame magnify",
+   "see_also": [
+    "ax-limits",
+    "win-keys"
+   ],
+   "body": "<b>Scroll</b> to zoom about the pointer. <b>Drag</b> to pan. <b>Double-click</b> to reset.<br><br>Three separate ways back, for three different situations:<br><br>· <b>View ▸ Reset the figure's view</b> — undoes zoom and pan. Your limits stay.<br>· <b>View ▸ Fit the axes back to the data</b> — discards limits you set and re-fits to what is in the data.<br>· <b>View ▸ Reset the 3-D camera</b> — for a rotatable figure, where it is genuinely easy to end up looking at the back of a surface from underneath.<br><br><b>Figures with no axes move differently.</b> A treemap, a sunburst, a Sankey, a chord diagram, a network graph, a word cloud - about a quarter of the catalogue - have no axis range to slide, so on those a drag moves <i>the drawing itself</i> within its frame and the wheel magnifies it, like a magnifying glass held over the picture. Nothing about the data changes. Double-click, or <b>Reset view</b>, puts it back in the middle at its original size.<br><br><b>Zoom is not the same as limits.</b> Zooming is a view of the figure; limits change which points exist in it. If you zoom in and export, you get what you see - but if you want the figure to be <i>defined</i> by that range, set the limits, because those are saved with the figure and a view is not."
+  },
+  {
+   "id": "ax-grid",
+   "section": "axes",
+   "kind": "task",
+   "title": "Grid, ticks and numbers on the axes",
+   "keywords": "grid ticks numbers labels axis density gridlines show hide",
+   "see_also": [
+    "ax-labels",
+    "pub-profiles"
+   ],
+   "body": "<b>View ▸ Grid</b> turns gridlines on and off. <b>View ▸ Grid density</b> chooses how many.<br><br><b>View ▸ Numbers on the axes</b> shows or hides the tick labels.<br><br><b>What to use when.</b> A grid helps a reader recover a value from the figure and gets in the way of seeing a shape. So: grid on for a figure someone will read numbers off, grid off for a figure that is making a qualitative point, and grid off for most journal figures - several publication profiles turn it off for you, because most publishers prefer it that way.<br><br>Hiding the numbers is for a figure where the axis is qualitative, or for a panel in a multi-panel figure where the neighbouring panel carries the scale."
+  },
+  {
+   "id": "ax-labels",
+   "section": "axes",
+   "kind": "task",
+   "title": "Titles, axis labels and the legend",
+   "keywords": "title label legend axis name text caption units rename",
+   "see_also": [
+    "data-units",
+    "data-series",
+    "pub-export"
+   ],
+   "body": "Set the figure title and the axis labels in the figure appearance controls. They are part of the figure and are exported with it.<br><br><b>Include the unit in the axis label.</b> An axis labelled <i>Depth</i> is a figure that cannot be used; <i>Depth (m)</i> can. Where GraphVis knows the unit of a column it will offer it, but it does not invent one.<br><br><b>The legend</b> names each series by its column name, verbatim. If you want different words in the legend, rename the columns - in the file, or with a derived column. GraphVis does not silently prettify a name, because a legend that says something different from the data is the kind of small lie that survives into print.<br><br><b>Sizes</b> come from the publication profile when one is set, in points at final size. Do not set a title to 20 pt because it looks small on screen; set the profile and let it be right at the size it will be printed."
+  },
+  {
+   "id": "ax-annot",
+   "section": "axes",
+   "kind": "task",
+   "title": "Drawing notes on a figure",
+   "keywords": "annotate annotation note arrow text mark label point draw highlight callout",
+   "see_also": [
+    "ax-labels",
+    "pr-figures"
+   ],
+   "body": "Annotations are text, arrows and marks you draw on the figure itself - pointing at the peak, marking the threshold, labelling the outlier.<br><br>They belong to the figure, are saved with it and are exported with it. They move with the data when you zoom, so an arrow pointing at a peak keeps pointing at that peak.<br><br><b>Edit ▸ Clear notes on the figure</b> removes all of them. It does not touch the data or the mapping.<br><br><b>Where they help most</b> is the thing a caption cannot do: mark the specific point the sentence is about. A caption that says <i>note the shoulder at 450 nm</i> asks the reader to find it; an arrow shows them."
+  },
+  {
+   "id": "col-maps",
+   "section": "colour",
+   "kind": "concept",
+   "title": "Colour maps: what they are for",
+   "keywords": "colour color map colormap viridis jet rainbow choose perceptual sequential diverging",
+   "see_also": [
+    "ref-colourmaps",
+    "col-bar",
+    "col-vision"
+   ],
+   "body": "A colour map turns a number into a colour - for heat maps, contours, fields, surfaces and choropleths. There are {colourmaps} of them in {colourmap_groups} groups.<br><br><b>Pick by what the number is, not by what looks nice.</b><br><br><b>Perceptually uniform</b> (Viridis, Cividis, Magma, Parula) for a quantity you want read off the figure. Equal steps in the number are equal steps in apparent colour, which is what makes a gradient in the picture mean a gradient in the data. This is the right default.<br><br><b>Diverging</b> (Coolwarm, RdBu, Spectral) for a quantity with a meaningful middle - an anomaly about zero, a difference between two conditions. Set the colour range symmetric about that middle or the diverging map lies about where the middle is.<br><br><b>Categorical</b> (Tab10, Set1, Paired) for labels. Never for a number: a categorical map has no order, so a reader cannot tell which of two colours is larger.<br><br><b>The rainbow family</b> (Jet, Rainbow, Nipy Spectral) is here because some fields expect it, not because it reads well. Jet invents a bright band in the middle of the range that is not in your data, and hides real structure at the ends. If you have a choice, do not.<br><br><b>Terrain and ocean</b> maps encode a convention - green low, brown high, blue below sea level - and are right when your data actually is elevation and misleading when it is not."
+  },
+  {
+   "id": "col-bar",
+   "section": "colour",
+   "kind": "concept",
+   "title": "The colour key, and why a field without one is unreadable",
+   "keywords": "colour bar key scale legend colorbar missing quantity read values",
+   "see_also": [
+    "col-maps",
+    "ax-limits"
+   ],
+   "body": "The bar drawn beside a shaded figure is what makes the colours mean quantities. Without it a heat map is a pattern: the reader can see that one part is darker, and cannot say by how much or of what.<br><br><b>It is drawn from the colour range</b>, so it is honest about what you set. If you clipped the colour range to the middle 90% of the data, the key shows the range you used, and the reader can tell.<br><br><b>Watch it when you change the range.</b> The key is the quickest check that the colour range is doing what you meant - if it spans 0 to 10,000 because of one bad row, the figure is one colour and the key says exactly why.<br><br><b>Non-linear colour scales.</b> A colour range can be set, but a non-linear classing of values - quantile classes, natural breaks - is not currently expressed by the key, which is why it is not offered. A key that draws a linear ramp over non-linear classes would be worse than no key."
+  },
+  {
+   "id": "col-vision",
+   "section": "colour",
+   "kind": "concept",
+   "title": "Colour vision: designing for your readers",
+   "keywords": "colourblind colorblind accessible protanopia deuteranopia tritanopia vision deficiency safe preview categorical palette designed shortlist groups audience",
+   "see_also": [
+    "ref-colour-vision-modes",
+    "col-maps",
+    "data-series"
+   ],
+   "body": "About one man in twelve has a colour vision deficiency. A figure whose two conditions are red and green is a figure a lot of your readers cannot read, and they will not tell you.<br><br>GraphVis handles this in three separate places, and they do different things.<br><br><b>1. The series palette</b> (<b>View ▸ Colour vision</b>). {colour_vision_modes} choices. The standard palette is measured distinguishable under protanopia, deuteranopia <i>and</i> tritanopia, and is the right answer unless you are designing for one in particular. This changes the figure, and it is exported.<br><br><b>2. The preview</b> (<b>View ▸ Colour vision ▸ Preview as this reader sees it</b>). Simulates the deficiency over the whole figure <i>without changing it</i>. This is a check, not a setting - it shows you what somebody else sees.<br><br><b>3. The colour maps.</b> GraphVis measures each map against the reading task it exists for, under normal vision and under all three deficiencies, and tells you when the map you chose is not safe for the one you are designing for.<br><br>The map picker also carries a <b>Colour-blind</b> group for each deficiency, always, whether or not a colour-vision mode is switched on. That is deliberate: most figures are drawn by somebody with ordinary colour vision for an audience that is not, and that reader cannot switch a mode on here to help themselves, because they are not the one using the program. Each group is a shortlist ordered by the measurement rather than everything that merely passes - fifty of the eighty-four maps pass for a protanope, which is not a choice.<br><br><b>The categorical palettes in those groups were designed rather than inherited.</b> Exactly one of the thirteen inherited categorical palettes survives protanopia, so anyone plotting six groups had a single option. The designed ones are chosen in the simulated colour space - among the colours that reader can actually tell apart - and reach 31 to 71 dE76 against the best inherited palette's 12. They are offered at several sizes, because separation falls as the count rises and four groups should not be handed the compromise that ten needs.<br><br>The ramps in those groups are <i>not</i> designed: the inherited maps already win that case and by a wide margin, because a ramp's separation comes mostly from lightness and a colour-vision deficiency leaves lightness intact. Where a designed map would be worse, GraphVis offers the inherited one.<br><br><b>The trap worth knowing.</b> A palette specialised for one deficiency is <b>not</b> automatically safe for another. Measured: the protanopia and deuteranopia palettes each collapse a pair of colours for a tritanope. Somebody choosing one of those is usually being considerate about a figure other people will read, so GraphVis says so on the menu rather than letting a considerate choice produce an unreadable figure.<br><br><b>Colour should not be the only channel.</b> Line style, marker shape and direct labels all survive being printed in black and white, which your figure eventually will be."
+  },
+  {
+   "id": "col-custom",
+   "section": "colour",
+   "kind": "task",
+   "title": "Custom colours and stops",
+   "keywords": "custom colour stops gradient edit own palette pick hex",
+   "see_also": [
+    "col-maps",
+    "col-vision"
+   ],
+   "body": "Where the built-in maps do not fit - a house style, a journal's required palette, a figure that has to match another one - you can set colours directly and place your own stops along the ramp.<br><br><b>Two things to check on anything you build by hand.</b><br><br><b>Does it have an order a reader can see?</b> A ramp that goes light-dark-light has two values for every colour, and a reader cannot tell which side of the figure they are on.<br><br><b>Does it survive a colour vision deficiency and a black-and-white printer?</b> Use the preview. A custom ramp is exactly where an unsafe pair of colours gets in, because the measured checks that cover the built-in maps have nothing to say about yours."
+  },
+  {
+   "id": "col-bg",
+   "section": "colour",
+   "kind": "concept",
+   "title": "Figure background and figure theme",
+   "keywords": "background figure colour white dark transparent theme export paper",
+   "see_also": [
+    "win-themes",
+    "pub-export"
+   ],
+   "body": "<b>View ▸ Figure background</b> sets the colour behind the figure. This is part of the figure and it is exported.<br><br><b>For anything going into a document, use white</b> - or set a publication profile, which does it for you. A dark figure dropped into a white page is the most common thing to come back from a co-author.<br><br><b>The figure theme</b> goes further than the background: it sets the axis, text and grid colours to match, so a dark figure is coherently dark rather than black text on a dark background.<br><br>Do not confuse either of these with <b>View ▸ Interface theme</b>, which is the application's own colours and is never exported. See <i>Interface theme and figure background</i>."
+  },
+  {
+   "id": "fi-what",
+   "section": "fields",
+   "kind": "concept",
+   "title": "What estimating a field means, and why it needs your attention",
+   "keywords": "field estimate interpolate surface contour heatmap scattered grid between points guess",
+   "see_also": [
+    "fi-method",
+    "fi-failures",
+    "ref-estimators"
+   ],
+   "body": "A contour plot, a heat map or a surface needs a value <b>everywhere</b>. Your measurements exist only where you measured. Something has to fill in between, and that something is an estimator.<br><br><b>This is the part of GraphVis where the program adds information that is not in your data.</b> Everywhere else, a figure is a rearrangement of your numbers. Here, most of the coloured area is the estimator's opinion, drawn in the same colours and at the same strength as the measurements it was derived from.<br><br>That is not a reason to avoid it - it is how contour plots have always worked. It is a reason to know which rule is being applied, which is why the whole submenu exists rather than one hidden default.<br><br><b>The single most useful habit:</b> plot your measurement points on top of the field, at least once, while you are deciding. A field that looks smooth and convincing over a region with three measurements in it looks very different once you can see where those three were.<br><br><b>View ▸ Estimating a field</b> holds all of it: the method, what happens beyond your measurements, how failures are handled, and how much detail is computed."
+  },
+  {
+   "id": "fi-method",
+   "section": "fields",
+   "kind": "task",
+   "title": "Choosing an estimation method",
+   "keywords": "estimator method kriging idw spline loess delaunay nearest bilinear choose which auto",
+   "see_also": [
+    "ref-estimators",
+    "fi-what",
+    "fi-edges"
+   ],
+   "body": "<b>View ▸ Estimating a field ▸ Method.</b> {estimators} methods, grouped by what kind of data they assume.<br><br><b>Auto</b> looks at whether your points fall on a complete rectangular grid and picks accordingly. It is the right answer until you have a specific reason it is not.<br><br><b>Structured methods</b> (bilinear, bicubic, B-spline, monotone PCHIP) are for measurements that already lie on a full grid - an image, a raster, a sweep of every combination of two settings. On grid data they are both faster and better than the general machinery. On scattered data they do not apply.<br><br><b>Unstructured methods</b> (Delaunay linear, natural neighbour, inverse distance, modified Shepard) are the general case: points anywhere. Delaunay linear is the conservative choice - it never invents a value outside the range of the three measurements around it, at the cost of a visible crease at every triangle edge.<br><br><b>Radial basis functions</b> (thin plate spline, multiquadric, Gaussian) solve once over everything and are smooth everywhere. They will overshoot: a smooth surface through scattered points goes above your highest measurement and below your lowest, which for a quantity that cannot be negative is a problem. See <i>Values</i> under the same menu.<br><br><b>Kriging and LOESS</b> are statistical. Kriging assumes a correlation structure, which you choose with the variogram; LOESS fits locally, with a span that says how much of the data each local fit sees. Both are the honest choice when your measurements are noisy and you want the trend rather than a surface through every point.<br><br><b>There is a fast path</b> (<i>Fill the grid</i>) that bins measurements into cells before estimating. On a hundred thousand points that is the difference between interactive and not. On a few hundred it throws away resolution for no gain.<br><br><b>One method is deliberately withheld:</b> {withheld_estimators}. It is implemented and switched off because it fails the smoothness property it is named for, which would put a faceted sheen on every contour it drew."
+  },
+  {
+   "id": "fi-edges",
+   "section": "fields",
+   "kind": "concept",
+   "title": "Beyond the measurements",
+   "keywords": "extrapolation hull edge outside beyond convex mask nearest fill boundary",
+   "see_also": [
+    "fi-what",
+    "fi-failures"
+   ],
+   "body": "<b>View ▸ Estimating a field ▸ Beyond the measurements.</b><br><br>Inside the area you sampled, an estimator interpolates - it is bounded by real measurements on all sides. Outside it, there is nothing to be bounded by, and any value it draws is an extrapolation.<br><br><b>Mask outside the convex hull</b> draws nothing there. This is the honest default: the figure shows a region with a ragged edge, and that edge is where your data stops.<br><br><b>The filling options</b> - nearest, inverse distance, linear-plus-nearest, edge-clamped - extend the field to the full rectangle. They make a tidier figure. They also fill the corners of that rectangle with values that are entirely the program's invention, drawn in the same colours as your measurements.<br><br><b>Use a filled rectangle when</b> the reader knows the extent of the survey from elsewhere, or when the figure is a background for something else. <b>Use masking when</b> the figure is the evidence.<br><br>If you fill, say so in the caption. It costs a sentence and it is the difference between a tidy figure and a misleading one."
+  },
+  {
+   "id": "fi-failures",
+   "section": "fields",
+   "kind": "concept",
+   "title": "Failed runs, masking and bridging",
+   "keywords": "failure failed run mask hole gap bridge invalid missing nan sample cell voronoi",
+   "see_also": [
+    "fi-edges",
+    "fi-what"
+   ],
+   "body": "Some of your measurements failed - the run crashed, the solver did not converge, the sensor returned nothing. These are not zeros and they are not small values; they are absences, and they need to be handled before the field is estimated.<br><br><b>View ▸ Estimating a field ▸ Failed runs</b> holds three separate decisions.<br><br><b>1. How much one failure masks.</b> A failed measurement invalidates more than its own point - the question is how much more. <i>Sample cell only</i> is the narrowest; <i>Voronoi failure region</i> masks everything closer to that failure than to any successful measurement, which is the defensible answer if you take the failure seriously; <i>None</i> fits straight through failures as if they were not there.<br><br><b>2. Whether holes are bridged.</b> Bridging fills a masked region back in from its surroundings. Isolated single failures, small enclosed holes, or all interior holes.<br><br><b>3. How a masked area is drawn.</b> Transparent, a fallback colour, or filled in by nearest-neighbour, local mean, baseline clamp or mirror.<br><br><b>The distinction that matters.</b> <b>Masking is honesty and bridging is convenience.</b> A masked area says <i>not measured</i>. Anything that fills it in is the program's guess wearing the same colours as your data - and unlike the convex-hull case, it is in the <i>middle</i> of your figure, where a reader has every reason to assume there were measurements.<br><br>Bridge a single dropped pixel in a raster without much worry. Bridging a region where a whole run failed is making a claim about the thing that failed."
+  },
+  {
+   "id": "fi-detail",
+   "section": "fields",
+   "kind": "concept",
+   "title": "Field detail, mesh lines and what they cost",
+   "keywords": "detail resolution grid mesh lines wireframe slow quality cells performance field",
+   "see_also": [
+    "set-perf",
+    "fi-method"
+   ],
+   "body": "<b>Field detail</b> is how fine a grid the field is estimated on. Finer is smoother and slower, and the cost is quadratic - doubling the detail is four times the work, on top of an estimator that may itself be superlinear in the number of measurements.<br><br><b>Detail is not accuracy.</b> A field estimated at high detail from twenty measurements is a very smooth picture of twenty measurements. Raising the detail past the point where the contours stop changing shape buys nothing but time.<br><br><b>Mesh lines</b> draw the estimation grid over the field. Turn them on once while you are choosing a method: they show you where the cells are, and a field whose structure lines up suspiciously well with its own grid is telling you the detail is too coarse for the estimator you picked."
+  },
+  {
+   "id": "an-panel",
+   "section": "analysis",
+   "kind": "task",
+   "title": "The analysis panel",
+   "keywords": "analysis fit statistics regression operation derived smooth test compute",
+   "see_also": [
+    "data-expressions",
+    "an-scan",
+    "set-science"
+   ],
+   "body": "<b>Analysis</b> in the controls panel, or the Analysis workspace.<br><br>Fits, statistics and derived columns. Each operation says which columns it reads and which values it cannot run without, and the result comes back as a new column or a new dataset that you can plot like anything else.<br><br><b>The list is built from the analysis service's own registry</b>, not written out by hand. That is worth knowing because it used to be written by hand, and six of the eleven operations the panel advertised did not exist behind the buttons. Now an operation that is not registered has no button, and one that is registered cannot be forgotten - the list and the code cannot disagree, because there is only one list.<br><br>Analysis runs through the Science add-on. Without it the panel says so."
+  },
+  {
+   "id": "an-solver",
+   "section": "analysis",
+   "kind": "task",
+   "title": "Running an external solver",
+   "keywords": "solver matlab ansys comsol external run command sweep script mapdl aquasim",
+   "see_also": [
+    "data-batch",
+    "pub-repro"
+   ],
+   "body": "<b>Solver</b> in the controls panel. GraphVis can run an external computational engine - MATLAB, ANSYS MAPDL, COMSOL, AQUASIM, or any command-line program - and pick up whatever files the run produced, so a parameter sweep ends in a figure without anyone opening a file dialog afterwards.<br><br><b>It is engine-agnostic on purpose.</b> The command is a template with <i>&#123;script&#125;</i> and <i>&#123;workdir&#125;</i> substituted, and it is editable in place. A solver nobody anticipated is a line of text, not a code change.<br><br><b>How a run works:</b> pick a preset or write the command, point it at a script and a working directory, run. GraphVis watches the working directory and collects the outputs that appear, importing the ones it can read.<br><br><b>A run can be cancelled</b> and the exit code is reported. If the solver wrote nothing, that is what you will be told - GraphVis does not invent a result from a failed run."
+  },
+  {
+   "id": "an-scan",
+   "section": "analysis",
+   "kind": "task",
+   "title": "Smart scan",
+   "keywords": "scan smart suite recommend intelligent budget cache suggestions dataset",
+   "see_also": [
+    "gr-scan",
+    "an-panel"
+   ],
+   "body": "See <i>Letting GraphVis suggest a graph</i> - the scan is reached from both the Graphs and Analysis sides because it answers a question that belongs to both: given this data, what is worth looking at.<br><br>Results are cached per dataset and budget. <i>Force</i> re-runs it when the data has changed underneath the cache."
+  },
+  {
+   "id": "lit-what",
+   "section": "literature",
+   "kind": "concept",
+   "title": "The literature workspace",
+   "keywords": "literature paper pdf read import article reference extract science",
+   "see_also": [
+    "lit-derender",
+    "lit-ai",
+    "set-science"
+   ],
+   "body": "<b>Ctrl+L</b>, or <b>File ▸ Open literature…</b>, or the ▣ workspace.<br><br>A paper on one side, and what GraphVis has extracted from it on the other. The pipeline can pull out numeric tables and series, find datasets referenced inside the text, reconstruct the data behind a published plot, and link the methods, equations and units it mentions.<br><br><b>Extracted data comes back as a dataset.</b> It arrives as Arrow, appears in the dataset bar, and is plotted with the same engines as anything else - literature data is never a special second-class thing baked into GraphVis.<br><br><b>All of this is the optional Science add-on.</b> PDF reading, vision models and chart de-rendering are large and not everybody wants them, so the standard application does not carry them and says so plainly when you ask for one."
+  },
+  {
+   "id": "lit-derender",
+   "section": "literature",
+   "kind": "task",
+   "title": "Reading the numbers off a published figure",
+   "keywords": "derender extract digitise digitize chart plot figure numbers reconstruct scrape reverse",
+   "see_also": [
+    "lit-what",
+    "data-import"
+   ],
+   "body": "De-rendering takes a figure in a paper and gives you back the data it was drawn from.<br><br><b>How to do it:</b> open the literature, pick out the figure, and de-render it. GraphVis identifies the axes and their scales, finds the series, and reads points off them. The result arrives as a dataset you can plot, compare against your own, or overlay.<br><br><b>Check three things before you use the numbers.</b><br><br><b>1. The axis scales.</b> A log axis read as linear produces numbers that are wrong by orders of magnitude and look entirely plausible.<br><b>2. The axis limits.</b> The extracted values are only as good as the two reference points the scale was built from.<br><b>3. A few points by hand.</b> Pick two you can read off the printed figure yourself and compare.<br><br><b>What it is for.</b> Comparing your result against a published one, recovering data from a paper whose authors are not contactable, and checking a claim. It is a reconstruction, not the original data, and it should be described as one."
+  },
+  {
+   "id": "lit-ai",
+   "section": "literature",
+   "kind": "concept",
+   "title": "AI providers and keys",
+   "keywords": "ai key api provider openai anthropic privacy offline network literature vision model",
+   "see_also": [
+    "lit-what",
+    "set-addons"
+   ],
+   "body": "Some literature features - understanding the text of a paper, describing a figure - can use a vision or language model. Those are the only parts of GraphVis that talk to a network, and they are off unless you configure them.<br><br><b>You supply the key.</b> GraphVis stores it locally and uses it for the requests you ask for. There is no GraphVis account and nothing is sent anywhere by default.<br><br><b>What leaves your machine, when you use one:</b> the content you asked to analyse. If that is a confidential manuscript or unpublished data, that matters, and it is the reason this is opt-in rather than a default.<br><br><b>Everything else works offline.</b> Importing, plotting, analysing, exporting: no network, ever. That is a design requirement of the program and not an accident of packaging.<br><br><b>Test the connection</b> from the panel before relying on it - a wrong key fails at the moment you needed it otherwise."
+  },
+  {
+   "id": "pub-export",
+   "section": "publish",
+   "kind": "task",
+   "title": "Exporting a figure",
+   "keywords": "export save png pdf svg image file output write picture publish",
+   "see_also": [
+    "pub-vector",
+    "pub-profiles",
+    "tb-export"
+   ],
+   "body": "<b>Publish</b> in the controls panel, or the Publish workspace.<br><br><b>1. Set a profile</b> if the figure is going anywhere specific. The profile decides the size in millimetres, the text size in points at final size, the line weights and the resolution. This is not a last step - it changes how the figure is drawn, so set it before you fine-tune anything.<br><br><b>2. Choose a format.</b> PDF or SVG for anything going into a document; PNG for a slide or a quick look. See <i>Vector or raster</i>.<br><br><b>3. Check the background.</b> White unless you have a reason. The profile usually handles this.<br><br><b>4. Export.</b> The figure is re-rendered at the profile's measurements. What you get is not a screenshot of the panel.<br><br><b>The export directory is remembered</b> between exports and between sessions, so a second figure goes where the first one went."
+  },
+  {
+   "id": "pub-vector",
+   "section": "publish",
+   "kind": "concept",
+   "title": "Vector or raster: PDF, SVG and PNG",
+   "keywords": "vector raster pdf svg png dpi resolution sharp blurry quality format which",
+   "see_also": [
+    "pub-export",
+    "set-renderers",
+    "tb-export"
+   ],
+   "body": "<b>Vector (PDF, SVG)</b> stores the figure as shapes - lines, curves, text. It is sharp at any size, the text is real text that a reader can search and select, and the file is usually smaller. <b>This is what a journal wants.</b><br><br><b>Raster (PNG)</b> stores a grid of pixels. Sharp at exactly the resolution it was made at and progressively worse away from it. Fine for a slide or an email.<br><br><b>Two things that force raster</b>, and they are worth knowing before you build the figure:<br><br><b>1. The renderer.</b> Only the Qt 2-D renderer produces true vector output. The WGPU and VTK renderers draw on the GPU and can only give you pixels. If the figure is going into a paper, build it on Qt 2-D.<br><br><b>2. Genuinely rasterised content.</b> A volume rendering or a million-point scatter is a picture, not a set of shapes, and a vector file of it would be enormous and no sharper.<br><br><b>Resolution on a raster export</b> comes from the profile. 300 dpi is a common halftone minimum; some publishers want 600 or 1000 for line art. The profile knows."
+  },
+  {
+   "id": "pub-profiles",
+   "section": "publish",
+   "kind": "concept",
+   "title": "Why a profile re-renders instead of scaling",
+   "keywords": "profile journal publication size millimetres points re-render scale shrink copy editor",
+   "see_also": [
+    "ref-profiles",
+    "pub-export",
+    "ax-labels"
+   ],
+   "body": "This is the idea the Publish panel is built around, and it is worth one paragraph of your attention.<br><br><b>A journal figure is not a screen figure saved at a higher resolution.</b><br><br>Suppose your figure is 165 mm wide on screen with 8 pt labels, and the journal wants 89 mm. If you scale the figure down, everything scales: those 8 pt labels become about 4.3 pt. That is what comes back from the copy editor, and it is the single most common reason a figure is sent back.<br><br>So a profile does not scale. It <b>re-renders the figure at 89 mm</b> with the text at the size the publisher specified, in points, at final size. The lines are re-drawn at the publisher's minimum weight rather than being thinned by the same factor. The result is a figure that is correct at the size it will be printed, which is the only size that matters.<br><br>{profiles} profiles are built in, {publisher_profiles} of them publisher specifications taken from those publishers' own author guidelines. Where a publisher does not state a number, the profile's note says the value is a GraphVis default rather than quietly filling one in.<br><br><b>Check the current instructions before you submit anyway.</b> These were right when they were written, and publishers change them."
+  },
+  {
+   "id": "pub-latex",
+   "section": "publish",
+   "kind": "task",
+   "title": "LaTeX export",
+   "keywords": "latex tex pgf tikz export document include figure caption",
+   "see_also": [
+    "pub-export",
+    "pub-vector",
+    "pub-citation-styles"
+   ],
+   "body": "GraphVis can export a figure for inclusion in a LaTeX document, so the figure's text is typeset by LaTeX in the document's own font rather than embedded at whatever font GraphVis had.<br><br><b>Use it when</b> the document has a specific typeface and you want the figure's labels to match it, or when you want to edit a label without re-exporting.<br><br><b>Use plain PDF when</b> you want the figure to be self-contained and identical everywhere, which is most of the time and is what most co-authors expect to receive."
+  },
+  {
+   "id": "pub-citation-styles",
+   "section": "publish",
+   "kind": "task",
+   "title": "Citation styles for a figure",
+   "keywords": "citation style reference apa harvard ieee mla chicago vancouver nature science acs ama nlm cse oscola bluebook doi bibtex bibliography",
+   "see_also": [
+    "pub-latex",
+    "pub-export"
+   ],
+   "body": "The <b>LaTeX figure</b> panel builds the block that goes round an exported image - the float, the width, the caption, the label - and the style you pick changes the block, not only the reference. APA 7 puts the figure number and title <i>above</i> the image and the explanatory note below it; almost every other style captions below.<br><br><b>Fifty-one styles are understood.</b> The first three in the list are the ones this program's users reach for - APA, Harvard and IEEE - and the rest are alphabetical, so a physicist does not scroll past the humanities styles to reach APS.<br><br><b>Where the rules come from is printed under the picker.</b> Some of these are published manuals and some are a name people use for a family of styles that has no single manual - “Harvard” and “Oxford referencing” chief among them. When the style you chose is one of those, the panel says so, because formatting to a common-denominator version and saying nothing invites a reference list your department will send back.<br><br><b>What it formats.</b> One journal article with a DOI, which is what resolving a DOI against Crossref returns. Books, chapters, preprints and datasets each have their own rules in every one of these styles and are not produced here.<br><br><b>BibTeX is not a style.</b> It is a bibliography <i>format</i>, and the entry for the cited paper is returned alongside the block for your .bib file whichever style you pick.<br><br><b>Check one reference before you submit.</b> A formatter is a starting point: journals vary their own house styles, and the difference is usually one character of punctuation."
+  },
+  {
+   "id": "pub-repro",
+   "section": "publish",
+   "kind": "concept",
+   "title": "Making a figure you can reproduce later",
+   "keywords": "reproduce reproducible again later same figure rebuild record provenance save state",
+   "see_also": [
+    "pr-figures",
+    "pr-state",
+    "an-solver"
+   ],
+   "body": "Nine months later a reviewer asks for the same figure with one more data point. Three habits make that ten minutes rather than an afternoon.<br><br><b>1. Save the figure, not just the export.</b> A saved figure carries the engine, the mapping, the scales, the limits, the colours and the annotations. A PNG carries none of it.<br><br><b>2. Keep the figure in a project with its data.</b> A project is rescanned on every start, so a dataset you added in March is still listed in September whether or not it is loaded.<br><br><b>3. Derive rather than edit.</b> A derived column or a SQL query is recorded in the figure's state and re-runs; the same transformation done by hand in a spreadsheet before import is not, and by then you will not remember which columns you touched.<br><br><b>Record what you set by hand.</b> Axis limits especially. A limit that excludes points is a decision, and it is one that a reader of the exported figure cannot see."
+  },
+  {
+   "id": "pr-projects",
+   "section": "project",
+   "kind": "concept",
+   "title": "Projects: managed and adopted",
+   "keywords": "project folder managed adopted create open workspace organise files where",
+   "see_also": [
+    "pr-figures",
+    "pr-state",
+    "pub-repro"
+   ],
+   "body": "A project is a folder holding your datasets, figures and notes. The window title shows which one is open. It is rescanned on every start, which is what lets GraphVis tell you what you have rather than only what you opened this session.<br><br><b>Two shapes, chosen when you make the project.</b><br><br><b>Managed</b> — GraphVis creates the folder and copies files into it. Everything for the project is in one place, which is somewhere to point a backup at.<br><br><b>Adopted</b> — a folder you already have, scanned where it stands. <b>Nothing is copied or moved.</b> This is the one to use when your data lives somewhere structured already, or on a share, or under version control.<br><br>Neither modifies your data files. The difference is only whether GraphVis keeps its own copy."
+  },
+  {
+   "id": "pr-figures",
+   "section": "project",
+   "kind": "task",
+   "title": "Saving and reopening figures",
+   "keywords": "save figure open load reopen file state persist come back",
+   "see_also": [
+    "pr-projects",
+    "pub-repro",
+    "win-figures"
+   ],
+   "body": "<b>File ▸ Save figure as…</b> writes the figure: the engine, the dataset it refers to, the column mapping, the scales, the limits, the colours, the annotations - every choice you made.<br><br>Reopening it brings back what you were looking at rather than a blank canvas. Figures kept in a project are listed in the Project panel.<br><br><b>A figure refers to its dataset; it does not contain it.</b> If the data file moves or changes, the figure follows it to wherever it now is, or tells you it cannot. That is the right behaviour - a figure that silently carried a stale private copy of the data would draw something that no longer matches the file it names."
+  },
+  {
+   "id": "pr-recent",
+   "section": "project",
+   "kind": "reference",
+   "title": "Recent files and the import log",
+   "keywords": "recent files history log import failed what happened list clear",
+   "see_also": [
+    "data-import",
+    "tb-addon"
+   ],
+   "body": "<b>File ▸ Recent datasets</b> and <b>Recent visualisations</b> list what you opened, with the full path on hover. <b>Clear recent files</b> empties both lists and deletes nothing.<br><br><b>The import log</b> is more useful than it sounds. It records every import attempt and what became of it - succeeded, failed, and the reason. When three of a folder of forty files did not appear, this is the list that tells you which three and why, rather than leaving you to work out what is missing."
+  },
+  {
+   "id": "pr-state",
+   "section": "project",
+   "kind": "reference",
+   "title": "What is saved where",
+   "keywords": "saved settings stored state persist where preferences registry disk files",
+   "see_also": [
+    "pr-figures",
+    "set-settings"
+   ],
+   "body": "<b>In the figure file:</b> the engine, the dataset it points to, the mapping, the scales, the limits, the colour map and range, the figure background and theme, the annotations, the title and labels.<br><br><b>In the project folder:</b> the datasets (in a managed project), the figures, the notes.<br><br><b>In the application settings:</b> the layout, the interface theme, the renderer, which graph packs are on, the window position, the export directory, the recent lists. These follow you between projects because they are about how you like to work, not about any one piece of work.<br><br><b>Nowhere:</b> your data files are never written to. GraphVis reads them."
+  },
+  {
+   "id": "set-renderers",
+   "section": "setup",
+   "kind": "concept",
+   "title": "Which renderer should I use?",
+   "keywords": "renderer qt wgpu vtk gpu 3d opengl performance backend restart which choose",
+   "see_also": [
+    "pub-vector",
+    "gr-3d",
+    "set-perf"
+   ],
+   "body": "<b>Options ▸ Renderer.</b> Three, and the answer is nearly always the first one.<br><br><b>Qt 2-D — use this unless you have a reason not to.</b> Every catalogue engine draws here, and it is the only renderer that exports a true vector PDF or SVG, so it is the one for anything going into a paper. It draws on the CPU, fast enough for tens of thousands of points.<br><br><b>Native WGPU — for data the 2-D painter cannot carry.</b> A GPU point cloud, for very large scatter and volume data in the millions of points. It has no catalogue engines and no vector export. Use it to <i>look</i> at a large cloud, then go back to Qt 2-D to make the figure.<br><br><b>VTK / PBR — lit, rotatable 3-D.</b> Physically based materials and real lighting, for showing the <i>shape</i> of a surface rather than reading values off it. No vector export.<br><br><b>Switching needs a restart.</b> Which scene graph the application runs on is decided at startup, so choosing a different renderer takes effect next time you open GraphVis - the menu offers to restart for you. This is not a caveat you can work around; it is what the graphics stack requires.<br><br><b>Switching is safe.</b> The renderer changes how a figure is drawn, not what your data is, and nothing on disk changes."
+  },
+  {
+   "id": "set-addons",
+   "section": "setup",
+   "kind": "concept",
+   "title": "Add-ons and optional components",
+   "keywords": "addon add-on optional install component download science extra missing package",
+   "see_also": [
+    "set-science",
+    "tb-addon"
+   ],
+   "body": "<b>Options ▸ Add-ons and optional components…</b><br><br>The heavy or rarely-wanted parts of GraphVis are a choice, at install time and afterwards. <b>Nothing in this list is needed to plot a CSV.</b><br><br>Each entry says what it gives you, what it costs to download and what it costs to use - a decision made with the numbers in front of you rather than a guess at a checkbox.<br><br>The list comes from the same file the installer reads, so a component added there appears here with no code change and the two cannot disagree about what exists.<br><br>Components can be added and removed at any time; this is not an install-time-only decision."
+  },
+  {
+   "id": "set-science",
+   "section": "setup",
+   "kind": "concept",
+   "title": "The Science add-on, in detail",
+   "keywords": "science addon python import formats analysis literature install what does it do needed",
+   "see_also": [
+    "set-addons",
+    "data-import",
+    "an-panel",
+    "tb-addon"
+   ],
+   "body": "The largest optional component, and the one most messages point at. It is a Python service that GraphVis starts when it needs it.<br><br><b>What it gives you:</b><br>· <b>Import</b> of {formats} file extensions beyond the {builtin_formats} the core reads - MATLAB, HDF5, NetCDF, Excel, SPSS, Stata, SAS, CTD casts, FITS, mass spec, flow cytometry, genomics, dive logs, seismic, GIS.<br>· <b>Analysis</b> - the fits, statistics and derived columns in the Analysis panel.<br>· <b>Scanning</b> - the dataset recommendations.<br>· <b>Literature</b> - PDF reading, table extraction and figure de-rendering.<br><br><b>What it does not change:</b> plotting, exporting, layouts, colours, projects. All of that is native and works without it.<br><br><b>How an imported file reaches the figure.</b> The service reads the file, converts it to Arrow and hands the result to exactly the same code that loads a CSV. There is no separate path for add-on formats, which is why a MATLAB file behaves identically to a CSV once it is in.<br><br><b>A format whose Python package is missing says which package to install</b> rather than failing at startup or blocking the formats that do work. Each reader imports its dependency lazily for that reason."
+  },
+  {
+   "id": "set-perf",
+   "section": "setup",
+   "kind": "concept",
+   "title": "Performance: previews, budgets and large data",
+   "keywords": "slow performance speed large data render resolution budget preview lag million points",
+   "see_also": [
+    "set-renderers",
+    "fi-detail",
+    "tb-slow"
+   ],
+   "body": "<b>What makes GraphVis feel fast on a big dataset is that the figure you interact with is a preview.</b> A full-resolution render is produced in the background and swapped in when it is ready; the badge on the status strip is telling you that is happening.<br><br><b>Options ▸ Full-resolution render</b> controls when that happens, and <b>Ask above</b> sets the number of seconds beyond which GraphVis asks first rather than starting a long render you did not want.<br><br><b>Where the time actually goes</b>, in rough order:<br><br><b>1. Field estimation.</b> A contour or surface over scattered points is usually the slowest thing in the program, and the cost is quadratic in the detail setting. See <i>Field detail</i>.<br><b>2. Point count.</b> Hundreds of thousands of individual markers. Reduce with a SQL query or a sampled subset while you work out what the figure should be, then go back to everything.<br><b>3. The estimator you chose.</b> Kriging over ten thousand points is a different proposition from inverse distance over the same points.<br><b>4. Re-import.</b> Converting a large file through the Science add-on happens once per import, not per redraw.<br><br><b>Two habits that help most:</b> work out the figure on a subset, and set the field detail to the lowest number at which the contours stop changing shape."
+  },
+  {
+   "id": "set-settings",
+   "section": "setup",
+   "kind": "reference",
+   "title": "Settings, and what follows you between projects",
+   "keywords": "settings preferences stored saved reset default configuration experimental",
+   "see_also": [
+    "pr-state",
+    "win-layouts"
+   ],
+   "body": "Settings that describe <i>how you like to work</i> are stored by the application and follow you into every project: the layout, the interface theme, the renderer, the enabled graph packs, the window position and display mode, the export directory, the recent lists, the full-resolution render policy.<br><br>Settings that describe <i>a piece of work</i> live in the figure and the project. See <i>What is saved where</i>.<br><br><b>Options ▸ Experimental interface</b> switches on an alternative shell that is being worked on. It is off by default, it is not finished, and it is not where your work should live."
+  },
+  {
+   "id": "tb-nothing",
+   "section": "trouble",
+   "kind": "task",
+   "title": "The figure is blank",
+   "keywords": "blank empty nothing white no data missing figure not drawing broken help",
+   "see_also": [
+    "data-columns",
+    "gr-columns",
+    "win-status"
+   ],
+   "body": "In roughly the order they turn out to be the cause:<br><br><b>1. The columns are not numbers.</b> This is the most common by a distance. An engine cannot read a text column, and it gets back nothing rather than an error. Open the Data panel and check the type of every column you mapped. See <i>Columns and types</i>.<br><br><b>2. The engine needs more columns than you gave it.</b> A vector field needs four, a choropleth four or five. Check the mapping panel for empty slots.<br><br><b>3. A log axis with non-positive data.</b> A log scale cannot show zero or a negative number, and every such point vanishes. If most of your column is zero, the figure is nearly empty. Switch to log(1+x) or linear.<br><br><b>4. Axis limits that exclude everything.</b> <b>View ▸ Fit the axes back to the data</b> puts them back.<br><br><b>5. The data really is all missing.</b> The Data panel says how many values each column has.<br><br><b>Read the plot notice and the status strip before anything else.</b> When the engine can say why it drew nothing, it does - and that message names the cause directly rather than leaving you with this list."
+  },
+  {
+   "id": "tb-onepixel",
+   "section": "trouble",
+   "kind": "task",
+   "title": "Everything is squashed into one corner",
+   "keywords": "squashed corner outlier one point scale squeezed tiny cluster spread unreadable",
+   "see_also": [
+    "ax-scales",
+    "ax-limits",
+    "data-table"
+   ],
+   "body": "Almost always one extreme value stretching the axis so that everything else occupies a few pixels.<br><br><b>Find it:</b> the Data panel shows each column's range. A maximum that is orders of magnitude above the rest is the culprit, and it is often a sentinel - 9999, -999, 1e30 - meaning <i>missing</i> in whatever produced the file.<br><br><b>Then pick one:</b><br><br>· <b>Set axis limits</b> to the range you care about. Quick, reversible, and it hides the outlier from the figure without removing it from the data - so say so in the caption.<br>· <b>Use a log axis</b>, if the spread is genuine and spans orders of magnitude.<br>· <b>Use a quantile axis</b>, if the column is mostly one value with a long tail. It makes structure visible at the cost of the distances meaning anything.<br>· <b>Filter with SQL</b>, if the value is genuinely bad data. This is the right answer for a sentinel, because a sentinel should not be in a fit either.<br><br><b>On a heat map or a field</b>, the same thing happens to the colours rather than the axes, and the fix is the <i>colour range</i>, not the axis limits. See <i>Axis limits and colour range</i>."
+  },
+  {
+   "id": "tb-nocolumn",
+   "section": "trouble",
+   "kind": "task",
+   "title": "My column is not in the list",
+   "keywords": "column missing not listed dropdown cannot select absent choose text date",
+   "see_also": [
+    "data-columns",
+    "data-expressions",
+    "data-table"
+   ],
+   "body": "The mapping lists offer numeric columns only, so a column that is absent was read as text.<br><br><b>Check the Data panel</b> for the type it was read as. Then:<br><br><b>If it should be numbers:</b> something in the column is not one. Usual suspects - a unit written into the cell (<i>12 mm</i>), a comma as a decimal separator, an <i>n/a</i> or <i>--</i> for missing, a footnote marker, a thousands separator, a stray header row partway down the file. Fix the file and import it again.<br><br><b>If it is a date:</b> it needs to be a number to go on an axis - a timestamp, or days from a reference date.<br><br><b>If it is genuinely labels:</b> you need a numeric column that means the same thing. Add an ID column to the file, or make one with an expression. This is exactly why a choropleth reads a region <i>id</i> and not a region name.<br><br><b>If it is a column you expected to exist and does not at all:</b> the file may have been read with the wrong delimiter or a header in the wrong place. The Data panel shows the columns as read, which usually makes that obvious at a glance."
+  },
+  {
+   "id": "tb-addon",
+   "section": "trouble",
+   "kind": "task",
+   "title": "It says the Science add-on is needed",
+   "keywords": "science addon needed install required message missing python service not available",
+   "see_also": [
+    "set-science",
+    "set-addons",
+    "data-import"
+   ],
+   "body": "You have asked for something that lives in the optional Science add-on: importing a format the native core does not read, an analysis operation, a scan, or a literature feature.<br><br><b>To install it:</b> <b>Options ▸ Add-ons and optional components…</b> The panel says what it costs to download and what it gives you.<br><br><b>If it is installed and still says this:</b><br><br>· <b>One format is missing its own package.</b> Readers import their dependencies lazily, so one format can be unavailable while the rest work. The message names the package to install.<br>· <b>The service was changed but not reinstalled.</b> The add-on is installed as a copy rather than a link, so an edit to the service source does not take effect until it is installed again.<br><br><b>What still works without it:</b> everything about plotting and exporting, and {builtin_formats} for import."
+  },
+  {
+   "id": "tb-slow",
+   "section": "trouble",
+   "kind": "task",
+   "title": "It is slow",
+   "keywords": "slow lag freeze hang performance waiting stuck unresponsive speed up",
+   "see_also": [
+    "set-perf",
+    "fi-detail",
+    "data-sql"
+   ],
+   "body": "<b>First, is it busy or is it stuck?</b> The busy overlay names the job it is waiting for, and the job can be cancelled. The render badge means a full-resolution render is in progress and the preview on screen is deliberately the fast version.<br><br><b>Then, in order of how often it is the answer:</b><br><br><b>1. Field detail is too high.</b> A contour or surface over scattered points is usually the slowest thing here, and the cost is quadratic - halving the detail is a quarter of the work. Turn it down until the contours start changing shape, then back up one step.<br><br><b>2. Too many points.</b> Work out the figure on a subset with a SQL query, then run it on everything once.<br><br><b>3. The estimator is expensive.</b> Kriging and the radial basis functions do a global solve. Inverse distance or Delaunay linear over the same points is a different order of cost.<br><br><b>4. The full-resolution render is set to run on every change.</b> <b>Options ▸ Full-resolution render</b>, and <b>Ask above</b> sets the threshold past which it asks first.<br><br><b>Not usually the problem:</b> the renderer. Switching to the GPU renderer helps a million-point cloud and does nothing at all for a slow field estimate, which is CPU work either way."
+  },
+  {
+   "id": "tb-export",
+   "section": "trouble",
+   "kind": "task",
+   "title": "The exported figure does not look like the screen",
+   "keywords": "export different wrong looks size text small background blurry mismatch changed",
+   "see_also": [
+    "pub-profiles",
+    "pub-vector",
+    "win-themes"
+   ],
+   "body": "<b>This is usually working as intended</b>, and the reason is worth understanding.<br><br><b>The text is a different size.</b> A publication profile re-renders the figure at the publisher's measurements, with text in points at <i>final size</i>. On a 89 mm figure with 6 pt text, the labels look large relative to the figure on screen and are correct in print. Set the profile and trust it rather than adjusting sizes by eye. See <i>Why a profile re-renders</i>.<br><br><b>The background is dark.</b> The <i>figure</i> background is exported; the <i>interface</i> theme is not. If your figure came out dark, the figure background is dark. See <i>Interface theme and figure background</i>.<br><br><b>The grid has gone.</b> Several publication profiles turn the grid off, because most publishers prefer it that way.<br><br><b>It is blurry in the document.</b> You exported PNG. Export PDF or SVG - and if those are not offered, the figure is being drawn by a GPU renderer, which cannot produce vector. Switch to Qt 2-D. See <i>Vector or raster</i>.<br><br><b>It is cropped differently.</b> The exported figure uses the axis limits, not your current zoom. If the range matters, set the limits."
+  },
+  {
+   "id": "tb-unverified",
+   "section": "trouble",
+   "kind": "concept",
+   "title": "It says this graph is unverified",
+   "keywords": "unverified warning label red trust use anyway safe should i measured",
+   "see_also": [
+    "gr-verified",
+    "pub-repro"
+   ],
+   "body": "It means nothing has yet <i>measured</i> whether that engine draws its claim correctly. It does not mean it is known to be wrong, and the engine is not hidden or disabled.<br><br><b>What has been checked:</b> that it renders, that it puts your data on the page, and that it produces a picture no other engine produces.<br><br><b>What has not:</b> that the specific claim it makes is true - that the ranks are in the right order, that the colours follow the value, that the widths carry the totals.<br><br><b>What to do with one.</b> Use it to look at your data freely. Before it goes into anything published, check it the way you would check any unfamiliar tool: feed it something whose answer you already know, and confirm the picture says what it should. That is exactly what verifying an engine consists of.<br><br>Currently {unverified} of {entries} entries are unverified."
+  },
+  {
+   "id": "tb-missing",
+   "section": "trouble",
+   "kind": "task",
+   "title": "A control I was using has disappeared",
+   "keywords": "missing control gone hidden cannot find panel disappeared where layout lost",
+   "see_also": [
+    "win-layouts",
+    "win-palette",
+    "ax-limits"
+   ],
+   "body": "Three causes, in order of likelihood.<br><br><b>1. The layout changed.</b> Layouts move and hide panels by design - Zen and Bare have almost no permanent controls. <b>Ctrl+K</b> reaches everything from any layout, and <b>View ▸ Layout</b> is always on the menu. View also has explicit toggles for the toolbar, the controls panel and the workspace bar.<br><br><b>2. This figure has not got that thing.</b> Several panels ask the figure what it has rather than assuming. The Range panel shows a row per axis the engine actually reads - a line chart has two, a pie chart has none - so a missing limits row means this engine has no such axis. Engine-specific settings appear only for the engines that declare them.<br><br><b>3. It needs an add-on.</b> Analysis and literature controls say so rather than vanishing, so if a panel is telling you something is unavailable, that is the answer rather than a missing control."
+  },
+  {
+   "id": "tb-restart",
+   "section": "trouble",
+   "kind": "concept",
+   "title": "It says restart to finish switching",
+   "keywords": "restart required renderer switch pending reopen change effect later",
+   "see_also": [
+    "set-renderers"
+   ],
+   "body": "You changed the renderer. Which scene graph the application runs on is decided once, at startup, so a renderer chosen now takes effect when GraphVis next opens. The menu offers to restart for you.<br><br>Until you do, the figure is still being drawn by the old renderer - which matters most if you switched <i>to</i> Qt 2-D in order to export vector. The export will not be vector until the restart has happened.<br><br>Nothing is lost by restarting: figures in a project are still there, and the state of the current figure is carried across."
+  }
+ ]
+}

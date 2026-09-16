@@ -33,6 +33,57 @@ Rectangle {
     readonly property string paperName: hasPaper ? app.literatureUrl.toString().split("/").pop() : ""
     readonly property bool analysed: app.literatureAnalysis.ok === true
 
+    // ONE ACTION, ONE GATE, ONE SENTENCE.
+    //
+    // Reported from the built application: "why is the recreat greyed out when
+    // i selected one of the graphs also it looks liek hte buttons on both side
+    // greyed out might do the same thing or something".
+    //
+    // They did. The Library panel's "Research tools" group was the Literature
+    // intelligence panel's "Actions" group written a second time: three buttons
+    // calling the same three functions under different names -
+    //
+    //   Extract figures and tables  =  Analyze paper           analyzeLiterature()
+    //   Recreate selected graph     =  Reconstruct graph       lab.trace()
+    //   Use extracted dataset       =  Send extracted data …   importFirstLiteratureDataset()
+    //
+    // - with separately written enabled expressions, which had already drifted.
+    // "Use extracted dataset" was enabled by `analysed` alone: the exact
+    // condition that was wrong on its twin and was reported as a broken button.
+    // Fixing one copy of a rule fixes one copy of the rule.
+    //
+    // So the conditions live here, once, and both panels read them. The reason
+    // a button is grey is a property too, not a tooltip: a tooltip explains a
+    // disabled control only to someone who already suspects it is waiting
+    // rather than broken, and the person who asked the question above did not,
+    // because nothing on screen suggested it.
+    readonly property bool canExtract: root.hasPaper && !root.app.busy
+
+    readonly property bool canTrace: root.analysed && lab.calibrated && !root.app.busy
+    // The location matters as much as the list. The person HAD selected a
+    // figure; the things still missing are asked for by controls UNDER that
+    // figure, in the middle pane - which is not where they were looking when a
+    // button on the far side of the window refused them.
+    readonly property string traceBlocked: {
+        if (!root.analysed) return "Extract the paper first."
+        if (root.canTrace || lab.missingForCalibration === "") return ""
+        if (lab.imagePath === "") return "Still needs " + lab.missingForCalibration + "."
+        return "Still needs " + lab.missingForCalibration
+               + " — the controls for these are under the figure itself, in the "
+               + "middle of the window."
+    }
+
+    readonly property bool canSend: root.analysed
+                                    && root.app.literatureSummary.drawable > 0
+    readonly property string sendBlocked: {
+        if (!root.analysed || root.canSend) return ""
+        if (!(root.app.literatureSummary.tables > 0))
+            return "Nothing has been extracted from this paper yet."
+        return "Nothing to send: none of the " + root.app.literatureSummary.tables
+               + " extracted tables has two numeric columns over three or more "
+               + "rows. Use Reconstruct graph to read numbers off a figure instead."
+    }
+
     ListModel { id: annotations }
 
     // What was extracted BEFORE this session.
@@ -116,30 +167,48 @@ Rectangle {
                     }
                 }
 
+                // The one action this panel is the natural home of: it follows
+                // "Open literature…" at the top, and it is what turns a paper
+                // into everything the other two panels then work on.
+                //
+                // The two buttons that used to sit beneath it - "Use extracted
+                // dataset" and "Recreate selected graph" - were the same calls
+                // as "Send extracted data to workspace" and "Reconstruct graph"
+                // on the right-hand side, and are gone rather than duplicated
+                // under a second name. See the gate properties at the top of
+                // this file for why. They act on a figure and on an extraction,
+                // both of which are shown on the other side of the window, so
+                // that is where their buttons belong.
                 GvGroupBox {
-                    title: "Research tools"; Layout.fillWidth: true
+                    title: "Read this paper"; Layout.fillWidth: true
                     ColumnLayout { anchors.fill: parent
                         // "&" in a Button is a MNEMONIC, not an ampersand: Qt eats it and
                         // underlines the next letter, so this button read
                         // "Extract figures _tables" on screen. Spelled out
                         // rather than escaped as "&&", which is the same trap
                         // waiting for the next person to edit the line.
-                        Button { text: "Extract figures and tables"; Layout.fillWidth: true; enabled: root.hasPaper && !root.app.busy; onClicked: root.app.analyzeLiterature() }
-                        Button { text: "Use extracted dataset"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
-                        // Was `enabled: false` with a tooltip describing a
-                        // selection the interface could not make. It can now.
                         Button {
-                            id: recreateButton
-                            text: "Recreate selected graph"
+                            text: "Extract figures and tables"
                             Layout.fillWidth: true
-                            enabled: root.analysed && lab.calibrated && !root.app.busy
-                            onClicked: lab.trace()
-                            ToolTip.visible: recreateButton.hovered
-                            ToolTip.text: root.analysed
-                                ? (lab.calibrated
-                                   ? "Follow the colour you picked across the plot area and turn it back into numbers"
-                                   : "Choose a figure, drag a box round its plot area, click the line, and type both axis ranges")
-                                : "Extract the paper first"
+                            enabled: root.canExtract
+                            onClicked: root.app.analyzeLiterature()
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: !root.hasPaper
+                            text: "Open a paper first."
+                            color: Theme.textMuted
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.analysed
+                            text: "What to do with it is in the Literature "
+                                  + "intelligence panel, on the right."
+                            color: Theme.textMuted
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }
@@ -374,14 +443,35 @@ Rectangle {
                             Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Theme.textSecondary
                             text: root.app.busy && root.app.workspaceMode === "Literature" ? root.app.busyLabel
                                   : root.analysed ? "Extraction complete. Send the data to the workspace to plot it."
-                                  : "Run Analyze to extract figures, tables and numeric series from this paper."
+                                  : "Press \"Extract figures and tables\" to pull the figures, tables and numeric series out of this paper."
                         }
                         Label {
                             Layout.alignment: Qt.AlignHCenter; color: Theme.positive; visible: root.analysed
                             text: (root.app.literatureAnalysis.datasets ? root.app.literatureAnalysis.datasets.length + " numeric datasets" : "")
                                   + (root.app.literatureAnalysis.text_chars ? " · " + root.app.literatureAnalysis.text_chars + " characters indexed" : "")
                         }
-                        Button { Layout.alignment: Qt.AlignHCenter; text: "Send extracted data to workspace"; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
+                        // The same gate as the copy in the side panel - see the
+                        // long note there. Two buttons that call one action
+                        // must agree about when that action can run, or the
+                        // person finds one of them enabled and the other not
+                        // for the same paper.
+                        Button {
+                            id: sendButtonWide
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Send extracted data to workspace"
+                            enabled: root.canSend
+                            onClicked: root.app.importFirstLiteratureDataset()
+                        }
+                        Label {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.maximumWidth: 420
+                            horizontalAlignment: Text.AlignHCenter
+                            visible: root.sendBlocked !== ""
+                            text: root.sendBlocked
+                            color: Theme.textMuted
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                        }
                     }
 
                     // The empty state, sized to whatever the pane has rather
@@ -442,19 +532,55 @@ Rectangle {
                     GvGroupBox {
                         title: "Detected content"; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
                         ColumnLayout { anchors.fill: parent
-                            Label { text: root.app.literatureAnalysis.datasets ? root.app.literatureAnalysis.datasets.length + " numeric datasets" : "Figures · tables · equations"; color: Theme.textSecondary }
+                            // HOW MANY CAN BE DRAWN, not how many were found.
+                            //
+                            // This said `datasets.length` - "12 numeric
+                            // datasets" - for a thesis whose twelve tables were
+                            // a contents page and running heads. Every one was
+                            // a table to pdfplumber and none was a table of
+                            // numbers, so the count invited a button press that
+                            // could not work. The count and the sentence below
+                            // it come from AppController, which applies the same
+                            // rule the chooser does.
+                            Label {
+                                text: root.app.literatureSummary.tables !== undefined
+                                      ? root.app.literatureSummary.drawable + " of "
+                                        + root.app.literatureSummary.tables
+                                        + " tables can be drawn"
+                                      : "Figures · tables · equations"
+                                color: root.app.literatureSummary.drawable > 0
+                                       ? Theme.positive : Theme.textSecondary
+                            }
+                            Label {
+                                visible: !!root.app.literatureSummary.guidance
+                                text: root.app.literatureSummary.guidance || ""
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontSizeSmall
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
                             Label { text: root.app.literatureAnalysis.text_chars ? root.app.literatureAnalysis.text_chars + " text characters indexed" : "Method and unit links appear here"; color: Theme.textMuted; wrapMode: Text.WordWrap }
                         }
                     }
                     GvGroupBox {
                         title: "Actions"; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
                         ColumnLayout { anchors.fill: parent
-                            Button { text: "Analyze paper"; Layout.fillWidth: true; enabled: !root.app.busy && root.hasPaper; onClicked: root.app.analyzeLiterature() }
+                            // Was "Analyze paper". Same call as the Library
+                            // panel's button, so it is now the same words as
+                            // well: two names for one action is what made a
+                            // person ask whether the buttons on both sides of
+                            // the window "might do the same thing or something".
+                            Button {
+                                text: "Extract figures and tables"
+                                Layout.fillWidth: true
+                                enabled: root.canExtract
+                                onClicked: root.app.analyzeLiterature()
+                            }
                             Button {
                                 id: reconstructButton
                                 text: "Reconstruct graph"
                                 Layout.fillWidth: true
-                                enabled: root.analysed && lab.calibrated && !root.app.busy
+                                enabled: root.canTrace
                                 onClicked: lab.trace()
                                 ToolTip.visible: reconstructButton.hovered
                                 ToolTip.text: lab.calibrated
@@ -467,9 +593,8 @@ Rectangle {
                             // control that will not respond.
                             Label {
                                 Layout.fillWidth: true
-                                visible: root.analysed && !lab.calibrated
-                                         && lab.missingForCalibration !== ""
-                                text: "Still needs " + lab.missingForCalibration + "."
+                                visible: root.traceBlocked !== ""
+                                text: root.traceBlocked
                                 color: Theme.textMuted
                                 font.pixelSize: 10
                                 wrapMode: Text.WordWrap
@@ -484,9 +609,7 @@ Rectangle {
                                 // against each other. Nothing special, which is
                                 // the point - the numbers off the paper are now
                                 // ordinary numbers.
-                                enabled: root.app.lastReconstruction
-                                         && root.app.lastReconstruction.rows > 0
-                                         && !root.app.busy
+                                enabled: !!(root.app.lastReconstruction && root.app.lastReconstruction.rows > 0 && !root.app.busy)
                                 onClicked: {
                                     if (root.app.importReconstruction())
                                         root.app.workspaceMode = "Visualize"
@@ -509,7 +632,42 @@ Rectangle {
                                 font.pixelSize: 10
                                 wrapMode: Text.WordWrap
                             }
-                            Button { text: "Send extracted data to workspace"; Layout.fillWidth: true; enabled: root.analysed; onClicked: root.app.importFirstLiteratureDataset() }
+                            // ENABLED ONLY WHEN THERE IS SOMETHING TO SEND.
+                            //
+                            // It used to be enabled the moment the paper was
+                            // analysed, whether or not any extracted table was
+                            // drawable. Pressing it on a paper whose numbers
+                            // are all in its figures - which is most papers -
+                            // did nothing visible: the refusal was written to
+                            // the status strip at the bottom of the window,
+                            // which is not where anyone is looking when they
+                            // have just pressed a button in this panel. It read
+                            // as a broken button, and was reported as one.
+                            //
+                            // `drawable` is already computed, for the line a
+                            // few rows above that says "None of the N extracted
+                            // tables is a table of numbers" - so the panel HAD
+                            // the answer and the button was not asking it.
+                            //
+                            // Disabled with the reason underneath is the
+                            // pattern the two buttons above already use; this
+                            // was the one control in the group that failed
+                            // silently instead.
+                            Button {
+                                id: sendButton
+                                text: "Send extracted data to workspace"
+                                Layout.fillWidth: true
+                                enabled: root.canSend
+                                onClicked: root.app.importFirstLiteratureDataset()
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                visible: root.sendBlocked !== ""
+                                text: root.sendBlocked
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
+                            }
                         }
                     }
                     GvGroupBox {

@@ -19,6 +19,7 @@ Rectangle {
     property var canvas: null
 
     signal graphSearchRequested()
+    signal exportRequested()
 
     implicitHeight: 62
     color: Theme.surfaceAlt
@@ -145,7 +146,10 @@ Rectangle {
                 id: exportButton
                 text: "Save figure…"
                 enabled: root.canvas !== null && root.canvas.pointCount > 0
-                onClicked: root.app.notify("Use File ▸ Save figure as…")
+                // Opens the real dialog. It used to tell the person to go
+                // and use a menu instead, which is a button describing its own
+                // replacement.
+                onClicked: root.exportRequested()
                 ToolTip.visible: exportButton.hovered
                 ToolTip.text: "PDF, SVG, PNG, the script that redraws it, or the numbers behind it"
             }

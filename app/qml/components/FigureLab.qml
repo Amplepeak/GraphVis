@@ -56,15 +56,21 @@ Item {
     property bool yLog: false
     property real tolerance: 45
 
-    // What calibration is still waiting for, as a sentence.
+    // What calibration is still waiting for, as a NOUN PHRASE.
     //
-    // The two buttons in the right-hand panel are disabled until this is empty,
-    // and until now the only explanation was a tooltip - so a disabled button
-    // looked broken rather than waiting. A control that refuses to act should
-    // say what it is waiting for where the person is already looking.
+    // The buttons that read this are disabled until it is empty, and until now
+    // the only explanation was a tooltip - so a disabled button looked broken
+    // rather than waiting. A control that refuses to act should say what it is
+    // waiting for where the person is already looking.
+    //
+    // Noun phrase rather than instruction, because the only sentence anyone
+    // builds out of this begins "Still needs". The first two branches used to
+    // be imperatives, which produced "Still needs drag a box round the plot
+    // area." on screen - a sentence that reads as a bug in the sentence and
+    // therefore as a bug in the button.
     readonly property string missingForCalibration: {
-        if (root.imagePath === "") return "choose a figure above"
-        if (!root.boxDrawn) return "drag a box round the plot area"
+        if (root.imagePath === "") return "a figure — choose one above"
+        if (!root.boxDrawn) return "a box dragged round the plot area"
         if (root.asGrid) return ""
         var need = []
         if (!root.colourPicked) need.push("the line colour")

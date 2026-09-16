@@ -34,7 +34,7 @@ def _coerce(payload:dict)->VLMObservation:
     def pair(v):
         try:
             if v is not None and len(v)==2:return (float(v[0]),float(v[1]))
-        except Exception:pass
+        except Exception:pass  # a box that is not a pair of numbers is simply not a box
         return None
     return VLMObservation(
         plot_type=str(payload.get("plot_type","unknown")), confidence=float(payload.get("confidence",0.0) or 0.0),

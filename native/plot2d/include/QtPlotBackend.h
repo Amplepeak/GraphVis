@@ -1,4 +1,7 @@
 #pragma once
+
+// std::optional: the engine-rewrite groups below return one.
+#include <optional>
 // =========================================================================
 // QtPlotBackend - draws the 2-D catalogue with QPainter.
 //
@@ -9,6 +12,10 @@
 // =========================================================================
 #include "PlotBackend.h"
 #include <QFont>
+#include <QPointF>
+// qIsInf and qBound, for `finite` and `Bounds::scale` just below.
+#include <QtGlobal>
+#include <QtNumeric>
 
 class QPainter;
 
@@ -19,6 +26,49 @@ struct AxisTick {
     double value = 0.0;
     QString label;
     bool minor = false;
+};
+
+// MOVED UP FROM QtPlotBackendShared.h, because the class below now has member
+// functions that take them.
+//
+// They were in the private implementation header, which is included BY this one
+// - so nothing declared here could mention them, and the 3-D painter's four
+// branches could not be split into functions: each needs the projection and the
+// three axis spans, and a member function cannot be declared with a type its
+// own header has not seen. The builders (`makeProjection`, `boundsOf`,
+// `withAxisLimits`) stay in the implementation header; only the vocabulary moves.
+inline bool finite(double v){ return v==v && !qIsInf(v); }
+
+// The span of one column.
+//
+// This existed twice under two names with two builders - boundsOf and boundsFor.
+// They measure the same thing and differ only in what they map it onto: a radar
+// chart wants [0,1] clamped, a 3-D projection wants [-0.5,+0.5] unclamped. Both
+// normalisations live here.
+struct Bounds {
+    double lo=0, hi=1;
+    bool valid=false;
+    // Centred on zero, for the orthographic projection: a cube from -0.5 to
+    // +0.5 rotates about its own middle.
+    double norm(double v) const { return hi>lo ? (v-lo)/(hi-lo)-0.5 : 0.0; }
+    // Clamped to [0,1], so a radar chart can compare columns whose units
+    // differ. Plotting raw values on a shared radius compares nothing.
+    double scale(double v) const {
+        if(!finite(v)||!(hi>lo)) return 0.0;
+        return qBound(0.0,(v-lo)/(hi-lo),1.0);
+    }
+};
+
+// A colour map is a table of 256 RGB triples. The alias is here rather than
+// with the tables because the class below takes one as a parameter.
+using ColourMapKind = const unsigned char (*)[3];
+
+// The orthographic camera: two angles pre-resolved into sines and cosines, the
+// centre of the cube on the page, and how many pixels a unit of the cube is.
+struct Projection {
+    double sinAz, cosAz, sinEl, cosEl;
+    QPointF origin;
+    double scale;
 };
 
 class QtPlotBackend final : public PlotBackend {
@@ -82,6 +132,11 @@ public:
     // computeFrame on whichever thread drew; the full-resolution render builds
     // its own backend, so this is never touched from two threads at once.
     QRectF lastPlotArea() const { return lastPlotArea_; }
+    // Where the last render put the legend, in the target's coordinates, or a
+    // null rectangle when it drew none. A legend sits INSIDE the plot area, so
+    // anything asking a question about what the DATA did near the frame has to
+    // be able to exclude it - see the plot-frame property check.
+    QRectF lastLegendRect() const { return lastLegendRect_; }
     // Public because the canvas decides whether to offer panning at all, and
     // the answer must be the same one render() acts on.
     static bool engineHasAxes(const QString& engine);
@@ -210,8 +265,29 @@ private:
     // Hexagonal binning for "Hexbin Density", which until now shared the 2-D
     // histogram's square-celled painter and therefore drew the same picture.
     void drawHexbin(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The style to colour with, once the painter knows its values.
+    //
+    // A quantile scale needs the DISTRIBUTION of what is being coloured, and
+    // only the painter holds that - a heat map has its cells, a hexbin its
+    // counts. Linear and log need nothing but the range, which is why those two
+    // reach every mapped engine through rampPosition alone and this exists only
+    // for the third.
+    //
+    // Returns a copy rather than mutating the spec: a painter takes a const
+    // PlotSpec&, and it should stay that way - a painter that edits the figure
+    // it is drawing is how two renders of one spec come out different.
+    static PlotStyle scaledStyle(const PlotSpec& spec, const QVector<double>& values);
+
     void drawColourBar(QPainter* p, const Frame& f, const PlotSpec& spec,
                        double lo, double hi, const QString& caption) const;
+    // The same key, for a ramp that is not linear in the value.
+    //
+    // A separate overload rather than a defaulted argument, so the eight
+    // existing callers are untouched and the two that pass a scale say so at
+    // the call site. The scale here MUST be the one the engine coloured with -
+    // scalePosition is shared for exactly that reason.
+    void drawColourBar(QPainter* p, const Frame& f, const PlotSpec& spec,
+                       const ColourScale& scale, const QString& caption) const;
     // The title, for the engines that have no axis frame to hang it on: pie,
     // donut, the composition family and both 3-D paths. Written out four times
     // identically before this.
@@ -260,6 +336,18 @@ private:
     // Open/high/low/close. One series per period, y = {o, h, l, c}.
     void drawCandlestick(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     void drawPie(QPainter* p, const QRectF& target, const PlotSpec& spec, bool donut) const;
+    // The mainstream shapes the catalogue was missing. Each carries its own
+    // note where it is defined, in QtPlotBackendEngines6.cpp.
+    //
+    // Gauge, Bullet and Marimekko take a target rectangle rather than a Frame:
+    // none of them has a coordinate to put on an axis, so all three are in
+    // engineHasAxes' exclusion list for the same reason Pie is. Dumbbell does
+    // have axes - its x IS the measured value - and takes a Frame.
+    void drawDumbbell(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    void drawGauge(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawBullet(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawMarimekko(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
+    void drawChoropleth(QPainter* p, const Frame& f, const PlotSpec& spec) const;
     // A scalar field sampled onto a regular lattice. Declared here rather than
     // in the .cpp so it can be cached across repaints - see gridCache_.
     struct ValueGrid {
@@ -313,7 +401,57 @@ private:
     // Quiver, streamlines, and the scalars derived from a field. All share one
     // gridding step: a field measured at scattered points has to be regular
     // before anything can be differentiated or integrated through it.
+    // The four pictures draw3D dispatches between. The camera, the cube, its
+    // axes and the depth-sort are written once in draw3D because every one of
+    // them needs all four; what differs is the mark, and that is these.
+    //
+    // The last of them was the `else` of a four-arm chain, and nine engines
+    // were drawn as a scatter because they landed in it - a 3-D bar as a cloud
+    // of dots, a 3-D stem with no stalks. A named function is harder to fall
+    // into by accident than an `else`.
+    void draw3DSurface(QPainter* p, const Projection& proj, const PlotSpec& spec,
+                       const Bounds& bz, ColourMapKind cmap, bool limited,
+                       bool contoured, bool wireframe) const;
+    void draw3DContourStack(QPainter* p, const Projection& proj, const PlotSpec& spec,
+                            const Bounds& bz, ColourMapKind cmap) const;
+    void draw3DLine(QPainter* p, const Projection& proj, const PlotSpec& spec,
+                    const Bounds& bx, const Bounds& by, const Bounds& bz,
+                    bool limited) const;
+    void draw3DMarks(QPainter* p, const Projection& proj, const PlotSpec& spec,
+                     const Bounds& bx, const Bounds& by, const Bounds& bz,
+                     ColourMapKind cmap, bool limited) const;
+    // The three parts render() was made of. It was 318 lines and complexity
+    // 83, three quarters of which was two dispatch chains - thirty engine
+    // names in one and forty in the other - burying the part that actually
+    // decides anything: the draft thinning, the frame, the order the chrome
+    // goes on in.
+    bool thinForDraft(const PlotSpec& prepared, PlotSpec& out) const;
+    void drawAxislessEngine(QPainter* painter, const QRectF& target,
+                            const PlotSpec& spec) const;
+    void drawFramedEngine(QPainter* painter, const Frame& f,
+                          const PlotSpec& spec) const;
     void drawVectorField(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    // The five pictures drawVectorField dispatches between, one function each.
+    // They were one 482-line body sharing a scope, which is how the feather
+    // branch spent a release drawing the quiver's gridded arrows: the comment
+    // said the two differed and the code did not, and nothing in the shape of
+    // the function made that visible. Separate functions cannot share a branch
+    // by accident.
+    //
+    // Each takes the gridded field rather than the raw columns, because that
+    // gridding is the one step all of them except the feather have in common.
+    void drawFeatherPlot(QPainter* p, const Frame& f, const PlotSpec& spec) const;
+    void drawDerivedField(QPainter* p, const Frame& f, const PlotSpec& spec,
+                          const ValueGrid& gu, const ValueGrid& gv,
+                          bool vorticity) const;
+    void drawStreamlines(QPainter* p, const Frame& f, const PlotSpec& spec,
+                         const ValueGrid& gu, const ValueGrid& gv,
+                         double magMax) const;
+    void drawPhasePortraitPoints(QPainter* p, const Frame& f, const PlotSpec& spec,
+                                 const ValueGrid& gu, const ValueGrid& gv) const;
+    void drawQuiverArrows(QPainter* p, const Frame& f, const PlotSpec& spec,
+                          const ValueGrid& gu, const ValueGrid& gv,
+                          double magMax) const;
     // Treemap, sunburst, Venn, word cloud, Sankey. All divide a whole rather
     // than plot a coordinate, so none of them uses the axis frame.
     void drawComposition(QPainter* p, const QRectF& target, const PlotSpec& spec) const;
@@ -402,6 +540,29 @@ private:
     // The rewrite itself. prepareSpec wraps it so that axis limits set by the
     // caller - the canvas's pan and zoom - survive an engine that sets its own.
     PlotSpec prepareSpecCore(const PlotSpec& spec) const;
+    // The engine-rewrite chain, in six pieces - one per translation unit.
+    //
+    // prepareSpecCore was 19,600 lines inside a 1.78 MB source file that took
+    // 2 minutes 10 seconds to compile by itself. A translation unit cannot be
+    // divided across cores, so every build paid all of it for a change to any
+    // one of 434 engines.
+    //
+    // Each returns the rewritten spec if it recognised the engine and nothing
+    // if it did not, so prepareSpecCore can try them in order. std::optional
+    // rather than a bool with an out parameter, because every block inside
+    // them still says `return out;` exactly as it did - and so do the many
+    // lambdas in there, which a bool signature would have meant telling apart
+    // by hand, 312 times.
+    //
+    // They are called in the order they are numbered, and that order is part
+    // of the behaviour: several engines are matched by a `startsWith` that a
+    // later and more specific test would also match.
+    std::optional<PlotSpec> prepareEngineGroup1(const PlotSpec& spec) const;
+    std::optional<PlotSpec> prepareEngineGroup2(const PlotSpec& spec) const;
+    std::optional<PlotSpec> prepareEngineGroup3(const PlotSpec& spec) const;
+    std::optional<PlotSpec> prepareEngineGroup4(const PlotSpec& spec) const;
+    std::optional<PlotSpec> prepareEngineGroup5(const PlotSpec& spec) const;
+    std::optional<PlotSpec> prepareEngineGroup6(const PlotSpec& spec) const;
 
     // prepareSpec is where the statistical engines actually live: a KDE sums a
     // kernel over every sample for every output point, a periodogram runs an
@@ -429,6 +590,7 @@ private:
     bool draft_=false;
     mutable int draftCap_=6000;
     mutable QRectF lastPlotArea_;
+    mutable QRectF lastLegendRect_;
     // The rectangle the last frame was fitted to, so the colour bar can tell
     // whether it would fall off the edge of a very narrow figure.
     mutable QRectF lastTarget_;
@@ -441,8 +603,30 @@ private:
     // per repaint (it is a linear pass over data that render already copies)
     // and specific enough that a changed sample, colour or axis bound misses.
     static quint64 specFingerprint(const PlotSpec& spec);
+
     const PlotSpec& preparedCached(const PlotSpec& spec) const;
 public:
+    // WHERE THE 3-D CUBE IS DRAWN, AND HOW BIG.
+    //
+    // Public so a caller can anchor a zoom on the pointer. The 2-D figures do
+    // that from their own axis limits; the 3-D ones have no axis limits to read
+    // and their framing comes out of makeProjection, which is internal. Asking
+    // for the answer is the alternative to a second copy of that arithmetic in
+    // PlotCanvas - and a second copy is exactly how the frame and the picture
+    // come to disagree about where the figure is.
+    //
+    // `origin` is the screen point the cube's centre projects to and `scale`
+    // converts projection units to pixels, which is everything needed to turn
+    // "keep this screen point still" into a pan.
+    struct CameraFrame {
+        QPointF origin;
+        double scale = 0.0;
+        bool valid = false;
+    };
+    // No paint device: the margin is font metrics, and the item and the
+    // projection both work in logical pixels, which is the space
+    // QFontMetricsF measures in without one.
+    CameraFrame cameraFrameFor(const PlotSpec& spec,const QRectF& target) const;
     // The rewritten spec, for the engine sweep. An engine expressed as a data
     // rewrite fails by producing no series rather than by failing to compile,
     // so the test needs to see what the rewrite actually produced.
@@ -467,6 +651,12 @@ public:
     // 2-D heatmap by the time anything is drawn and a Correlation Matrix is
     // too, so answering from the catalogue name would miss both.
     static bool usesColourMap(const QString& preparedEngine);
+
+    // Will this engine draw a mapped series against the right-hand axis when
+    // the mapping asks it to? Answered by asking the engine rather than by
+    // listing names - see the definition, which explains why the probe is run
+    // twice.
+    bool honoursSecondaryAxis(const QString& engine) const;
 private:
     // Notes on the figure, drawn last and clipped to the plot area. Real text,
     // so a PDF export carries words rather than outlines.

@@ -28,7 +28,6 @@ import random
 import string
 import time
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -171,6 +170,7 @@ def test_no_operation_crashes_on_random_numeric_input() -> None:
             try:
                 run(op_name, frame, request)
             except (OperationError, ValueError, KeyError, TypeError):
+                # these are the errors the fuzz test EXPECTS; anything else propagates
                 pass
             except Exception as exc:                       # noqa: BLE001
                 failures.append(
@@ -199,8 +199,6 @@ def test_citation_formatting_survives_missing_fields(style: str) -> None:
     from graphvis_science.citations import to_text
 
     rng = random.Random(SEED + 4)
-    fields = ["authors", "year", "title", "journal", "volume", "issue",
-              "pages", "doi"]
     full = {"authors": [{"family": "A", "given": "B C"}], "year": 2024,
             "title": "T", "journal": "J", "volume": "1", "issue": "2",
             "pages": "3-4", "doi": "10.1/x"}

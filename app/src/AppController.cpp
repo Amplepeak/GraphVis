@@ -23,6 +23,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QProcess>
 
 static QString cleanLocalPath(const QUrl& url){return url.isLocalFile()?url.toLocalFile():url.toString();}
 
@@ -39,6 +40,16 @@ void AppController::setStartupReporter(std::function<void(const QString&,double)
 
 AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     project_=new ProjectWorkspace(this);
+    // The title is built from three sources, so it has to be re-read when any
+    // of them moves. Without this the window would show the project it was
+    // opened with for the rest of the session - which is the bug it replaces,
+    // wearing a better name.
+    connect(project_,&ProjectWorkspace::projectChanged,
+            this,&AppController::windowTitleChanged);
+    connect(this,&AppController::stateChanged,
+            this,&AppController::windowTitleChanged);
+    connect(this,&AppController::activeDatasetChanged,
+            this,&AppController::windowTitleChanged);
     reportStartup(QStringLiteral("Loading the graph catalogue"),0.30);
     loadGraphCatalogue();
 #ifndef Q_OS_WIN
@@ -53,12 +64,14 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     sidebarCollapsed_=settings.value(QStringLiteral("ui/sidebarCollapsed"),false).toBool();
     navRailCollapsed_=settings.value(QStringLiteral("ui/navRailCollapsed"),false).toBool();
     themeIndex_=settings.value(QStringLiteral("ui/themeIndex"),0).toInt();
+    themeBeforeCvd_=settings.value(QStringLiteral("ui/themeBeforeColourVision"),-1).toInt();
     rendererMode_=settings.value(QStringLiteral("ui/rendererMode"),rendererMode_).toString();
     // Maximised by default: a scientific editor wants the whole screen, and it
     // avoids the window opening straddled across a two-monitor desktop.
     displayMode_=qBound(0,settings.value(QStringLiteral("ui/displayMode"),1).toInt(),3);
     plotColourVision_=qBound(0,settings.value(QStringLiteral("plot/colourVision"),0).toInt(),4);
     colourVisionToolbar_=settings.value(QStringLiteral("plot/colourVisionToolbar"),false).toBool();
+    figureTabs_=settings.value(QStringLiteral("ui/figureTabs"),true).toBool();
     plotColourMap_=settings.value(QStringLiteral("plot/colourMap")).toString();
     // Automatic by default. The old behaviour - a notice, every time, for every
     // render however brief - meant the better picture existed and was not being
@@ -79,6 +92,7 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
     plotGridDensityY_=qBound(0,settings.value(QStringLiteral("plot/gridDensityY"),0).toInt(),25);
     plotPieLabels_=qBound(0,settings.value(QStringLiteral("plot/pieLabels"),0).toInt(),3);
     plotPolarConvention_=qBound(0,settings.value(QStringLiteral("plot/polarConvention"),0).toInt(),1);
+    plotLegendLabels_=qBound(0,settings.value(QStringLiteral("plot/legendLabels"),0).toInt(),1);
     plotScaleLabels_=settings.value(QStringLiteral("plot/scaleLabels"),true).toBool();
     plotFieldInterpolation_=qBound(0,settings.value(QStringLiteral("plot/fieldInterpolation"),2).toInt(),3);
     plotFieldEstimator_=qBound(-1,settings.value(QStringLiteral("plot/fieldEstimator"),-1).toInt(),16);
@@ -287,6 +301,30 @@ AppController::AppController(QObject* parent):QObject(parent),viewport_(){
         scienceRestartPending_=false;
         pendingScienceOp_.clear();
         setBusy(false);});
+    // ASK THE SERVICE TO GO AS SOON AS THE APPLICATION IS GOING.
+    //
+    // The destructor closes the service's stdin and waits up to two seconds
+    // for Python to flush and exit, then kills it and waits another second.
+    // That wait is correct - killing a service mid-write can leave a truncated
+    // Arrow file behind - but the destructor is the worst moment to spend it:
+    // it runs after the QML engine has begun tearing down, so those seconds
+    // are spent with a window on screen that is no longer painting. That is
+    // what gets reported as "it hung when I closed it".
+    //
+    // aboutToQuit fires while the event loop is still running and before any
+    // of that teardown, so closing stdin here gives Python the whole shutdown
+    // to finish in. By the time the destructor runs the process has normally
+    // already gone and its wait returns at once.
+    //
+    // Nothing else changes: the destructor still does the full close-wait-kill
+    // on its own, because this signal does not fire on every path out of the
+    // program - a fatal error, or a platform that tears the app down without
+    // it, must still get the graceful close. This is a head start, not a
+    // replacement, which is why it is safe for it not to run.
+    connect(qApp,&QCoreApplication::aboutToQuit,this,[this]{
+        if(scienceProcess_.state()!=QProcess::NotRunning)
+            scienceProcess_.closeWriteChannel();
+    });
     // If it dies mid-request, say so and let the next request start a fresh one
     // rather than writing into a dead pipe forever.
     connect(&scienceProcess_,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,
@@ -326,10 +364,42 @@ AppController::~AppController(){
         // The service is a loop over stdin, so closing stdin asks it to finish
         // and exit cleanly - which lets Python flush and release any file it
         // still holds. Only kill it if it ignores that.
+        //
+        // Usually already closed, by the aboutToQuit handler in the
+        // constructor, and usually already exited because of it - so this wait
+        // returns immediately and the ceiling below is only paid by a service
+        // that is genuinely wedged, or by a shutdown path that never reached
+        // aboutToQuit. Closing an already-closed write channel is harmless.
         scienceProcess_.closeWriteChannel();
         if(!scienceProcess_.waitForFinished(2000)){
             scienceProcess_.kill();
             scienceProcess_.waitForFinished(1000);
+        }
+    }
+    // THE OTHER PROCESS. The science service above has been shut down properly
+    // since it was written; the PowerShell that lists and installs the optional
+    // components was left to QProcess's destructor, which kills it and says so:
+    //
+    //   QProcess: Destroyed while process ("powershell.exe") is still running.
+    //
+    // Once per run in the interface self-test, because the add-ons panel asks
+    // for the component list as it is built and the self-test exits about a
+    // second later, while PowerShell is still starting. A person who quits soon
+    // after opening that panel gets the same thing, plus an orphaned console
+    // process for as long as Windows takes to reap it.
+    //
+    // Ended the same way the service is: ask, wait, then insist.
+    //
+    // WHAT THIS DOES NOT SOLVE, recorded rather than glossed: quitting during an
+    // INSTALL still cuts the install short. Killing it here is no worse than
+    // what QProcess already did, but the right answer is for the window to
+    // decline to close while a component change is running, and that is a
+    // decision about the interface rather than about this destructor.
+    if(componentProcess_.state()!=QProcess::NotRunning){
+        componentProcess_.terminate();
+        if(!componentProcess_.waitForFinished(2000)){
+            componentProcess_.kill();
+            componentProcess_.waitForFinished(1000);
         }
     }
     // Both futures hold the runtime pointer and each worker body is a single
@@ -366,21 +436,109 @@ void AppController::setBusy(bool value,const QString& label){
     emit busyChanged();
 }
 void AppController::setActiveDatasetId(const QString&id){if(activeDatasetId_==id)return;activeDatasetId_=id;emit activeDatasetChanged();}
+// See the note on the declaration: the scene graph's graphics API is a
+// once-per-process choice, so this is what "switch to VTK" actually costs.
+void AppController::restartApplication(const QVariantMap& figureState){
+    QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
+    // Stashed under a key the next launch looks for exactly once. Written
+    // before the relaunch rather than on the way out, because a process that is
+    // about to be replaced is not a good place to be doing work.
+    if(!figureState.isEmpty())
+        settings.setValue(QStringLiteral("session/pendingFigure"),figureState);
+    else
+        settings.remove(QStringLiteral("session/pendingFigure"));
+    settings.sync();
+
+    // Detached, and started BEFORE quitting: a started process that then finds
+    // the old one still holding a single-instance lock is a recoverable
+    // annoyance, whereas quitting first and failing to start is an application
+    // that simply vanished.
+    const QString exe=QCoreApplication::applicationFilePath();
+    QStringList args=QCoreApplication::arguments();
+    if(!args.isEmpty()) args.removeFirst();
+    qInfo("GraphVis: restarting to change the scene graph");
+    if(!QProcess::startDetached(exe,args)){
+        setStatus(QStringLiteral("GraphVis could not restart itself. Close and reopen it "
+                                 "to finish switching renderer."));
+        qWarning("GraphVis: self-restart failed; the session was left running");
+        return;
+    }
+    QCoreApplication::quit();
+}
+
+QVariantMap AppController::takePendingFigureState(){
+    QSettings settings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"));
+    const QVariantMap state=settings.value(QStringLiteral("session/pendingFigure")).toMap();
+    // Taken, not read. Left in place it would reapply itself over whatever the
+    // person had done since, every time anything asked.
+    settings.remove(QStringLiteral("session/pendingFigure"));
+    return state;
+}
+
+bool AppController::rendererNeedsRestart() const{
+    // The only combination that needs one: the saved choice is the renderer
+    // that requires OpenGL, and this session is not running on it.
+    return QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+               .value(QStringLiteral("ui/rendererMode")).toString()
+               ==QStringLiteral("VTK / PBR")
+           && !graphicsApiIsOpenGL();
+}
+
 void AppController::setRendererMode(const QString& value){
     if(rendererMode_==value)return;
+    // VTK / PBR ON A DIRECT3D SCENE GRAPH IS A CRASH, NOT A WARNING.
+    //
+    // QQuickVTKItem requires an OpenGL Qt Quick scene graph. main() asks for
+    // OpenGL only when the LAST session chose this renderer, so selecting it
+    // now cannot change the scene graph this session is already running on.
+    //
+    // This used to set the mode, persist it, and then say "restart GraphVis to
+    // use it" - having already entered the state it was describing as
+    // unusable. The QML Loader watches rendererMode and does not read status
+    // lines, so it immediately loaded the VTK viewport into a Direct3D scene
+    // graph. That is the crash. And because the mode had been persisted first,
+    // the next launch came up in it too.
+    //
+    // The choice is still remembered, because remembering it is what makes the
+    // next launch start on OpenGL and the renderer work. What does not happen
+    // is switching to it now.
+    if(value==QStringLiteral("VTK / PBR")&&!graphicsApiIsOpenGL()){
+        QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+            .setValue(QStringLiteral("ui/rendererMode"),value);
+        setStatus(QStringLiteral("VTK / PBR needs the OpenGL scene graph, which is chosen "
+                                 "when GraphVis starts. Your choice is saved - use "
+                                 "View \u25b8 Renderer \u25b8 Restart now to finish "
+                                 "switching, and the figure comes back with you."));
+        qInfo("GraphVis: VTK / PBR requested on a non-OpenGL scene graph; saved for the "
+              "next launch and NOT activated in this one.");
+        // The property did not change, so the picker has to be told to snap
+        // back to what is actually being drawn.
+        emit rendererModeChanged();
+        return;
+    }
     rendererMode_=value;
+    // A breadcrumb in the startup log, which the crash reporter now preserves.
+    // If the process dies inside a renderer bring-up, the last line of the
+    // previous session's log says which renderer it was bringing up.
+    qInfo("GraphVis: renderer mode -> %s",qPrintable(value));
     // Persisted because the graphics API is chosen before the GUI exists:
     // main.cpp reads this back at startup to decide whether the scene graph
     // has to be OpenGL for QQuickVTKItem.
     QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
         .setValue(QStringLiteral("ui/rendererMode"),rendererMode_);
-    if(value==QStringLiteral("VTK / PBR")&&!graphicsApiIsOpenGL())
-        setStatus(QStringLiteral("VTK / PBR needs the OpenGL scene graph - restart GraphVis to use it"));
     emit rendererModeChanged();
 }
 
 // main.cpp records what it actually chose, so the UI can say so honestly
 // instead of guessing.
+//
+// A mutable global read from QML, which is a thread question - and the answer
+// is that it is written at main.cpp:216, well before QQmlApplicationEngine is
+// constructed at :354 and long before app.exec() at :387, so the only thread in
+// existence at the write is the one doing it. Written down because "a bare
+// mutable global read from the render thread" is otherwise exactly the shape
+// of a bug, and the next person to audit this should not have to re-derive
+// that it is not one.
 static bool gGraphicsApiIsOpenGL=false;
 void AppController::setGraphicsApiIsOpenGL(bool value){gGraphicsApiIsOpenGL=value;}
 bool AppController::graphicsApiIsOpenGL(){return gGraphicsApiIsOpenGL;}
@@ -445,6 +603,60 @@ QString wildcardsFor(const QSet<QString>& extensions){
     return list.join(QLatin1Char(' '));
 }
 } // namespace
+
+QStringList AppController::exportNameFilters() const{
+    // Generated from the writer registry, grouped the way a person thinks
+    // about the choice rather than the way the registry stores it.
+    //
+    // ONE CALL, ONE CONTAINER - and the reason that sentence is here is that
+    // the first version of this line crashed the program on every launch.
+    //
+    // It read:
+    //
+    //     QSet<QString>(exportableExtensions().begin(),
+    //                   exportableExtensions().end())
+    //
+    // `exportableExtensions()` returns a QStringList BY VALUE, so those are two
+    // separate calls returning two separate temporaries. The iterator pair
+    // therefore straddles two different containers: the range walks from the
+    // FIRST list's begin and compares against the SECOND list's end, which it
+    // can never equal, so it runs off the end of the first list's buffer and
+    // goes on constructing QStrings out of whatever is there.
+    //
+    // What that looked like from outside: an access violation (0xc0000005)
+    // inside Qt6Core.dll at a fixed offset, on every launch, with startup.log
+    // stopping dead at "Loading GraphVis/Main QML module" and no Qt message of
+    // any kind - because the process was gone before it could write one. It
+    // fires here rather than anywhere else because this is called from a
+    // BINDING - `nameFilters` on the Save dialog in DataWorkspace - which is
+    // evaluated while the QML object tree is being built.
+    //
+    // Nothing in this project could see it. The engine sweep and the gallery
+    // never construct an AppController; the interface tests use a GENERATED
+    // stand-in whose exportNameFilters() returns an empty list, so the real one
+    // is never called; and qmllint cannot see into C++ at all. The one check
+    // that should have caught it - the one that opens the window - did run, did
+    // crash, and was reported as "problems: none", because it counts warning
+    // lines in a log that a dead process never wrote to. That is fixed in
+    // tools/build_report.py.
+    //
+    // importNameFilters() below has always done this correctly, with one call
+    // and one object. This is the same function written carelessly beside a
+    // correct one, which is this project's most-recorded root cause: a rule
+    // right in one place and not carried to the case beside it.
+    const QStringList writable=exportableExtensions();
+    return {
+        QStringLiteral("All writable data (%1)")
+            .arg(wildcardsFor(QSet<QString>(writable.begin(),writable.end()))),
+        QStringLiteral("Comma separated (*.csv)"),
+        QStringLiteral("Tab separated (*.tsv *.txt *.dat)"),
+        QStringLiteral("Excel (*.xlsx)"),
+        QStringLiteral("Columnar (*.parquet *.pq *.feather *.arrow *.ipc)"),
+        QStringLiteral("JSON (*.json *.jsonl *.ndjson)"),
+        QStringLiteral("Documents (*.html *.htm *.md)"),
+        QStringLiteral("All files (*)"),
+    };
+}
 
 QStringList AppController::importNameFilters() const{
     // The "all" line is GENERATED from importableExtensions(), which is itself
@@ -631,6 +843,70 @@ QStringList AppController::literatureNameFilters() const{
     };
 }
 
+// WRITING A DATASET BACK OUT.
+//
+// Kept in step with exporter.py's WRITERS registry, the same way
+// importableExtensions() is kept in step with READERS - and for the same
+// reason: refusing here means a person is told "GraphVis cannot write .sav"
+// while the file dialog is still open, rather than after a round trip to the
+// service.
+QStringList AppController::exportableExtensions() const{
+    return {QStringLiteral("csv"),QStringLiteral("tsv"),QStringLiteral("txt"),
+            QStringLiteral("dat"),QStringLiteral("json"),QStringLiteral("jsonl"),
+            QStringLiteral("ndjson"),QStringLiteral("xlsx"),
+            QStringLiteral("parquet"),QStringLiteral("pq"),
+            QStringLiteral("feather"),QStringLiteral("arrow"),
+            QStringLiteral("ipc"),QStringLiteral("html"),QStringLiteral("htm"),
+            QStringLiteral("md")};
+}
+
+bool AppController::exportDataset(const QUrl& url,const QStringList& columns,bool overwrite){
+    const QString path=cleanLocalPath(url);
+    if(path.isEmpty()){setStatus(QStringLiteral("That is not a local file"));return false;}
+
+    // THE DATASET THE PROGRAM IS HOLDING, named by the Arrow cache the
+    // importer wrote. Reading that back in the service rather than keeping a
+    // frame anywhere means the thing written is the thing being used, not a
+    // copy free to drift from it.
+    const QString arrow=nativeArrowPath();
+    if(arrow.isEmpty()){
+        setStatus(QStringLiteral("There is no dataset open to write out."));
+        return false;
+    }
+    const QString suffix=QFileInfo(path).suffix().toLower();
+    if(!exportableExtensions().contains(suffix)){
+        setStatus(suffix.isEmpty()
+                      ? QStringLiteral("Give the file an extension - .csv, .xlsx or .parquet - "
+                                       "so GraphVis knows what to write.")
+                      : QStringLiteral("GraphVis cannot write .%1 files. It writes %2.")
+                            .arg(suffix,exportableExtensions().join(QStringLiteral(", "))));
+        return false;
+    }
+    if(!scienceServiceAvailable()){
+        setStatus(QStringLiteral("Writing a dataset out uses the GraphVis Science add-on, "
+                                 "which is not installed yet."));
+        emit scienceServiceAvailabilityChanged();
+        return false;
+    }
+
+    QJsonObject request{{"op","io.export"},{"arrow_path",arrow},{"path",path}};
+    if(!columns.isEmpty()) request.insert(QStringLiteral("columns"),
+                                          QJsonArray::fromStringList(columns));
+    if(overwrite) request.insert(QStringLiteral("overwrite"),true);
+    pendingExportTarget_=path;
+    if(!startScienceOp(request,QStringLiteral("io.export"),
+                       QStringLiteral("Writing %1").arg(QFileInfo(path).fileName()))){
+        pendingExportTarget_.clear();
+        return false;
+    }
+    return true;
+}
+
+bool AppController::exportDatasetPath(const QString& path,const QStringList& columns,
+                                      bool overwrite){
+    return exportDataset(QUrl::fromLocalFile(path),columns,overwrite);
+}
+
 bool AppController::importDataset(const QUrl& url){
     const QString path=cleanLocalPath(url);
     if(path.isEmpty()){setStatus(QStringLiteral("That is not a local file"));return false;}
@@ -675,6 +951,56 @@ bool AppController::importDatasetPath(const QString& path){
     return importDataset(QUrl::fromLocalFile(path));
 }
 
+// ---------------------------------------------------------------- boundaries
+//
+// The ordinary geospatial import keeps ONE ROW PER FEATURE at a point inside
+// it, which is right for a geo scatter and is the only thing a choropleth
+// cannot use: a shape cannot be recovered from its centroid. This asks the
+// reader for the outlines instead - one row per vertex, with the feature's
+// own columns repeated beside them.
+//
+// A separate entry point rather than a flag on importDataset, because the two
+// produce tables with DIFFERENT ROWS from the same file and each is right for
+// different engines. Offering it as an option on one import would make the
+// row meaning depend on a setting nobody can see afterwards.
+bool AppController::readsRegionBoundaries(const QString& path) const {
+    // EXACTLY the extensions importer.py registers as geospatial, and no
+    // more. `.json` was in this list for one draft: plain JSON is not
+    // registered as geospatial there, so the file would have been offered,
+    // accepted, sent, and rejected by the reader - a list here disagreeing
+    // with the list there, which is the failure this codebase hits most.
+    //
+    // Python remains the authority: it refuses anything its geospatial group
+    // does not cover, and this only decides whether to OFFER the option.
+    static const QStringList kGeo{QStringLiteral("geojson"),QStringLiteral("shp"),
+                                  QStringLiteral("gpkg")};
+    return kGeo.contains(QFileInfo(path).suffix().toLower());
+}
+
+bool AppController::importRegionBoundaries(const QUrl& url){
+    const QString path=cleanLocalPath(url);
+    if(path.isEmpty()){setStatus(QStringLiteral("That is not a local file"));return false;}
+    if(!readsRegionBoundaries(path)){
+        noteImport(path,QStringLiteral("failed"),
+                   QStringLiteral("Region outlines come from a geospatial file - "
+                                  "GeoJSON, shapefile or GeoPackage. This is a .%1.")
+                       .arg(QFileInfo(path).suffix().toLower()));
+        return false;
+    }
+    // Recorded BEFORE importDataset queues it, because pumpImportQueue may run
+    // synchronously from inside that call and would otherwise read points.
+    importGeometry_.insert(path,QStringLiteral("boundaries"));
+    if(!importDataset(url)){
+        importGeometry_.remove(path);
+        return false;
+    }
+    return true;
+}
+
+bool AppController::importRegionBoundariesPath(const QString& path){
+    return importRegionBoundaries(QUrl::fromLocalFile(path));
+}
+
 void AppController::pumpImportQueue(){
     if(busy_||importQueue_.isEmpty()||!runtime_) return;
     const QString path=importQueue_.takeFirst();
@@ -687,9 +1013,16 @@ void AppController::pumpImportQueue(){
         pendingConvertSource_=path;
         noteImport(path,QStringLiteral("converting"),
                    QStringLiteral("Reading with the GraphVis Science add-on"));
-        if(!startScienceOp(QJsonObject{{"op","io.import"},{"path",path},{"out_dir",outDir}},
+        const QString geometry=importGeometry_.take(path);
+        QJsonObject request{{"op","io.import"},{"path",path},{"out_dir",outDir}};
+        if(!geometry.isEmpty()) request.insert(QStringLiteral("geometry"),geometry);
+        if(!startScienceOp(request,
                            QStringLiteral("io.import"),
-                           QStringLiteral("Converting %1").arg(QFileInfo(path).fileName()))){
+                           geometry==QLatin1String("boundaries")
+                               ? QStringLiteral("Reading the region outlines in %1")
+                                     .arg(QFileInfo(path).fileName())
+                               : QStringLiteral("Converting %1")
+                                     .arg(QFileInfo(path).fileName()))){
             pendingConvertSource_.clear();
             noteImport(path,QStringLiteral("failed"),status_);
             QTimer::singleShot(0,this,&AppController::pumpImportQueue);
@@ -742,6 +1075,31 @@ void AppController::handleImportFinished(){
                         ? shown : loaded.value(QStringLiteral("name")).toString());
     workspaceMode_=QStringLiteral("Visualize"); emit workspaceModeChanged();
     pumpImportQueue();
+}
+
+// THE TITLE BAR, FROM WHATEVER THE WINDOW IS ACTUALLY SHOWING.
+//
+// In order of how specific each answer is:
+//
+//   1. the open project, because that is what a person named;
+//   2. the core's workspace name, if it ever carries one - it is read from the
+//      native state on every refresh and has never yet been anything but
+//      "Untitled", which is precisely why it cannot be the first answer;
+//   3. the active dataset's file name, which is what the window shows when
+//      there is no project;
+//   4. nothing. "GraphVis 18" on its own is honest; "GraphVis 18 - Untitled"
+//      is a field the person never filled in being reported as if they had.
+QString AppController::windowTitle() const{
+    const QString product=QStringLiteral("GraphVis 18");
+    if(project_&&project_->isOpen()&&!project_->name().trimmed().isEmpty())
+        return product+QStringLiteral(" — ")+project_->name().trimmed();
+    const QString fromCore=workspaceName_.trimmed();
+    if(!fromCore.isEmpty()&&fromCore!=QLatin1String("Untitled"))
+        return product+QStringLiteral(" — ")+fromCore;
+    const QString dataset=activeDataset().value(QStringLiteral("name")).toString().trimmed();
+    if(!dataset.isEmpty())
+        return product+QStringLiteral(" — ")+dataset;
+    return product;
 }
 
 QVariantMap AppController::activeDataset() const{for(const auto&v:datasets_){const auto m=v.toMap();if(m.value("id").toString()==activeDatasetId_)return m;}return{};}
@@ -949,12 +1307,330 @@ void AppController::analyzeLiterature(){
 }
 
 
-bool AppController::importFirstLiteratureDataset(){
+
+namespace {
+
+// THE CSV, MEASURED HERE, BECAUSE THE SERVICE MAY BE AN OLD ONE.
+//
+// The first version of the chooser below read `plottable_rows` out of the
+// extract reply. The science add-on is installed with a plain
+// `pip install services\python` - a COPY into site-packages, not an editable
+// install - so the running service is whatever was installed last, and a change
+// to the source tree does not reach it until someone reinstalls.
+//
+// So the button got worse rather than better: the old service sends no such
+// field, every candidate scored zero, nothing qualified, and a call that used
+// to import the wrong table imported nothing at all. A fix that depends on the
+// other side having been updated is not a fix, it is a second thing to go
+// wrong.
+//
+// The files are on disk and the question is small, so it is answered here. The
+// service's own metadata is still used for the NAME and the page in the status
+// line, where being out of date costs nothing.
+struct TableScore {
+    int numericColumns=0;
+    int plottableRows=0;
+    // How many columns have a NAME - see namedColumns below. A table of
+    // measurements has them; a block of page furniture pdfplumber read as a
+    // table does not.
+    int namedColumns=0;
+};
+
+// One CSV row, honouring quotes. pandas quotes any field containing a comma,
+// and a reference list is full of them - "Smith, J." split on commas turns one
+// column into two and shifts every column after it.
+QStringList csvRow(const QString& line){
+    QStringList out;
+    QString field;
+    bool quoted=false;
+    for(int i=0;i<line.size();++i){
+        const QChar c=line.at(i);
+        if(quoted){
+            if(c!=QLatin1Char('"')){ field.append(c); continue; }
+            // "" inside a quoted field is one literal quote.
+            if(i+1<line.size()&&line.at(i+1)==QLatin1Char('"')){ field.append(c); ++i; continue; }
+            quoted=false;
+        }else if(c==QLatin1Char('"')){
+            quoted=true;
+        }else if(c==QLatin1Char(',')){
+            out.append(field); field.clear();
+        }else{
+            field.append(c);
+        }
+    }
+    out.append(field);
+    return out;
+}
+
+// Can this table be drawn? ONE definition, used by the chooser and by the
+// panel that reports what the paper yielded.
+//
+// Two points is a line segment and not a figure; three is the fewest that can
+// show a shape, and it is also what separates a real short table from a stray
+// pair of numbers caught in a caption. Two NAMED columns is what separates a
+// table of measurements from page furniture pdfplumber read as a table - a
+// contents page scores numeric columns quite happily, because a run of section
+// numbers is a run of numbers.
+//
+// The panel and the chooser asking this question differently is how a panel
+// promises a dataset the chooser then refuses.
+bool tableIsDrawable(const TableScore& score){
+    return score.numericColumns>=2&&score.plottableRows>=3&&score.namedColumns>=2;
+}
+
+TableScore scoreCsv(const QString& path){
+    TableScore score;
+    QFile file(path);
+    if(!file.open(QIODevice::ReadOnly|QIODevice::Text)) return score;
+    QTextStream in(&file);
+    const QString header=in.readLine();
+    if(header.isEmpty()) return score;
+    const QStringList headers=csvRow(header);
+    const int width=headers.size();
+    if(width<2) return score;
+
+    // A TABLE OF NUMBERS IS NOT THE SAME THING AS A TABLE.
+    //
+    // The first version of this chose on the numbers alone - two numeric
+    // columns over three or more rows - and run against the twelve tables a
+    // 69-page thesis actually produced it picked the TABLE OF CONTENTS: 28
+    // rows of section number against page number, which is numeric, is
+    // plentiful, and is not data. The list of figures and the list of
+    // equations scored nearly as well.
+    //
+    // I then tried to tell an index apart by the SHAPE of its page column -
+    // whole, rising, repeating - and that rule could not be made to separate
+    // "section, page" from "replicate, yield", which have the same shape. A
+    // rule that cannot tell your data from a contents page does not belong
+    // anywhere near your data, so it was removed rather than tuned.
+    //
+    // What actually separates them is the HEADER. Every one of those twelve
+    // tables arrived with broken ones - "demic", "i", "of Fi", "List of E",
+    // "4.1.5", "31", "col_13", "col_6" - because pdfplumber was reading a
+    // contents page, a running head or a fragment of body text and there was
+    // no header row to find. col_N is its own placeholder for exactly that,
+    // and is a direct statement that it found none.
+    //
+    // A table somebody wrote has names on its columns. Two of them, at least,
+    // or what reaches the canvas is an axis labelled "col_6".
+    for(const QString& name:headers){
+        const QString trimmed=name.trimmed();
+        if(trimmed.size()<3) continue;                       // "i", "E"
+        if(trimmed.startsWith(QLatin1String("col_"))) continue;   // invented
+        bool numeric=false;
+        trimmed.toDouble(&numeric);
+        if(numeric) continue;                                // "4.1.5", "31"
+        ++score.namedColumns;
+    }
+
+    // Bounded. A table big enough that this matters is already drawable, and
+    // an unbounded read on a button press is a stall waiting for a bad file.
+    constexpr int kMaxRows=5000;
+    QVector<int> present(width,0),numeric(width,0);
+    QVector<QVector<double>> values(width);
+    QVector<QVector<bool>> rows;
+    rows.reserve(256);
+    int read=0;
+    while(!in.atEnd()&&read<kMaxRows){
+        const QStringList cells=csvRow(in.readLine());
+        QVector<bool> isNumber(width,false);
+        for(int c=0;c<width&&c<cells.size();++c){
+            const QString cell=cells.at(c).trimmed();
+            if(cell.isEmpty()) continue;          // absent, not prose
+            ++present[c];
+            bool ok=false;
+            const double v=cell.toDouble(&ok);
+            if(ok&&std::isfinite(v)){ ++numeric[c]; isNumber[c]=true; values[c].append(v); }
+        }
+        rows.append(isNumber);
+        ++read;
+    }
+    if(rows.isEmpty()) return score;
+
+    // Four fifths, not all of them: a real results table carries the odd
+    // "n/a" or a footnote marker, and discarding the column for one of those
+    // would reject the data and keep the reference list. The same rule the
+    // service uses, deliberately - two ideas of what "numeric" means is how
+    // the two come to disagree.
+    QVector<bool> columnIsNumeric(width,false);
+    for(int c=0;c<width;++c){
+        if(present.at(c)<2) continue;
+        if(numeric.at(c)*5>=present.at(c)*4){
+            columnIsNumeric[c]=true;
+            ++score.numericColumns;
+        }
+    }
+    if(score.numericColumns<2) return score;
+
+    // Rows carrying at least TWO numeric columns, which is what a point on a
+    // figure needs. Counted per row rather than summed per column, so a table
+    // whose numeric columns never overlap scores zero.
+    for(const QVector<bool>& row:rows){
+        int on=0;
+        for(int c=0;c<width;++c) if(columnIsNumeric.at(c)&&row.at(c)) ++on;
+        if(on>=2) ++score.plottableRows;
+    }
+    return score;
+}
+
+} // namespace
+
+// THE BEST EXTRACTED TABLE, NOT THE FIRST ONE.
+//
+// Reported as "clicking send extracted data to workspace made this graph,
+// doesn't seem it worked". It had worked exactly as written, and what was
+// written was `paths.first()`.
+//
+// The paper produced twelve datasets and the first was a reference list:
+// pdfplumber had read a block of prose as a table, so its columns arrived as
+// clipped word fragments - "nvironme", "y and E" - and the one column that
+// looked numeric was a run of publication years. One row survived the
+// coercion, so the canvas drew a single point against an axis ruled 1970 to
+// 2006, which is precisely what a figure of a bibliography looks like.
+//
+// "First" is not a choice, it is the absence of one, and in a PDF the first
+// thing that parses as a table is very often the thing that is not data.
+//
+// So the table is CHOSEN, on the files themselves - see scoreCsv, and the note
+// there about why this does not ask the service. Most drawable rows wins; ties
+// go to more numeric columns, then to the earlier page, so the answer does not
+// move between runs of the same paper.
+//
+// And when nothing qualifies, nothing is imported. Sending the least bad table
+// to the canvas and leaving the person to work out that none of it was data is
+// the failure this is fixing, not a milder version of it to fall back on.
+// What this paper yielded, said in the terms the person needs.
+//
+// The panel used to report `datasets.length` - "12 numeric datasets" - for a
+// thesis whose twelve tables were a contents page, running heads and fragments
+// of body text. Every one of them was a table to pdfplumber and none was a
+// table of numbers, so the count was not merely unhelpful: it was an
+// invitation to press a button that could not work, which is what happened.
+//
+// The rule is the SAME one importFirstLiteratureDataset uses, applied through
+// the same scoreCsv, so the panel cannot promise a dataset the chooser would
+// then refuse. And it is measured on the SAVED FILES rather than taken from
+// the reply, because the add-on is installed as a copy and may be older than
+// the app - see the note at the end of plottability().
+QVariantMap AppController::summariseLiterature() const {
+    const QVariantList datasets=literatureAnalysis_.value(QStringLiteral("datasets")).toList();
     const QVariantList paths=literatureAnalysis_.value(QStringLiteral("saved_paths")).toList();
-    if(paths.isEmpty()){setStatus(QStringLiteral("No extracted dataset is available yet"));return false;}
-    const QString path=paths.first().toString();
-    if(path.isEmpty()||!QFileInfo::exists(path)){setStatus(QStringLiteral("Extracted dataset path is unavailable"));return false;}
-    return importDataset(QUrl::fromLocalFile(path));
+    const int figures=literatureAnalysis_.value(QStringLiteral("figures")).toList().size();
+
+    QStringList files;
+    for(int i=0;i<datasets.size();++i){
+        QString path=datasets.at(i).toMap().value(QStringLiteral("path")).toString();
+        if(path.isEmpty()&&i<paths.size()) path=paths.at(i).toString();
+        if(!path.isEmpty()) files.append(path);
+    }
+    for(int i=datasets.size();i<paths.size();++i){
+        const QString path=paths.at(i).toString();
+        if(!path.isEmpty()) files.append(path);
+    }
+
+    int drawable=0;
+    for(const QString& path:std::as_const(files)){
+        if(!QFileInfo::exists(path)) continue;
+        if(tableIsDrawable(scoreCsv(path))) ++drawable;
+    }
+
+    QString guidance;
+    if(files.isEmpty())
+        guidance=QStringLiteral("Nothing has been extracted from this paper yet.");
+    else if(drawable>0)
+        guidance=QStringLiteral("%1 of %2 extracted tables can be drawn.")
+                     .arg(drawable).arg(files.size());
+    else if(figures>0)
+        guidance=QStringLiteral("None of the %1 extracted tables is a table of "
+                                "numbers. The measurements in this paper are in "
+                                "its %2 figures - calibrate one and use "
+                                "Reconstruct graph.")
+                     .arg(files.size()).arg(figures);
+    else
+        guidance=QStringLiteral("None of the %1 extracted tables is a table of "
+                                "numbers, and no figures were found to read "
+                                "instead.").arg(files.size());
+
+    return QVariantMap{{QStringLiteral("tables"),files.size()},
+                       {QStringLiteral("drawable"),drawable},
+                       {QStringLiteral("figures"),figures},
+                       {QStringLiteral("guidance"),guidance}};
+}
+
+bool AppController::importFirstLiteratureDataset(){
+    const QVariantList datasets=literatureAnalysis_.value(QStringLiteral("datasets")).toList();
+    const QVariantList paths=literatureAnalysis_.value(QStringLiteral("saved_paths")).toList();
+
+    // Every candidate file, however this reply happens to be shaped. A newer
+    // service puts the path on each dataset; an older one sends only the
+    // parallel saved_paths list; both are read, and neither is required.
+    struct Candidate { QString path,name; int page=0; };
+    QVector<Candidate> candidates;
+    for(int i=0;i<datasets.size();++i){
+        const QVariantMap d=datasets.at(i).toMap();
+        Candidate c;
+        c.path=d.value(QStringLiteral("path")).toString();
+        if(c.path.isEmpty()&&i<paths.size()) c.path=paths.at(i).toString();
+        c.name=d.value(QStringLiteral("name")).toString();
+        c.page=d.value(QStringLiteral("page")).toInt();
+        if(!c.path.isEmpty()) candidates.append(c);
+    }
+    for(int i=datasets.size();i<paths.size();++i){
+        Candidate c;
+        c.path=paths.at(i).toString();
+        c.name=QFileInfo(c.path).completeBaseName();
+        if(!c.path.isEmpty()) candidates.append(c);
+    }
+    if(candidates.isEmpty()){
+        setStatus(QStringLiteral("No extracted dataset is available yet"));
+        return false;
+    }
+
+    int bestAt=-1;
+    TableScore best;
+    for(int i=0;i<candidates.size();++i){
+        if(!QFileInfo::exists(candidates.at(i).path)) continue;
+        const TableScore score=scoreCsv(candidates.at(i).path);
+        // Two points is a line segment and not a figure; three is the fewest
+        // that can show a shape, and it is also what separates a real short
+        // table from a stray pair of numbers caught in a caption.
+        if(!tableIsDrawable(score)) continue;
+        const bool better=(score.plottableRows>best.plottableRows)
+                        ||(score.plottableRows==best.plottableRows
+                           &&score.numericColumns>best.numericColumns)
+                        ||(score.plottableRows==best.plottableRows
+                           &&score.numericColumns==best.numericColumns
+                           &&candidates.at(i).page<candidates.at(bestAt<0?i:bestAt).page);
+        if(bestAt<0||better){ bestAt=i; best=score; }
+    }
+
+    if(bestAt<0){
+        // Said in full, because "it did not work" is what this looked like from
+        // the outside and the person needs to know the difference between a
+        // broken button and a paper whose tables are prose.
+        setStatus(QStringLiteral("None of the %1 extracted tables has two numeric columns "
+                                 "over three or more rows, so there is nothing to draw. "
+                                 "Use Reconstruct graph to read numbers off a figure "
+                                 "instead.").arg(candidates.size()));
+        return false;
+    }
+    if(!importDataset(QUrl::fromLocalFile(candidates.at(bestAt).path))) return false;
+
+    // WHICH one, and that there were others. A chooser is the right interface
+    // for twelve tables; until there is one, the person must at least be told
+    // that a choice was made on their behalf and that it was not the only
+    // candidate.
+    const Candidate& chosen=candidates.at(bestAt);
+    const QString label=chosen.name.isEmpty()
+        ? QFileInfo(chosen.path).completeBaseName() : chosen.name;
+    setStatus(candidates.size()>1
+        ? QStringLiteral("Sent “%1” (%2 rows × %3 numeric columns) — the most drawable of "
+                         "%4 extracted tables")
+              .arg(label).arg(best.plottableRows).arg(best.numericColumns)
+              .arg(candidates.size())
+        : QStringLiteral("Sent “%1” (%2 rows × %3 numeric columns)")
+              .arg(label).arg(best.plottableRows).arg(best.numericColumns));
+    return true;
 }
 
 
@@ -1104,6 +1780,98 @@ bool AppController::exportProjectState(const QUrl& url){
 // The thumbnails themselves are installed to share/graphvis/assets and are
 // loaded from disk rather than embedded, so the executable stays small.
 // =========================================================================
+// The help, read from the embedded resource on first use.
+//
+// Shipped inside the executable rather than as files beside it, for the same
+// reason the catalogue is: help that depends on an installation layout is help
+// that is missing on somebody's machine, and help that depends on a network is
+// missing on a research vessel.
+//
+// Cached, and CONSTANT: the content cannot change while the program runs, so a
+// binding that reads it never needs to be re-evaluated.
+// ONE read for both lists.
+//
+// The topics carry a `section` id and the sections carry the titles those ids
+// resolve to, so they are two halves of one answer. Reading them in two places
+// would be the shape this project keeps getting bitten by - two independent
+// answers to one question, free to drift - and here it would show up as a
+// topic filed under a heading the browser cannot name.
+void AppController::loadHelp() const {
+    if(!helpTopics_.isEmpty()) return;
+    QFile f(QStringLiteral(":/qt/qml/GraphVis/help/help_topics.json"));
+    if(!f.open(QIODevice::ReadOnly)){
+        qWarning("GraphVis: help_topics.json is missing from the application resources");
+        return;
+    }
+    QJsonParseError err{};
+    const QJsonDocument doc=QJsonDocument::fromJson(f.readAll(),&err);
+    if(err.error!=QJsonParseError::NoError||!doc.isObject()){
+        qWarning("GraphVis: help_topics.json is not valid JSON: %s",
+                 qPrintable(err.errorString()));
+        return;
+    }
+    const QJsonObject o=doc.object();
+    helpTopics_=o.value(QStringLiteral("topics")).toArray().toVariantList();
+    helpSections_=o.value(QStringLiteral("sections")).toArray().toVariantList();
+
+    // A topic whose section is not declared would be drawn under a heading
+    // spelled like an internal id. tools/make_help.py refuses to write such a
+    // file, so this can only fire if the resource was replaced by hand - which
+    // is worth one line of warning rather than a silent oddity on screen.
+    QSet<QString> known;
+    for(const QVariant& v:std::as_const(helpSections_))
+        known.insert(v.toMap().value(QStringLiteral("id")).toString());
+    for(const QVariant& v:std::as_const(helpTopics_)){
+        const QString s=v.toMap().value(QStringLiteral("section")).toString();
+        if(!known.contains(s)){
+            qWarning("GraphVis: help topic '%s' is in undeclared section '%s'",
+                     qPrintable(v.toMap().value(QStringLiteral("id")).toString()),
+                     qPrintable(s));
+            break;
+        }
+    }
+}
+
+// The citation styles, read once from the embedded generated list.
+//
+// The file is written by tools/make_citation_styles.py from the one table in
+// graphvis_science/citation_styles.py, and the audit fails when the two
+// disagree - so the set this picker offers is by construction the set the
+// formatter can produce. The arrangement it replaces was a list written out in
+// QML beside a formatter that had its own, which is how a style could be
+// offered and then not applied.
+void AppController::loadCitationStyles() const {
+    if(!citationStyles_.isEmpty()) return;
+    QFile f(QStringLiteral(":/qt/qml/GraphVis/citations/citation_styles.json"));
+    if(!f.open(QIODevice::ReadOnly)){
+        qWarning("GraphVis: citation_styles.json is missing from the application resources");
+        return;
+    }
+    QJsonParseError err{};
+    const QJsonDocument doc=QJsonDocument::fromJson(f.readAll(),&err);
+    if(err.error!=QJsonParseError::NoError||!doc.isObject()){
+        qWarning("GraphVis: citation_styles.json is not valid JSON: %s",
+                 qPrintable(err.errorString()));
+        return;
+    }
+    citationStyles_=doc.object().value(QStringLiteral("styles")).toArray().toVariantList();
+}
+
+QVariantList AppController::citationStyles() const {
+    loadCitationStyles();
+    return citationStyles_;
+}
+
+QVariantList AppController::helpTopics() const {
+    loadHelp();
+    return helpTopics_;
+}
+
+QVariantList AppController::helpSections() const {
+    loadHelp();
+    return helpSections_;
+}
+
 void AppController::loadGraphCatalogue(){
     QFile f(QStringLiteral(":/qt/qml/GraphVis/catalogue/graph_catalogue.json"));
     if(!f.open(QIODevice::ReadOnly)){
@@ -1261,13 +2029,48 @@ QString AppController::graphThumbnail(const QString& fileName,bool compact) cons
     return QUrl::fromLocalFile(path).toString();
 }
 
+// WHERE THE LAST EXPORT WENT, or the default if there has never been one.
+//
+// This used to hard-code ~/Documents/GraphVis/exports and take no directory at
+// all, so every export went to a folder the person was never told about and
+// silently overwrote the previous file of the same engine and extension. "I
+// exported it and I do not know where it went" is the correct reaction to that.
+QString AppController::exportDirectory() const{
+    const QString remembered=QSettings(QStringLiteral("GraphVis"),
+                                       QStringLiteral("GraphVis 18.4"))
+                                 .value(QStringLiteral("export/lastDirectory")).toString();
+    if(!remembered.isEmpty()&&QFileInfo(remembered).isDir()) return remembered;
+    return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+           +QStringLiteral("/GraphVis/exports");
+}
+
+void AppController::rememberExportDirectory(const QString& directory){
+    if(directory.isEmpty()) return;
+    const QFileInfo info(directory);
+    // The DIRECTORY, whether a folder or a file was handed over. A Save dialog
+    // returns the file; remembering that as the folder would put the next
+    // export inside a path that is not one.
+    const QString dir=info.isDir()?info.absoluteFilePath():info.absolutePath();
+    if(dir.isEmpty()||!QFileInfo(dir).isDir()) return;
+    if(dir==exportDirectory()) return;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("export/lastDirectory"),dir);
+    emit exportDirectoryChanged();
+}
+
 QString AppController::exportPath(const QString& baseName,const QString& extension) const{
-    const QString dir=QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-                      +QStringLiteral("/GraphVis/exports");
+    const QString dir=exportDirectory();
     QDir().mkpath(dir);
     QString stem=baseName.isEmpty()?QStringLiteral("figure"):baseName;
     stem.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._-]+")),QStringLiteral("_"));
     return QDir(dir).absoluteFilePath(stem+QLatin1Char('.')+extension);
+}
+
+// Whether writing there would replace something. The export dialog asks before
+// it overwrites now; it used to overwrite in silence, which is how a figure
+// somebody spent an afternoon on disappears under a quick re-export.
+bool AppController::fileExists(const QString& path) const{
+    return !path.isEmpty()&&QFileInfo::exists(path);
 }
 
 
@@ -1398,6 +2201,26 @@ void AppController::handleScienceReply(const QJsonObject& obj){
         }
         pendingScanCachePath_.clear();
         applyScanReply(obj,false);
+        return;
+    }
+
+    if(op==QStringLiteral("io.export")){
+        const QString target=pendingExportTarget_;
+        pendingExportTarget_.clear();
+        if(ok){
+            setStatus(QStringLiteral("Wrote %1 (%2 rows)")
+                          .arg(QFileInfo(target).fileName())
+                          .arg(obj.value(QStringLiteral("rows")).toInt()));
+            emit datasetExported(target);
+        }else{
+            // The service's refusals are written as sentences a person can act
+            // on - "already exists", "cannot write .sav", "these columns are
+            // not in the dataset" - so they are shown rather than summarised.
+            const QString why=obj.value(QStringLiteral("error")).toString();
+            setStatus(why.isEmpty()
+                          ? QStringLiteral("Could not write %1").arg(QFileInfo(target).fileName())
+                          : why);
+        }
         return;
     }
 
@@ -1666,6 +2489,9 @@ void AppController::handleScienceReply(const QJsonObject& obj){
 
     if(op.startsWith(QLatin1String("literature."))){
         literatureAnalysis_=obj.toVariantMap();
+        // Measured once, here, rather than every time a binding reads it: the
+        // decision reads each saved CSV off disk.
+        literatureSummary_=summariseLiterature();
         emit literatureChanged();
         setStatus(ok?QStringLiteral("Literature intelligence complete")
                     :QStringLiteral("Literature service error: %1").arg(error));
@@ -2201,7 +3027,7 @@ void AppController::scanDataset(double budgetSeconds,bool useLiterature,bool for
     }
 
     if(startScienceOp(request,QStringLiteral("dataset.scan"),
-                      QStringLiteral("Scanning dataset (%1 s budget)").arg(int(budgetSeconds)))){
+                      QStringLiteral("Scanning dataset (up to %1 s)").arg(int(budgetSeconds)))){
         pendingScanCachePath_=cachePath;
         scanning_=true;
         scanRecommendations_.clear();
@@ -2212,6 +3038,14 @@ void AppController::scanDataset(double budgetSeconds,bool useLiterature,bool for
 
 void AppController::clearScan(){
     scanRecommendations_.clear(); scanSummary_.clear(); scanning_=false; emit scanChanged();
+}
+
+void AppController::setThemeBeforeColourVision(int value){
+    if(themeBeforeCvd_==value) return;
+    themeBeforeCvd_=value;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("ui/themeBeforeColourVision"),themeBeforeCvd_);
+    emit themeIndexChanged();
 }
 
 void AppController::setThemeIndex(int value){
@@ -2269,7 +3103,24 @@ QRect AppController::preferredWindowGeometry(int width,int height) const{
                 QRect fitted=saved;
                 fitted.setWidth(qMin(fitted.width(),area.width()));
                 fitted.setHeight(qMin(fitted.height(),area.height()));
-                if(!area.contains(fitted)) fitted.moveTo(area.topLeft());
+                // NUDGED BACK INSIDE, not thrown into the corner.
+                //
+                // This was `if(!area.contains(fitted)) fitted.moveTo(area.topLeft())`,
+                // and it is why the window opened jammed against the top-left of
+                // the screen. The two lines above clamp the SIZE and leave the
+                // POSITION alone, so a window last closed near the right or
+                // bottom edge no longer fits - and the whole thing was then
+                // moved to the corner, throwing away a position the person had
+                // chosen in order to fix an overhang of a few pixels.
+                //
+                // Clamping each axis moves it the least distance that puts it
+                // on screen, so it opens as near as possible to where it was
+                // left. The +1 is because `right()` and `bottom()` are the last
+                // pixel INSIDE the rectangle, not one past it.
+                fitted.moveTo(qBound(area.left(),fitted.x(),
+                                     area.right()-fitted.width()+1),
+                              qBound(area.top(),fitted.y(),
+                                     area.bottom()-fitted.height()+1));
                 return fitted;
             }
         }
@@ -2439,8 +3290,12 @@ QStringList AppController::uiLayoutNames() const{
 
 QVariantList AppController::uiLayoutList() const{
     QVariantList out;
-    for(int i=0;i<graphvis::uiLayouts().size();++i){
-        QVariantMap m=graphvis::uiLayoutAsMap(graphvis::uiLayouts().at(i));
+    // Fetched ONCE. The table is the same on every pass, so calling for it in
+    // the condition and again in the body asked for it twice per layout.
+    const auto& layouts=graphvis::uiLayouts();
+    out.reserve(layouts.size());
+    for(int i=0;i<layouts.size();++i){
+        QVariantMap m=graphvis::uiLayoutAsMap(layouts.at(i));
         m.insert(QStringLiteral("index"),i);
         out.append(m);
     }
@@ -2449,11 +3304,13 @@ QVariantList AppController::uiLayoutList() const{
 
 QVariantList AppController::uiLayoutGroupList() const{
     QVariantList out;
-    for(int i=0;i<graphvis::uiLayoutGroups().size();++i){
+    const auto& groups=graphvis::uiLayoutGroups();
+    out.reserve(groups.size());
+    for(int i=0;i<groups.size();++i){
         QVariantMap m;
         m.insert(QStringLiteral("index"),i);
-        m.insert(QStringLiteral("name"),graphvis::uiLayoutGroups().at(i).name);
-        m.insert(QStringLiteral("description"),graphvis::uiLayoutGroups().at(i).description);
+        m.insert(QStringLiteral("name"),groups.at(i).name);
+        m.insert(QStringLiteral("description"),groups.at(i).description);
         out.append(m);
     }
     return out;
@@ -2735,6 +3592,15 @@ void AppController::setPlotPieLabels(int mode){
     emit plotDisplayChanged();
 }
 
+void AppController::setPlotLegendLabels(int mode){
+    const int clamped=qBound(0,mode,1);
+    if(plotLegendLabels_==clamped) return;
+    plotLegendLabels_=clamped;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("plot/legendLabels"),plotLegendLabels_);
+    emit plotDisplayChanged();
+}
+
 void AppController::setPlotPolarConvention(int mode){
     const int clamped=qBound(0,mode,1);
     if(plotPolarConvention_==clamped) return;
@@ -2789,6 +3655,14 @@ void AppController::setPlotColourVisionPreview(bool on){
     setStatus(on?QStringLiteral("Showing the figure as this reader sees it. Exports "
                                 "are unaffected.")
                 :QStringLiteral("Back to the real figure."));
+}
+
+void AppController::setFigureTabsVisible(bool on){
+    if(figureTabs_==on) return;
+    figureTabs_=on;
+    QSettings(QStringLiteral("GraphVis"),QStringLiteral("GraphVis 18.4"))
+        .setValue(QStringLiteral("ui/figureTabs"),figureTabs_);
+    emit figureTabsChanged();
 }
 
 void AppController::setColourVisionToolbarVisible(bool on){

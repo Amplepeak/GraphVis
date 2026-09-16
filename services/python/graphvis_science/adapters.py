@@ -172,6 +172,126 @@ def global_linear_pairs(datasets: Sequence[Any], *, shared_slope: bool = True):
     return CurveFittingEngine.global_linear(pairs, shared_slope=bool(shared_slope))
 
 
+def fit_custom_formula(x, y, *, formula: str, parameters: Any = None,
+                       initial: Any = None, bounds: Any = None):
+    """Fit a formula the person typed, rather than one from the built-in list.
+
+    `CurveFittingEngine.custom` has been complete since it was written and was
+    unreachable: it takes a CALLABLE, and a request that arrives as JSON cannot
+    carry one. This is the missing half - the formula arrives as text, is parsed
+    by the same validated SymPy parser the function plots use, and becomes the
+    callable the engine already knows how to fit.
+
+    The parser is the reason this is safe to expose. `parse_expression`
+    validates the source and resolves names against an allow-list, so a formula
+    cannot reach an import, an attribute or the filesystem; anything it does not
+    recognise comes back as "Unknown symbols" rather than being evaluated.
+
+    `parameters` is what to fit. Everything in the formula that is not `x` and
+    not a parameter is an error rather than an assumption - a typo in a
+    parameter name would otherwise be silently fitted as a new one.
+    """
+    import numpy as np
+
+    from graphvis_science.analysis.expression import (ExpressionError,
+                                                      parse_expression)
+    from graphvis_science.analysis.fitting import CurveFittingEngine
+
+    names = [str(n).strip() for n in (parameters or []) if str(n).strip()]
+    if not names:
+        raise ValueError(
+            "A custom fit needs the names of the parameters to fit, "
+            'for example {"formula": "a*exp(-k*x)+c", '
+            '"parameters": ["a", "k", "c"]}.')
+    if "x" in names:
+        raise ValueError("`x` is the variable being fitted against, so it "
+                         "cannot also be a parameter.")
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ValueError("Each parameter may be named once; repeated: "
+                         + ", ".join(duplicates))
+
+    try:
+        expr, syms = parse_expression(formula, variables=("x", *names))
+    except ExpressionError as exc:
+        raise ValueError(str(exc)) from exc
+
+    # A PARAMETER THE FORMULA DOES NOT USE CANNOT BE FITTED, and saying so is
+    # the difference between a clear refusal and a fit that returns whatever
+    # the optimiser started that parameter at, with an error bar to match.
+    unused = [n for n in names if syms[n] not in expr.free_symbols]
+    if unused:
+        raise ValueError("These parameters do not appear in the formula, so "
+                         "there is nothing to fit them to: "
+                         + ", ".join(unused))
+
+    import sympy as sp
+    call = sp.lambdify((syms["x"], *[syms[n] for n in names]), expr, "numpy")
+
+    def model(xs, *values):
+        out = call(np.asarray(xs, dtype=float), *values)
+        # A formula with no x in it - a constant - lambdifies to a scalar, and
+        # curve_fit needs one value per point.
+        return np.broadcast_to(np.asarray(out, dtype=float),
+                               np.shape(np.asarray(xs, dtype=float))).astype(float)
+
+    model.__name__ = str(formula)
+
+    start = [float(v) for v in (initial or [])] or [1.0] * len(names)
+    if len(start) != len(names):
+        raise ValueError(f"{len(names)} parameter(s) named and {len(start)} "
+                         "starting value(s) given; they have to match.")
+    lo, hi = (-np.inf, np.inf)
+    if bounds:
+        try:
+            lo, hi = bounds
+        except (TypeError, ValueError) as exc:
+            raise ValueError('bounds is [low, high], each a number or a list '
+                             'one per parameter') from exc
+    return CurveFittingEngine.custom(x, y, model, names, start, bounds=(lo, hi))
+
+
+def figure_parity(reference_image: str, candidate_image: str, *,
+                  reference_values=None, candidate_values=None,
+                  relative_tolerance: float = 0.01):
+    """How close a re-plot is to the figure it was taken from, as numbers.
+
+    `validation/visual_parity.py` has had `compare_images` and
+    `numerical_parity` since it was written and nothing referenced either -
+    dead code in a program whose whole argument is that it says what it has
+    checked. This is the way in.
+
+    Both halves, because they answer different questions and a reader needs
+    both. The picture comparison (SSIM, PSNR, dE) says whether the figure LOOKS
+    like the published one; the value comparison says whether the numbers
+    underneath agree, which is what actually matters and what a picture can
+    hide - a chart redrawn with a different y scale can score well visually and
+    be wrong.
+
+    The values are optional: comparing two images is useful on its own, and a
+    caller who has the numbers from the de-renderer can pass them.
+    """
+    from graphvis_science.validation.visual_parity import (compare_images,
+                                                           numerical_parity)
+
+    out: dict[str, Any] = {"ok": True}
+    metrics = compare_images(reference_image, candidate_image)
+    out["visual"] = metrics.as_dict()
+    # SAID IN WORDS AS WELL AS NUMBERS. An SSIM of 0.94 means nothing to most
+    # readers, and a number nobody can interpret is a number nobody acts on.
+    ssim = float(metrics.ssim)
+    out["visual"]["verdict"] = (
+        "indistinguishable" if ssim >= 0.99 else
+        "very close" if ssim >= 0.95 else
+        "recognisably the same figure" if ssim >= 0.85 else
+        "different enough to look at")
+    if reference_values is not None and candidate_values is not None:
+        out["numerical"] = numerical_parity(
+            reference_values, candidate_values,
+            relative_tolerance=float(relative_tolerance))
+    return out
+
+
 def function_curve(source: str, *, domain: str | None = None,
                    samples: int = 1200) -> dict:
     """y = f(x) over a domain, as a curve the plot catalogue can draw.

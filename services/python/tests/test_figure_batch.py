@@ -7,7 +7,6 @@ the figures GraphVis 17 wrote.
 """
 from __future__ import annotations
 
-import io
 import json
 import os
 import sys

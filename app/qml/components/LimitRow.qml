@@ -35,7 +35,12 @@ ColumnLayout {
     signal limitsRequested(real lo, real hi)
     signal autoRequested()
 
-    readonly property bool auto: root.entry ? (root.entry.autoMin && root.entry.autoMax) : true
+    // !!( ) on the inner pair as well as the ternary guard outside it: the
+    // guard covers a missing entry, not an entry that arrives without those two
+    // fields on it, and `autoMin && autoMax` is undefined rather than false
+    // when the first is missing.
+    readonly property bool auto: root.entry
+        ? !!(root.entry.autoMin && root.entry.autoMax) : true
     readonly property real dataLo: root.entry ? Number(root.entry.dataMin) : 0
     readonly property real dataHi: root.entry ? Number(root.entry.dataMax) : 1
     readonly property real curLo: root.entry ? Number(root.entry.min) : 0
@@ -108,6 +113,13 @@ ColumnLayout {
         // every frame of a slider drag - including the frame in the middle of
         // typing "10" where the value is still 1. The text follows the canvas
         // only while the box is not focused.
+        //
+        // Qt.binding ON BLUR, not a plain assignment. Typing into a TextField
+        // destroys its text binding, and `text = root.fmt(...)` puts back a
+        // VALUE, not the binding - so after the first edit the field stopped
+        // following the canvas for the rest of the session, which is the exact
+        // opposite of what the paragraph above says it does. Restoring the
+        // binding restores the behaviour.
         TextField {
             id: minField
             Layout.fillWidth: true
@@ -117,7 +129,8 @@ ColumnLayout {
             validator: DoubleValidator {}
             placeholderText: "min"
             text: root.fmt(root.curLo)
-            onActiveFocusChanged: if (!activeFocus) text = root.fmt(root.curLo)
+            onActiveFocusChanged: if (!activeFocus)
+                                      text = Qt.binding(function() { return root.fmt(root.curLo) })
             onAccepted: root.commitFields()
             onEditingFinished: root.commitFields()
         }
@@ -131,7 +144,8 @@ ColumnLayout {
             validator: DoubleValidator {}
             placeholderText: "max"
             text: root.fmt(root.curHi)
-            onActiveFocusChanged: if (!activeFocus) text = root.fmt(root.curHi)
+            onActiveFocusChanged: if (!activeFocus)
+                                      text = Qt.binding(function() { return root.fmt(root.curHi) })
             onAccepted: root.commitFields()
             onEditingFinished: root.commitFields()
         }

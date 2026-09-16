@@ -27,6 +27,13 @@ PanelScroll {
     readonly property bool ready: canvas !== null && canvas.pointCount > 0
     property string profileName: "Nature single-column"
     readonly property var profile: canvas ? canvas.publicationProfile(root.profileName) : null
+    // A MAP WITH NO KEYS IS STILL TRUTHY, so `profile ? ... : ...` is not
+    // the guard it looks like: before a profile has been looked up, every
+    // read below returned undefined, which either concatenated into the
+    // label as the word "undefined" or was refused outright by Qt. One
+    // named question, asked of a member that a real profile always has.
+    readonly property bool profileKnown: !!root.profile
+                                         && root.profile.widthMm !== undefined
 
     FileDialog {
         id: figureDialog
@@ -150,23 +157,26 @@ PanelScroll {
 
                 Label { text: "Width"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
                 Label {
-                    text: root.profile ? root.profile.widthMm.toFixed(1) + " mm  ("
-                                         + root.profile.widthIn.toFixed(2) + " in)" : ""
+                    text: root.profileKnown
+                          ? root.profile.widthMm.toFixed(1) + " mm  ("
+                            + root.profile.widthIn.toFixed(2) + " in)" : ""
                     color: Theme.text; font.pixelSize: Theme.fontSizeSmall
                 }
                 Label { text: "Resolution"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
                 Label {
-                    text: root.profile ? root.profile.dpi + " dpi" : ""
+                    text: root.profileKnown ? root.profile.dpi + " dpi" : ""
                     color: Theme.text; font.pixelSize: Theme.fontSizeSmall
                 }
                 Label { text: "Body text"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
                 Label {
-                    text: root.profile ? root.profile.baseFontSize + " pt " + root.profile.fontFamily : ""
+                    text: root.profileKnown
+                          ? root.profile.baseFontSize + " pt " + root.profile.fontFamily : ""
                     color: Theme.text; font.pixelSize: Theme.fontSizeSmall
                 }
                 Label { text: "Line weight"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeSmall }
                 Label {
-                    text: root.profile ? root.profile.lineWidth + " pt  ·  " + root.profile.colorSpace : ""
+                    text: root.profileKnown
+                          ? root.profile.lineWidth + " pt  ·  " + root.profile.colorSpace : ""
                     color: Theme.text; font.pixelSize: Theme.fontSizeSmall
                 }
             }
@@ -176,8 +186,10 @@ PanelScroll {
             // instructions take precedence over any of it.
             Label {
                 Layout.fillWidth: true
-                visible: root.profile !== null && root.profile.notes !== ""
-                text: root.profile ? root.profile.notes : ""
+                visible: !!root.profile && !!root.profile.notes
+                // Same reason as the width above: an empty map reaches
+                // here and `.notes` is undefined, which is not a string.
+                text: root.profile && root.profile.notes ? root.profile.notes : ""
                 color: Theme.textMuted
                 font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.WordWrap

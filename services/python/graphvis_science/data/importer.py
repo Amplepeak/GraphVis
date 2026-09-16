@@ -445,6 +445,109 @@ def _r_tiff(p):
     raise ImportError_("Only a single 2-D TIFF plane becomes a table.")
 
 # ----------------------------------------------------------------- geospatial
+def _r_geo_boundaries(p):
+    """Region OUTLINES, one row per vertex - what a choropleth is drawn from.
+
+    `_r_geo` below keeps one row per feature and a representative point inside
+    it, which is right for a geo scatter and throws away the only thing a
+    choropleth needs: the boundary. A shape cannot be recovered from its
+    centroid, so this is a separate reader rather than a cleverer one.
+
+    The shape of the table is the long format every polygon plotter uses:
+
+        region      ring   longitude   latitude   <the feature's own columns>
+        Cornwall    0      -5.71       50.06      ...
+        Cornwall    0      -5.53       50.19      ...
+        Devon       0      -4.21       50.32      ...
+
+    Rows of one region, in order, are its outline. `ring` separates an island
+    or a hole from the outer boundary, so a country with offshore territory
+    does not come back as one polygon zig-zagging across the sea.
+
+    The attributes are repeated on every vertex. That is redundant and it is
+    the point: it keeps the value beside the shape in ONE table, so the
+    existing column mapping can reach both without a join the interface has
+    no way to express.
+    """
+    _need('geopandas', 'geopandas')
+    import geopandas as gpd
+    gdf = gpd.read_file(p)
+    if gdf.empty:
+        raise ImportError_("This file has no features in it.")
+
+    geom_name = gdf.geometry.name
+    attrs = [c for c in gdf.columns if c != geom_name]
+
+    # A name for each region, so the rows say something a person recognises.
+    # Prefer a column that looks like a name and is unique per feature.
+    label_col = None
+    for candidate in attrs:
+        low = str(candidate).lower()
+        if any(w in low for w in ('name', 'region', 'area', 'district',
+                                  'county', 'state', 'country', 'zone', 'id')):
+            if gdf[candidate].nunique(dropna=False) == len(gdf):
+                label_col = candidate
+                break
+
+    rows = []
+    for i, (_idx, feature) in enumerate(gdf.iterrows()):
+        geom = feature[geom_name]
+        if geom is None or geom.is_empty:
+            continue
+        label = str(feature[label_col]) if label_col is not None else f"region {i + 1}"
+        for ring_no, ring in enumerate(_exterior_rings(geom)):
+            base = {c: feature[c] for c in attrs}
+            for lon, lat in ring:
+                row = dict(base)
+                row['region'] = label
+                # A NUMBER as well as the name. The plot backend reads columns
+                # as float64 and hands an engine nothing at all for a text
+                # column, so the name alone could not group anything - the
+                # choropleth would see one undifferentiated cloud of vertices.
+                row['region_id'] = i
+                row['ring'] = ring_no
+                row['longitude'] = float(lon)
+                row['latitude'] = float(lat)
+                rows.append(row)
+
+    if not rows:
+        raise ImportError_(
+            "No region outlines in this file - the geometry is points or "
+            "lines, not areas. Import it normally for a geo scatter.")
+    frame = pd.DataFrame(rows)
+    # Ordered for the automatic column mapping, which fills an engine's slots
+    # from the file in order: longitude, latitude and region_id are the first
+    # three numeric columns, so the fourth it reaches is the first of the
+    # feature's own attributes - the value. `ring` is deliberately last: four
+    # columns draw a correct map for regions that are one polygon, and the
+    # fifth is opt-in for the archipelagos that need it.
+    lead = ['region', 'longitude', 'latitude', 'region_id']
+    tail = ['ring']
+    middle = [c for c in frame.columns if c not in lead and c not in tail]
+    return frame[lead + middle + tail]
+
+
+def _exterior_rings(geom):
+    """Every outer ring of a polygon or multi-polygon, as (lon, lat) pairs.
+
+    Interior rings - holes - are deliberately skipped. A filled region drawn
+    from its outer ring is right for every choropleth; drawing the hole as a
+    second outline would paint a lake in the same colour as the county.
+    """
+    kind = getattr(geom, 'geom_type', '')
+    if kind == 'Polygon':
+        return [list(geom.exterior.coords)]
+    if kind == 'MultiPolygon':
+        return [list(part.exterior.coords) for part in geom.geoms
+                if part is not None and not part.is_empty]
+    if kind == 'GeometryCollection':
+        out = []
+        for part in geom.geoms:
+            out.extend(_exterior_rings(part))
+        return out
+    return []
+
+
 def _r_geo(p):
     _need('geopandas', 'geopandas')
     import geopandas as gpd
@@ -455,6 +558,7 @@ def _r_geo(p):
         frame['longitude'] = pts.x.to_numpy()
         frame['latitude'] = pts.y.to_numpy()
     except Exception:
+        # geometry without representative points: the table loads without lon/lat
         pass
     return frame
 
@@ -661,6 +765,7 @@ def _xr_frame(ds):
             if len(frame):
                 return frame
     except Exception:
+        # the size hint is a hint; the default stands when it cannot be read
         pass
     arrays = {}
     for name, var in list(ds.coords.items()) + list(ds.data_vars.items()):
@@ -1176,6 +1281,7 @@ def _r_xyz_molecule(p):
                                  'x': float(parts[1]), 'y': float(parts[2]),
                                  'z': float(parts[3])})
                 except ValueError:
+                    # a malformed row is skipped - a tolerant reader is the point of this parser
                     pass
         i += count
         frame_index += 1
@@ -1266,6 +1372,7 @@ def _r_molfile(p):
                                  'y': float(parts[1]), 'z': float(parts[2]),
                                  'element': parts[3]})
                 except ValueError:
+                    # a malformed row is skipped, as above
                     pass
         end = next((n for n in range(i, len(lines)) if lines[n].startswith('$$$$')), None)
         if end is None:
@@ -1435,6 +1542,7 @@ def _decompressed_copy(src: Path):
         try:
             os.remove(temp)
         except OSError:
+            # best-effort cleanup of a temporary file we no longer need
             pass
         raise ImportError_(f"Could not decompress this {suffix} file: {exc}")
     return temp, temp
@@ -1453,14 +1561,27 @@ def _suffix(path: str) -> str:
     return os.path.splitext(low)[1]
 
 
-def import_to_arrow(path: str, out_dir: str) -> dict:
-    """Convert any supported dataset into Arrow IPC. Returns a summary dict."""
+def import_to_arrow(path: str, out_dir: str, geometry: str = "points") -> dict:
+    """Convert any supported dataset into Arrow IPC. Returns a summary dict.
+
+    `geometry` applies only to geospatial files and defaults to the behaviour
+    every existing caller already gets - one row per feature, at a point
+    inside it. Pass "boundaries" for the region outlines a choropleth needs.
+    It is a parameter rather than a change to the reader because the two
+    tables have different rows and each is right for different engines.
+    """
     src = Path(path)
     if not src.exists():
         raise ImportError_(f"File not found: {path}")
 
     ext = _suffix(str(src))
     entry = READERS.get(ext)
+    if entry is not None and geometry == "boundaries":
+        _reader, group = entry
+        if str(group).lower() != "geospatial":
+            raise ImportError_(
+                "Region outlines can only be read from a geospatial file.")
+        entry = (_r_geo_boundaries, group)
     if entry is None:
         raise ImportError_(
             f"Unsupported dataset format '{ext or src.name}'. "
@@ -1475,6 +1596,7 @@ def import_to_arrow(path: str, out_dir: str) -> dict:
             try:
                 os.remove(temp_path)
             except OSError:
+                # best-effort cleanup of a temporary file we no longer need
                 pass
 
     if frame is None or len(frame) == 0:

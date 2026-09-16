@@ -219,7 +219,15 @@ ok("Nature elides past five", "et al." in citations.to_text(many, "nature"))
 ok("Harvard elides past three", "et al." in citations.to_text(many, "harvard"))
 huge = {"doi": "10.1/x", "title": "T", "authors":
         [{"family": f"N{i}", "given": "A"} for i in range(25)]}
-ok("APA elides past twenty", "..." in citations.to_text(huge, "apa"))
+# APA 7's rule for twenty-one or more authors is NOT "et al.": it lists the
+# first nineteen, then a spaced ellipsis, then the FINAL author - ". . . Zhu, X."
+# A formatter that wrote "et al." there would be wrong in the one place a
+# reader checks a long reference, and the spacing is part of the rule.
+_apa_huge = citations.to_text(huge, "apa")
+ok("APA elides past twenty with a spaced ellipsis, not et al.",
+   ". . ." in _apa_huge and "et al." not in _apa_huge, _apa_huge[-60:])
+ok("APA keeps the LAST author after the ellipsis",
+   _apa_huge.rstrip().split(". . . ")[-1].startswith("N24"), _apa_huge[-40:])
 ok("the whole thing is JSON-safe", json.dumps(record) is not None)
 
 print(f"\n{passed} passed, {failed} failed, {skipped} skipped")

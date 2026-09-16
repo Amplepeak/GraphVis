@@ -14,11 +14,23 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import GraphVis
 
 MenuBar {
     id: root
     required property var app
+    // The OPEN FIGURES, listed here as well as on the strip above the canvas.
+    //
+    // Handed down rather than read off the workspace: the menu bar belongs to
+    // the window and the figures belong to the Visualize workspace, and a menu
+    // that reached across to fetch them would be a second route to the same
+    // list. Main.qml binds these from whichever shell is loaded, the same way
+    // it already routes Export.
+    property var figureTitles: []
+    property int figureIndex: 0
+    signal figureSelected(int index)
+    signal figureAddRequested()
 
     // The layouts of one family, and that family's name. Filtering here beats
     // a second property per group on the controller, and both are needed
@@ -122,6 +134,12 @@ MenuBar {
         MenuSeparator {}
 
         Action {
+            // A SHORTCUT, because two layouts have no header to put a button
+            // in. Zen and Bare hide the canvas panel's header entirely - that
+            // is the point of them - and the Export button lives in that
+            // header, so on those two layouts the menu was the only route and
+            // it had no key of its own.
+            shortcut: "Ctrl+E"
             text: "Save figure as…"
             enabled: root.canvas !== null && root.canvas.pointCount > 0
             onTriggered: root.exportRequested()
@@ -183,8 +201,15 @@ MenuBar {
             onTriggered: if (root.canvas) root.canvas.resetCamera()
         }
         Action {
-            text: "Fit the axes back to the data"
-            enabled: root.canvas !== null && root.canvas.viewZoomed
+            // The wording follows the figure. On an axis-less engine there are
+            // no axes to fit and resetView puts the drawing back in the middle
+            // of its frame instead, so a menu item promising to fit axes would
+            // be describing something that cannot happen.
+            text: root.canvas && root.canvas.frameMoved && !root.canvas.viewZoomed
+                  ? "Put the figure back in its frame"
+                  : "Fit the axes back to the data"
+            enabled: root.canvas !== null
+                     && (root.canvas.viewZoomed || root.canvas.frameMoved)
             onTriggered: if (root.canvas) root.canvas.resetView()
         }
 
@@ -212,24 +237,82 @@ MenuBar {
             checkable: true
             checked: !root.app.navRailCollapsed
             // Only the layouts that put the workspaces on an edge have one.
-            enabled: root.app.uiLayoutSpec && root.app.uiLayoutSpec.navEdge !== 0
+            enabled: !!(root.app.uiLayoutSpec && root.app.uiLayoutSpec.navEdge !== 0)
             onTriggered: root.app.navRailCollapsed = !root.app.navRailCollapsed
+        }
+        // THE FIGURE STRIP BELONGS WITH THE OTHER BARS, and it was the one
+        // show-or-hide toggle missing from the group.
+        //
+        // It was in two places, neither of them this one: on the Figures menu,
+        // and inside View > Colour vision - where it had nothing whatever to do
+        // with colour vision and had simply been dropped beside the toolbar
+        // toggle that does. So the person looking for "how do I get more room
+        // for the figure", who finds Toolbar, Controls panel and Workspace bar
+        // right here, did not find the fourth bar among them.
+        //
+        // Named as a bare noun like its three neighbours rather than "Show the
+        // figure strip": they are a group of things that are either on screen
+        // or not, and one of them phrased as an instruction reads as a
+        // different kind of control.
+        Action {
+            text: "Figure strip"
+            checkable: true
+            checked: root.app.figureTabsVisible
+            onTriggered: root.app.figureTabsVisible = !root.app.figureTabsVisible
         }
 
         MenuSeparator {}
 
         Menu {
+            id: themeMenu
             title: "Interface theme"
+
+            // The same filter the theme picker applies, from the same measured
+            // tags. Two lists of themes that disagree about which are offered
+            // is precisely the shape that keeps costing this project time, and
+            // here it would be visible: the picker showing four entries and
+            // this menu showing all hundred and eight.
+            readonly property string visionKind:
+                root.app ? Theme.visionKindAt(root.app.plotColourVision) : ""
+            readonly property int hiddenCount:
+                themeMenu.visionKind === ""
+                    ? 0
+                    : Theme.themeCount
+                      - Theme.indicesCarrying(themeMenu.visionKind).length
+
             Repeater {
                 model: Theme.themes
                 delegate: MenuItem {
+                    id: themeItem
                     required property var modelData
                     required property int index
-                    text: modelData.name
+                    // The current theme stays listed even when it fails the
+                    // mode. A menu that hides what is currently ticked leaves
+                    // nothing ticked, which reads as no theme being set at all.
+                    readonly property bool carries:
+                        Theme.themeCarries(themeItem.index, themeMenu.visionKind)
+                        || Theme.currentIndex === themeItem.index
+                    visible: themeItem.carries
+                    height: themeItem.carries ? themeItem.implicitHeight : 0
+                    text: themeItem.modelData.name
                     checkable: true
-                    checked: Theme.currentIndex === index
-                    onTriggered: Theme.currentIndex = index
+                    checked: Theme.currentIndex === themeItem.index
+                    onTriggered: Theme.currentIndex = themeItem.index
                 }
+            }
+
+            MenuSeparator {
+                visible: themeMenu.hiddenCount > 0
+                height: visible ? implicitHeight : 0
+            }
+            // Says what is missing and why, rather than leaving a short menu to
+            // be read as a short list of themes.
+            MenuItem {
+                enabled: false
+                visible: themeMenu.hiddenCount > 0
+                height: visible ? implicitHeight : 0
+                text: themeMenu.hiddenCount + " hidden — their status colours "
+                      + "are one shade for " + Theme.cvdLabel(themeMenu.visionKind)
             }
         }
 
@@ -294,6 +377,10 @@ MenuBar {
                              = !root.app.plotColourVisionPreview
             }
             MenuSeparator {}
+            // The figure strip used to be here too. It is a bar you show or
+            // hide, not a colour-vision setting, and it now sits with the other
+            // three bars under View. Only the colour-vision toolbar is left,
+            // which is the one that does belong to this menu.
             Action {
                 text: "Show the colour-vision toolbar"
                 checkable: true
@@ -645,6 +732,43 @@ MenuBar {
                     }
                 }
             }
+
+            // HOW MANY LINES THE MESH HAS, which is not how finely the surface
+            // was sampled.
+            //
+            // 3D Mesh and 3D Topography / Surface build the identical grid and
+            // differ by one boolean, and the mesh was every quad of that grid
+            // outlined - so at the resolution a real survey gives you, the
+            // strokes closed the gaps and it drew as a solid. The two engines
+            // could be told apart only by zooming in far enough to see one
+            // cell.
+            Menu {
+                title: "Mesh lines"
+                enabled: root.canvas !== null && root.canvas.wireframeEngine
+                Repeater {
+                    model: [
+                        { label: "Automatic — one line per grid cell", lines: 0 },
+                        { label: "Open · 8 lines", lines: 8 },
+                        { label: "Coarse · 16 lines", lines: 16 },
+                        { label: "Medium · 24 lines", lines: 24 },
+                        { label: "Fine · 40 lines", lines: 40 },
+                        { label: "Very fine · 64 lines", lines: 64 }
+                    ]
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.label
+                        checkable: true
+                        checked: root.canvas !== null && root.canvas.meshDensity === modelData.lines
+                        ToolTip.visible: hovered
+                        ToolTip.text: modelData.lines === 0
+                            ? "One line per cell of the field grid. On a dense survey "
+                            + "that is a solid block rather than a mesh."
+                            : "The surface keeps its own sampling — only the number of "
+                            + "lines you can see through changes."
+                        onTriggered: if (root.canvas) root.canvas.meshDensity = modelData.lines
+                    }
+                }
+            }
         }
 
         MenuSeparator {}
@@ -749,8 +873,16 @@ MenuBar {
             }
         }
 
+        // "Colour-blind mode", not "Graph colours".
+        //
+        // It was reported as not doing anything, and the name was half the
+        // reason: "Graph colours" reads as a palette picker, so a person who
+        // opens it and sees the figure barely change concludes it is broken
+        // rather than that their chosen map already passes. The name now says
+        // what the setting is FOR, and the entries under it name the
+        // deficiency rather than a colour scheme.
         Menu {
-            title: "Graph colours"
+            title: "Colour-blind mode"
             Repeater {
                 model: root.app.plotColourVisionNames
                 delegate: MenuItem {
@@ -769,14 +901,23 @@ MenuBar {
             // Each with what it is actually for. The three names on their own
             // said nothing about which to pick, and two of them can take a
             // moment to start.
+            //
+            // THE NAMES HERE HAVE TO BE THE MODE STRINGS. This menu offered
+            // "Rust / WGPU" while every piece of code that reads the setting
+            // compares against "Native WGPU" - so the entry never showed as
+            // checked, the picker in the top bar snapped back to Qt 2-D, and
+            // applyMapping fell past its `rendererMode_=="Native WGPU"` branch
+            // and pushed nothing into the viewport it had just switched to. The
+            // renderer half-worked from the menu and worked from the top bar,
+            // which is a difference nobody would think to look for.
             Repeater {
                 model: [
                     { name: "Qt 2-D",
-                      why: "All 434 catalogue engines, exported as true vector PDF. The default, and the only one that can export vectors." },
-                    { name: "Rust / WGPU",
-                      why: "GPU point cloud for very large scatter and volume data. Draws through a native surface, so it cannot export vectors." },
+                      why: "All 434 catalogue engines, and the only renderer that exports true vector PDF and SVG. Start here; it is the default and it is what the catalogue is for." },
+                    { name: "Native WGPU",
+                      why: "A GPU point cloud for scatter and volume data too large for the 2-D painter - millions of points. It draws straight onto a native surface, so it has no catalogue engines and cannot export vectors." },
                     { name: "VTK / PBR",
-                      why: "Lit, rotatable 3-D with physically based materials. Needs the optional VTK component installed." }
+                      why: "Lit, rotatable 3-D with physically based materials, for showing a surface rather than measuring one. Needs the OpenGL scene graph, which is chosen at startup - so it takes effect after a restart." }
                 ]
                 delegate: MenuItem {
                     required property var modelData
@@ -787,6 +928,25 @@ MenuBar {
                     ToolTip.text: modelData.why
                     onTriggered: root.app.rendererMode = modelData.name
                 }
+            }
+            MenuSeparator {}
+            // The one thing that finishes a switch to VTK.
+            //
+            // The scene graph's graphics API is chosen before the first window
+            // exists and cannot be changed afterwards, so a running session
+            // cannot switch to the renderer that needs OpenGL. Rather than
+            // leave "restart GraphVis" as an instruction, this does it - and
+            // carries the figure across, so the restart costs nothing but the
+            // wait.
+            MenuItem {
+                text: "Restart now to finish switching"
+                enabled: root.app.rendererNeedsRestart()
+                ToolTip.visible: hovered
+                ToolTip.text: enabled
+                    ? "Reopens GraphVis on the OpenGL scene graph and puts this figure back"
+                    : "Only needed after choosing VTK / PBR, which cannot start mid-session"
+                onTriggered: root.app.restartApplication(
+                    root.canvas ? root.canvas.figureState() : ({}))
             }
         }
 
@@ -823,4 +983,185 @@ MenuBar {
             onTriggered: root.addOnsRequested()
         }
     }
+
+    // A Help menu, because the application had none.
+    //
+    // The renderer is the setting people ask about: three names, no obvious
+    // default, and two of them behave differently enough that picking wrong
+    // looks like a fault. A tooltip can say one sentence; choosing between
+    // three things needs them side by side.
+    // The open figures. The same list the strip above the canvas shows, from
+    // the same place - so switching figure from the menu and from a tab cannot
+    // come to mean different things.
+    Menu {
+        title: "F&igures"
+        Repeater {
+            model: root.figureTitles
+            MenuItem {
+                required property int index
+                required property string modelData
+                text: (index + 1) + "  " + modelData
+                checkable: true
+                checked: index === root.figureIndex
+                onTriggered: root.figureSelected(index)
+            }
+        }
+        MenuSeparator {}
+        Action {
+            text: "Add a figure"
+            onTriggered: root.figureAddRequested()
+        }
+        // The strip toggle has moved to View, beside the toolbar, the controls
+        // panel and the workspace bar - the other three things that are either
+        // on screen or not. This menu is for the figures themselves.
+    }
+
+    // The Help menu is a way into the whole manual, not a shortlist.
+    //
+    // It used to be three links, and three links is a menu that answers three
+    // questions and implies there are only three. The manual is eighty-six
+    // topics in fourteen sections covering every panel, control and menu in
+    // the program; the way to say so is to put the sections on the menu and
+    // let the reader see how much is there.
+    //
+    // `openHelp` rather than two statements at every call site: setting one of
+    // the two start properties and leaving the other at whatever the last
+    // caller set it to is a bug that shows up as the wrong article opening,
+    // and it is invisible in review because each line looks right on its own.
+    function openHelp(topicId, sectionId) {
+        helpBrowser.startAt = topicId || ""
+        helpBrowser.startSection = sectionId || ""
+        helpBrowser.open()
+    }
+
+    Menu {
+        title: "&Help"
+
+        Action {
+            text: "Help contents…"
+            onTriggered: root.openHelp("", "")
+        }
+
+        MenuSeparator {}
+
+        // Every section of the manual, read from the manual itself. A section
+        // added to config/help_written.json appears here with no edit - the
+        // menu cannot fall behind the document it opens.
+        Menu {
+            title: "Browse the manual"
+            Repeater {
+                model: root.app ? root.app.helpSections : []
+                delegate: MenuItem {
+                    id: helpSectionItem
+                    required property var modelData
+                    text: helpSectionItem.modelData.title
+                    onTriggered: root.openHelp("", helpSectionItem.modelData.id)
+                    ToolTip.text: helpSectionItem.modelData.blurb
+                    ToolTip.visible: hovered && helpSectionItem.modelData.blurb !== ""
+                    ToolTip.delay: 400
+                }
+            }
+        }
+
+        MenuSeparator {}
+
+        // The questions people actually arrive with, in the words they arrive
+        // in. Every id here is checked against the manual by the passive audit
+        // (help_topic_missing), because a menu item pointing at a topic that
+        // has been renamed opens the browser at the wrong article and says
+        // nothing - the silent name mismatch this project keeps meeting.
+        Menu {
+            title: "How do I…"
+            Action {
+                text: "Make my first figure"
+                onTriggered: root.openHelp("start-first", "")
+            }
+            Action {
+                text: "Import a file GraphVis does not recognise"
+                onTriggered: root.openHelp("data-import", "")
+            }
+            Action {
+                text: "Choose the right graph"
+                onTriggered: root.openHelp("gr-library", "")
+            }
+            Action {
+                text: "Put several series on one figure"
+                onTriggered: root.openHelp("data-series", "")
+            }
+            Action {
+                text: "Export a figure for a paper"
+                onTriggered: root.openHelp("pub-export", "")
+            }
+            Action {
+                text: "Check a figure for colour vision"
+                onTriggered: root.openHelp("col-vision", "")
+            }
+            Action {
+                text: "Read numbers off a published figure"
+                onTriggered: root.openHelp("lit-derender", "")
+            }
+            Action {
+                text: "Draw a choropleth from region outlines"
+                onTriggered: root.openHelp("data-boundaries", "")
+            }
+        }
+
+        Menu {
+            title: "Why is…"
+            Action {
+                text: "My figure blank?"
+                onTriggered: root.openHelp("tb-nothing", "")
+            }
+            Action {
+                text: "Everything squashed into one corner?"
+                onTriggered: root.openHelp("tb-onepixel", "")
+            }
+            Action {
+                text: "My column not in the list?"
+                onTriggered: root.openHelp("tb-nocolumn", "")
+            }
+            Action {
+                text: "The export different from the screen?"
+                onTriggered: root.openHelp("tb-export", "")
+            }
+            Action {
+                text: "This graph marked unverified?"
+                onTriggered: root.openHelp("tb-unverified", "")
+            }
+            Action {
+                text: "It slow?"
+                onTriggered: root.openHelp("tb-slow", "")
+            }
+            Action {
+                text: "A control I was using missing?"
+                onTriggered: root.openHelp("tb-missing", "")
+            }
+        }
+
+        MenuSeparator {}
+
+        Action {
+            text: "Which renderer should I use?"
+            onTriggered: root.openHelp("set-renderers", "")
+        }
+        Action {
+            text: "Estimating a field: what it is doing"
+            onTriggered: root.openHelp("fi-what", "")
+        }
+        Action {
+            text: "All %1 graph categories".arg(
+                      root.app && root.app.graphCategories
+                      ? root.app.graphCategories.length : 0)
+            onTriggered: root.openHelp("ref-categories", "")
+        }
+    }
+
+    // The renderer popup used to be written out by hand here. Its text is now
+    // one topic among the rest, so it can be searched and linked to instead of
+    // living only behind a menu item somebody has to already know about.
+    HelpBrowser {
+        id: helpBrowser
+        app: root.app
+    }
+
 }

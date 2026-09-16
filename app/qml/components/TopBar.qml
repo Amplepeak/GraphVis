@@ -195,20 +195,16 @@ ToolBar {
             visible: root.app.workspaceMode === "Visualize"
         }
 
-        Label {
-            text: "Renderer"; color: Theme.textSecondary
-            visible: root.app.workspaceMode === "Visualize" && !root.compact
-        }
-        ComboBox {
-            Layout.preferredWidth: root.compact ? 118 : 150
-            visible: root.app.workspaceMode === "Visualize"
-            model: ["Qt 2-D", "Native WGPU", "VTK / PBR"]
-            currentIndex: root.app.rendererMode === "VTK / PBR" ? 2
-                          : (root.app.rendererMode === "Native WGPU" ? 1 : 0)
-            onActivated: root.app.rendererMode = currentText
-            ToolTip.visible: root.compact && hovered
-            ToolTip.text: "Renderer"
-        }
+        // The renderer picker is NOT here any more, and neither is the
+        // window-mode picker below. Both are in the menu bar - View > Renderer
+        // and View > Display - and a control in two places is two places for
+        // them to disagree, which these two already had: this bar listed
+        // "Native WGPU" while the menu listed "Rust / WGPU", so the same
+        // renderer chosen from the two controls behaved differently.
+        //
+        // They are also not toolbar decisions. A renderer is chosen once and
+        // the window mode less often than that; the toolbar is for what is
+        // touched while working on a figure, and it was already overflowing.
         ToolButton {
             text: root.narrow ? "⟲" : "Reset camera"
             visible: root.app.workspaceMode === "Visualize"
@@ -230,19 +226,6 @@ ToolBar {
             Layout.preferredHeight: 30
         }
 
-        // How the window opens, remembered between sessions.
-        Label { text: "Display"; color: Theme.textSecondary; visible: !root.compact }
-        ComboBox {
-            id: displayBox
-            visible: !root.tiny
-            Layout.preferredWidth: root.compact ? 150 : 178
-            model: root.app.displayModeNames
-            currentIndex: root.app.displayMode
-            onActivated: root.app.displayMode = currentIndex
-            ToolTip.visible: hovered
-            ToolTip.text: "Window mode. F11 toggles fullscreen, Esc leaves it."
-        }
-
         // Optional components - domain formats, chart reading. Always reachable,
         // because a user who does not know these exist cannot ask for them.
         ToolButton {
@@ -261,7 +244,7 @@ ToolBar {
             text: "⚙ View"
             onClicked: viewPopup.opened ? viewPopup.close() : viewPopup.open()
             ToolTip.visible: hovered
-            ToolTip.text: "Theme and window mode"
+            ToolTip.text: "Theme"
         }
 
         // Last on the row, hard against the right-hand edge, which is where a
@@ -300,17 +283,16 @@ ToolBar {
                 Layout.preferredWidth: 240
                 Layout.preferredHeight: 32
             }
-            Label { text: "Display"; color: Theme.textSecondary }
-            ComboBox {
-                Layout.preferredWidth: 240
-                model: root.app.displayModeNames
-                currentIndex: root.app.displayMode
-                onActivated: root.app.displayMode = currentIndex
-            }
+            // Window mode lives in View > Display now, so this popup - which
+            // exists only to rescue controls from a bar too narrow to show
+            // them - has one fewer thing to rescue.
             Label {
-                text: "F11 toggles fullscreen · Esc leaves it"
+                text: "Window mode is in View ▸ Display · F11 toggles "
+                    + "fullscreen, Esc leaves it"
                 color: Theme.textMuted
                 font.pixelSize: 11
+                wrapMode: Text.WordWrap
+                Layout.preferredWidth: 240
             }
             MenuSeparator { Layout.fillWidth: true }
             Button {

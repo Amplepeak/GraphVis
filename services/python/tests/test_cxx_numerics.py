@@ -39,7 +39,20 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+# Both halves of the backend that hold a primitive this file compiles.
+#
+# `quantileOf`, `meanOf` and `stdevOf` were anonymous-namespace functions
+# inside QtPlotBackend.cpp until that file was split across seven translation
+# units, and they now live in the shared header all seven see. `logTicks` is a
+# member of QtPlotBackend and stayed put. Naming one file found three of the
+# four and failed on whichever was in the other.
 BACKEND = ROOT / "native" / "plot2d" / "src" / "QtPlotBackend.cpp"
+BACKEND_SHARED = ROOT / "native" / "plot2d" / "src" / "QtPlotBackendShared.h"
+
+
+def _backend_text() -> str:
+    return "\n".join(p.read_text(encoding="utf-8", errors="ignore")
+                      for p in (BACKEND_SHARED, BACKEND) if p.exists())
 
 WANTED = ("quantileOf", "meanOf", "stdevOf")
 
@@ -86,7 +99,8 @@ def extract(source: str, name: str) -> str:
     """One free function, from its signature to its matching closing brace."""
     match = re.search(rf"^[A-Za-z_][\w:<>,\s\*&]*?\b{name}\s*\([^;{{]*\)\s*\{{",
                       source, re.M)
-    assert match, f"{name} is not in {BACKEND.name} - has it been renamed?"
+    assert match, (f"{name} is in neither {BACKEND_SHARED.name} nor "
+                   f"{BACKEND.name} - has it been renamed or moved again?")
     depth, index = 0, match.start()
     while index < len(source):
         if source[index] == "{":
@@ -102,7 +116,7 @@ def extract(source: str, name: str) -> str:
 @pytest.mark.skipif(not BACKEND.exists(), reason="run from a source tree")
 @pytest.mark.skipif(shutil.which("g++") is None, reason="no C++ compiler")
 def test_cxx_quantile_mean_and_stdev_agree_with_numpy(tmp_path: Path) -> None:
-    source = BACKEND.read_text(encoding="utf-8", errors="ignore")
+    source = _backend_text()
     program = SHIM + "\n".join(extract(source, name) for name in WANTED) + MAIN
 
     cpp = tmp_path / "primitives.cpp"
@@ -140,7 +154,7 @@ def test_the_histogram_and_the_box_plot_use_the_same_quantile() -> None:
     plot of one column were built on two different numbers. The comment
     recording that fix is still in the source; this makes it a test.
     """
-    source = BACKEND.read_text(encoding="utf-8", errors="ignore")
+    source = _backend_text()
     # Comments first. The comment recording the original fix quotes the bad
     # form as the thing it replaced - "quantileOf, not v[int(n*0.25)]" - so a
     # scan of the raw text finds the documentation and calls it the defect.
@@ -174,7 +188,7 @@ def test_no_painter_invents_its_own_categorical_colours() -> None:
     `prepareSpecCore` is deliberately not covered. It builds PlotSeries rather
     than painting, and those colours are a separate question from this one.
     """
-    source = BACKEND.read_text(encoding="utf-8", errors="ignore")
+    source = _backend_text()
     code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
     code = re.sub(r"//[^\n]*", "", code)
 
@@ -278,7 +292,7 @@ def test_a_log_axis_always_carries_at_least_one_label(tmp_path: Path) -> None:
     decade-crossing cases, so a fix that labelled the minors by breaking the
     decade labels would fail here too.
     """
-    source = BACKEND.read_text(encoding="utf-8", errors="ignore")
+    source = _backend_text()
     # The class qualifier goes: the function is compiled free-standing, and it
     # calls linearTicks and formatTick unqualified inside its own body anyway.
     body = extract(source, "logTicks").replace("QtPlotBackend::", "")

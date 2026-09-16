@@ -427,6 +427,152 @@ to land. **Tauc 1,314 ms, Kubelka-Munk 1,220 ms and the creep curve 1,497 ms at
 24,000 points, all now within a factor of 90 of their 240-point cost rather
 than 300.**
 
+### Fixed — the right-hand axis label was upside down
+
+Found by looking at the built figure rather than the local render, after a batch
+whose point was something else entirely. The X-bar and R chart's secondary
+ordinate read **"ǝƃuɐɹ dnoɹƃqns"** — "subgroup range", rotated 180 degrees from
+the "subgroup mean" beside it.
+
+The primary y label is drawn with `rotate(-90)`, bottom-to-top, which is the
+convention. The secondary was drawn with `rotate(90)`. Next to each other the
+difference does not read as a rotation choice, it reads as a font fault.
+Bottom-to-top on both sides is what matplotlib's twinx, Origin and Excel all
+produce, and it is the only choice that lets a reader tilt their head once.
+
+Six figures, which is every engine with a secondary ordinate: sCOD Degradation
+Profile, Polarisation & Power Curve, EIS Bode, Scree Plot, Pareto Chart and
+X-bar and R.
+
+### Fixed — the numbers that were computed and never shown
+
+This catalogue's standard for its fitted engines is stated in its own source:
+*"every one of them puts its numbers in the legend, because a chart that makes
+you get a ruler out is a chart that gets read wrong."* The **reference rules**
+had never been held to it, and a **correlogram** had never been held to it at
+all.
+
+Found by a new harness rather than by reading: `preparedFor` is public, so an
+engine can be fed data built from a KNOWN law and asked what number it puts on
+the figure — without touching a single shipped fixture. Measured first: **230 of
+the 434 engines put a computed value on the figure.** That is the population
+this kind of check applies to.
+
+- **Bland-Altman drew three lines labelled "bias", "+1.96 SD" and "-1.96 SD"
+  with no values.** Those three numbers *are* the result of a Bland-Altman
+  analysis — they are what gets quoted in a paper — and the reader had to
+  measure them off the axis. The control chart did the same with "centre",
+  "UCL" and "LCL", and the X-bar chart with its grand mean. Given differences
+  of exactly +2, the figure now reports **bias 2** and limits at 2 ± 2.066,
+  which is 1.96σ on the *sample* deviation — the right convention, and one that
+  could not be confirmed at all while the numbers were absent.
+- **The cross correlation never said where its peak was.** A correlogram exists
+  to report the lag of strongest correlation — the delay between two records —
+  and this one computed 121 stems, labelled the series "a x b", and stopped.
+  Given a record delayed by exactly seven samples it now reports **"strongest
+  at lag 7, r 0.992"**.
+
+**And the first version of that second fix was worthless, which is the part
+worth keeping.** Putting the peak into the correlogram's own label changed
+nothing on the page: the figure has one named series, and a legend of one row
+is suppressed as a caption — so the number was written somewhere the reader
+never sees. It only became visible when it was made a second, *marked* series,
+which is the idiom the elbow's knee and the beam caustic's waist already use. A
+number is not reported until it is on the figure, and the only way to know is to
+look at the figure.
+
+Not every bare rule was changed, and the distinction matters: "0 dB", "zero",
+"Cp = 0", "p = 0.05" and "genome-wide 5e-8" **are** their own value, and the
+attribute charts already state their centre in the series label. Only rules
+computed from the data and left unstated were touched.
+
+### Verified — ten engines against answers known before the run
+
+The same harness confirmed, from constructed data, that these engines report
+what they should. None of this changes any code; it is the evidence that was
+missing.
+
+| engine | built from | reported |
+|---|---|---|
+| Drag Polar | CD = 0.0200 + 0.0500·CL² | CD0 **0.0200**, k **0.0500**, and the derived (L/D)max **15.8** at CL **0.632** — which are 1/(2√(CD0·k)) and √(CD0/k) |
+| Beam Caustic | waist 2 at z = 3 | waist **2 at 3** |
+| Cottrell Plot | i = 5/√t | slope **5**, R² 1.0000 |
+| Calibration Curve | y = 0.25x + 0.10 | slope **0.25**, R² 1.0000, LOD 7e-15 |
+| Lorenz Curve | a uniform distribution | Gini **0.333** (exactly 1/3) |
+| Bland-Altman | differences of +2 | bias **2** |
+| Cross Correlation | delayed by 7 samples | lag **7**, r 0.992 |
+| Double-Mass Curve | station = ½ × reference | slope **0.500** |
+| Gutenberg-Richter | a decade per magnitude | b **0.98** |
+| Detrended Fluctuation | white noise | α **0.460**, *and* the honest note that 0.4 to 0.7 is not distinguishable from uncorrelated at that record length |
+
+Three apparent failures in the first run were the harness's fault, not the
+engines': the catalogue has **two column conventions** — some engines read one
+mapped column per series, others read x and y from a single series and break
+after the first — and feeding the second kind two columns makes it fit a column
+against its own row number. That produced a drag polar with a CD0 of 10.6 and
+an elbow knee at 1. Both are correct when asked correctly. A fourth "failure",
+the elbow knee at 5 against an expected 4, was the *expectation* being wrong:
+the constructed curve's corner really is at 5.
+
+### Fixed — "sand" and "clay 1" written on top of each other
+
+Found by a new measurement: cluster the ink below a figure's frame into labels,
+then measure the gaps between them. Across 354 figures with three or more
+bottom-axis labels the distribution is healthy — 28 to 45 pixels between
+neighbours — and **one figure sat at five**.
+
+The soil texture triangle draws two lines underneath itself, the class census
+and the source, and the geometry reserved room for neither. `originY` was
+`target.bottom() - margin*0.9`, which put the triangle's base at almost exactly
+the height the census is written at, so a survey touching ten of the eleven
+classes wrote straight through the bottom-left corner's own labels. At 1/6 scale
+on a contact sheet it looks like a slightly busy corner; at full size it reads
+"sand" and "clay 1" on top of one another, at the corner a reader checks first.
+
+**The first fix was the wrong one and is worth recording.** The obvious reading
+is that the census is too long, so it was measured and truncated — and the
+figure did not improve, because the line *fits* the figure's width. It lands on
+top of the diagram. Width was never the constraint; height was. The room is now
+reserved where the geometry is decided, which is the same fix the sounding
+charts needed a few entries above, for the same reason.
+
+The census measurement was kept, because it is unbounded in principle — one
+entry per populated class, joined with commas. It is now ordered by count, so
+that if the line cannot hold every class the populated ones get the room, with
+ties broken by name so the same data gives the same sentence every time; and it
+is truncated by **font metrics** rather than a guessed character count, since
+"sandy clay loam 1" is three times the width of "sand 1". What it drops, it
+counts: "and 3 more".
+
+The two QAPF diamonds and the Durov diagram were checked for the same fault and
+are tight but clear. The QAPF Plutonic footnote is in the danger colour because
+the demonstration data contains two rows with both quartz and feldspathoid,
+which no rock has — that is the engine working, not a layout fault.
+
+### Fixed — a polar ring labelled 1.25e+03, for a count of observations
+
+The rings were drawn at quarters of the radius and then labelled with quarters
+of the largest value, which produces a round number only when the largest value
+happens to be round. A wind rose whose biggest sector held 1250 observations
+read **312 / 625 / 937 / 1.25e+03**. The polar histogram read 24.3 / 48.5 /
+72.8 / 97.
+
+Both halves were already solved elsewhere in the same file and neither was
+reached for. `niceStep` picks the step a person would pick — it is what the
+contour levels, the ternary grid and the sounding temperature axis all use.
+`formatTick` gives a value the decimals its step needs and only reaches for an
+exponent past 1e5, where `'g'` with three significant figures had turned 1250
+into one.
+
+**The step decides the rings now**, rather than the values being back-computed
+from a radius already fixed, so the maximum rounds outward — the same thing the
+sounding's temperature axis does, and with the same second benefit: the largest
+petal no longer runs into the outermost circle.
+
+Wind Rose 500 / 1000 / 1500. Polar histogram 20 / 40 / 60 / 80 / 100. Compass
+0.5 / 1.0 / 1.5 / 2.0. Radar chart 0.2 through 1.0. Eight figures change, all in
+the same way.
+
 ### Fixed — the canvas-edge check never looked at the bottom
 
 `edgesTouched` reported `left`, `right` and `top`. There was no `bottom` — and
@@ -1042,6 +1188,377 @@ demonstration is broken, not a reason to stop counting the pair.
   ink in them.
 - **A star glyph grid and a waffle chart were drawn inside an axis** numbering
   their own layout positions.
+
+### Changed — what a legend does with a label too long for its box is now yours
+
+The legend box is capped at a third of the plot width. A label longer than that
+was elided on the right, always — and the right is where a computed value lives:
+`bias 0.0142`, `strongest at lag 3, r 0.81`, `Km 2.5 mM`, `subgroup mean (n 5, 6
+beyond the c…`. A figure that spent an engine's whole output on a legend row and
+then cut the row off had reported nothing.
+
+Wrapping everything is not the answer either. Twenty series each wrapping onto
+three lines is a legend taller than the plot, and on those figures the ellipsis
+is the right trade: the reader is matching colours, not quoting numbers.
+
+So it is a setting, under **Long legend labels** in the figure appearance bar —
+*Shorten a label that does not fit* (the default, and byte-identical to every
+figure this build produced before it existed) or *Wrap it onto more lines*. The
+same conclusion the polar convention reached, for the same reason: neither answer
+is right for every figure, so the figure is asked rather than told.
+
+It is saved **with the figure** as well as on the application, beside the polar
+convention and the pie's slice naming. A notebook holds figures whose series are
+called "control" and "treated" and figures whose series carry a fitted constant
+and its units, and an application-wide answer would make the second wrong
+whenever the first was right.
+
+Two things had to change in the painter rather than just the draw call, and both
+are the kind of mistake that only shows once wrapping is switched on:
+
+- **The box is sized in rows, not in series.** A wrapped three-line entry costs
+  three rows. Sizing the box by `series × rowHeight` gave a box the entries
+  overrun.
+- **How many entries fit is accumulated from their real heights.** The old count
+  stepped a probe down the box by one row height at a time, which is correct only
+  while every row is one line. The heights are measured with the same
+  `QFontMetrics` the text is drawn with, so the box reserves exactly what gets
+  used — a row counted short is a row drawn over its neighbour.
+
+Proven both ways: the default renders all 434 gallery figures byte-identically
+against the previous build, and eleven separate reversions of the wiring — the
+painter's two branches, the measurement, the row arithmetic, the fit
+accumulation, the canvas property, the figure state going out and coming back,
+the QSettings read, the combo box, and each of the two QML canvases — each fail
+a guard that names what breaks.
+
+### Fixed — a stacked total drawn at twice its height
+
+The VFA Concentration Profile appends a "total VFA" line carrying the sum of the
+three acid species it has just handed to the stacked painter. The source said
+appending it last was enough to keep it out of the stack — *"drawStackedLines has
+already stacked them and this rides on top"*. Nothing read that. The painter
+walks the series in order and adds **every** one of them to the running total, so
+the band came out at twice its height, and the annotation, which is placed in
+data coordinates at the real peak, sat halfway down the picture pointing at
+nothing: a total of 1,480 mg/L drawn at 2,950 and labelled `1.48e+03`.
+
+`PlotSeries::stacked` now says so, and two places honour it — the painter, and
+`stackedBands`, which computes the axis range and whose own comment promises it
+accumulates *exactly* as the painter does. A series excluded from one and not the
+other gives a frame that does not contain the figure.
+
+It was invisible for as long as the engine ran on the generic five-column
+fixture: doubling a total nobody can compute looks like a total.
+
+### Fixed — thirteen engines reported a number into a legend that is never drawn
+
+A legend of one named series is suppressed, because the row would repeat what the
+axes already say. That is right for a series called "measured" and wrong the
+moment an engine puts its **result** there. A screen over all 434 prepared specs
+found thirteen doing exactly that — computing a number, formatting it, and
+showing it nowhere:
+
+| Engine | What was lost |
+|---|---|
+| Harmonic Spectrum | total harmonic distortion |
+| Detrended Fluctuation Analysis | the scaling exponent and what it means |
+| Lomb-Scargle Periodogram | the peak period |
+| Mohr's Circle | σ1, σ2, τmax and the principal plane |
+| P-M Interaction Diagram | the balanced point |
+| Mass Haul Diagram | net volume, largest cut, largest fill |
+| Tornado Diagram | the base case |
+| Phase-Folded Light Curve | the period it was folded on |
+| Response Spectrum | the peak and the period it falls at |
+| Radiation Pattern | beamwidth, front-to-back, sidelobe |
+| Eye Diagram | how many sweeps, on what symbol period |
+| Coherence Spectrum | how many windows were averaged |
+| Spaghetti Plot | the subject count and the spread |
+| Mean Cumulative Function | the fleet size the ordinate is a mean over |
+
+Three answers, chosen by what each number belongs to rather than applied as one
+rule. A quantity describing the **whole figure** goes under the axis in
+`figureNote`, drawn whether there is one series or five and exported with the
+figure. A quantity belonging to a **point** gets a second named series marking it
+— which both fills the legend and ties the number to the place it refers to, the
+idiom the cross correlation's strongest lag already used. Where a marker already
+existed and the envelope beside it carried the name, the name moved onto the
+marker.
+
+The Coherence Spectrum is the one worth naming: a single window returns a
+coherence of one at every frequency, so how many windows were averaged is not
+decoration — it is the difference between a result and an artefact.
+
+**Function Plot was examined and deliberately left alone.** Its series label is
+the expression, and so is its ordinate, so nothing was lost and a note would only
+repeat the axis. The guard asserts that reason still holds rather than asserting
+the fix.
+
+### Fixed — "net 7555, most cut 1.376e+04", in one label, in one unit
+
+`QString::number(v,'g',n)` leaves plain notation as soon as a value needs more
+digits before the point than `n`, so the threshold deciding the notation belongs
+to the **format** and not to the quantity. Sweeping every label on all 434
+prepared specs found thirteen in exponent form. Six were faults, and two of them
+held both notations at once — the mass haul above, and a stress-strain curve
+reading `E 7e+04, UTS 410, yield 271.1`, all four megapascals.
+
+One had destroyed its value outright: an O-C diagram's epoch is a Julian date,
+which needs seven figures before the point, and at three it read `2.45e+06` — a
+five-thousand-day window rather than a night.
+
+`formatMeasured` rounds to significant figures and writes the result out in full,
+falling back to exponent form only beyond a billion or below a ten-thousandth.
+**The other seven are correct and are untouched**: a genome-wide threshold of
+5e-8, an Arrhenius pre-exponential, a relative roughness of 1e-05, a Paris
+coefficient, a bit error rate of 1e-12. Those are how the people who read them
+write them, and spelling them out would be the same mistake facing the other way.
+
+Also: a Group Delay "ripple" of 1.583e-17 on a 1 ms delay is not a ripple, it is
+what the last bits of the subtraction left behind. On linear phase the figure now
+says the delay is flat to the arithmetic, so a reader can tell a flat filter from
+one rippling by a part in ten thousand — which is the distinction the number
+exists to make.
+
+### Fixed — the tornado's base case was a 1.5-pixel tick
+
+`drawFloatingRow` reads every series as a bar: one row in y, a start and an end
+in x. The tornado's base case is the other shape — one abscissa and the two rows
+it should span — so it was drawn as a bar on row zero running from the base case
+to the base case. A zero-length bar is a milestone, and a milestone is never
+allowed to vanish, so it came out at the minimum 1.5 pixels: a tick under the
+shortest bar, on a chart whose entire reading is which side of the base case each
+bar falls on.
+
+Two rows and one abscissa is unambiguous here — Gantt, Availability Timeline and
+Swimmer Plot all build bars as `y={row}` — so the painter now draws that shape as
+the rule it is.
+
+### Added — four digester engines run on a batch fermentation
+
+The modified Gompertz fit, the sCOD profile, the VFA stack and the fuel cell were
+all still drawing the generic five-column sweep. They rendered, drew data and
+passed every structural check, and the numbers in their legends meant nothing
+because the data behind them meant nothing.
+
+One batch fermentation, stated as constants and inverted: P 420 mL, Rm 38 mL/h,
+λ 6 h for the Gompertz; C₀ 8,000 mg/L decaying at 0.045/h for the substrate;
+three acids as produce-then-consume intermediates; and a cell at 0.78 V open
+circuit with 12 Ω·cm² internal resistance. The equation the Gompertz fixture is
+built from is the equation the engine fits, so the legend has to return those
+three numbers — **and it does: `P 420 · Rm 38 · λ 6 · R² 1.000`.**
+
+Three of the four read a *point* out of one series, so they are paired rather
+than numbered; a numbered column would hand the engine its own row index as the
+time, and a Gompertz fitted against a subscript returns three numbers that mean
+nothing.
+
+### Added — seven signal engines run on signals with known answers
+
+The spectrum, the autocorrelation, the lag plot, the cross correlation, the
+confidence ellipse and the two calculus engines were all still drawing the
+generic five-column sweep. Each rendered, drew data, passed every structural
+check, and could not be checked against anything.
+
+- **6.25 Hz and 12.5 Hz sampled at 100 Hz.** Both are exact divisors of the
+  sample rate — sixteen and eight samples to the cycle — so the peaks land on
+  FFT bins instead of smearing across two, and the autocorrelation of the same
+  record has to return at lag 16 and its multiples. It does. The second tone is
+  the octave at 0.4 amplitude, so the power ratio is checkable against 0.4².
+- **A source and its echo at exactly twelve samples**, under independent noise.
+  The figure reports `strongest at lag 12, r 0.927` — which also fixes the
+  **sign**, the half of a cross correlation most often read backwards.
+- **A bivariate normal with a stated covariance**: sd 2 across, sd 1 up,
+  correlation 0.7. An ellipse drawn from the wrong eigenvector leans at 45
+  degrees; this one has to lean at the regression slope, and does.
+- **A sine over two turns** for the calculus pair, because the derivative of sin
+  is cos and its integral from zero is 1 − cos. Both come out right and both are
+  checkable by eye against a shape everyone knows.
+
+The sample rate matters to the fixture's *shape*, not only its values: the
+spectrum reads its sample interval off its own x, so these are paired. A numbered
+column would put the abscissa in cycles per sample and the 6.25 Hz peak would
+appear at 0.0625 with nothing on the figure saying the units had changed.
+
+**One decision is left open deliberately.** The spectrum now shows two
+unmistakable peaks and names neither, while the Lomb-Scargle periodogram beside
+it reports its peak period. Making the PSD report its peak frequency is a
+one-line change of the same shape, but it is a change to what the figure *says*
+rather than a fault, so it waits for a decision rather than being taken quietly.
+
+### Fixed — a data race on the colour-vision gamma table
+
+`simulateInPlace` built its 256-entry linear-light table the first time it ran:
+
+    static double toLinear[256];
+    static bool ready=false;
+    if(!ready){ ...fill the table...; ready=true; }
+
+**Both threads do get here.** `paintSimulated` is called from
+`PlotCanvas::paint`, which Qt Quick runs on the scene-graph render thread, and
+from `PlotCanvas::renderTo`, which the export path runs on the GUI thread. Both
+reaching it for the first time at once is an unsynchronised write to one array
+by two threads, which is undefined behaviour whatever the values are.
+
+It is not saved by both writing the same numbers. The store to `ready` carries
+no release ordering, so the second thread may observe `ready == true` while the
+table is still the zero-initialised array it started as — **and a frame drawn
+from that table is black.** That is a rare, unreproducible black flash on the
+first colour-vision-simulated paint, which is exactly the shape of bug that gets
+filed as "it did it once and I can't make it happen again".
+
+It is now a function-local static initialised by a lambda, which C++11
+guarantees is initialised exactly once and safely from any number of threads.
+The arithmetic is untouched and the table is bit-for-bit what it was, checked
+by compiling both and differencing all 256 entries.
+
+**How it was found matters more than the fix.** "Are there races?" is not a
+question reading can answer, which is why this stood open. *"What mutable static
+state is reachable from more than one thread?"* is — you can enumerate it. There
+were two: this, and `gGraphicsApiIsOpenGL` in AppController, which is written at
+`main.cpp:216`, before the QML engine exists at `:354` and long before
+`app.exec()` at `:387`. That one is safe, and now says so in a comment, because a
+bare mutable global read from the render thread is otherwise exactly the shape
+of a bug and nobody should have to re-derive that it is not one.
+
+### Changed — the backend was one translation unit and took 2m10s to compile
+
+`QtPlotBackend.cpp` was 1.78 MB in a single translation unit, and
+`prepareSpecCore` alone was 19,600 lines of it. A translation unit cannot be
+divided across cores, so a one-line change to any one of 434 engines recompiled
+all of it, serially. **Measured before touching anything: 130 seconds for that
+file by itself.**
+
+It is now the shared helpers, the painters and the dispatcher, and six
+contiguous arms of the engine-rewrite chain:
+
+| | before | after |
+|---|---|---|
+| total compile work | 130 s | **48 s** |
+| wall clock on six cores | 130 s | **~15 s** |
+| change inside one engine group | 130 s | **~6 s** |
+
+The total dropped as well as the wall clock, which is the compiler's cost being
+superlinear in function size rather than anything clever here.
+
+**The blocks are verbatim.** Nothing was reworded and no `return` was rewritten,
+which is the whole reason a group returns `std::optional<PlotSpec>`: a block that
+said `return out;` still says `return out;` and converts. A bool-with-an-out-
+parameter signature would have meant editing 312 of those by hand — while
+leaving alone the many `return`s belonging to lambdas inside the same blocks,
+which look identical.
+
+**The order is the behaviour.** Several engines are matched by a `startsWith`
+that a later and more specific test would also match, so the chain is a sequence
+and not a set. The groups are contiguous runs of the original sequence and are
+called in that sequence. A guard asserts that, and fails when the calls are
+reordered, when a group's result is discarded, or when a group file goes missing.
+
+**One thing had to change rather than move.** The rewrite-depth counter was a
+`thread_local` at namespace scope. In a shared header that gives every
+translation unit its own copy — and the recursion it guards crosses them,
+because a rewrite in one group calls `prepareSpec` on a spec that can land in
+another. Every copy would see a depth of one and the guard would never fire,
+which is precisely the failure it was written to prevent. It is now a
+function-local static inside an inline function, which is one object across the
+whole program.
+
+**Proven by the gallery.** All 434 figures are byte-identical to the build
+before the split, checked twice: once after the helpers moved into
+`QtPlotBackendShared.h`, and again after the chain was divided. That was the
+point of doing it in two steps.
+
+Three test helpers had to learn the new shape — `_backend_source` now reads all
+seven pieces in link order, a new `_engine_chain` reads the six groups, and the
+C++ numerics test compiles its primitives out of the shared header where they
+now live. Four guards that reached into `prepareSpecCore` and read the first few
+thousand characters were redirected to the chain; a fifth, which scanned for
+catalogue scale variants in one named file, had reported nineteen variants as
+unhandled that are handled a few thousand lines further on.
+
+### Fixed — a radar outline that collapsed to a line through the centre
+
+`Bounds::scale` maps a column's minimum to 0, and on a radial figure 0 is the
+centre — one point every spoke shares. So an outline whose row was lowest on
+four of six axes put four vertices in the same place and drew as a line rather
+than a shape. Worse, it asserted something the data does not say: a cruise speed
+of 443 kt at the origin of an axis whose other rows are 461 to 512 reads as
+*none*, not as *least*.
+
+**The star glyph already reserved an inner quarter for exactly this reason, and
+the radar chart did not** — one rule applied to one class of a pair. `radialScale`
+is now that rule in one place, with the floor stated by the caller: a quarter for
+a star glyph, drawn small and in multiples, and 0.15 for a radar, which gets the
+whole canvas. The star glyph passes 0.25 and gets exactly what its open-coded
+`0.25 + 0.75 * scale(v)` gave it, so its figure is byte-identical — this is a fix
+to the radar and a de-duplication of the star.
+
+### Fixed — a Venn label written across the overlap of the other two sets
+
+Every circle's name was drawn above its own circle. That is right for the two
+side by side and wrong for the third, which sits *below* the centre — so "found
+in service" landed inside the overlap of the other two, unreadable against two
+translucent fills and pointing at the wrong region. A three-set Venn is the case
+the engine exists for and it was the only arrangement that came out wrong. The
+label now goes on the far side of its circle from the middle of the diagram.
+
+### Added — eleven engines that read a shape, not a measurement
+
+A composition, a profile across named axes, a set of studies with intervals, a
+sample whose distribution is the question: eleven engines read structure rather
+than a signal, and all eleven were drawing the generic five-column sweep. A
+sunburst of "paired", "p_value" and "flag", sized by the sum of a sine, renders
+and draws data and is a picture of nothing.
+
+Two of the new fixtures are demonstrations rather than decoration, which is the
+point of them:
+
+- the **Q-Q and probability plots** get a normal sample *and* a right-skewed one,
+  because the pair is what those figures are for — one plots straight, the other
+  bends away at the top. On one smooth signal neither showed the only thing it
+  exists to show.
+- the **correlation matrix** gets four columns with a stated structure — B
+  follows A at 0.9, C runs against it at −0.8, D is independent — so the cells
+  can be *read* rather than admired. They come back at +0.9, −0.8 and 0 with
+  ones down the diagonal.
+
+The **calibration** fixture states its own miscalibration: the observed frequency
+runs at 0.78 of the distance the predicted probability claims, either side of a
+half, so there is a slope to check rather than a cloud that looks about right.
+The **partial dependence** fixture is a logistic centred at 5, so the curve has a
+known inflection. The **forest plot** gets eight studies that disagree about the
+size and agree about the direction, which is the reading it is drawn for. The
+**radar** gets five rows rather than three, because with per-axis scaling three
+rows put one at each extreme of every axis and drew a star of spikes.
+
+**One decision is left open.** The forest plot displays its studies and computes
+no pooled estimate, which is the number a meta-analysis is run to produce. The
+arithmetic is unambiguous — inverse-variance weighting by each interval's
+half-width — but a summary row and a reference line change what the figure
+*says*, and where to put the null depends on whether the effect measure is a
+ratio or a difference, which the engine cannot know. So it waits, beside the
+spectrum's peak frequency and the PACF's implied order.
+
+That leaves 50 of 434 engines on the generic fixture, and most of those should
+stay there: a line chart, an area chart, a histogram and a box plot have no law
+to invert and no structure to state.
+
+### Added — EIS Bode and EIS Nyquist run on a real circuit
+
+Both were still drawing the shared five-column fixture, which contains no
+impedance. They rendered, drew data, and passed every structural check — and
+showed nothing an electrochemist would recognise, so there was nothing to check
+them against.
+
+The fixture is now a Randles circuit inverted: solution resistance in series with
+a parallel RC, Rs 20 Ω, Rct 100 Ω, C 10 µF, swept 0.1 Hz to 1 MHz. Its Nyquist
+locus is therefore a semicircle from Z′ = 20 to Z′ = 120 with its apex at
+−Z″ = 50, which is what the figure draws, and the Bode pair is taken from the
+same complex impedance rather than generated separately so the two figures cannot
+disagree about one circuit.
+
+That leaves 75 of 434 engines still on the generic fixture.
+
 
 ### Fixed — build
 

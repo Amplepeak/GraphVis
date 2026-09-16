@@ -76,10 +76,15 @@ Rectangle {
             }
             ToolButton {
                 id: viewReset
-                visible: plot.viewZoomed
+                // frameMoved too - see the note on the same button in
+                // VisualizeWorkspace. Without it an axis-less figure dragged
+                // out of its frame has no visible way back.
+                visible: plot.viewZoomed || plot.frameMoved
                 text: "⤢"
                 ToolTip.visible: viewReset.hovered
-                ToolTip.text: "Fit the axes back to the data"
+                ToolTip.text: plot.frameMoved && !plot.viewZoomed
+                              ? "Put the figure back in its frame"
+                              : "Fit the axes back to the data"
                 onClicked: plot.resetView()
             }
             ToolButton {
@@ -133,6 +138,7 @@ Rectangle {
                 gridDensityY: root.app.plotGridDensityY
                 pieLabels: root.app.plotPieLabels
                 polarConvention: root.app.plotPolarConvention
+                legendLabels: root.app.plotLegendLabels
                 scaleLabelsVisible: root.app.plotScaleLabels
                 fieldInterpolation: root.app.plotFieldInterpolation
                 colourVision: root.app.plotColourVision

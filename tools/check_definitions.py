@@ -153,7 +153,7 @@ def declarations(header: Path) -> list[tuple[str, int]]:
         bare = re.sub(r"//.*$", "", line)
         opening = depth
 
-        if re.match(rf"^\s*class\s+\w+", bare) and class_depth is None:
+        if re.match(r"^\s*class\s+\w+", bare) and class_depth is None:
             class_depth = depth
 
         section = re.match(r"^\s*(public|protected|private)?\s*(slots|signals)?\s*:", bare)

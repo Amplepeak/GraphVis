@@ -46,10 +46,18 @@ ComboBox {
     // guessed, because the answer depends on the font the theme is using and a
     // number typed in here would be wrong on the next theme.
     FontMetrics { id: nameMetrics; font: root.font }
+    // THE HEADINGS COUNT TOO. This measured the map names alone, which was
+    // right while every category was one or two words - "Diverging",
+    // "Categorical". The colour-vision shortlists are headed "Colour-blind ·
+    // Deuteranopia", which is wider than any map name in the catalogue, so the
+    // popup sized itself to the names and cut the heading that explains them.
     readonly property real widestName: {
         var w = 0
-        for (var i = 0; i < root.entries.length; ++i)
+        for (var i = 0; i < root.entries.length; ++i) {
             w = Math.max(w, nameMetrics.advanceWidth(root.entries[i].name))
+            if (root.entries[i].first)
+                w = Math.max(w, nameMetrics.advanceWidth(root.entries[i].category))
+        }
         return w
     }
     // 8 left margin + 34 preview + 6 gap + the name + 30 for the arrow. The
@@ -62,6 +70,14 @@ ComboBox {
     // the list never changes at run time.
     property var entries: {
         var out = []
+        // Read so the binding DEPENDS on it. colourMapCategories() is a
+        // function call, and a binding that only calls a function re-evaluates
+        // when nothing in particular happens - so the list went on showing
+        // every map after the colour-vision mode changed, which is exactly the
+        // "this setting does nothing" report. Touching the property makes the
+        // list rebuild the moment the mode does.
+        var vision = root.canvas ? root.canvas.colourVision : 0
+        void vision
         var cats = root.canvas.colourMapCategories()
         for (var c = 0; c < cats.length; ++c) {
             var maps = cats[c].maps
@@ -94,6 +110,9 @@ ComboBox {
     }
     readonly property var rows: {
         var out = []
+        // Same dependency as `entries` above, for the same reason.
+        var vision = root.canvas ? root.canvas.colourVision : 0
+        void vision
         var cats = root.canvas.colourMapCategories()
         for (var c = 0; c < cats.length; ++c) {
             var name = cats[c].name
@@ -169,6 +188,20 @@ ComboBox {
             required property var modelData
             width: ListView.view ? ListView.view.width : implicitWidth
             highlighted: !row.modelData.header && row.modelData.current
+            // WHY A MAP IS GREYED OUT, measured from the map's own table
+            // against the colour-vision mode in force - see
+            // PlotCanvas::colourMapWarning. Twenty-nine of the eighty-four
+            // lose most of their range for at least one reader.
+            //
+            // Disabled rather than hidden: a list that silently shortens when
+            // a setting changes reads as the setting having broken something.
+            // The tooltip is the whole point of the control being visible.
+            readonly property string cvWarning:
+                row.modelData.header ? ""
+                                     : root.canvas.colourMapWarning(row.modelData.label)
+            enabled: row.modelData.header || row.cvWarning === ""
+            ToolTip.visible: row.hovered && row.cvWarning !== ""
+            ToolTip.text: row.cvWarning
 
             contentItem: RowLayout {
                 spacing: 8
@@ -191,7 +224,8 @@ ComboBox {
                 Label {
                     text: row.modelData.header ? row.modelData.label.toUpperCase()
                                                : row.modelData.label
-                    color: row.modelData.header ? Theme.textSecondary : Theme.text
+                    color: row.modelData.header ? Theme.textSecondary
+                         : (row.cvWarning !== "" ? Theme.textMuted : Theme.text)
                     font.bold: row.modelData.header
                     font.pixelSize: row.modelData.header ? 10 : Theme.fontSizeBody
                     elide: Text.ElideRight

@@ -71,7 +71,7 @@ class MultivariateEngine:
 
     @staticmethod
     def hierarchical(df: pd.DataFrame, columns: Sequence[str] | None = None, method: str = "ward", metric: str = "euclidean") -> MLResult:
-        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.cluster.hierarchy import linkage
         frame=_numeric_frame(df,columns); X=frame.to_numpy(float)
         Z=linkage(X,method=method,metric=metric)
         table=pd.DataFrame(Z,columns=["left","right","distance","count"])

@@ -16,11 +16,114 @@
 #include <QStringList>
 #include <QVector>
 #include <limits>
+#include <algorithm>
+#include <cmath>
 
 namespace graphvis {
 
 inline double unsetValue() { return std::numeric_limits<double>::quiet_NaN(); }
 inline bool isUnset(double v) { return v != v; }
+
+// HOW A VALUE BECOMES A POSITION ON THE RAMP - one answer, used by both halves.
+//
+// A choropleth of a skewed column on a linear ramp paints almost every region
+// the same colour, and quantile classing is the standard cartographic answer to
+// that. The reason it was not shipped is recorded in
+// graphvis-choropleth-scale-decision.md and it is the right reason:
+//
+//     drawColourBar takes a linear lo..hi and draws a linear ramp with numbers
+//     along it - it has no way to express log or quantile classing. Shipping
+//     the classing without the key would produce a figure whose colours no
+//     longer mean what the key says they mean.
+//
+// So the key learned first. THIS FUNCTION IS THE WHOLE POINT OF THE DESIGN: the
+// engine that fills a region and the bar that explains the fill both ask it
+// where a value sits, so they cannot disagree about what a colour means. Two
+// copies of this arithmetic is the failure this project has met more than any
+// other - "one question, one answer" - and here it would be invisible, because
+// a wrong key and a wrong fill look exactly like a right key and a right fill.
+struct ColourScale {
+    enum Kind { Linear, Log10, Quantile };
+    Kind kind = Linear;
+    double lo = 0.0, hi = 1.0;
+    // Quantile only: the class edges, ascending, size classes()+1. Empty for a
+    // continuous ramp.
+    QVector<double> breaks;
+
+    int classes() const { return breaks.size()>=2 ? breaks.size()-1 : 0; }
+    bool discrete() const { return kind==Quantile && classes()>0; }
+};
+
+// 0..1 along the ramp, or NaN when the value cannot be placed there.
+//
+// NaN rather than a clamp for a log scale that is handed a non-positive value:
+// that value has no position on a logarithmic ramp, and colouring it as the
+// bottom of the range would be inventing a reading. colourMapStyled already
+// turns a non-finite position into "do not draw this", which is the honest
+// picture.
+inline double scalePosition(double v,const ColourScale& sc){
+    if(v!=v) return std::numeric_limits<double>::quiet_NaN();
+    if(sc.discrete()){
+        // A class, not a gradient. The colour is constant across the class and
+        // is taken from the MIDDLE of that class's share of the ramp, so a
+        // five-class key is five distinct colours and not five samples that
+        // happen to include both endpoints.
+        const int n=sc.classes();
+        for(int i=0;i<n;++i){
+            const bool last=(i==n-1);
+            if(v>=sc.breaks[i]&&(last ? v<=sc.breaks[i+1] : v<sc.breaks[i+1]))
+                return (double(i)+0.5)/double(n);
+        }
+        // Outside every class - below the first break or above the last.
+        return v<sc.breaks.first() ? 0.5/double(n) : (double(n)-0.5)/double(n);
+    }
+    if(sc.kind==ColourScale::Log10){
+        if(!(v>0.0)||!(sc.lo>0.0)||!(sc.hi>0.0))
+            return std::numeric_limits<double>::quiet_NaN();
+        const double a=std::log10(sc.lo),b=std::log10(sc.hi);
+        if(!(b>a)) return 0.5;
+        return (std::log10(v)-a)/(b-a);
+    }
+    if(!(sc.hi>sc.lo)) return 0.5;
+    return (v-sc.lo)/(sc.hi-sc.lo);
+}
+
+// The class edges for `classes` quantiles of `values`, ascending.
+//
+// Equal COUNT per class, which is what quantile classing means and why it
+// helps: a skewed column gets as many regions in the dark class as in the pale
+// one. Degenerate input - fewer values than classes, or every value the same -
+// returns nothing, and the caller falls back to a linear ramp rather than
+// drawing classes with identical edges.
+inline QVector<double> quantileBreaks(QVector<double> values,int classes){
+    QVector<double> out;
+    if(classes<2) return out;
+    values.erase(std::remove_if(values.begin(),values.end(),
+                                [](double v){ return v!=v; }),
+                 values.end());
+    if(values.size()<classes) return out;
+    std::sort(values.begin(),values.end());
+    if(!(values.last()>values.first())) return out;
+    out.reserve(classes+1);
+    out.append(values.first());
+    for(int i=1;i<classes;++i){
+        const double pos=double(i)*double(values.size()-1)/double(classes);
+        const int k=int(pos);
+        const double frac=pos-double(k);
+        const double a=values[qBound(0,k,values.size()-1)];
+        const double b=values[qBound(0,k+1,values.size()-1)];
+        out.append(a+(b-a)*frac);
+    }
+    out.append(values.last());
+    // Ties can make two edges equal - a column that is half one value does
+    // that - and two equal edges is a class nothing can fall into. Reported by
+    // returning nothing, so the caller shows a linear ramp it can explain
+    // rather than a key with a class of zero width on it.
+    for(int i=1;i<out.size();++i)
+        if(!(out[i]>out[i-1])) return QVector<double>();
+    return out;
+}
+
 
 // One drawn series. x and y are parallel and already cleaned of non-finite
 // pairs by the caller, because a backend must never have to decide what a
@@ -66,6 +169,20 @@ struct PlotSeries {
     // drawn up the right-hand side. Set by the engine, because the engine is
     // what knows that the quantity it derived is not the one it was given.
     bool secondaryAxis = false;
+    // NOT PART OF THE STACK IT IS DRAWN ON.
+    //
+    // A stacked painter adds every series it is given to the running total, and
+    // that is right for every series that IS one of the parts. It is wrong for
+    // a series that reports the whole: the VFA profile appends a "total VFA"
+    // line whose values are the sum of the three species, and stacking that on
+    // top of the three doubled the band - a peak of 1,480 mg/L drawn at 2,950,
+    // with the annotation naming the true figure sitting halfway down the
+    // picture beside it. The source comment claimed appending it last was
+    // enough to keep it out of the stack. It was not; nothing read it.
+    //
+    // Clear this and the painter draws the series as a plain line in its own
+    // values, and leaves the running total alone.
+    bool stacked = true;
     // Set only by the Monochrome colour-vision mode, where colour cannot carry
     // the series on its own. Empty means a solid line. Units are pen widths, so
     // the pattern scales with lineWidth and survives PDF export unchanged.
@@ -208,6 +325,24 @@ struct PlotStyle {
     //   0  Mathematical - 0 degrees at the right, increasing anticlockwise
     //   1  Compass      - 0 degrees at the top, increasing clockwise
     int polarConvention = 0;
+    // WHAT A LEGEND DOES WITH A LABEL TOO LONG FOR ITS BOX.
+    //
+    // The box is capped at a third of the plot area's width, because a long
+    // label unchecked makes the legend cover the figure it describes. That cap
+    // is right; ELIDING to meet it is what is arguable, because these labels
+    // carry the engine's computed answer - "7 categories, total 100; 3 of them
+    // above the 80% line" becomes "7 categories, total 100; 3 of them ..." and
+    // the finding is the part that got cut.
+    //
+    // There is no answer that is right for everyone: a reader comparing twenty
+    // series wants short rows, and a reader quoting one number wants the
+    // number. So it is offered rather than decided.
+    //
+    //   0  Elide  - one row per series, cut with an ellipsis. What every
+    //               figure did before this existed.
+    //   1  Wrap   - the row grows downward instead, so the whole label is
+    //               readable and the box grows in the cheaper dimension.
+    int legendLabels = 0;
     int dpi = 100;
     double figureWidthIn = unsetValue();
     double figureHeightIn = unsetValue();
@@ -255,6 +390,31 @@ struct PlotStyle {
     // a caption saying so and misleading in one without. The person chooses,
     // beside the range itself.
     bool colourOutOfRangeDropped = false;
+    // HOW A VALUE IS PLACED ON THE RAMP, for every colour-mapped engine and not
+    // only the choropleth.
+    //
+    // `ColourScale`, `scalePosition` and the classing-aware `drawColourBar`
+    // were all built for the choropleth and all worked; the other ten
+    // colour-bar call sites still passed a linear low/high pair, so a heat map
+    // of a quantity spanning four orders of magnitude had no way to be read
+    // except as "nearly all of it is the bottom colour".
+    //
+    // Linear is the default and `scalePosition` returns exactly
+    // (v - lo) / (hi - lo) for it, so every existing figure is unchanged - the
+    // 440-figure gallery is the proof of that, not an assumption.
+    //
+    // Log10 needs nothing but the range, so it reaches every mapped engine
+    // through `rampPosition`. Quantile needs the distribution of the values
+    // being coloured, which only the painter holds, so an engine opts into it
+    // by filling `colourBreaks` - see `quantileBreaks`.
+    ColourScale::Kind colourScaleKind = ColourScale::Linear;
+    // Quantile only: the class edges, ascending. Empty means the continuous
+    // ramp, whatever `colourScaleKind` says, because a quantile scale with no
+    // edges is not a scale.
+    QVector<double> colourBreaks;
+    // How many classes to ask for when the person chooses quantile. The
+    // painter turns this into `colourBreaks` from its own values.
+    int colourClasses = 5;
     // 0 is the continuous ramp. Two or more turns it into that many discrete
     // bands - the difference between a photograph and a contour map, and what
     // lets a reader say "that region is the third band" at all. The colour bar
@@ -325,6 +485,23 @@ struct PlotStyle {
     // Cells across the gridded field. 0 chooses from the sample count. Higher
     // is smoother once the gaps are filled, and meaningless while they are not.
     int fieldResolution = 0;
+    // LINES ACROSS THE WIREFRAME, which is not the same thing as cells across
+    // the grid.
+    //
+    // 3D Mesh and 3D Topography / Surface were the same picture at any
+    // resolution a real dataset produces. They build the identical grid and
+    // differ by one boolean, and the "mesh" was every quad of that grid
+    // outlined - so at the 160 to 360 cells a survey gives you, the wireframe's
+    // own strokes cover the gaps between them and it draws as a solid block.
+    // The two engines were distinguishable only by zooming in far enough to see
+    // a single cell.
+    //
+    // A mesh is a grid of lines you can see through, and how many lines that is
+    // has nothing to do with how finely the surface underneath was sampled. So
+    // this counts LINES, the geometry still follows every cell, and the surface
+    // keeps its own resolution. 0 follows the grid, which is what it did
+    // before.
+    int meshDensity = 0;
     // The SCATTERED estimator, when one is chosen. -1 keeps the grid-filling
     // path above, which is what every existing figure uses.
     //
@@ -408,6 +585,50 @@ struct PlotView3D {
     double azimuth = -35.0;
     double elevation = 24.0;
     double zoom = 1.0;
+    // WHERE THE CUBE SITS, so a zoom can be about the pointer.
+    //
+    // The 2-D figures zoom about the cursor - zoomAt anchors on it - and the
+    // 3-D ones scaled about the centre of the canvas, because zoom3DBy takes a
+    // factor and no position. Zooming into the corner of a surface meant
+    // zooming into the middle and then having nowhere to go.
+    //
+    // Held in the projection's own units, which is the space `project` works in
+    // before it multiplies by the fitted scale. That makes it independent of
+    // the canvas size: the same figure exported at another size, or the
+    // full-resolution render beside the preview, frames identically. A pan in
+    // pixels would not survive either.
+    double panX = 0.0;
+    double panY = 0.0;
+};
+
+// MOVING A FIGURE THAT HAS NO AXES TO MOVE.
+//
+// The 2-D pan and zoom work by changing the axis range: the data slides under a
+// frame that stays put. That is the right model for a figure whose axes mean
+// something, and it is no model at all for the sixty-six engines where
+// engineHasAxes is false - a treemap, a sunburst, a Sankey, a chord diagram, a
+// network graph, a word cloud, a flame graph, an UpSet plot. viewInteractive()
+// is false for every one of them, so until now they could not be moved or
+// magnified at all - and they are precisely the dense figures somebody most
+// wants to get into.
+//
+// So this is the other kind of view: the drawing itself is translated and
+// scaled INSIDE its frame, clipped to it. No data changes and nothing is
+// recomputed. It is a magnifying glass held over the picture.
+//
+// HELD AS FRACTIONS OF THE FRAME rather than in pixels, for the same reason
+// PlotView3D holds its pan in projection units: the same figure exported at
+// another size, and the full-resolution render beside the preview, must frame
+// identically. A pan in pixels would put the magnified part somewhere else in
+// each of them.
+struct PlotFrameView {
+    double panX = 0.0;   // fraction of the frame's width, positive is right
+    double panY = 0.0;   // fraction of the frame's height, positive is down
+    double zoom = 1.0;
+    // Compared exactly rather than with a tolerance: resetView writes literal
+    // 0 and 1, so "has this been touched" has an exact answer, and a gesture
+    // that lands a hair from the origin should still count as touched.
+    bool active() const { return zoom != 1.0 || panX != 0.0 || panY != 0.0; }
 };
 
 struct PlotSpec {
@@ -434,6 +655,12 @@ struct PlotSpec {
     QString expression;
     PlotStyle style;
     PlotView3D view3d;
+    // The in-frame view, for the engines that have no axis range to slide.
+    // Beside view3d because it is the same kind of thing: a way of looking at
+    // the figure rather than a statement about the data, carried on the spec
+    // so that the export and the full-resolution render show what is on
+    // screen.
+    PlotFrameView frameView;
     bool legendVisible = true;
     // Whether a RECTANGULAR FRAME belongs round this figure at all.
     //

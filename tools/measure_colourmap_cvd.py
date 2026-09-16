@@ -54,6 +54,10 @@ import sys
 import numpy as np
 
 HEADER = "native/plot2d/include/ColourMaps.h"
+# The designed palettes live in their own generated header and are registered
+# in ColourMaps.h's list. Both are read, because a map that is offered and not
+# measured is a map with no safety verdict at all.
+DESIGNED_HEADER = "native/plot2d/include/ColourMapsCvd.h"
 
 # Machado, Oliveira & Fernandes (2009), severity 1.0, linear sRGB.
 CVD = {
@@ -101,8 +105,12 @@ def simulate(linear, mode):
 def parse_tables(text):
     """Pull every kName[kStops][3] table out of the generated header."""
     tables = {}
-    for m in re.finditer(r"static const unsigned char (k\w+)\[kStops\]\[3\]=\{(.*?)\};",
-                         text, re.S):
+    # Either spelling of the stop count. The inherited header writes
+    # `[kStops][3]`; the designed one is included before that constant is
+    # declared and writes `[64][3]`.
+    for m in re.finditer(
+            r"static const unsigned char (k\w+)\[(?:kStops|64)\]\[3\]=\{(.*?)\};",
+            text, re.S):
         nums = [int(n) for n in re.findall(r"\d+", m.group(2))]
         if len(nums) != 64 * 3:
             raise SystemExit(f"{m.group(1)}: {len(nums)} numbers, expected 192")
@@ -207,11 +215,21 @@ ROLE = {
     "Terrain, Ocean & Field": "sequential",
     "Categorical": "categorical",
     "Specialized & Utility": "utility",
+    # The designed palettes are a mixed category by construction - grey ramps
+    # and categorical palettes in one list - so the role comes from the name
+    # rather than from the group. See ROLE_OVERRIDE below.
+    "Colour-blind (designed)": "categorical",
 }
 
 # Cubehelix sits in the cyclic group by name but is a monotone-lightness ramp -
 # that is the whole point of it - so it is measured as what it is.
 ROLE_OVERRIDE = {"Cubehelix": "sequential"}
+# The designed grey ramps are ramps; everything else in that category is a
+# palette. Named by prefix because the designer names them that way and the
+# audit fails if it stops doing so.
+ROLE_OVERRIDE.update({name: "sequential" for name in
+                      ("Monochrome Linear", "Monochrome Low detail",
+                       "Monochrome High detail", "Monochrome High contrast")})
 
 
 def measure(table, mode, role):
@@ -229,12 +247,34 @@ def measure(table, mode, role):
     return 0.0, 0.0
 
 
+def parse_designed(text):
+    """(display name, symbol) for every designed palette, in offer order.
+
+    Read from ColourMapsCvd.h rather than from ColourMaps.h's registry: the
+    designed maps are appended there by a LOOP, not written as literals, so
+    the registry parser cannot see them. A map that is offered by the program
+    and not measured here would have no safety verdict at all - it would be
+    hidden from every colour-vision mode, which for palettes designed for
+    those very modes would be the whole feature failing silently.
+    """
+    body = text.split("inline const QVector<CvdEntry>& designed()")[1]
+    body = body.split("return entries;")[0]
+    return re.findall(r'\{"([^"]+)",(k\w+),', body)
+
+
 def main():
     text = open(HEADER, encoding="utf-8").read()
+    designed_text = open(DESIGNED_HEADER, encoding="utf-8").read()
     tables = parse_tables(text)
+    tables.update(parse_tables(designed_text))
     registry = parse_registry(text)
+    designed_registry = parse_designed(designed_text)
+    registry = registry + [row for row in designed_registry
+                           if row not in registry]
     cats = parse_categories(text)
     cat_of = {n: c for c, names in cats.items() for n in names}
+    for name, _sym in designed_registry:
+        cat_of.setdefault(name, "Colour-blind (designed)")
 
     modes = ["protan", "deutan", "tritan", "mono"]
     rows = []
@@ -273,6 +313,13 @@ def safe(r, m):
     return w >= MIN_SEPARATION and mo >= MIN_MONOTONIC
 
 
+# How many maps the "Best for this reader" group offers per role. Six is
+# enough to cover the preferred tier - the maps designed for the job - plus a
+# little of what the measurement turns up behind them, and short enough to read
+# without scrolling.
+RECOMMEND_PER_ROLE = 6
+
+
 def choose_substitutes(rows, modes, tables, registry):
     """Pick the map to offer instead of an unsafe one, per role and vision.
 
@@ -287,7 +334,6 @@ def choose_substitutes(rows, modes, tables, registry):
     says about a colourful map surviving a greyscale print.  So it is answered
     from the maps that are achromatic by construction.
     """
-    sym_of = dict(registry)
     achromatic = set()
     for name, sym in registry:
         t = tables[sym]
@@ -295,14 +341,24 @@ def choose_substitutes(rows, modes, tables, registry):
             achromatic.add(name)
 
     # Consulted before the score.  These are the maps designed for the job.
+    #
+    # A PALETTE DESIGNED FOR THIS DEFICIENCY OUTRANKS ANY INHERITED ONE, and
+    # only in the categorical role, because that is the only role where the
+    # measurement says it wins: the designed palettes reach 31-71 dE76 for a
+    # protanope against the best inherited palette's 12.4, while a designed
+    # sequential ramp loses to Afmhot by more than two to one. Preferring them
+    # everywhere would be preferring the story over the numbers.
     PREFERRED = {
         "sequential": ["Cividis", "Viridis", "Magma", "Inferno", "Plasma"],
         "diverging": ["PuOr", "RdBu", "RdYlBu", "PRGn", "BrBG"],
         "cyclic": ["Twilight", "Twilight Shifted", "Phase"],
         "categorical": ["Accent", "Dark2", "Set2", "Tab10"],
     }
+    DESIGNED_FOR = {"protan": "Protanopia", "deutan": "Deuteranopia",
+                    "tritan": "Tritanopia", "mono": "Monochrome"}
 
     best = {}
+    recommended = {}
     for role in ["sequential", "diverging", "cyclic", "categorical"]:
         for m in modes:
             pool = [r for r in rows if r["role"] == role and safe(r, m)
@@ -319,20 +375,33 @@ def choose_substitutes(rows, modes, tables, registry):
             if not pool:
                 continue
             pref = PREFERRED.get(role, [])
+            designed_prefix = DESIGNED_FOR.get(m, "")
 
-            def rank(r):
+            def rank(r, pref=pref, m=m, role=role, prefix=designed_prefix):
+                # Tier -1: designed for this very deficiency, categorical only.
+                if (role == "categorical" and prefix
+                        and r["name"].startswith(prefix)):
+                    return (-1, -r[m][0])
                 tier = pref.index(r["name"]) if r["name"] in pref else len(pref)
                 return (tier, -r[m][0])
 
             best[(role, m)] = min(pool, key=rank)["name"]
-    return best, achromatic
+            # The same ordering, kept whole rather than reduced to its first
+            # element. One substitute per role is enough to make an unreadable
+            # figure readable; it is not enough to answer "which should I
+            # pick", and it cannot offer a reader something RESEMBLING the map
+            # they chose. The interface takes the nearest entry of this list to
+            # the chosen map, so a person who picked a blue-white-red diverging
+            # map gets a blue-white-red one back.
+            recommended[(role, m)] = [r["name"] for r in sorted(pool, key=rank)][:RECOMMEND_PER_ROLE]
+    return best, achromatic, recommended
 
 
 def emit(rows, modes, tables, registry):
     # The substitute keeps the SAME role: swapping a diverging map for a
     # sequential one would throw away the centre the diverging map exists to
     # show, which is a change to what the figure claims, not to how it looks.
-    best, achromatic_names = choose_substitutes(rows, modes, tables, registry)
+    best, achromatic_names, recommended = choose_substitutes(rows, modes, tables, registry)
 
     out = []
     w = out.append
@@ -463,6 +532,45 @@ def emit(rows, modes, tables, registry):
     w("    default: break;")
     w("    }")
     w("    return name;")
+    w("}")
+    w("")
+    w("// The maps this reader should be OFFERED, best first, per role.")
+    w("//")
+    w("// safeSubstituteFor answers \"what do I draw instead of this unreadable")
+    w("// map\" with one name per role. That is enough to rescue a figure and it")
+    w("// is not enough for two other things the interface needs:")
+    w("//")
+    w("//   - a \"Best for this reader\" group in the chooser. Hiding the maps a")
+    w("//     reader cannot use says which are ruled out; it never says which to")
+    w("//     pick, and of the maps that pass, some clear the bar by a point and")
+    w("//     some by fifteen.")
+    w("//   - a substitute that RESEMBLES the chosen map. With one name per role,")
+    w("//     everyone who picked any unreadable diverging map got the same one.")
+    w("//     With a list, the interface can take the nearest entry to what was")
+    w("//     chosen, so a blue-white-red map comes back blue-white-red.")
+    w("//")
+    w("// Ordered by the same rule as the substitute above: the preferred tier")
+    w("// first - the maps designed for the job - and the measured score only")
+    w("// ordering within it. Ranked by score alone this list starts with Afmhot,")
+    w("// a black-red-yellow heat ramp that scores well because it is violently")
+    w("// contrasty, ahead of Cividis, which exists for precisely this purpose.")
+    w("inline QStringList recommendedMaps(MapRole role,ColourVision mode){")
+    w("    switch(mode){")
+    for m, label in [("protan", "Protanopia"), ("deutan", "Deuteranopia"),
+                     ("tritan", "Tritanopia"), ("mono", "Monochrome")]:
+        w(f"    case ColourVision::{label}:")
+        w("        switch(role){")
+        for role in ["sequential", "diverging", "cyclic", "categorical"]:
+            names = recommended.get((role, m)) or []
+            if names:
+                joined = ",".join(f'QStringLiteral("{n}")' for n in names)
+                w(f'        case MapRole::{ROLE_ENUM[role]}: return {{{joined}}};')
+        w("        default: break;")
+        w("        }")
+        w("        break;")
+    w("    default: break;")
+    w("    }")
+    w("    return {};")
     w("}")
     w("")
     w("// What the substitution costs, or an empty string when it costs nothing.")

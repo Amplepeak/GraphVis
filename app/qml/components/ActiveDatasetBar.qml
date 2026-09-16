@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 // Which dataset the graphs below are drawn from, and a one-click way to change it.
 //
 // Switching datasets meant leaving the Graphs tab for the Data tab, finding the

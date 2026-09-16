@@ -133,14 +133,66 @@ Item {
                 Repeater {
                     model: figures
 
+                    // THE DELEGATE DECLARES ONLY WHAT IT DOES NOT ALREADY HAVE.
+                    //
+                    // EVERY FIGURE THOUGHT IT WAS FIGURE ZERO.
+                    //
+                    // This used to re-declare `required property int index` and
+                    // then write `index: cell.index`. FigureCell already
+                    // declares that property, so the re-declaration SHADOWED
+                    // it - the linter said so in as many words, "Property
+                    // 'index' already exists in base type 'FigureCell', use a
+                    // different name". Two things then went wrong at once: the
+                    // base's required `index` was never initialised, and the
+                    // shadow's value came from `index: cell.index`, a binding
+                    // on itself. Both ended at the default, zero, for every row
+                    // in the model.
+                    //
+                    // What that did, measured rather than reasoned about - a
+                    // notebook of three figures, and the cells read back:
+                    //
+                    //   PROBE figureCount = 3   cells found = 3
+                    //   PROBE cell 0 index = 0 engine =
+                    //   PROBE cell 1 index = 0 engine = Line Chart
+                    //   PROBE cell 2 index = 0 engine = Bar
+                    //
+                    // The figures are all there and all drawn - the engines are
+                    // right - and every one of them answers 0 when asked which
+                    // figure it is. So `current` is true for all three at once
+                    // whenever the current index is 0 and false for all three
+                    // otherwise; clicking any figure selects the first; and the
+                    // close button on any figure removes the first. The
+                    // notebook looked like it worked and acted on the wrong
+                    // figure.
+                    //
+                    // (A first reading of the warnings - "Cannot create
+                    // delegate", "Required property index was not initialized",
+                    // once per row - said the cells were not being created at
+                    // all. They are: Qt logs that and carries on with the
+                    // default. The probe above is why this note says what it
+                    // says instead.)
+                    //
+                    // A Repeater DOES inject the model index into a required
+                    // property declared in the delegate's BASE type - checked
+                    // on two files of nothing else - so the re-declaration and
+                    // the self-assignment were not merely redundant, they were
+                    // the whole fault.
+                    //
+                    // Nothing here could see it. The linter reported the
+                    // shadowing and it was read as a style note; the engine
+                    // sweep and the property checks never load QML; and the
+                    // interface tests could not instantiate this component at
+                    // all, because FigureCell contains a PlotCanvas and that is
+                    // a C++ type the staged test module had no answer for. That
+                    // last one is now fixed - see the generated stand-in in
+                    // tools/run_ui_tests.py - and tests/qml/tst_notebook.qml
+                    // fails on the old shape.
                     delegate: FigureCell {
                         id: cell
-                        required property int index
                         required property string figureEngine
                         required property string figureVariant
 
                         app: root.app
-                        index: cell.index
                         current: root.currentIndex === cell.index
 
                         Layout.fillWidth: true

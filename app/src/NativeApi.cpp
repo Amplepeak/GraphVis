@@ -2,6 +2,25 @@
 #include <QCoreApplication>
 #include <QDir>
 
+// The one NativeApi, and the threading contract for it - written down because
+// this object IS reached from more than one thread and the reason that is safe
+// is not visible from here.
+//
+// Construction of a function-local static is thread-safe in C++11 and later;
+// the compiler emits the guard. That covers the object coming into existence
+// and nothing else.
+//
+// What makes the rest safe is that it is written exactly once, early:
+// AppController's constructor calls load() on the GUI thread, before any
+// QtConcurrent work is started (AppController.cpp:138). Every later touch is a
+// read of a resolved function pointer, and the worker threads that do the
+// reading are started by QtConcurrent::run afterwards, which establishes the
+// happens-before that makes those reads see the resolved values.
+//
+// So: load() must stay a start-up call. Calling it again, from anywhere, or
+// lazily from a worker, would turn every one of those reads into a race - and
+// it would do so silently, because the pointers are already valid and the
+// second load writes the same values.
 NativeApi& NativeApi::instance(){ static NativeApi api; return api; }
 
 bool NativeApi::load(){

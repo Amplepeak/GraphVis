@@ -98,7 +98,6 @@ def run(paths: Iterable[str], operation: str = "summary", out_dir: str = "") -> 
             elif operation == "convert":
                 payload = {"arrow_path": info.get("arrow_path", ""), "rows": rows}
             else:
-                import pandas as pd
                 import pyarrow as pa
                 import pyarrow.ipc as ipc
                 with pa.memory_map(str(info["arrow_path"]), "r") as source:

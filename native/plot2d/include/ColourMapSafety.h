@@ -129,6 +129,27 @@ inline const QVector<SafetyEntry>& safety(){
         {"Flag",MapRole::Utility,0x00},  // normal 0.0  protan 0.0  deutan 0.0  tritan 0.0  mono 0.0
         {"Colorcube",MapRole::Utility,0x00},  // normal 0.0  protan 0.0  deutan 0.0  tritan 0.0  mono 0.0
         {"White",MapRole::Utility,0x08},  // normal 0.0  protan 0.0  deutan 0.0  tritan 0.0  mono 0.0
+        {"Monochrome Linear",MapRole::Sequential,0x1f},  // normal 23.0  protan 23.0  deutan 23.0  tritan 23.0  mono 23.0
+        {"Monochrome Low detail",MapRole::Sequential,0x1f},  // normal 10.8  protan 10.8  deutan 10.8  tritan 10.8  mono 10.8
+        {"Monochrome High contrast",MapRole::Sequential,0x1f},  // normal 13.3  protan 13.3  deutan 13.3  tritan 13.3  mono 13.3
+        {"Protanopia 4",MapRole::Categorical,0x17},  // normal 82.3  protan 71.2  deutan 68.4  tritan 14.5  mono 1.0
+        {"Protanopia 6",MapRole::Categorical,0x17},  // normal 57.5  protan 55.6  deutan 32.1  tritan 14.5  mono 1.0
+        {"Protanopia 8",MapRole::Categorical,0x17},  // normal 37.9  protan 36.2  deutan 15.1  tritan 14.5  mono 1.0
+        {"Protanopia 10",MapRole::Categorical,0x17},  // normal 33.7  protan 31.8  deutan 15.1  tritan 14.5  mono 1.0
+        {"Protanopia 12",MapRole::Categorical,0x17},  // normal 33.7  protan 31.5  deutan 15.1  tritan 14.1  mono 1.0
+        {"Deuteranopia 4",MapRole::Categorical,0x17},  // normal 73.1  protan 65.0  deutan 68.2  tritan 49.5  mono 4.0
+        {"Deuteranopia 6",MapRole::Categorical,0x17},  // normal 64.9  protan 49.5  deutan 55.4  tritan 23.4  mono 3.8
+        {"Deuteranopia 8",MapRole::Categorical,0x17},  // normal 54.2  protan 25.1  deutan 39.0  tritan 22.0  mono 1.3
+        {"Deuteranopia 10",MapRole::Categorical,0x17},  // normal 26.8  protan 11.2  deutan 33.3  tritan 13.2  mono 1.3
+        {"Deuteranopia 12",MapRole::Categorical,0x16},  // normal 26.8  protan 9.9  deutan 32.8  tritan 13.2  mono 1.3
+        {"Tritanopia 4",MapRole::Categorical,0x17},  // normal 89.9  protan 58.6  deutan 43.8  tritan 68.9  mono 1.0
+        {"Tritanopia 6",MapRole::Categorical,0x17},  // normal 59.2  protan 10.8  deutan 23.1  tritan 54.2  mono 1.0
+        {"Tritanopia 8",MapRole::Categorical,0x17},  // normal 39.7  protan 10.6  deutan 12.9  tritan 40.8  mono 0.8
+        {"Tritanopia 10",MapRole::Categorical,0x17},  // normal 39.7  protan 10.6  deutan 12.9  tritan 36.0  mono 0.8
+        {"Tritanopia 12",MapRole::Categorical,0x15},  // normal 27.3  protan 10.6  deutan 6.5  tritan 32.4  mono 0.8
+        {"Monochrome 3",MapRole::Categorical,0x17},  // normal 106.0  protan 48.6  deutan 50.6  tritan 63.6  mono 34.0
+        {"Monochrome 4",MapRole::Categorical,0x17},  // normal 59.9  protan 48.6  deutan 48.8  tritan 19.3  mono 17.0
+        {"Monochrome 5",MapRole::Categorical,0x17},  // normal 34.2  protan 22.8  deutan 16.6  tritan 19.3  mono 17.0
     };
     return entries;
 }
@@ -177,7 +198,7 @@ inline QString safeSubstituteFor(const QString& name,ColourVision mode){
         case MapRole::Sequential: return QStringLiteral("Cividis");
         case MapRole::Diverging: return QStringLiteral("PuOr");
         case MapRole::Cyclic: return QStringLiteral("Twilight");
-        case MapRole::Categorical: return QStringLiteral("Lines");
+        case MapRole::Categorical: return QStringLiteral("Protanopia 4");
         default: break;
         }
         break;
@@ -186,7 +207,7 @@ inline QString safeSubstituteFor(const QString& name,ColourVision mode){
         case MapRole::Sequential: return QStringLiteral("Cividis");
         case MapRole::Diverging: return QStringLiteral("PuOr");
         case MapRole::Cyclic: return QStringLiteral("Twilight");
-        case MapRole::Categorical: return QStringLiteral("Accent");
+        case MapRole::Categorical: return QStringLiteral("Deuteranopia 4");
         default: break;
         }
         break;
@@ -195,7 +216,7 @@ inline QString safeSubstituteFor(const QString& name,ColourVision mode){
         case MapRole::Sequential: return QStringLiteral("Cividis");
         case MapRole::Diverging: return QStringLiteral("PuOr");
         case MapRole::Cyclic: return QStringLiteral("Twilight");
-        case MapRole::Categorical: return QStringLiteral("Accent");
+        case MapRole::Categorical: return QStringLiteral("Tritanopia 4");
         default: break;
         }
         break;
@@ -204,13 +225,76 @@ inline QString safeSubstituteFor(const QString& name,ColourVision mode){
         case MapRole::Sequential: return QStringLiteral("Gray");
         case MapRole::Diverging: return QStringLiteral("Gray");
         case MapRole::Cyclic: return QStringLiteral("Gray");
-        case MapRole::Categorical: return QStringLiteral("Gray");
+        case MapRole::Categorical: return QStringLiteral("Monochrome Linear");
         default: break;
         }
         break;
     default: break;
     }
     return name;
+}
+
+// The maps this reader should be OFFERED, best first, per role.
+//
+// safeSubstituteFor answers "what do I draw instead of this unreadable
+// map" with one name per role. That is enough to rescue a figure and it
+// is not enough for two other things the interface needs:
+//
+//   - a "Best for this reader" group in the chooser. Hiding the maps a
+//     reader cannot use says which are ruled out; it never says which to
+//     pick, and of the maps that pass, some clear the bar by a point and
+//     some by fifteen.
+//   - a substitute that RESEMBLES the chosen map. With one name per role,
+//     everyone who picked any unreadable diverging map got the same one.
+//     With a list, the interface can take the nearest entry to what was
+//     chosen, so a blue-white-red map comes back blue-white-red.
+//
+// Ordered by the same rule as the substitute above: the preferred tier
+// first - the maps designed for the job - and the measured score only
+// ordering within it. Ranked by score alone this list starts with Afmhot,
+// a black-red-yellow heat ramp that scores well because it is violently
+// contrasty, ahead of Cividis, which exists for precisely this purpose.
+inline QStringList recommendedMaps(MapRole role,ColourVision mode){
+    switch(mode){
+    case ColourVision::Protanopia:
+        switch(role){
+        case MapRole::Sequential: return {QStringLiteral("Cividis"),QStringLiteral("Viridis"),QStringLiteral("Magma"),QStringLiteral("Inferno"),QStringLiteral("Plasma"),QStringLiteral("Afmhot")};
+        case MapRole::Diverging: return {QStringLiteral("PuOr"),QStringLiteral("RdBu"),QStringLiteral("RdYlBu"),QStringLiteral("PRGn"),QStringLiteral("Coolwarm"),QStringLiteral("Bwr")};
+        case MapRole::Cyclic: return {QStringLiteral("Twilight"),QStringLiteral("Twilight Shifted"),QStringLiteral("Phase")};
+        case MapRole::Categorical: return {QStringLiteral("Protanopia 4"),QStringLiteral("Protanopia 6"),QStringLiteral("Protanopia 8"),QStringLiteral("Protanopia 10"),QStringLiteral("Protanopia 12"),QStringLiteral("Deuteranopia 4")};
+        default: break;
+        }
+        break;
+    case ColourVision::Deuteranopia:
+        switch(role){
+        case MapRole::Sequential: return {QStringLiteral("Cividis"),QStringLiteral("Viridis"),QStringLiteral("Magma"),QStringLiteral("Inferno"),QStringLiteral("Plasma"),QStringLiteral("Afmhot")};
+        case MapRole::Diverging: return {QStringLiteral("PuOr"),QStringLiteral("RdBu"),QStringLiteral("RdYlBu"),QStringLiteral("PRGn"),QStringLiteral("BrBG"),QStringLiteral("Coolwarm")};
+        case MapRole::Cyclic: return {QStringLiteral("Twilight"),QStringLiteral("Twilight Shifted"),QStringLiteral("Phase")};
+        case MapRole::Categorical: return {QStringLiteral("Deuteranopia 4"),QStringLiteral("Deuteranopia 6"),QStringLiteral("Deuteranopia 8"),QStringLiteral("Deuteranopia 10"),QStringLiteral("Deuteranopia 12"),QStringLiteral("Accent")};
+        default: break;
+        }
+        break;
+    case ColourVision::Tritanopia:
+        switch(role){
+        case MapRole::Sequential: return {QStringLiteral("Cividis"),QStringLiteral("Viridis"),QStringLiteral("Magma"),QStringLiteral("Inferno"),QStringLiteral("Plasma"),QStringLiteral("Gist Heat")};
+        case MapRole::Diverging: return {QStringLiteral("PuOr"),QStringLiteral("RdBu"),QStringLiteral("RdYlBu"),QStringLiteral("PRGn"),QStringLiteral("BrBG"),QStringLiteral("Coolwarm")};
+        case MapRole::Cyclic: return {QStringLiteral("Twilight"),QStringLiteral("Twilight Shifted"),QStringLiteral("Phase"),QStringLiteral("HSV")};
+        case MapRole::Categorical: return {QStringLiteral("Tritanopia 4"),QStringLiteral("Tritanopia 6"),QStringLiteral("Tritanopia 8"),QStringLiteral("Tritanopia 10"),QStringLiteral("Tritanopia 12"),QStringLiteral("Accent")};
+        default: break;
+        }
+        break;
+    case ColourVision::Monochrome:
+        switch(role){
+        case MapRole::Sequential: return {QStringLiteral("Gray"),QStringLiteral("Binary"),QStringLiteral("Gist Gray"),QStringLiteral("Gist Yarg"),QStringLiteral("Monochrome Linear"),QStringLiteral("Greys")};
+        case MapRole::Diverging: return {QStringLiteral("Gray"),QStringLiteral("Binary"),QStringLiteral("Gist Gray"),QStringLiteral("Gist Yarg"),QStringLiteral("Monochrome Linear"),QStringLiteral("Greys")};
+        case MapRole::Cyclic: return {QStringLiteral("Gray"),QStringLiteral("Binary"),QStringLiteral("Gist Gray"),QStringLiteral("Gist Yarg"),QStringLiteral("Monochrome Linear"),QStringLiteral("Greys")};
+        case MapRole::Categorical: return {QStringLiteral("Monochrome Linear"),QStringLiteral("Monochrome High contrast"),QStringLiteral("Monochrome Low detail"),QStringLiteral("Gray"),QStringLiteral("Binary"),QStringLiteral("Gist Gray")};
+        default: break;
+        }
+        break;
+    default: break;
+    }
+    return {};
 }
 
 // What the substitution costs, or an empty string when it costs nothing.

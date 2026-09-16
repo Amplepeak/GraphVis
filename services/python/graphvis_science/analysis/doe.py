@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from itertools import product
-from typing import Callable, Mapping, Sequence, Any
+from typing import Mapping, Sequence, Any
 import numpy as np
 import pandas as pd
 from scipy.stats import qmc

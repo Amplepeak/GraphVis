@@ -1,9 +1,11 @@
 #include "PlotCanvas.h"
+#include <QThread>
 #include "SurfaceEstimators.h"
 #include "ArrowTable.h"
 #include "ColourVision.h"
 #include "ColourMaps.h"
 #include "ColourMapSafety.h"
+#include "ColourMapAdvice.h"
 #include "Expression.h"
 #include "PublicationProfile.h"
 #include "Units.h"
@@ -14,6 +16,8 @@
 #include <limits>
 
 #include <QFileInfo>
+#include <QMutex>
+#include <memory>
 #include <QImage>
 #include <QBuffer>
 #include <QMouseEvent>
@@ -29,6 +33,9 @@
 #include <QSet>
 #include <QQuickWindow>
 #include <QtConcurrent/QtConcurrentRun>
+// std::array: the linear-light table in simulateInPlace, which has to be a
+// function-local static to be initialised safely from two threads.
+#include <array>
 
 namespace graphvis {
 namespace {
@@ -148,6 +155,57 @@ QVector<double> gather(const QVector<double>& in,const QVector<int>& rows){
     return out;
 }
 
+// An evenly spaced subset of rows that have ALREADY been chosen. strideRows
+// answers the same question for a contiguous 0..n-1; this answers it for the
+// scattered set of rows that fall inside a zoomed view.
+QVector<int> strideOf(const QVector<int>& base,int budget){
+    if(budget<=0||base.size()<=budget) return base;
+    QVector<int> rows;
+    rows.reserve(budget);
+    const double step=double(base.size())/double(budget);
+    for(int i=0;i<budget;++i){
+        const int r=int(i*step);
+        if(r<base.size()) rows.append(base.at(r));
+    }
+    return rows;
+}
+
+// ===========================================================================
+// THE POINT BUDGET IS SPENT WHERE THE PERSON IS LOOKING.
+//
+// Reported as: while zooming, "it goes back to normal after zooming - make
+// this left screenshot not happen, people will want to see exactly what they
+// are zooming in or out on."
+//
+// The preview gets 10,000 points, and it was decimating the WHOLE column into
+// them however far the figure was zoomed. Zoom a 300,000-row series until a
+// seventieth of it is on screen and 10,000 points become about 140 inside the
+// frame: the curve arrives as a handful of broken strokes. Then the
+// full-resolution render lands a second later with every row and the figure
+// turns back into a curve - which is the "it goes back to normal afterwards"
+// half of the report, and the reason the fault looked like a rendering glitch
+// rather than the budget it actually is.
+//
+// A budget spent outside the frame buys nothing: those points are clipped away
+// before a single pixel is drawn. So the same 10,000 go to the rows inside the
+// view, and the preview gets BETTER as the zoom goes deeper instead of worse -
+// which is what zooming in is for. At any zoom past about 1.1x the window holds
+// fewer rows than the budget, so the preview is then every row there is, the
+// full render can add nothing, and previewIsExact says so and skips it.
+//
+// One row either side of the window is kept deliberately, so the curve enters
+// and leaves the frame instead of stopping short of both edges.
+//
+// Only for engines that read x as an AXIS. A heatmap and its relatives read
+// their three mapped columns as series 0, 1 and 2 and grid them, and the grid's
+// extent comes from the data it is given - so windowing those would re-bin the
+// field on every zoom and change the cell size under the person. Those engines
+// are left alone; see the caller.
+// ===========================================================================
+// Declared in the header so the preview and the full render can ask one
+// function for it; the reasoning is the note above.
+using ViewWindow=PlotCanvas::ViewWindow;
+
 // Series construction, shared by the on-screen preview and the full-resolution
 // render that runs on a worker thread.
 //
@@ -182,15 +240,63 @@ void applyConversion(QVector<double>& values,const Units::Conversion* conversion
 
 int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringList& yNames,
                     int colourVision,int budget,PlotSpec& spec,
-                    const QString& xUnit=QString(),const QString& yUnit=QString()){
+                    const QString& xUnit=QString(),const QString& yUnit=QString(),
+                    const ViewWindow& window=ViewWindow(),int* rowsAvailable=nullptr,
+                    const QString& y2Name=QString()){
     spec.series.clear();
-    const QVector<double> rawX=table.column(xName);
+    // Cleared every time, because it is written from the mapping below. Left
+    // standing, the name of a column that is no longer on the right-hand axis
+    // keeps its margin reserved on a figure that no longer has a second axis.
+    spec.y2Axis.label.clear();
+    if(rowsAvailable) *rowsAvailable=0;
+    // CONVERTED FIRST, because the window arrives in the unit the axis is drawn
+    // in - the person zoomed a figure labelled in feet, not in metres. It used
+    // to be converted after decimation, which is equivalent for the points
+    // themselves (a conversion is monotonic, so it commutes with a per-bucket
+    // min and max) but leaves nothing in display units to compare the window
+    // against.
+    QVector<double> rawX=table.column(xName);
+    Units::Conversion xStore;
+    applyConversion(rawX,displayConversion(xName,xUnit,xStore));
+
     // Row-preserving unless the x column is ordered. See columnIsOrdered.
     const bool ordered=columnIsOrdered(rawX);
-    const QVector<int> rows=ordered?QVector<int>():strideRows(int(rawX.size()),budget);
-    QVector<double> xs=ordered?decimate(rawX,budget):gather(rawX,rows);
-    Units::Conversion xStore;
-    applyConversion(xs,displayConversion(xName,xUnit,xStore));
+
+    // The slice of rows inside the view. See ViewWindow.
+    //
+    // A linear scan rather than a binary search even on the ordered path:
+    // columnIsOrdered ignores non-finite values, so an ordered column may still
+    // have a NaN in the middle of it, and lower_bound on a range that is not
+    // totally ordered is undefined. One pass over the column is a fraction of
+    // the decimation that follows.
+    int rowLo=0,rowHi=int(rawX.size())-1;
+    QVector<int> inWindow;
+    if(window.usable()&&rawX.size()>2){
+        if(ordered){
+            int first=-1,last=-1;
+            for(int i=0;i<rawX.size();++i){
+                if(!std::isfinite(rawX[i])) continue;
+                if(rawX[i]<window.lo){ first=i; continue; }
+                if(rawX[i]>window.hi){ last=i; break; }
+            }
+            rowLo=(first>=0)?first:0;                       // one row before
+            rowHi=(last>=0)?last:int(rawX.size())-1;        // and one after
+        }else{
+            for(int i=0;i<rawX.size();++i)
+                if(rawX[i]>=window.lo&&rawX[i]<=window.hi) inWindow.append(i);
+            // A window that caught nothing is not a window. Falling back to the
+            // whole column shows the person an empty frame's worth of data
+            // rather than an empty frame with no explanation.
+            if(inWindow.isEmpty()) inWindow=strideRows(int(rawX.size()),0);
+        }
+    }else if(!ordered){
+        inWindow=strideRows(int(rawX.size()),0);
+    }
+
+    const int sliceCount=qMax(0,rowHi-rowLo+1);
+    const QVector<int> rows=ordered?QVector<int>():strideOf(inWindow,budget);
+    QVector<double> xs=ordered?decimate(rawX.mid(rowLo,sliceCount),budget)
+                              :gather(rawX,rows);
     const ColourVision vision=colourVisionFromInt(colourVision);
     const QVector<QColor> palette=seriesPalette(vision);
     const QVector<QVector<qreal>> dashes=seriesDashPatterns(vision);
@@ -209,9 +315,20 @@ int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringLi
         s.x=xs;
         // The SAME rows as x when the data is unordered, so a point on screen
         // is a row that exists rather than one column's minimum paired with
-        // another column's.
-        s.y=ordered?decimate(table.column(yName),budget)
-                   :gather(table.column(yName),rows);
+        // another column's - and the same slice of them, or the pair would be
+        // drawn from two different parts of the file.
+        const QVector<double> rawY=table.column(yName);
+        s.y=ordered?decimate(rawY.mid(rowLo,qMin(sliceCount,
+                                                 qMax(0,int(rawY.size())-rowLo))),budget)
+                   :gather(rawY,rows);
+        // How many rows this series COULD have drawn - the slice, not the
+        // budgeted sample of it. previewIsExact compares the two, so counting
+        // the sample here would have reported every preview as exact and
+        // skipped the full render for good.
+        if(rowsAvailable)
+            *rowsAvailable+=ordered
+                ?qMin(sliceCount,qMax(0,int(rawY.size())-rowLo))
+                :qMin(int(inWindow.size()),int(rawY.size()));
         Units::Conversion yStore;
         if(const Units::Conversion* c=displayConversion(yName,yUnit,yStore)){
             applyConversion(s.y,c);
@@ -226,6 +343,22 @@ int buildPlotSeries(const ArrowTable& table,const QString& xName,const QStringLi
         // not the same decision, so this follows the points actually drawn.
         s.drawMarkers=spec.engine==QLatin1String("4D / 5D Scatter")||s.x.size()<=60;
         s.markerSize=spec.engine==QLatin1String("4D / 5D Scatter")?4.5:3.0;
+        // THE ONE COLUMN THE PERSON PUT ON THE RIGHT-HAND AXIS.
+        //
+        // Set here, on the series, rather than anywhere later: everything
+        // downstream - the range that is measured, the ticks that are drawn,
+        // the log scale, the device transform - already reads this one flag,
+        // and it is the same flag the eight engines that build their own
+        // secondary series set for themselves. Adding a second way to say it
+        // would be two implementations of one question, which is this
+        // project's most expensive recurring mistake.
+        if(!y2Name.isEmpty()&&yName==y2Name){
+            s.secondaryAxis=true;
+            // The axis needs a name or it is an unlabelled scale on the right
+            // of the figure, which is worse than no second axis at all. The
+            // series label is already unit-corrected by the block above.
+            spec.y2Axis.label=s.label;
+        }
         const int n=qMin(s.x.size(),s.y.size());
         s.x.resize(n); s.y.resize(n);
         total+=n;
@@ -271,6 +404,14 @@ PlotCanvas::PlotCanvas(QQuickItem* parent):QQuickPaintedItem(parent){
         scheduleFullRender();
     });
 
+    // The end of a splitter drag, which also has no end event here.
+    resizeIdle_.setSingleShot(true);
+    resizeIdle_.setInterval(180);
+    connect(&resizeIdle_,&QTimer::timeout,this,[this]{
+        resizing_=false;
+        update();                 // one last preview, this time antialiased
+    });
+
     // A progress bar that only moves when the work finishes is a lie. There is
     // no honest sub-render progress to report from a single QPainter pass, so
     // this reports elapsed against the measured estimate and says so in the
@@ -297,6 +438,7 @@ GV_SETTER(setXColumn,xColumn_,QString)
 GV_SETTER(setYColumns,yColumns_,QStringList)
 GV_SETTER(setZColumn,zColumn_,QString)
 GV_SETTER(setColorColumn,colorColumn_,QString)
+GV_SETTER(setY2Column,y2Column_,QString)
 GV_SETTER(setXUnit,xUnit_,QString)
 GV_SETTER(setYUnit,yUnit_,QString)
 
@@ -462,8 +604,42 @@ void PlotCanvas::setAnnotating(bool on){
     // A drag half-finished when the mode changed would otherwise pan on the
     // next move event, after the press that started it has been reinterpreted.
     dragging_=false;
-    setCursor(on?Qt::CrossCursor:Qt::ArrowCursor);
+    refreshCursor();
     emit annotationsChanged();
+}
+
+// WHAT THE POINTER SAYS THE FIGURE WILL DO.
+//
+// Asked for as "allow a drag function too on the visualisation so it can also
+// be dragged to view the right location" - and dragging already worked. A
+// press has set dragging_ and every move since has called panByPixels for as
+// long as the canvas has accepted mouse buttons at all; a probe that sends a
+// press and six moves pans a Line Chart, a Bar and a 2-D Heatmap, and correctly
+// refuses on a Pie.
+//
+// So nothing was missing except any sign that it was there. The pointer stayed
+// an arrow over the figure, which is what it is over a label, a background and
+// every other part of the window that does nothing when you press it. A
+// feature nobody can find is not a feature, and the honest fix is the
+// affordance rather than a second implementation of the thing that works.
+//
+// The open hand is what a map, a PDF reader and every plotting tool use for
+// "this will move under you", and it closes while it is moving. Annotating
+// keeps its crosshair, because in that mode a press places a note rather than
+// grabbing the figure, and the cursor has to say which of the two is about to
+// happen.
+void PlotCanvas::refreshCursor(){
+    if(annotating_){ setCursor(Qt::CrossCursor); return; }
+    // view3D is included: a drag turns the cube rather than sliding a range,
+    // but it is still "take hold of this and move it", which is what the hand
+    // means. frameInteractive is included for the same reason - there the drag
+    // moves the drawing inside its frame - and it is the case that most needs
+    // the pointer to say so, because until now a treemap or a Sankey did
+    // nothing at all when pressed and nobody would think to try again.
+    if(!viewInteractive()&&!view3D()&&!frameInteractive()){
+        setCursor(Qt::ArrowCursor); return;
+    }
+    setCursor(dragging_?Qt::ClosedHandCursor:Qt::OpenHandCursor);
 }
 
 int PlotCanvas::addAnnotation(double x,double y,const QString& text){
@@ -583,6 +759,16 @@ void PlotCanvas::setPieLabels(int mode){
     emit styleChanged();
 }
 
+void PlotCanvas::setLegendLabels(int mode){
+    const int clamped=qBound(0,mode,1);
+    if(spec_.style.legendLabels==clamped) return;
+    spec_.style.legendLabels=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
 void PlotCanvas::setPolarConvention(int mode){
     const int clamped=qBound(0,mode,1);
     if(spec_.style.polarConvention==clamped) return;
@@ -673,7 +859,7 @@ void PlotCanvas::setCameraZoom(double factor){
     cameraMoved();
 }
 
-void PlotCanvas::zoom3DBy(double factor){
+void PlotCanvas::zoom3DBy(double factor,const QPointF& about){
     if(!view3D()||!(factor>0.0)) return;
     // Bounded so the figure cannot be driven out of its own frame. The old
     // ceiling of 40x did exactly that: a few wheel notches and the cube, the
@@ -682,6 +868,38 @@ void PlotCanvas::zoom3DBy(double factor){
     // nothing recognisable left in view, turning it did not look like turning.
     const double next=qBound(0.35,spec_.view3d.zoom*factor,4.0);
     if(qFuzzyCompare(next,spec_.view3d.zoom)) return;
+
+    // ABOUT THE POINTER, the way the 2-D figures already zoom.
+    //
+    // This used to change the zoom and nothing else, which scales about the
+    // centre of the canvas - so zooming towards a peak in the corner of a
+    // surface moved it further out of the frame, and the way to look at it was
+    // to zoom in and then discover there was no way to get there.
+    //
+    // Keeping a screen point fixed under a change of scale is one line of
+    // algebra. A model point m is drawn at
+    //
+    //     S(m) = centre + (pan + M(m)) * scale
+    //
+    // where M is the projection before scaling. For the point currently under
+    // the cursor to stay under it, the pan has to absorb the change:
+    //
+    //     pan += (P - centre) / scale * (scale/newScale - 1)
+    //
+    // `centre` and `scale` come from the backend rather than from a second copy
+    // of makeProjection here - see QtPlotBackend::cameraFrameFor. A private
+    // copy of that arithmetic is how the frame and the picture come to disagree
+    // about where the figure is.
+    const QRectF target(0,0,width(),height());
+    const QtPlotBackend::CameraFrame frame=
+        qtBackend_.cameraFrameFor(spec_,target);
+    if(frame.valid&&!about.isNull()&&target.contains(about)){
+        const double ratio=spec_.view3d.zoom/next;   // scale/newScale
+        const QPointF offset=about-frame.origin;
+        spec_.view3d.panX+=offset.x()/frame.scale*(ratio-1.0);
+        // Screen y grows downward and the projection's does not.
+        spec_.view3d.panY-=offset.y()/frame.scale*(ratio-1.0);
+    }
     spec_.view3d.zoom=next;
     cameraMoved();
 }
@@ -791,6 +1009,129 @@ void PlotCanvas::measureRoleSpans(const ArrowTable& table){
     }
 }
 
+// THE FILE, READ ONCE - FOR THE WHOLE APPLICATION.
+//
+// rebuild() opened the Arrow file and read every record batch out of it, and
+// rebuild() runs on every property change: a colour map, a grid toggle, a typed
+// axis limit. ArrowTable::load's own note measures a 481 MB file at 76 ms, so
+// anything that rebuilt often paid that again for a file whose contents had not
+// moved. The full-resolution worker read the same file a second time, on
+// purpose, because "loading it is most of the cost for a large dataset and
+// belongs off the GUI thread too" - which was true when the GUI thread threw
+// its copy away after every rebuild, and is not true now that it keeps one.
+//
+// It stopped being merely wasteful and became load-bearing when the point
+// budget started following the view: a zoom re-spends the budget inside the new
+// window, which means a rebuild per wheel notch, which would have meant reading
+// the whole file per wheel notch.
+//
+// SHARED, not one per canvas. A canvas-sized cache would have been a memory
+// regression rather than a saving - several figure tabs of one dataset would
+// each pin their own copy of it - where one entry behind a mutex means N open
+// figures of the same file cost ONE copy, which is less than the code used at
+// its peak before this existed.
+//
+// Keyed on the file's IDENTITY - path, size and modification time - not on the
+// path alone. An import that writes a new dataset to the same path is ordinary,
+// and a cache that trusted the name would go on drawing the previous one.
+//
+// Handed out as a shared_ptr so that a worker thread reading it cannot have it
+// swapped out from under itself when the person opens a different dataset.
+namespace {
+struct SharedTable {
+    QMutex lock;
+    QString path;
+    qint64 size=-1;
+    qint64 stamp=-1;
+    std::shared_ptr<const ArrowTable> table;
+};
+SharedTable& sharedTable(){ static SharedTable cache; return cache; }
+
+std::shared_ptr<const ArrowTable> tableFor(const QString& path){
+    if(path.isEmpty()) return {};
+    const QFileInfo info(path);
+    const qint64 size=info.size();
+    const qint64 stamp=info.lastModified().toMSecsSinceEpoch();
+    SharedTable& cache=sharedTable();
+    QMutexLocker held(&cache.lock);
+    if(cache.table&&cache.path==path&&cache.size==size&&cache.stamp==stamp)
+        return cache.table;
+    // Loaded UNDER the lock deliberately. Two canvases asking for the same
+    // file at once would otherwise read it twice and keep the loser's copy;
+    // waiting is what each of them would have been doing anyway.
+    auto loaded=std::make_shared<ArrowTable>();
+    loaded->load(path);
+    cache.path=path; cache.size=size; cache.stamp=stamp; cache.table=loaded;
+    return cache.table;
+}
+} // namespace
+
+const ArrowTable& PlotCanvas::loadedTable() const {
+    // An empty table to answer with when there is no file. Static so the
+    // reference this returns outlives the call, and never written to.
+    static const ArrowTable kNoTable;
+    table_=tableFor(arrowPath_);
+    return table_?*table_:kNoTable;
+}
+
+// IS THE X AXIS THE MAPPED X COLUMN?
+//
+// The window is compared against the mapped x column's values, and the window
+// itself comes off the x AXIS. Those are the same quantity for a line, a
+// scatter, an area - and they are not the same quantity for most of this
+// catalogue. A histogram's x axis is bin values derived from the column being
+// counted; a violin's is a slot number; a correlation matrix's is a variable
+// index. Windowing one of those by the mapped x column would compare metres
+// against counts and drop rows out of the figure on a zoom, silently.
+//
+// This is the fault this codebase keeps finding in new places: a rule that is
+// right for one class of engine applied to every engine. It was written that
+// way here too - "not a gridding engine, has axes, therefore window it" - and
+// caught before it shipped only because the question "which engines is this
+// actually true of" was asked of 434 entries rather than of the one on screen.
+//
+// Asked of the ENGINE rather than answered from a list, because a list of 434
+// names maintained by hand goes stale the first time an engine is added. The
+// prepared spec is what gets drawn: if its first series' x is the same array
+// the mapped column produced, then the engine draws that column on that axis
+// and the window means what it says. preparedFor is a cache lookup - rebuild
+// calls it anyway for usesColourMap_ - so this costs three comparisons.
+//
+// An engine that rewrites only y (a smoothing, a derivative, a cumulative sum)
+// passes, and correctly: x really is still the mapped column.
+bool PlotCanvas::xAxisIsMappedColumn() const {
+    if(spec_.series.isEmpty()) return false;
+    const PlotSpec& prepared=qtBackend_.preparedFor(spec_);
+    if(prepared.series.isEmpty()) return false;
+    const QVector<double>& want=spec_.series.at(0).x;
+    const QVector<double>& have=prepared.series.at(0).x;
+    if(want.isEmpty()||want.size()!=have.size()) return false;
+    const int probes[3]={0,int(want.size()/2),int(want.size()-1)};
+    for(int i:probes) if(!(want.at(i)==have.at(i))) return false;
+    return true;
+}
+
+PlotCanvas::ViewWindow PlotCanvas::windowForDrawing(bool asSeries) const {
+    ViewWindow w;
+    if(asSeries) return w;
+    if(!QtPlotBackend::engineHasAxes(spec_.engine)) return w;
+    // Only engines whose x axis IS the mapped column, and only once a rebuild
+    // has established that for this engine. The verdict cannot be reached
+    // before the series exist, so the first rebuild after an engine changes
+    // draws unwindowed and every rebuild after it - the next wheel notch, or
+    // the one the idle timer asks for when the gesture stops - is windowed.
+    // One frame of a gesture, against a rule that cannot be wrong about an
+    // engine nobody thought to add to a list.
+    if(!windowUsable_.value(spec_.engine+QLatin1Char('\x1f')+spec_.variant,false))
+        return w;
+    // BOTH ends, or it is not a window. A figure with only a floor typed into
+    // it has an open right-hand side and there is no slice to spend a budget
+    // on.
+    if(!limitLoSet_[0]||!limitHiSet_[0]) return w;
+    w.set=true; w.lo=limitLo_[0]; w.hi=limitHi_[0];
+    return w;
+}
+
 void PlotCanvas::applyStoredLimits(){
     bool any=false;
     for(int r=0;r<3;++r){
@@ -887,8 +1228,16 @@ void PlotCanvas::setAxisLimits(int role,double lo,double hi){
         if(!anyLeft) hasView_=false;
     }
     showingFull_=false;
+    // A TYPED range is a view too, so the point budget follows it exactly as it
+    // follows a wheel. Rebuilding is what re-spends the budget inside the new
+    // window - see the note above buildPlotSeries - and rebuild() ends by
+    // asking for the full-resolution render this used to ask for itself.
+    //
+    // Only for the x role: the window is an x window, because that is the axis
+    // the rows are decimated along.
+    if(role==0){ dirty_=true; rebuild(); }
+    else scheduleFullRender();
     update();
-    scheduleFullRender();
     emit axisRangesChanged();
     emit stateChanged();
 }
@@ -1142,13 +1491,39 @@ void PlotCanvas::applyColourVisionToMap(){
     const ColourVision vision=colourVisionFromInt(colourVision_);
     const QString chosen=chosenColourMap_.isEmpty()?QStringLiteral("Viridis")
                                                    :chosenColourMap_;
-    spec_.style.colourMap=colourmaps::mapIsSafeFor(chosen,vision)
-                              ? chosenColourMap_
-                              : colourmaps::safeSubstituteFor(chosen,vision);
+    // nearestSafeFor, not safeSubstituteFor. The fixed table answers with one
+    // map per role, so every unreadable sequential map became Cividis whatever
+    // the person had chosen - Hot, Terrain and Gist Ncar all landing on the
+    // same blue-yellow ramp. The role still cannot change, because the role is
+    // what the figure claims about the data; which map inside that role is
+    // taste, and the nearest one keeps it.
+    // recommendedFor, not nearestSafeFor.
+    //
+    // nearestSafeFor only acts when the chosen map FAILS the table. Seismic
+    // passes for a protanope, so choosing Protanopia left the figure exactly as
+    // it was, and that was reported as the setting doing nothing. It was not
+    // doing nothing; it was applying the bar for "may this be offered" to the
+    // question "what should this person be shown".
+    //
+    // Somebody who turns on a colour-blind mode is not asking for anything
+    // above the minimum, they are asking for something easy to read. So the
+    // painted map is held to the RECOMMENDED set for their vision and their
+    // map's role, and Seismic becomes Bwr - the same blue-white-red shape, from
+    // the tier of maps designed for the job.
+    //
+    // A map already in that set is left completely alone, so Viridis, Cividis,
+    // RdBu and Twilight do not move.
+    spec_.style.colourMap=colourmaps::recommendedFor(chosen,vision);
     // A substitution that costs something says so ON THE FIGURE, not only in
     // the panel - the person reading the exported PDF is not the person who
     // chose the setting.
-    spec_.figureNote=colourmaps::substitutionNote(chosen,vision);
+    //
+    // Nothing is claimed while custom colours are painting: the map is not on
+    // the figure, so a note about which map was substituted would describe
+    // something the reader cannot see.
+    spec_.figureNote=usingCustomColours()
+                         ? QString()
+                         : colourmaps::substitutionNote(chosen,vision);
 }
 
 QString PlotCanvas::colourVisionNote() const {
@@ -1161,6 +1536,24 @@ QString PlotCanvas::colourVisionNote() const {
     if(!usesColourMap())
         return tr("%1: series colours only - this engine does not colour a field.")
                    .arg(mode);
+
+    // CUSTOM COLOURS BEAT THE MAP, so nothing below is true while they are set.
+    //
+    // colourMapStyled returns sampleStops(customColours,t) whenever that list
+    // is non-empty and never looks at the map at all. So with custom colours in
+    // use, choosing a colour-vision mode changed the map, changed the
+    // substitute, wrote "drawn in Cividis" into this note - and left the figure
+    // exactly as it was, because the map had not been painting it for some
+    // time. Reported, correctly, as the setting doing nothing.
+    //
+    // The note said what the map WOULD be rather than what the figure IS. This
+    // says which of the two is on the screen, and how to get back to the other.
+    if(usingCustomColours())
+        return tr("%1: your own colours are painting this figure, so the colour "
+                  "map is not in use and this setting cannot reach it. They are "
+                  "not checked for colour-vision safety. Reset to the map to let "
+                  "it apply.").arg(mode);
+
     if(colourmaps::mapIsSafeFor(chosen,vision)){
         // The answer a person gets when they pick a vision mode and the picture
         // does not move. Without it the setting reads as broken, which is the
@@ -1295,16 +1688,108 @@ void PlotCanvas::setFieldResolution(int cells){
     emit styleChanged();
 }
 
+void PlotCanvas::setMeshDensity(int lines){
+    // 0 means "follow the grid", which is what the wireframe did before this
+    // existed. Anything else is clamped to a range a person can actually read:
+    // below four the mesh stops describing the surface, above about 120 it is
+    // solid again and the control has stopped doing anything.
+    const int clamped=lines<=0?0:qBound(4,lines,120);
+    if(spec_.style.meshDensity==clamped) return;
+    spec_.style.meshDensity=clamped;
+    showingFull_=false;
+    update();
+    scheduleFullRender();
+    emit styleChanged();
+}
+
 
 // The same eighty four, grouped the way GraphVis 17 grouped them. A flat list
 // of eighty four names is not a choice anyone can make; "Diverging" and
 // "Perceptually Uniform" are how the choice is actually reasoned about.
-QVariantList PlotCanvas::colourMapCategories(){
+// The map chooser's list, FOR THIS READER.
+//
+// It used to be the eight authored categories, the same eight for everybody.
+// Choosing a colour-vision mode then left every map still on offer, so the
+// setting looked as though it had done nothing - which is what was reported.
+// Greying the unusable ones was the first answer and it was only half of one:
+// a greyed row is still a row, still takes space, and still reads as something
+// you might be able to have.
+//
+// So in a colour-vision mode the unusable maps are not listed at all. Two
+// deliberate exceptions:
+//
+//   - The map the person has CHOSEN is always listed, even when it fails for
+//     this reader. Dropping it would leave the control showing a selection
+//     that is not in its own list, and the figure is being drawn in a
+//     substitute anyway - which the tooltip and the note beside the chooser
+//     both say. Hiding their choice would hide that explanation too.
+//
+//   - A "Best for" group goes first, from bestForReader. Hiding the bad maps
+//     answers "which can I not have"; it does not answer "which should I
+//     pick", and of the maps that pass, some clear the bar by a point and
+//     some by fifteen.
+QVariantList PlotCanvas::colourMapCategories() const {
+    const ColourVision vision=colourVisionFromInt(colourVision_);
+    const QString chosen=chosenColourMap_.isEmpty()?QStringLiteral("Viridis")
+                                                   :chosenColourMap_;
     QVariantList out;
+
+    if(vision!=ColourVision::Standard){
+        const QStringList best=colourmaps::bestForReader(vision);
+        if(!best.isEmpty()){
+            // Named for the reader rather than "Recommended", so it is clear
+            // the list is a measurement about them and not a house style.
+            const QString reader=colourVisionNames().value(colourVision_)
+                                     .section(QLatin1Char(' '),0,0);
+            out.append(QVariantMap{
+                {QStringLiteral("name"),tr("Best for %1").arg(reader)},
+                {QStringLiteral("maps"),QVariant(best)}});
+        }
+    }
+
+    // A GROUP PER DEFICIENCY, ALWAYS, whatever mode the person is in.
+    //
+    // The "Best for" group above appears only when a colour-vision mode is
+    // switched on, which serves a reader choosing for themselves and nobody
+    // else. Most figures are drawn by someone with ordinary colour vision for
+    // an audience that is not: a paper is read by everyone who reads it, and
+    // about one man in twelve has some form of deficiency. That person cannot
+    // switch a mode on in this program to help them, because they are not the
+    // one using it.
+    //
+    // So the four shortlists are here all the time, folded, ordered by the
+    // measurement. They are the same lists `bestForReader` returns - the same
+    // function, not a second copy of the ranking - so the group a reader sees
+    // when their own mode is on and the group an author picks from cannot say
+    // different things.
+    const QStringList visionNames=colourVisionNames();
+    for(int mode=1;mode<visionNames.size();++mode){
+        const ColourVision kind=colourVisionFromInt(mode);
+        if(kind==ColourVision::Standard) continue;
+        // Already offered at the top under "Best for", and offering the same
+        // list twice is two chances to notice it has changed in one place.
+        if(kind==vision) continue;
+        const QStringList best=colourmaps::bestForReader(kind);
+        if(best.isEmpty()) continue;
+        const QString reader=visionNames.value(mode)
+                                 .section(QLatin1Char(' '),0,0);
+        out.append(QVariantMap{
+            {QStringLiteral("name"),tr("Colour-blind \u00b7 %1").arg(reader)},
+            {QStringLiteral("maps"),QVariant(best)}});
+    }
+
     for(const auto& cat:colourmaps::categories()){
+        QStringList keep;
+        for(const QString& map:cat.second)
+            if(vision==ColourVision::Standard
+               ||colourmaps::mapIsSafeFor(map,vision)
+               ||map==chosen)
+                keep.append(map);
+        // A category with nothing left in it is a heading with no contents.
+        if(keep.isEmpty()) continue;
         out.append(QVariantMap{
             {QStringLiteral("name"),cat.first},
-            {QStringLiteral("maps"),QVariant(cat.second)}});
+            {QStringLiteral("maps"),QVariant(keep)}});
     }
     return out;
 }
@@ -1326,6 +1811,23 @@ QString PlotCanvas::colourMapPreview(const QString& name,int width,int height){
     buffer.open(QIODevice::WriteOnly);
     strip.save(&buffer,"PNG");
     return QStringLiteral("data:image/png;base64,")+QString::fromLatin1(png.toBase64());
+}
+
+// Empty when the map is usable by the CURRENT reader, and a sentence saying
+// what goes wrong and what will be drawn instead when it is not.
+//
+// Goes through colourmaps::colourMapWarning, which is built on the SAME
+// mapIsSafeFor that applyColourVisionToMap uses to choose what to paint. That
+// is the whole point of it: this drives the greying-out of entries in the map
+// chooser, and if it were measured independently the chooser and the figure
+// would disagree - which they did, on 48 of 252 map-and-reader pairs, until
+// both were pointed at the one table.
+//
+// Deliberately a function of the CURRENT setting rather than of a mode passed
+// in: the caller is the map chooser, and the question it asks is "can the
+// person looking at this screen read this map", which has one answer at a time.
+QString PlotCanvas::colourMapWarning(const QString& map) const {
+    return colourmaps::colourMapWarning(map,colourVisionFromInt(colourVision_));
 }
 
 void PlotCanvas::setColourVision(int mode){
@@ -1649,8 +2151,8 @@ void PlotCanvas::rebuild(){
 
     if(arrowPath_.isEmpty()){ message_=QStringLiteral("Import or select a dataset"); emit stateChanged(); return; }
 
-    ArrowTable table;
-    if(!table.load(arrowPath_)){ message_=table.error(); emit stateChanged(); return; }
+    const ArrowTable& table=loadedTable();
+    if(!table.isValid()){ message_=table.error(); emit stateChanged(); return; }
     available_=table.columnNames();
 
     if(!engineSupported_){
@@ -1753,19 +2255,45 @@ void PlotCanvas::rebuild(){
         if(roles.size()>=2) yNames=roles;
     }
 
+    // THE RIGHT-HAND AXIS COLUMN, if one was chosen and this engine draws the
+    // mapped columns as series at all. It joins the Y list rather than
+    // replacing anything: "pressure on the right" means pressure is also
+    // plotted, and dropping it from yNames would leave a labelled second axis
+    // with nothing drawn against it.
+    //
+    // A column already mapped to Y is not appended twice - it just moves to the
+    // other axis, which is the sensible reading of choosing it in both places.
+    QString y2Name;
+    if(!plan.asSeries&&!y2Column_.isEmpty()&&table.hasColumn(y2Column_)
+       &&y2Column_!=xName&&supportsSecondaryAxis()){
+        y2Name=y2Column_;
+        if(!yNames.contains(y2Name)) yNames.append(y2Name);
+    }
+
+    // The window the budget is spent in. Read from the STORED limits rather
+    // than from the axes, because the block at the top of this function has
+    // just cleared the axes and applyStoredLimits, at the bottom, has not put
+    // them back yet - these are the same numbers it is about to install.
+    //
+    // Only for engines that read x as an axis. See ViewWindow: an engine whose
+    // mapped columns become series 0, 1 and 2 grids them, and the grid takes
+    // its extent from the data it is handed, so windowing one would re-bin the
+    // field and change its cell size every time the person zoomed.
+    const ViewWindow window=windowForDrawing(plan.asSeries);
+    resolvedAsSeries_=plan.asSeries;
+
     pointCount_=buildPlotSeries(table,xName,yNames,colourVision_,
                                 interactiveBudgetFor(int(yNames.size())),spec_,
-                                xUnit_,yUnit_);
+                                xUnit_,yUnit_,window,&fullPointCount_,y2Name);
 
-    // How many points there would have been without the budget. The difference
-    // between this and pointCount_ is the whole reason the full-resolution
-    // render exists; when they match, the preview already IS the finished
-    // picture and no worker is started at all.
-    fullPointCount_=0;
-    for(const QString& yName:std::as_const(yNames))
-        if(table.hasColumn(yName))
-            fullPointCount_+=qMin(table.column(xName).size(),table.column(yName).size());
+    // fullPointCount_ is how many points there would have been without the
+    // budget, IN THE WINDOW. The difference between it and pointCount_ is the
+    // whole reason the full-resolution render exists; when they match, the
+    // preview already IS the finished picture and no worker is started at all -
+    // which is now what happens as soon as a zoom leaves fewer rows on screen
+    // than the budget, so a zoomed figure is final the moment it is drawn.
     resolvedX_=xName;
+    resolvedY2_=y2Name;
     resolvedY_=yNames;
 
     // "Pressure [kPa]" reads as "Pressure (kPa)", and a converted axis says the
@@ -1798,6 +2326,11 @@ void PlotCanvas::rebuild(){
     // is cached on the spec's fingerprint, so this is a lookup, not a second
     // preparation.
     usesColourMap_=QtPlotBackend::usesColourMap(qtBackend_.preparedFor(spec_).engine);
+    // Whether the point budget may follow the view on this engine. Recorded
+    // here, from the figure that was just built, and read by the NEXT
+    // windowForDrawing - see the note there.
+    windowUsable_.insert(spec_.engine+QLatin1Char('\x1f')+spec_.variant,
+                         xAxisIsMappedColumn());
     // What each role spans, and then the person's own limits back on top.
     //
     // In this order because applyStoredLimits drops a limit whose role the new
@@ -1807,6 +2340,12 @@ void PlotCanvas::rebuild(){
     // that was asked for rather than snapping to it a frame later.
     measureRoleSpans(table);
     applyStoredLimits();
+    // Whether this figure can be grabbed at all depends on the engine and on
+    // there being series to move, and both are only settled here - so the
+    // pointer is told after the figure is built rather than when the engine
+    // name changed. Switching from a Pie to a Line Chart has to take the hand
+    // back off and put it back on.
+    refreshCursor();
     emit axisRangesChanged();
     emit stateChanged();
     scheduleFullRender();
@@ -1859,38 +2398,56 @@ private:
 // near exportPdf, exportRaster or the full-resolution render that feeds them.
 namespace {
 // Severity 1.0, in linear sRGB. Rows of the 3x3, flattened.
-const double kSimProtan[9]={ 0.152286, 1.052583,-0.204868,
-                             0.114503, 0.786281, 0.099216,
-                            -0.003882,-0.048116, 1.051998};
-const double kSimDeutan[9]={ 0.367322, 0.860646,-0.227968,
-                             0.280085, 0.672501, 0.047413,
-                            -0.011820, 0.042940, 0.968881};
-const double kSimTritan[9]={ 1.255528,-0.076749,-0.178779,
-                            -0.078411, 0.930809, 0.147602,
-                             0.004733, 0.691367, 0.303900};
+// The matrices live in ColourVision.h now, beside the palettes they were
+// measured with and beside colourMapWarning, which simulates single colours
+// through the same transform. Two copies would be two ideas of what a protanope
+// sees - and the map-safety verdicts would drift from the preview that is
+// supposed to demonstrate them.
 
 // Rec.709 luma, which is what a monochrome reader is left with.
 void simulateInPlace(QImage& img,int mode){
     const double* m=nullptr;
     switch(mode){
-    case 1: m=kSimProtan; break;
-    case 2: m=kSimDeutan; break;
-    case 3: m=kSimTritan; break;
+    case 1: m=detail::visionMatrix(ColourVision::Protanopia); break;
+    case 2: m=detail::visionMatrix(ColourVision::Deuteranopia); break;
+    case 3: m=detail::visionMatrix(ColourVision::Tritanopia); break;
     case 4: break;                 // monochrome, handled below
     default: return;
     }
     // Built once rather than per pixel: the transform is in LINEAR light, so
     // every channel needs a gamma round trip and 8-bit inputs only have 256
     // possible values.
-    static double toLinear[256];
-    static bool ready=false;
-    if(!ready){
+    //
+    // A DATA RACE, AND A REACHABLE ONE. This was
+    //
+    //     static double toLinear[256];
+    //     static bool ready=false;
+    //     if(!ready){ ...fill the table...; ready=true; }
+    //
+    // and two threads do get here. `paintSimulated` is called from
+    // PlotCanvas::paint, which Qt Quick runs on the SCENE-GRAPH RENDER THREAD,
+    // and from PlotCanvas::renderTo, which the export path runs on the GUI
+    // thread. Both entering for the first time at once is an unsynchronised
+    // write to the same array by two threads, which is undefined behaviour
+    // whatever the values happen to be.
+    //
+    // It is not saved by both writing the same numbers. The store to `ready`
+    // carries no release ordering, so the other thread is allowed to observe
+    // ready == true while the table is still the zero-initialised array it
+    // started as - and a frame drawn from that table is black.
+    //
+    // A function-local static initialised by a lambda is the fix the language
+    // already provides: C++11 guarantees it is initialised exactly once, and
+    // that every thread reaching it either performs that initialisation or
+    // waits for it and then sees the finished object.
+    static const std::array<double,256> toLinear=[]{
+        std::array<double,256> table{};
         for(int i=0;i<256;++i){
             const double c=i/255.0;
-            toLinear[i]=c<=0.04045?c/12.92:std::pow((c+0.055)/1.055,2.4);
+            table[i]=c<=0.04045?c/12.92:std::pow((c+0.055)/1.055,2.4);
         }
-        ready=true;
-    }
+        return table;
+    }();
     const auto toSrgb=[](double c){
         c=qBound(0.0,c,1.0);
         const double v=c<=0.0031308?12.92*c:1.055*std::pow(c,1.0/2.4)-0.055;
@@ -2018,7 +2575,41 @@ void writeBack(PlotAxis& axis,const AxisView& v){
 }
 } // namespace
 
-void PlotCanvas::commitView(){
+// THE FIGURE LAGGING BEHIND THE WHEEL.
+//
+// Reported as "when zooming it shows the pre-zoom picture and goes back to
+// normal after zooming". It was not showing the wrong range: it was showing an
+// EARLIER one. The two screenshots were x 50..350 and x 80..240, and those are
+// the same zoom about the same anchor - solve for it and both give x ~ 114 -
+// so the first was a frame from partway through the gesture, still on screen
+// when the gesture had already moved on.
+//
+// Measured on 300,000 points: one preview repaint at full quality is 110 ms,
+// falling to 21 ms as the zoom narrows - about 17 frames a second across ten
+// notches. A wheel delivers notches far faster than that, so the displayed
+// frame runs several notches behind and only catches up when the wheel stops,
+// which is exactly the "goes back to normal afterwards" half of the report.
+//
+// Draft mode exists for precisely this, and the 2-D view never entered it.
+// paint() sets draft from `dragging_||interacting_||resizing_`, and
+// `interacting_` is set in ONE place - cameraMoved(), which is the 3-D camera.
+// So DRAGGING a 2-D figure was draft, because the press sets dragging_, while a
+// wheel zoom, a +/- button and a touch pan - none of which has a press or a
+// release around it - all painted at full quality on every step.
+//
+// cameraMoved's own comment describes this fault being found and fixed for the
+// 3-D camera: "a wheel zoom fires this once per notch with no press or release
+// around it, so the old `if(!dragging_)` started - and abandoned - a full
+// render on every notch." The same sentence was true of the 2-D view one
+// screen further down, and nobody carried it across. This is the recurring root
+// cause in its mirror image: not a rule right for one class applied to all, but
+// a fix right for every class applied to one.
+//
+// So a gesture now says that it is one. Draft is on for its duration, the
+// full-resolution render is asked for ONCE when it stops rather than started
+// and abandoned on every notch, and the idle timer that already ends a 3-D
+// gesture ends this one too.
+void PlotCanvas::commitView(View how){
     // A DRAGGED range is a typed range that was not typed: the two are the same
     // state, so a pan or a pinch updates the stored copy and the fields in the
     // panel move with the figure. Without this, dragging and then changing a
@@ -2031,9 +2622,28 @@ void PlotCanvas::commitView(){
         if(limitHiSet_[r]) limitHi_[r]=axis->max;
     }
     emit axisRangesChanged();
-    // A view change makes the accepted full-resolution image a picture of a
-    // different range, so it goes through the same path as any other edit.
-    scheduleFullRender();
+
+    // Said BEFORE the rebuild, because scheduleFullRender reads it: no
+    // full-resolution render is started while a gesture is in progress, and
+    // rebuild() ends by asking for one.
+    if(how==View::Gesture){
+        interacting_=true;
+        interactionIdle_.start();
+    }
+
+    // The series themselves, rebuilt for the new window - EITHER WAY.
+    //
+    // This is what spends the point budget where the person is now looking,
+    // see the note above buildPlotSeries, and it has to happen on the settled
+    // path too: Reset view widens the range back to the whole column, and
+    // without a rebuild the figure would go on being drawn from the few
+    // thousand rows the zoom had narrowed it to - a reset that did not reset.
+    // My own check caught that one.
+    //
+    // Affordable once per wheel notch only because loadedTable() no longer
+    // re-reads the Arrow file to do it.
+    dirty_=true;
+    rebuild();
     update();
     emit stateChanged();
 }
@@ -2053,7 +2663,76 @@ void PlotCanvas::panByPixels(double dx,double dy){
     // y grows upwards on screen.
     vy.lo+=stepY; vy.hi+=stepY;
     writeBack(spec_.xAxis,vx); writeBack(spec_.yAxis,vy);
-    commitView();
+    // A gesture. A mouse pan already had draft through dragging_, but a TOUCH
+    // pan arrives here with no press or release around it and had the same
+    // fault the wheel did.
+    commitView(View::Gesture);
+}
+
+// Can this figure be moved inside its frame?
+//
+// The three modes are exclusive by construction and this is the third: an axis
+// range to slide (viewInteractive), a camera to turn (view3D), or the drawing
+// itself to move. Written as "neither of the other two" rather than as a list
+// of engine names, for the reason the windowed-budget work settled - a
+// hand-maintained list of which of 440 engines a rule applies to is stale on
+// the next commit. An engine added tomorrow with no axes and no camera gets
+// this without anyone remembering to add it.
+//
+// The empty-series test is the one viewInteractive already makes: there is no
+// sense offering to move a figure with nothing drawn in it.
+bool PlotCanvas::frameInteractive() const {
+    return !viewInteractive()&&!view3D()&&!spec_.series.isEmpty();
+}
+
+void PlotCanvas::panFrameByPixels(double dx,double dy){
+    if(!frameInteractive()) return;
+    const QRectF area=interactionArea();
+    if(!(area.width()>0.0)||!(area.height()>0.0)) return;
+    // The figure follows the pointer exactly - a drag of forty pixels moves it
+    // forty pixels - at every magnification. That is what dividing the pixel
+    // delta by the frame and NOT by the zoom gives: the pan is applied outside
+    // the scale in applyFrameView, so it is already in frame units.
+    spec_.frameView.panX+=dx/area.width();
+    spec_.frameView.panY+=dy/area.height();
+    emit stateChanged();
+    commitView(View::Gesture);
+}
+
+void PlotCanvas::zoomFrameAt(const QPointF& pos,double factor){
+    if(!frameInteractive()) return;
+    if(!(factor>0.0)||!std::isfinite(factor)) return;
+    const QRectF area=interactionArea();
+    if(!(area.width()>0.0)||!(area.height()>0.0)) return;
+
+    PlotFrameView v=spec_.frameView;
+    // A floor and a ceiling, both reachable. Below 1 the figure shrinks inside
+    // its frame, which is worth having - it is how you see a network graph
+    // whose layout has run past the edges - and 0.2 is far enough out. Past 40
+    // the clip rectangle holds a few glyphs and there is nothing more to see.
+    const double next=qBound(0.2,v.zoom*factor,40.0);
+    if(next==v.zoom) return;
+
+    // ABOUT THE POINTER. applyFrameView scales about the frame's centre and is
+    // kept a pure transform, so that the export and the preview cannot
+    // disagree about where the figure sits; keeping a point still is therefore
+    // expressed here, as the pan that achieves it.
+    //
+    // px,py is the pointer relative to the centre as a fraction of the frame.
+    // The figure point under it is (p - pan)/zoom, and holding that still
+    // across the change of zoom gives the new pan directly.
+    const double px=(pos.x()-area.center().x())/area.width();
+    const double py=(pos.y()-area.center().y())/area.height();
+    const double figureX=(px-v.panX)/v.zoom;
+    const double figureY=(py-v.panY)/v.zoom;
+    v.panX=px-figureX*next;
+    v.panY=py-figureY*next;
+    v.zoom=next;
+
+    if(!std::isfinite(v.panX)||!std::isfinite(v.panY)) return;
+    spec_.frameView=v;
+    emit stateChanged();
+    commitView(View::Gesture);
 }
 
 void PlotCanvas::zoomAt(const QPointF& pos,double factor){
@@ -2086,7 +2765,10 @@ void PlotCanvas::zoomAt(const QPointF& pos,double factor){
     vx.lo=anchorX-tx*newSpanX; vx.hi=vx.lo+newSpanX;
     vy.lo=anchorY-ty*newSpanY; vy.hi=vy.lo+newSpanY;
     writeBack(spec_.xAxis,vx); writeBack(spec_.yAxis,vy);
-    commitView();
+    // Every 2-D zoom arrives here - the wheel, the +/- buttons through zoomBy,
+    // and a two-finger pinch - and not one of them has a press or a release
+    // around it. See the note on commitView.
+    commitView(View::Gesture);
 }
 
 // The range on screen, read rather than written. When the user has zoomed, the
@@ -2190,10 +2872,26 @@ void PlotCanvas::zoomBy(double factor){
     const QRectF area=interactionArea();
     const QPointF about=(haveLastPointer_&&area.contains(lastPointerOnPlot_))
                             ? lastPointerOnPlot_ : area.center();
-    zoomAt(about,factor);
+    // Routed the same way the wheel is. The + and - buttons are the keyboard
+    // and trackpad-less path to the same gesture, and a figure that zooms with
+    // the wheel and not with the button beside it is the kind of gap nobody
+    // reports because they assume they have misunderstood the button.
+    if(frameInteractive()) zoomFrameAt(about,factor);
+    else zoomAt(about,factor);
 }
 
 void PlotCanvas::resetView(){
+    // The in-frame view first, and OUTSIDE the hasView_ guard.
+    //
+    // hasView_ is about an axis range, and an axis-less figure never sets it -
+    // so the early return below would have made Reset view do nothing on
+    // exactly the engines the in-frame view exists for. A reset that silently
+    // does nothing on a figure you have plainly moved is worse than no reset.
+    if(spec_.frameView.active()){
+        spec_.frameView=PlotFrameView{};
+        emit stateChanged();
+        commitView();
+    }
     if(!hasView_) return;
     hasView_=false;
     // Back to knowing nothing about where the person was looking, so the next
@@ -2214,8 +2912,10 @@ void PlotCanvas::resetView(){
 
 void PlotCanvas::mousePressEvent(QMouseEvent* e){
     // A 3-D figure is dragged to turn it rather than to slide an axis range,
-    // so it accepts the press even though viewInteractive is false for it.
-    if(!viewInteractive()&&!view3D()){ e->ignore(); return; }
+    // so it accepts the press even though viewInteractive is false for it -
+    // and a figure with neither axes nor a camera is dragged to move the
+    // drawing inside its frame, which is the third case.
+    if(!viewInteractive()&&!view3D()&&!frameInteractive()){ e->ignore(); return; }
     // While annotating, a click places a note instead of starting a pan. The
     // coordinates come from updateCursor, which is the same conversion the
     // readout uses - so the note lands exactly where the readout said it would,
@@ -2242,6 +2942,7 @@ void PlotCanvas::mousePressEvent(QMouseEvent* e){
         return;
     }
     dragging_=true;
+    refreshCursor();
     lastPointer_=e->position();
     e->accept();
 }
@@ -2267,6 +2968,7 @@ void PlotCanvas::mouseMoveEvent(QMouseEvent* e){
     const QPointF delta=e->position()-lastPointer_;
     lastPointer_=e->position();
     if(view3D()) rotateByPixels(delta.x(),delta.y());
+    else if(frameInteractive()) panFrameByPixels(delta.x(),delta.y());
     else panByPixels(delta.x(),delta.y());
     e->accept();
 }
@@ -2285,6 +2987,7 @@ void PlotCanvas::mouseReleaseEvent(QMouseEvent* e){
     }
     const bool was=dragging_;
     dragging_=false;
+    refreshCursor();
     // The full-resolution render was held back for the whole drag - see
     // cameraMoved - so this is where it is asked for. The idle timer would
     // reach the same place a fifth of a second later; a release is a definite
@@ -2300,28 +3003,42 @@ void PlotCanvas::mouseDoubleClickEvent(QMouseEvent* e){
 }
 
 void PlotCanvas::wheelEvent(QWheelEvent* e){
-    if(!viewInteractive()&&!view3D()){ e->ignore(); return; }
+    if(!viewInteractive()&&!view3D()&&!frameInteractive()){ e->ignore(); return; }
     // The same gain as the 3-D viewport, so one notch feels the same in both.
     const double factor=std::pow(1.0015,double(e->angleDelta().y()));
-    if(view3D()) zoom3DBy(factor);
+    if(view3D()) zoom3DBy(factor,e->position());
+    else if(frameInteractive()) zoomFrameAt(e->position(),factor);
     else zoomAt(e->position(),factor);
     e->accept();
 }
 
 void PlotCanvas::touchEvent(QTouchEvent* e){
-    if(!viewInteractive()&&!view3D()){ e->ignore(); return; }
+    if(!viewInteractive()&&!view3D()&&!frameInteractive()){ e->ignore(); return; }
     if(e->type()==QEvent::TouchEnd||e->type()==QEvent::TouchCancel){
         touch_.reset(); e->accept(); return;
     }
     const TouchGesture::Step step=touch_.update(e->points(),e->type()==QEvent::TouchBegin);
     if(!step.usable){ e->accept(); return; }
 
+    // The in-frame view takes the same gestures as the 2-D one below - one
+    // finger drags, two pinch, a pinch that also moves does both - because to
+    // the hand it is the same action on the same figure. Wiring only the mouse
+    // would have given a treemap that moves with a trackpad drag and not with
+    // a finger, on the same machine.
+    if(frameInteractive()){
+        if(step.fingers>=2&&step.scale!=1.0) zoomFrameAt(step.centre,step.scale);
+        if(step.movement.x()!=0.0||step.movement.y()!=0.0)
+            panFrameByPixels(step.movement.x(),step.movement.y());
+        e->accept();
+        return;
+    }
+
     if(view3D()){
         // One finger turns it, two pinch to zoom. Deliberately NOT panning on
         // two fingers as the 2-D case does: the cube is fitted to the frame, so
         // there is nowhere to pan it to, and a figure that slides out of its
         // own frame under a pinch is a bug rather than a feature.
-        if(step.fingers>=2&&step.scale!=1.0) zoom3DBy(step.scale);
+        if(step.fingers>=2&&step.scale!=1.0) zoom3DBy(step.scale,step.centre);
         else if(step.movement.x()!=0.0||step.movement.y()!=0.0)
             rotateByPixels(step.movement.x(),step.movement.y());
         e->accept();
@@ -2341,7 +3058,22 @@ void PlotCanvas::geometryChange(const QRectF& newGeometry,const QRectF& oldGeome
     // Only the size matters; being moved does not change what was rendered.
     if(newGeometry.size()==oldGeometry.size()) return;
     if(newGeometry.width()<=0||newGeometry.height()<=0) return;
-    scheduleFullRender();
+    // DRAFT WHILE THE SIZE IS STILL MOVING.
+    //
+    // `dragging_` and `interacting_` cover gestures on the canvas - a pan, a
+    // pinch - and a splitter drag is neither, so a resize rendered every
+    // intermediate size at full quality. On a figure that takes tens of
+    // milliseconds to draw, that is the drag's whole budget spent redrawing
+    // sizes nobody will ever look at.
+    //
+    // Same idle-timer shape as interactionIdle_, and for the same reason: a
+    // splitter drag has no end event this item can see.
+    resizing_=true;
+    resizeIdle_.start();
+    // Keeping the rendered image: see the note in scheduleFullRender. A resize
+    // asks for a new render at the new size, it does not make the figure on
+    // screen wrong.
+    scheduleFullRender(Retain::RenderedImage);
 }
 
 void PlotCanvas::paint(QPainter* painter){
@@ -2349,7 +3081,7 @@ void PlotCanvas::paint(QPainter* painter){
     const QRectF target(0,0,width(),height());
     // Draft while the figure is being moved. This is the single most valuable
     // line in the interactive path: see QtPlotBackend::setDraft.
-    qtBackend_.setDraft(dragging_||interacting_);
+    qtBackend_.setDraft(dragging_||interacting_||resizing_);
 
     // The accepted full-resolution render, if there is one and it still matches
     // the current settings. Anything else falls through to the live preview.
@@ -2375,10 +3107,12 @@ void PlotCanvas::paint(QPainter* painter){
 
 PlotSpec PlotCanvas::specWithFullData() const {
     PlotSpec full=spec_;
-    ArrowTable table;
-    if(arrowPath_.isEmpty()||!table.load(arrowPath_)) return full;   // preview is all there is
+    if(arrowPath_.isEmpty()) return full;                  // preview is all there is
+    const ArrowTable& table=loadedTable();
+    if(!table.isValid()) return full;
     PlotSpec candidate=spec_;
-    if(buildPlotSeries(table,resolvedX_,resolvedY_,colourVision_,0,candidate,xUnit_,yUnit_)<=0)
+    if(buildPlotSeries(table,resolvedX_,resolvedY_,colourVision_,0,candidate,xUnit_,yUnit_,
+                       ViewWindow(),nullptr,resolvedY2_)<=0)
         return full;
     return candidate;
 }
@@ -2410,6 +3144,11 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("expression"),spec_.expression},
         {QStringLiteral("xColumn"),xColumn_},
         {QStringLiteral("yColumns"),QVariant(yColumns_)},
+        // All four mapped roles, not the two that used to be written. See
+        // applyFigureState.
+        {QStringLiteral("zColumn"),zColumn_},
+        {QStringLiteral("colorColumn"),colorColumn_},
+        {QStringLiteral("y2Column"),y2Column_},
         {QStringLiteral("logX"),spec_.xAxis.log10},
         {QStringLiteral("logY"),spec_.yAxis.log10},
         {QStringLiteral("xUnit"),xUnit_},
@@ -2436,6 +3175,15 @@ QVariantMap PlotCanvas::figureState() const {
         {QStringLiteral("azimuth"),spec_.view3d.azimuth},
         {QStringLiteral("elevation"),spec_.view3d.elevation},
         {QStringLiteral("cameraZoom"),spec_.view3d.zoom},
+        // The in-frame view, for the same reason and with the same history. A
+        // treemap somebody magnified onto one branch before saving is a figure
+        // ABOUT that branch; reopening it whole would throw away the only
+        // thing they did to it, exactly as reopening a 3-D figure at the
+        // default angle used to. Written for every figure and ignored on
+        // reopening by the engines that have axes instead.
+        {QStringLiteral("framePanX"),spec_.frameView.panX},
+        {QStringLiteral("framePanY"),spec_.frameView.panY},
+        {QStringLiteral("frameZoom"),spec_.frameView.zoom},
         // The zoom, when there is one. A figure saved while zoomed in reopens
         // showing what was on screen when it was saved; one saved fitted to
         // its data carries no limits at all and stays that way.
@@ -2466,6 +3214,22 @@ QVariantMap PlotCanvas::figureState() const {
         // convention was made a setting at all. An application-wide value would
         // have made the second figure wrong whenever the first was right.
         {QStringLiteral("polarConvention"),spec_.style.polarConvention},
+        // And what a legend does with a label too long for its box, which
+        // belongs to the figure for the same reason: one figure's series are
+        // named "control" and "treated", another's carry a fitted constant and
+        // its units, and the answer that suits one spoils the other.
+        //
+        // Deliberately NOT in specFingerprint. That hashes the INPUT to
+        // prepareSpec and nothing in prepareSpec reads this - the legend is
+        // measured and drawn in drawLegend, at paint time. Hashing a draw-time
+        // field there would throw away prepared figures for a change that
+        // cannot alter them. What does have to happen is a repaint, which is
+        // what setLegendLabels asks for.
+        {QStringLiteral("legendLabels"),spec_.style.legendLabels},
+        // How many lines the wireframe has. A figure-scoped setting for the
+        // same reason as the two above: a notebook can hold a coarse mesh for
+        // reading a shape and a fine one for reading a value.
+        {QStringLiteral("meshDensity"),spec_.style.meshDensity},
         {QStringLiteral("pieLabels"),spec_.style.pieLabels},
     };
 }
@@ -2490,6 +3254,16 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     xColumn_=text("xColumn",xColumn_);
     if(state.contains(QStringLiteral("yColumns")))
         yColumns_=state.value(QStringLiteral("yColumns")).toStringList();
+    // THE OTHER MAPPED ROLES, which were not saved at all.
+    //
+    // Only x and y were written out, so reopening a saved heat map, a 3-D
+    // scatter or anything else reading a third column got the figure back with
+    // its value column gone - and then filled the empty slot automatically, so
+    // it drew a plausible picture of a column the person had not chosen. A
+    // silently different figure is worse than an empty one.
+    zColumn_=text("zColumn",zColumn_);
+    colorColumn_=text("colorColumn",colorColumn_);
+    y2Column_=text("y2Column",y2Column_);
     spec_.xAxis.log10=flag("logX",spec_.xAxis.log10);
     spec_.yAxis.log10=flag("logY",spec_.yAxis.log10);
     xUnit_=text("xUnit",xUnit_);
@@ -2526,6 +3300,8 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
     };
     setPolarConvention(number("polarConvention",spec_.style.polarConvention));
     setPieLabels(number("pieLabels",spec_.style.pieLabels));
+    setLegendLabels(number("legendLabels",spec_.style.legendLabels));
+    setMeshDensity(number("meshDensity",spec_.style.meshDensity));
 
     // The engine's constants, from the file where the file has them and from
     // the engine's own declaration where it does not - a figure saved before
@@ -2539,11 +3315,11 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
         for(const QtPlotBackend::EngineParameter& param:declared){
             const QVariant v=savedParams.value(param.key);
             bool ok=false;
-            const double number=v.toDouble(&ok);
+            const double parsed=v.toDouble(&ok);
             // Clamped and checked, because a .gvfig is a file on disk that
             // someone may have edited by hand.
-            if(!ok||number!=number) continue;
-            spec_.parameters.insert(param.key,qBound(param.minimum,number,param.maximum));
+            if(!ok||parsed!=parsed) continue;
+            spec_.parameters.insert(param.key,qBound(param.minimum,parsed,param.maximum));
         }
         engineParams_.insert(spec_.engine,spec_.parameters);
         // After the values, not before: adoptEngineParameters above emitted the
@@ -2583,6 +3359,24 @@ void PlotCanvas::applyFigureState(const QVariantMap& state){
         setElevation(state.value(QStringLiteral("elevation")).toDouble());
     if(state.contains(QStringLiteral("cameraZoom")))
         setCameraZoom(state.value(QStringLiteral("cameraZoom")).toDouble());
+
+    // The in-frame view. BOUNDED AND CHECKED on the way in, like the camera
+    // above it: this arrives from a file, and a hand-edited or truncated one
+    // must not be able to set a zoom of zero - which no gesture could ever
+    // undo, because every gesture multiplies it.
+    {
+        const auto finite=[](double v){ return v==v&&v>-1e12&&v<1e12; };
+        PlotFrameView v;
+        if(state.contains(QStringLiteral("framePanX")))
+            v.panX=state.value(QStringLiteral("framePanX")).toDouble();
+        if(state.contains(QStringLiteral("framePanY")))
+            v.panY=state.value(QStringLiteral("framePanY")).toDouble();
+        if(state.contains(QStringLiteral("frameZoom")))
+            v.zoom=state.value(QStringLiteral("frameZoom")).toDouble();
+        if(!finite(v.panX)||!finite(v.panY)) { v.panX=0.0; v.panY=0.0; }
+        v.zoom=finite(v.zoom)?qBound(0.2,v.zoom,40.0):1.0;
+        spec_.frameView=v;
+    }
 
     dirty_=true;
     rebuild();
@@ -2797,10 +3591,86 @@ void PlotCanvas::invalidateFullRender(){
     showingFull_=false;
 }
 
-void PlotCanvas::scheduleFullRender(){
+void PlotCanvas::scheduleFullRender(Retain retain){
+    // THE TIMER MUST BE TOUCHED FROM THE GUI THREAD, AND THIS IS REACHED FROM
+    // THE RENDER THREAD.
+    //
+    // This is the "QObject::startTimer: Timers cannot be started from another
+    // thread" warning that had been in startup.log, unexplained, since before
+    // the audit began. The chain is short and entirely ordinary:
+    //
+    //     PlotCanvas::paint()          <- scene-graph RENDER thread
+    //       -> rebuild()               <- only does anything when dirty_
+    //         -> scheduleFullRender()
+    //           -> fullDebounce_.start()
+    //
+    // QTimer::start() on a running timer calls stop() first, which is why the
+    // warnings arrive in killTimer/startTimer pairs. And it only happens when a
+    // rebuild is still pending at paint time rather than having already been
+    // done on the GUI thread, which is why it appeared a handful of times in a
+    // long session and never in a --selftest-plot run: the selftest never opens
+    // a window, so nothing ever paints.
+    //
+    // Marshalled rather than restructured. Moving the rebuild off paint() is a
+    // much larger change to the thing most likely to break, and the debounce
+    // does not care about one turn of the event loop - it is a timer whose
+    // whole purpose is to wait.
+    if(QThread::currentThread()!=thread()){
+        QMetaObject::invokeMethod(this,[this,retain]{ scheduleFullRender(retain); },
+                                  Qt::QueuedConnection);
+        return;
+    }
     ++generation_;
     if(renderInFlight_) ++pendingEdits_;
-    invalidateFullRender();
+
+    // NOTHING EXPENSIVE WHILE A GESTURE IS IN PROGRESS.
+    //
+    // A wheel notch, a +/- button and a touch pan each rebuild the figure now,
+    // and rebuild() ends here - so without this a zoom would start, and
+    // abandon, a full-resolution render of the whole dataset on every step of
+    // the gesture. That is the fault cameraMoved() records having fixed for the
+    // 3-D camera; the 2-D view had it too, and this is the one place both now
+    // pass through.
+    //
+    // invalidate rather than schedule: the accepted image is a picture of a
+    // range the person has left and has to go, but a cancelled render returns a
+    // null image that handleFullRenderFinished discards on its own, so nothing
+    // needs a generation stamp to make that safe. The idle timer asks for
+    // exactly one render when the gesture stops - and at a deep zoom
+    // previewIsExact is true by then, so it asks for none at all.
+    if(interacting_){
+        invalidateFullRender();
+        fullDebounce_.stop();
+        renderInFlight_=false;
+        emit renderStateChanged();
+        update();
+        return;
+    }
+    // A RESIZE IS NOT AN EDIT, and throwing the figure away for one is why it
+    // vanished while a splitter was being dragged.
+    //
+    // invalidateFullRender drops the rendered image because "any edit makes a
+    // finished render stale" - true of a changed column, a changed engine, a
+    // changed colour map. It is NOT true of a resize: the picture is still a
+    // correct picture of exactly this figure, drawn at the wrong size. Dropping
+    // it left nothing on screen but whatever the preview could redraw within
+    // the frame, on every frame of the drag, and on a dataset large enough to
+    // need a full render that is a figure that blinks out for the whole
+    // gesture and reappears when the mouse stops.
+    //
+    // Kept and drawn stretched instead. paint() already scales it to the item,
+    // so a drag now shows the real figure very slightly soft until the new
+    // render lands - which is what every other application does and what the
+    // person expected.
+    if(retain==Retain::RenderedImage&&!fullImage_.isNull()&&showingFull_){
+        if(fullCancel_) fullCancel_->storeRelease(1);
+        fullRenderWaiting_=false;
+        // The CONTENT is still this generation's content. Only the size is out
+        // of date, and paint() asks about content.
+        readyGeneration_=generation_;
+    }else{
+        invalidateFullRender();
+    }
 
     // Nothing to render at full resolution if the preview already shows every
     // point, and nothing to render at all without data.
@@ -2830,13 +3700,44 @@ void PlotCanvas::startFullRender(){
     progressTick_->start();
     emit renderStateChanged();
 
-    // Everything the worker needs is copied by value. It re-reads the Arrow
-    // file itself rather than sharing the table, because loading it is most of
-    // the cost for a large dataset and belongs off the GUI thread too.
+    // Everything the worker needs is copied by value.
+    //
+    // The TABLE is shared rather than re-read. That comment used to say the
+    // opposite - "it re-reads the Arrow file itself rather than sharing the
+    // table, because loading it is most of the cost for a large dataset and
+    // belongs off the GUI thread too" - and it was right while the GUI thread
+    // threw its copy away after every rebuild. It is not right now: this thread
+    // has just read the file to build the preview, so the worker's own read is
+    // a second pass over the same bytes for a second copy of the same numbers,
+    // and on a large dataset that is the single most expensive thing the render
+    // does. A shared_ptr, so it stays alive even if the person opens a
+    // different dataset while this render is still going.
+    const std::shared_ptr<const ArrowTable> shared=table_;
     const QString path=arrowPath_;
     const QString xName=resolvedX_;
     const QStringList yNames=resolvedY_;
     const int vision=colourVision_;
+    // THE UNITS TOO.
+    //
+    // rebuild() passes xUnit_ and yUnit_ to buildPlotSeries and this did not,
+    // so a figure whose axis had been converted - metres to feet, kPa to bar -
+    // had its preview drawn in the chosen unit and its ACCEPTED
+    // full-resolution image drawn in the file's own. The picture changed under
+    // the person a few hundred milliseconds after they stopped touching it,
+    // with the axis label still naming the unit they picked. Silent, and only
+    // on datasets large enough to have a full render at all, which is why it
+    // had never been seen.
+    //
+    // Same rule as everywhere else in this file: what is on screen, what is
+    // exported and what is rendered at full resolution have to be the same
+    // figure, so anything rebuild() feeds the builder has to be fed to it here.
+    const QString xUnit=xUnit_;
+    const QString yUnit=yUnit_;
+    // And the same window the preview used, so the two are pictures of the same
+    // rows. Points outside it are clipped away before anything is drawn, so
+    // reading and gridding them was work spent on pixels that do not exist -
+    // and at a deep zoom it is nearly all of the file.
+    const ViewWindow drawWindow=windowForDrawing(resolvedAsSeries_);
     PlotSpec templateSpec=spec_;
     templateSpec.series.clear();
     const qreal dpr=window()?window()->effectiveDevicePixelRatio():1.0;
@@ -2846,14 +3747,24 @@ void PlotCanvas::startFullRender(){
     const QSize logical{int(width()),int(height())};
 
     fullWatcher_.setFuture(QtConcurrent::run(
-        [path,xName,yNames,vision,templateSpec,dpr,logical,cancel]()->QImage{
+        [shared,path,xName,yNames,vision,templateSpec,dpr,logical,cancel,
+         xUnit,yUnit,drawWindow]()->QImage{
             if(cancel->loadAcquire()) return QImage();
-            ArrowTable table;
-            if(!table.load(path)) return QImage();
+            // The preview's table when there is one - there almost always is,
+            // because a full render is only ever scheduled after a rebuild.
+            // Falling back to a read of its own keeps this correct if that ever
+            // stops being true.
+            ArrowTable own;
+            const ArrowTable* table=shared.get();
+            if(!table||!table->isValid()){
+                if(!own.load(path)) return QImage();
+                table=&own;
+            }
             if(cancel->loadAcquire()) return QImage();
 
             PlotSpec full=templateSpec;
-            if(buildPlotSeries(table,xName,yNames,vision,0,full)<=0) return QImage();
+            if(buildPlotSeries(*table,xName,yNames,vision,0,full,xUnit,yUnit,drawWindow)<=0)
+                return QImage();
             if(cancel->loadAcquire()) return QImage();
 
             QImage image(logical*dpr,QImage::Format_ARGB32_Premultiplied);
@@ -3053,10 +3964,17 @@ bool PlotCanvas::exportWithProfile(const QString& filePath,const QString& profil
 
     // The full data, not the screen's decimated preview. An export is where the
     // point budget stops applying.
-    {
-        ArrowTable table;
-        if(!arrowPath_.isEmpty()&&table.load(arrowPath_))
-            buildPlotSeries(table,resolvedX_,resolvedY_,colourVision_,0,publication);
+    //
+    // With the chosen units, for the same reason the full-resolution render
+    // needs them: a converted axis was drawn from the file's own values here
+    // while the label named the unit the person picked, so the published
+    // figure disagreed with the screen it was published from. specWithFullData
+    // passes them; this and the worker were the two places that did not.
+    if(!arrowPath_.isEmpty()){
+        const ArrowTable& table=loadedTable();
+        if(table.isValid())
+            buildPlotSeries(table,resolvedX_,resolvedY_,colourVision_,0,publication,
+                            xUnit_,yUnit_);
     }
 
     const QString kind=format.toLower();

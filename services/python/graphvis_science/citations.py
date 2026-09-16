@@ -16,7 +16,8 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+
+from graphvis_science import citation_styles
 
 CROSSREF = "https://api.crossref.org/works/"
 # Crossref asks for a contactable agent and gives faster service in return.
@@ -82,12 +83,26 @@ def _authors(work: dict) -> list[dict]:
     return out
 
 
-def _year(work: dict) -> int | None:
+def _date(work: dict) -> tuple:
+    """The publication year and month, from the first date-part that has one.
+
+    The month was being dropped. IEEE, NLM and the ACM reference format all
+    print it - "Jul. 2023", "2023 Jul" - so three styles could not be formatted
+    correctly from a record that had the answer in it and did not keep it.
+    Returns (year, month) with month None when the source gives only a year,
+    which is common for older articles and must not become "Jan.".
+    """
     for key in ("published-print", "published-online", "issued", "created"):
         parts = (work.get(key) or {}).get("date-parts") or []
         if parts and parts[0] and parts[0][0]:
-            return int(parts[0][0])
-    return None
+            first = parts[0]
+            month = int(first[1]) if len(first) > 1 and first[1] else None
+            return int(first[0]), month
+    return None, None
+
+
+def _year(work: dict) -> int | None:
+    return _date(work)[0]
 
 
 def resolve(doi: str, *, timeout: float = 12.0) -> dict:
@@ -104,7 +119,8 @@ def resolve(doi: str, *, timeout: float = 12.0) -> dict:
         "doi": doi,
         "title": str(title[0]) if title else "",
         "authors": _authors(work),
-        "year": _year(work),
+        "year": _date(work)[0],
+        "month": _date(work)[1],
         "journal": str(container[0]) if container else "",
         "volume": str(work.get("volume") or ""),
         "issue": str(work.get("issue") or ""),
@@ -151,9 +167,16 @@ def to_bibtex(record: dict) -> str:
     return "@article{" + _key(record) + ",\n" + body + "\n}"
 
 
-# The styles this understands. A name not in here is refused rather than
-# quietly formatted as something else.
-STYLES = ("apa", "ieee", "nature", "harvard", "bibtex")
+# The styles this understands, taken from the one table rather than listed
+# again here. A name not in it is refused rather than quietly formatted as
+# something else - which is the fault this module records: a `style` argument
+# that was accepted and ignored, so a user who chose IEEE got APA and had no
+# way to tell.
+#
+# "bibtex" is not a citation style and is not in the table; it is a
+# bibliography FORMAT and is handled separately by `to_bibtex`. It is appended
+# here because callers have always been able to ask for it by name.
+STYLES = citation_styles.keys() + ("bibtex",)
 
 
 def _initials(given: str) -> str:
@@ -199,70 +222,34 @@ def to_text(record: dict, style: str = "apa") -> str:
     IEEE got APA with no indication that their choice had done nothing. A
     parameter that is accepted and silently discarded is worse than one that
     does not exist, because the output looks like an answer to the question.
+
+    The fix after that was four hand-written branches, which was right for four
+    styles and would have been fifty copies of one rule for fifty. The rules
+    now live in `citation_styles.STYLE_TABLE` as data, and this is the one
+    place that decides whether "bibtex" was meant.
     """
     key = str(style or "apa").strip().lower()
-    if key not in STYLES:
-        raise CitationError(
-            f"Unknown citation style {style!r}. Choose one of: {', '.join(STYLES)}.")
     if key == "bibtex":
         return to_bibtex(record)
+    try:
+        return citation_styles.render(record, key)
+    except citation_styles.StyleError as exc:
+        raise CitationError(str(exc)) from exc
 
-    authors = record.get("authors") or []
-    names = _author_list(authors, key)
-    year = record.get("year") or "n.d."
-    title = str(record.get("title") or "").rstrip(".")
-    journal = record.get("journal") or ""
-    volume = str(record.get("volume") or "")
-    issue = str(record.get("issue") or "")
-    pages = str(record.get("pages") or "")
-    doi = record.get("doi") or ""
 
-    if key == "ieee":
-        # A. Author, "Title," Journal, vol. 1, no. 2, pp. 3-4, 2024.
-        bits = [names + ",", f'"{title},"' if title else ""]
-        if journal:
-            bits.append(journal + ",")
-        if volume:
-            bits.append(f"vol. {volume},")
-        if issue:
-            bits.append(f"no. {issue},")
-        if pages:
-            bits.append(f"pp. {pages},")
-        bits.append(f"{year}.")
-        return " ".join(b for b in bits if b)
+def to_latex(record: dict, style: str = "apa") -> str:
+    """The same reference with the style's italics marked up for LaTeX.
 
-    if key == "nature":
-        # Author, A. Title. Journal 49, 101-115 (2024).
-        tail = journal
-        if volume:
-            tail += f" {volume}"
-        if pages:
-            tail += f", {pages}"
-        return f"{names} {title}. {tail} ({year})." if tail else f"{names} {title}. ({year})."
-
-    if key == "harvard":
-        # Author, A.A. (2024) 'Title', Journal, 49(3), pp. 101-115.
-        tail = journal
-        if volume:
-            tail += f", {volume}"
-        if issue:
-            tail += f"({issue})"
-        if pages:
-            tail += f", pp. {pages}"
-        return f"{names} ({year}) '{title}', {tail}." if tail else f"{names} ({year}) '{title}'."
-
-    # APA 7: Author, A. A., & Other, B. (2024). Title. Journal, 49(3), 101-115. https://doi.org/...
-    tail = journal
-    if volume:
-        tail += f", {volume}"
-    if issue:
-        tail += f"({issue})"
-    if pages:
-        tail += f", {pages}"
-    out = f"{names} ({year}). {title}. {tail}." if tail else f"{names} ({year}). {title}."
-    if doi:
-        out += f" https://doi.org/{doi}"
-    return out
+    The caller escapes the record's prose BEFORE this, not after: escaping
+    afterwards would escape the braces this adds.
+    """
+    key = str(style or "apa").strip().lower()
+    if key == "bibtex":
+        return to_bibtex(record)
+    try:
+        return citation_styles.render_latex(record, key)
+    except citation_styles.StyleError as exc:
+        raise CitationError(str(exc)) from exc
 
 
 def cite(doi: str, *, style: str = "apa", timeout: float = 12.0) -> dict:

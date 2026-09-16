@@ -22,6 +22,7 @@ integration test that catches one instance.
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sys
 from pathlib import Path
@@ -258,6 +259,59 @@ def _function_bodies(source: str) -> list[tuple[str, str]]:
     return out
 
 
+def _family_body(source: str, *names: str) -> str:
+    """The bodies of one painter and the functions it dispatches to, joined.
+
+    Several guards below were written when a painter was one function, and ask
+    about the text of that function. Three of those painters have since been
+    split into a dispatcher and the four or five pictures it draws - which is
+    the change these guards exist to SURVIVE, not one they should fail on.
+    What each is really asking is "does this painter still do X", and the
+    painter is now a family.
+
+    The members are named explicitly rather than followed automatically. A
+    guard that searched everything a dispatcher can reach would end up reading
+    half the file, and a string found file-wide is not a statement about any
+    function - which is the fault this suite records four times over, most
+    recently on a send button whose gate was counted across a whole QML file
+    and matched a colour binding.
+    """
+    bodies = dict(_function_bodies(source))
+    out = []
+    for name in names:
+        key = name if "::" in name else f"QtPlotBackend::{name}"
+        body = bodies.get(key)
+        if body is None:
+            # A free function in the anonymous namespace - the sounding parts
+            # are written that way - is not a member and `_function_bodies`
+            # does not see it. Sliced by hand from its signature.
+            # A DEFINITION AT THE START OF A LINE, whatever it returns. The
+            # sounding parts return a struct, not void, so looking for
+            # "void name(" found nothing and the guard reported a missing
+            # function that was there all along.
+            found = re.search(r"(?m)^[A-Za-z_][\w:<>,\s\*&]*?\b"
+                              + re.escape(name) + r"\s*\([^;{]*\)\s*\{",
+                              source)
+            at = found.start() if found else -1
+            assert at >= 0, (
+                f"{name} is not in this file, so a guard is asking about a "
+                "function that no longer exists - rename it in the guard or "
+                "restore it")
+            depth, index, started = 0, at, False
+            while index < len(source):
+                if source[index] == "{":
+                    depth += 1
+                    started = True
+                elif source[index] == "}":
+                    depth -= 1
+                    if started and depth == 0:
+                        break
+                index += 1
+            body = source[at:index]
+        out.append(body)
+    return "\n".join(out)
+
+
 def test_no_live_path_blocks_the_gui_thread_waiting_for_a_process() -> None:
     offenders: list[str] = []
     for path in sorted(APP_SRC.glob("*.cpp")):
@@ -481,11 +535,15 @@ def test_every_catalogue_scale_variant_is_recognised_by_the_renderer() -> None:
     scales = {str(e["scale"]) for c in catalogue["categories"]
               for e in c.get("entries", []) if e.get("scale")}
 
+    # THE WHOLE BACKEND, not one file of it. Naming
+    # `native/plot2d/src/QtPlotBackend.cpp` was right while the backend was one
+    # file; split across seven it searched the painters and the dispatcher and
+    # none of the engine chain, and reported nineteen variants as unhandled
+    # that are handled a few thousand lines further on.
     corpus = ""
-    for name in ("app/src/AppController.cpp",
-                 "native/plot2d/src/PlotCanvas.cpp",
-                 "native/plot2d/src/QtPlotBackend.cpp"):
-        text = (ROOT / name).read_text(encoding="utf-8", errors="ignore")
+    for text in [(ROOT / n).read_text(encoding="utf-8", errors="ignore")
+                 for n in ("app/src/AppController.cpp",
+                           "native/plot2d/src/PlotCanvas.cpp")] + [_backend_source()]:
         text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         text = re.sub(r"//[^\n]*", "", text)
         corpus += text
@@ -539,11 +597,11 @@ def test_the_gompertz_fit_reports_whether_it_converged() -> None:
     goodness of fit, rather than going back to printing whatever the clamp left
     behind.
     """
-    source = (ROOT / "native" / "plot2d" / "src"
-              / "QtPlotBackend.cpp").read_text(encoding="utf-8", errors="ignore")
+    source = _backend_source()
     # Anchored on the BRANCH GUARD, not the bare name: the name also appears in
-    # the supportedEngines list far earlier in the file, and a first attempt at
-    # this scanned that instead and failed against a region with no fit in it.
+    # the supportedEngines list far earlier in the corpus, and a first attempt
+    # at this scanned that instead and failed against a region with no fit in
+    # it.
     start = source.index('if(in.engine==QStringLiteral("Gompertz H₂ Kinetics")')
     branch = source[start:start + 8000]
 
@@ -652,8 +710,72 @@ def test_heatmap_cells_are_placed_through_the_axes() -> None:
 
 
 def _backend_source() -> str:
-    return (ROOT / "native" / "plot2d" / "src"
-            / "QtPlotBackend.cpp").read_text(encoding="utf-8", errors="ignore")
+    """The backend as one text, because it is one backend in seven files.
+
+    QtPlotBackend.cpp was 1.78 MB in a single translation unit and took 2
+    minutes 10 seconds to compile by itself — single-threaded, on every build,
+    because a translation unit cannot be divided across cores. It is now the
+    shared helpers, the painters and six contiguous arms of the engine-rewrite
+    chain.
+
+    Concatenated **in link order** — helpers, then the painters and the
+    dispatcher, then the six groups in their numbered sequence — so a guard that
+    finds a statement and reads forward from it still reads forward through the
+    same code it did before the split. Every guard here was written against one
+    file and none of them had to change.
+    """
+    src = ROOT / "native" / "plot2d" / "src"
+    parts = [src / "QtPlotBackendShared.h", src / "QtPlotBackend.cpp"]
+    parts += [src / f"QtPlotBackendEngines{k}.cpp" for k in range(1, 7)]
+    missing = [p.name for p in parts if not p.exists()]
+    assert not missing, (
+        f"the backend is missing {missing} - a piece of it was renamed or "
+        "deleted without this list being told, so every guard below is now "
+        "reading less than the whole backend and can pass vacuously")
+    return "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in parts)
+
+
+def _compute_range_source() -> str:
+    """computeRange AND the named steps it was split into, as one text.
+
+    The function was one 258-line body, and every guard below sliced it with
+    `source.index("...computeRange(")` up to the next `\n}\n`. Splitting it
+    into `measureSeriesBounds`, `includeStackedBands`, `applyStatedLimits`,
+    `widenFlatAxes`, `pinZeroBaseline`, `addHeadroom` and
+    `settleSecondaryAxis` broke seven guards at once - and not one of them had
+    an opinion that had changed. Each named a PLACE rather than a statement.
+
+    That is the fault this file has now recorded four times, and the fix is the
+    one `_backend_source` already uses for the six engine groups: give the
+    guards the whole corpus the rule could live in, so dividing the code again
+    moves the rule without breaking the guard.
+
+    The region runs from the banner above the steps to the end of computeRange,
+    which is exactly the code that used to be inside it.
+    """
+    source = _backend_source()
+    start = source.index("// computeRange, broken into the steps it was already doing.")
+    fn = source.index("QtPlotBackend::Frame QtPlotBackend::computeRange(", start)
+    return source[start:source.index("\n}\n", fn)]
+
+
+def _engine_chain() -> str:
+    """The six arms of the engine-rewrite chain, in their numbered order.
+
+    Some guards used to reach into `prepareSpecCore` and read the first few
+    thousand characters of it, because the whole chain lived there. It does not
+    any more — that function is now a dispatcher of six calls — so a guard that
+    wants a rewrite block reads this instead. The order is the calling order,
+    which is part of the behaviour: several engines are matched by a
+    `startsWith` that a later, more specific test would also match.
+    """
+    src = ROOT / "native" / "plot2d" / "src"
+    parts = [src / f"QtPlotBackendEngines{k}.cpp" for k in range(1, 7)]
+    missing = [q.name for q in parts if not q.exists()]
+    assert not missing, (
+        f"the engine chain is missing {missing}, so any guard reading it is "
+        "now searching less than the whole chain and can pass vacuously")
+    return "\n".join(q.read_text(encoding="utf-8", errors="ignore") for q in parts)
 
 
 def _strip_comments(text: str) -> str:
@@ -695,8 +817,7 @@ def test_a_column_shaped_engine_scales_its_axes_from_its_columns() -> None:
     named = set(re.findall(r'QStringLiteral\("([^"]+)"\)', predicate))
     assert named, "columnShapedAxes no longer names any engine"
 
-    start = source.index("QtPlotBackend::Frame QtPlotBackend::computeRange(")
-    body = _strip_comments(source[start:source.index("\n}\n", start)])
+    body = _strip_comments(_compute_range_source())
     assert "columnShapedAxes(spec.engine)" in body, (
         "computeRange no longer asks whether the spec is column-shaped, so a "
         "field engine's axes are back to being scaled from a column nobody "
@@ -733,14 +854,25 @@ def test_a_field_is_not_padded_on_one_axis_only() -> None:
     leaves a strip of background above and below a heatmap and none at either
     side, and the image no longer fills its own plot area.
     """
-    source = _backend_source()
-    start = source.index("QtPlotBackend::Frame QtPlotBackend::computeRange(")
-    body = _strip_comments(source[start:source.index("\n}\n", start)])
-    pad = re.search(r"if\(!f\.yLog([^)]*)\)\{", body)
-    assert pad, "computeRange's y-padding guard has moved"
-    assert "!columns" in pad.group(1), (
-        "the 5% y pad is being applied to column-shaped field engines again, "
-        "which pads one axis of an image and not the other")
+    body = _strip_comments(_compute_range_source())
+    # Both pads, asked together. The guard used to be pinned to the literal
+    # `if(!f.yLog...)`, which asserted the field exclusion and the LOG
+    # exclusion as one string - so when the log exclusion turned out to be a
+    # defect in its own right (a log axis got no headroom at all, and every log
+    # figure drew its outermost mark on the frame line), removing it broke a
+    # test about fields. One question per assertion: this one is about fields.
+    pads = re.findall(r"const double pad=(x|y)Hi\*0\.05-(?:x|y)Lo\*0\.05;", body)
+    assert sorted(pads) == ["x", "y"], (
+        "computeRange no longer pads both axes by five per cent: found "
+        f"{sorted(pads)!r}")
+    for axis in ("x", "y"):
+        guard = re.search(
+            r"if\(([^)]*)\)\{\s*const double pad=" + axis + r"Hi\*0\.05",
+            body)
+        assert guard, f"computeRange's {axis}-padding guard has moved"
+        assert "!columns" in guard.group(1), (
+            f"the 5% {axis} pad is being applied to column-shaped field engines "
+            "again, which pads an image that has no headroom to give")
 
 
 def test_every_field_painter_places_its_grid_through_the_axes() -> None:
@@ -755,9 +887,18 @@ def test_every_field_painter_places_its_grid_through_the_axes() -> None:
     the same grid in two places.
     """
     source = _backend_source()
-    for name in ("drawHeatmap", "drawContour", "drawVectorField"):
-        start = source.index(f"void QtPlotBackend::{name}(")
-        body = _strip_comments(source[start:source.index("\n}\n", start)])
+    # drawVectorField is now a dispatcher over five pictures, so the question
+    # "does this painter place its grid through the axes" is a question about
+    # the family - see _family_body.
+    families = {
+        "drawHeatmap": ("drawHeatmap",),
+        "drawContour": ("drawContour",),
+        "drawVectorField": ("drawVectorField", "drawFeatherPlot", "drawDerivedField",
+                          "drawStreamlines", "drawPhasePortraitPoints",
+                          "drawQuiverArrows",),
+    }
+    for name, members in families.items():
+        body = _strip_comments(_family_body(source, *members))
         assert "toDevice(" in body, (
             f"{name} no longer maps anything through toDevice, so what it "
             "draws is placed without reference to the axes it is drawn against")
@@ -1007,8 +1148,13 @@ def test_a_stacked_axis_contains_the_stack() -> None:
             ("void QtPlotBackend::drawLegend(",
              "the legend picks its corner by where the individual series are, "
              "not where the bands it would cover actually run")):
-        start = source.index(caller)
-        body = _strip_comments(source[start:source.index("\n}\n", start)])
+        # computeRange reads it from one of the steps it was split into, so
+        # the region rather than the single body - see _compute_range_source.
+        if "computeRange" in caller:
+            body = _strip_comments(_compute_range_source())
+        else:
+            start = source.index(caller)
+            body = _strip_comments(source[start:source.index("\n}\n", start)])
         assert "stackedBands(spec)" in body, (
             f"{caller.split('::')[-1].rstrip('(')} no longer reads "
             f"stackedBands(), so {why}")
@@ -1078,8 +1224,10 @@ def test_a_feather_is_not_gridded() -> None:
     it does not use.
     """
     source = _backend_source()
-    start = source.index("void QtPlotBackend::drawVectorField(")
-    body = _strip_comments(source[start:source.index("\n}\n", start)])
+    # The dispatcher alone: the ORDER of the feather branch against the grid
+    # is a property of the function that decides between them, and asking the
+    # family would mix in the bodies of both.
+    body = _strip_comments(_family_body(source, "drawVectorField"))
 
     feather = body.find('spec.engine==QLatin1String("Feather")')
     assert feather != -1, (
@@ -1361,8 +1509,10 @@ def test_every_3d_engine_draws_its_own_mark() -> None:
     three; ten copies of a depth sort is how they drift apart.
     """
     source = _backend_source()
-    start = source.index("void QtPlotBackend::draw3D(")
-    body = _strip_comments(source[start:source.index("\n}\n", start)])
+    # draw3D is now a dispatcher over four pictures. "Does this engine get its
+    # own mark" is a question about the family; asking the dispatcher alone
+    # would say no for every one of them.
+    body = _strip_comments(_family_body(source, "draw3D", "draw3DSurface", "draw3DContourStack", "draw3DLine", "draw3DMarks"))
 
     for engine in ("3D Bar", "3D Horizontal Bar", "3D Stem", "3D Bubble",
                    "3D Swarm", "Comet 3D", "Ribbon", "Surface + Contours",
@@ -1701,10 +1851,15 @@ def test_the_legend_lists_named_series_only() -> None:
         "name and nine anonymous pieces still draws a legend")
     assert "f.plotArea.height()-16.0" in body, (
         "the legend box is no longer capped to the plot area")
-    # The rows the box can hold are now COUNTED before any are drawn, so the
-    # last one can say how many it is hiding rather than the loop simply
-    # stopping. The claim is the same: nothing is drawn past the bottom.
-    assert "for(double probe=box.top()+4;probe+rowH<=box.bottom()-2;probe+=rowH) ++fits;" in body, (
+    # The rows the box can hold are COUNTED before any are drawn, so the last
+    # one can say how many it is hiding rather than the loop simply stopping.
+    # The claim is unchanged: nothing is drawn past the bottom. What changed is
+    # that a row is no longer a fixed height - a wrapped label costs several -
+    # so the count accumulates real heights instead of stepping by one.
+    assert "const double room=box.height()-6.0;" in body, (
+        "the room a legend box has for rows is no longer measured, so how many "
+        "fit is a guess")
+    assert "if(used+need>room) break;" in body, (
         "the rows are drawn past the bottom of a capped box")
 
 
@@ -2198,8 +2353,7 @@ def test_a_phase_portrait_counts_its_fixed_points_once() -> None:
     genuinely distinct points.
     """
     source = _backend_source()
-    start = source.index("if(portrait){")
-    body = _strip_comments(source[start:source.index("\n    }else{", start)])
+    body = _strip_comments(_family_body(source, "drawPhasePortraitPoints"))
 
     assert "QVector<Critical> criticals;" in body, (
         "fixed points are drawn straight from the detection loop again, so "
@@ -3039,13 +3193,24 @@ def test_the_x_axis_gets_the_headroom_the_y_axis_has() -> None:
     above, and padding both ends would lift the bars off the axis they are
     measured from — so an axis pinned to zero is padded at the far end only.
     """
-    body = _strip_comments(_backend_source())
-    frame = body[body.index("QtPlotBackend::Frame QtPlotBackend::computeRange("):]
-    frame = frame[:frame.index("\n}")]
+    frame = _strip_comments(_compute_range_source())
 
-    assert "if(!f.xLog&&!columns){" in frame, (
+    assert "if(!columns){\n        const double pad=xHi*0.05-xLo*0.05;" in frame, (
         "the x axis is unpadded again, so the extreme value of every engine "
         "whose data runs along x is drawn on the frame")
+    # AND ON A LOG AXIS, which is where it was missing longest.
+    #
+    # Both pads used to read `if(!f.?Log&&!columns)`. The bounds in this
+    # function are already logarithms on a log axis, so five per cent of the
+    # span is five per cent of the DRAWN axis exactly as on a linear one; the
+    # exclusion had no comment and no reason, and what it did was draw the
+    # outermost mark of every log figure hard on the frame line and clip it
+    # down the middle. The property check reported the Power Spectral Density,
+    # the Paschen Curve and the Tripartite Response Spectrum for it.
+    assert "f.xLog&&!columns" not in frame and "f.yLog&&!columns" not in frame, (
+        "a log axis is excluded from the headroom again, so the highest "
+        "frequency of a spectrum and the lowest point of a Paschen curve are "
+        "drawn on the frame and clipped")
     # Same overflow-safe form as the y pad: (hi-lo)*0.05 goes infinite on a
     # column holding both 1e308 and -1e308.
     assert "xHi*0.05-xLo*0.05" in frame, (
@@ -3066,7 +3231,7 @@ def test_the_x_axis_gets_the_headroom_the_y_axis_has() -> None:
 
     # And it must still be excluded for a field, which is what the whole
     # `!columns` condition exists for.
-    xpad = frame[frame.index("if(!f.xLog&&!columns){"):]
+    xpad = frame[frame.index("if(!columns){\n        const double pad=xHi*0.05"):]
     xpad = xpad[:xpad.index("\n    }")]
     assert "columns" not in xpad.replace("!columns", ""), (
         "the field exclusion has moved inside the x pad body, where it no "
@@ -3443,9 +3608,9 @@ def test_a_horizontal_bar_chosen_from_the_library_is_transposed() -> None:
     from one that still needs it is that theirs carry a single point per
     series; transposing twice puts the chart back as it was.
     """
-    source = _backend_source()
-    start = source.index("PlotSpec QtPlotBackend::prepareSpecCore")
-    head = _strip_comments(source[start:start + 6000])
+    # The chain, not `prepareSpecCore` — that function is a dispatcher of six
+    # calls now, and the rewrites it used to contain live in the six groups.
+    head = _strip_comments(_engine_chain())
 
     assert 'in.engine==QLatin1String("Horizontal Bar")' in head, (
         "a Horizontal Bar chosen directly is no longer transposed, so it reads "
@@ -3538,9 +3703,7 @@ def test_a_summary_against_one_position_is_measured_whole() -> None:
     OF STUDIES - forty studies of effects between 1 and 4 on an axis running
     to 40.
     """
-    source = _backend_source()
-    start = source.index("QtPlotBackend::Frame QtPlotBackend::computeRange")
-    body = _strip_comments(source[start:source.index("\n    // A stacked band", start)])
+    body = _strip_comments(_compute_range_source())
 
     assert "const bool summary=(nx==1&&ny>1)||(ny==1&&nx>1);" in body, (
         "computeRange no longer recognises a summary against one position, so "
@@ -3564,9 +3727,7 @@ def test_a_stated_axis_limit_is_the_limit() -> None:
     was drawn as 105 and a minimum of 0 as -5. Headroom is for a bound that was
     MEASURED from the data. A bound that was asked for is already the answer.
     """
-    source = _backend_source()
-    start = source.index("QtPlotBackend::Frame QtPlotBackend::computeRange")
-    body = _strip_comments(source[start:source.index("\n    if(spec.xAxis.inverted)", start)])
+    body = _strip_comments(_compute_range_source())
 
     for name in ("xLoStated", "xHiStated", "yLoStated", "yHiStated"):
         assert f"const bool {name}=" in body, (
@@ -3691,8 +3852,7 @@ def test_a_derivative_at_the_edge_of_a_grid_is_one_sided() -> None:
     """
     source = _backend_source()
 
-    div = source.index('const bool vorticity=engine==QLatin1String("Vorticity Map");')
-    dbody = _strip_comments(source[div:div + 2600])
+    dbody = _strip_comments(_family_body(source, "drawDerivedField"))
     assert "auto slopeX=[&](auto&& sample,int cx,int cy){" in dbody, (
         "the divergence and vorticity maps differentiate with a clamped "
         "central difference again, so their edges are half-slope artefacts")
@@ -4204,8 +4364,7 @@ def test_two_quantities_of_different_scale_get_two_ordinates() -> None:
         "the frame no longer carries a second ordinate's range")
 
     source = _backend_source()
-    start = source.index("QtPlotBackend::Frame QtPlotBackend::computeRange")
-    body = _strip_comments(source[start:source.index("\n    // A stacked band", start)])
+    body = _strip_comments(_compute_range_source())
     assert "double& loY=s.secondaryAxis?y2Lo:yLo;" in body, (
         "a series on the right-hand ordinate is measured into the left-hand "
         "range again, so the two quantities are back to fighting over one axis")
@@ -4235,11 +4394,20 @@ def test_two_quantities_of_different_scale_get_two_ordinates() -> None:
     # panels, and the right-hand ordinate is what this renderer has to say it
     # with — including for the range LIMITS, which belong on the axis of the
     # thing they limit.
-    assert source.count("secondaryAxis=true;") == 6, (
+    # SEVEN, and the seventh is not an engine.
+    #
+    # `honoursSecondaryAxis` asks each engine whether a mapped column would
+    # reach the right-hand axis by handing it a probe series that asks for one
+    # and seeing whether the answer comes back still asking. That probe writes
+    # `secondaryAxis=true;` like an engine does, and is counted here like one -
+    # which is the census working: a new occurrence has to be explained rather
+    # than absorbed.
+    assert source.count("secondaryAxis=true;") == 7, (
         "the set of engines using the right-hand ordinate has changed - it was "
         "the polarisation power, the sCOD removal percentage, the scree plot's "
         "cumulative share, the Pareto chart's running share and its 80% line, "
-        "and the X-bar and R chart's range series")
+        "and the X-bar and R chart's range series, plus the probe in "
+        "honoursSecondaryAxis")
     assert "ranges.secondaryAxis=true;" in source, (
         "the R chart is back on the mean chart's ordinate, where a range of "
         "0.9 is a flat line along the bottom of a chart of 48 mm bores")
@@ -4261,6 +4429,240 @@ def test_two_quantities_of_different_scale_get_two_ordinates() -> None:
         assert gone not in stripped, (
             f"{gone} is back: an axis label naming two quantities is an axis "
             "measuring neither")
+
+
+def test_a_column_you_choose_can_go_on_the_right_hand_axis() -> None:
+    """The half of the second ordinate that was missing: asking for one.
+
+    Everything the test above checks was finished, correct and reachable ONLY by
+    choosing one of six particular graphs. The ordinary reason to want two axes -
+    "temperature on the left, pressure on the right", about two columns of your
+    own data - had no control anywhere in the interface. A feature that works
+    and cannot be asked for is not a feature the program has.
+
+    What makes this more than plumbing is HOW the interface decides whether to
+    offer the role. Six engines mark their own derived series whatever they are
+    handed, so on those a mapped column would be discarded and the control would
+    do nothing - and "a control that cannot affect the figure should not be
+    offered for it" is this project's own rule. The obvious implementation is a
+    list of engine names, which is equally this project's own recorded trap: a
+    guard that matches a NAME rather than a STATEMENT. So the question is put to
+    the engine twice, once asking and once not, and the role is offered where
+    the asking makes the difference.
+    """
+    backend = _backend_source()
+    stripped = _strip_comments(backend)
+    assert "bool QtPlotBackend::honoursSecondaryAxis(" in backend, (
+        "nothing measures whether an engine will honour a mapped column on the "
+        "right-hand axis, so the interface can only guess")
+    assert "probe(true)&&!probe(false)" in stripped, (
+        "the probe no longer requires the request to MAKE THE DIFFERENCE, so a "
+        "Pareto chart - which marks its own cumulative series whatever it is "
+        "handed - answers yes and gets a control that does nothing")
+
+    canvas_h = (ROOT / "native/plot2d/include/PlotCanvas.h").read_text(encoding="utf-8")
+    assert "QString y2Column READ y2Column" in canvas_h, (
+        "the canvas has no right-hand-axis column, so the mapping has nowhere "
+        "to put one")
+    assert "bool supportsSecondaryAxis READ supportsSecondaryAxis" in canvas_h, (
+        "the interface cannot ask whether the role applies to this engine")
+    assert "QString resolvedY2_;" in canvas_h, (
+        "the full-resolution render no longer remembers which column went on "
+        "the right, so the final image would have one axis where the preview "
+        "had two")
+
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    assert "spec.y2Axis.label=s.label;" in _strip_comments(canvas), (
+        "the second axis is drawn without a name, which is worse than not "
+        "drawing it")
+
+    # THE CACHE HAS TO SEE IT. prepareSpec's result is cached on a fingerprint
+    # of its input, so a field the fingerprint omits is a field the person can
+    # change with no effect at all - which is exactly what happened here, and
+    # what the renderer's own self-test now refuses.
+    assert "(s.secondaryAxis?4:0)" in backend, (
+        "the spec fingerprint ignores which axis a series is drawn against, so "
+        "moving a column to the right-hand axis returns the figure prepared "
+        "without it and the control appears to do nothing")
+
+    panel = (ROOT / "app/qml/components/MappingPanel.qml").read_text(encoding="utf-8")
+    assert '{label:"Right-hand Y axis",key:"y2",optional:true}' in panel, (
+        "the mapping panel offers no right-hand axis row")
+    assert "root.canvas.supportsSecondaryAxis" in panel, (
+        "the row is shown without asking whether the engine honours it")
+    assert 'root.noneLabel' in panel, (
+        "there is no way back to one axis once a column has been chosen")
+
+    workspace = (ROOT / "app/qml/workspaces/VisualizeWorkspace.qml").read_text(
+        encoding="utf-8")
+    assert "function writeMapping(x, y, z, c, y2)" in workspace, (
+        "the mapped columns reach the canvas from more than one place again - "
+        "the shape that already cost this program Z and Colour")
+    assert workspace.count("t.y2Column = ") == 1, (
+        "two copies of the mapping write-out, which is how the sidebar's panel "
+        "and the docked one come to disagree")
+
+
+def test_a_build_whose_interface_never_started_is_reported_as_a_problem() -> None:
+    """The check that scored a crash as an improvement.
+
+    Every launch of one build died with an access violation inside the QML
+    load, and the build report said *"Problems: none"* - and, in its trend
+    table, *"better  startup.log problems 2 -> 0 (down)"*. Both statements came
+    from counting warning and error LINES in startup.log. A process that
+    crashes writes none, because it is gone before it can: so the two harmless
+    warnings the previous build had, gone, read as an improvement, and the
+    crash read as nothing at all.
+
+    The reasoning was sound and the question was wrong. Counting complaints
+    measures a running program's noise; it cannot distinguish a quiet program
+    from a dead one. So the report now asks for a STATEMENT the program makes
+    about itself - main.cpp writes one line, and only one, once
+    `loadFromModule` has returned a root object - and its absence is the
+    finding.
+
+    Asserted by RUNNING the report's own judgement over both logs rather than
+    by reading its source for a string, because what failed was a judgement and
+    not a spelling.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import build_report
+    finally:
+        sys.path.pop(0)
+
+    started = "Main QML window created successfully"
+    # The real shape: the log stops at the last thing main.cpp writes BEFORE
+    # handing over to QML, and nothing follows it.
+    crashed = (
+        "GraphVis 18.4.0 startup diagnostics\n"
+        "Qt runtime: 6.11.1\n"
+        "2026-09-16T16:11:16.792  Starting Qt GUI application\n"
+        "2026-09-16T16:11:17.050  AppController constructed; status: ready\n"
+        "2026-09-16T16:11:17.059  Loading GraphVis/Main QML module\n")
+    healthy = crashed + f"2026-09-16T16:11:17.400  {started}; entering event loop\n"
+
+    def verdict(log: str) -> list:
+        facts = {
+            "selftest_exit": "0", "regressions": [], "property_failures": [],
+            "engines_swept": 440, "every_engine_drew": True,
+            "same_picture_groups": 0, "like_line_chart": 0, "seed_stable": True,
+            "vector_pdf_ok": True, "startup_problem_count": 0,
+            "startup_line_count": 0, "unverified_engines": [],
+            "gallery_figures": 440, "undecided_clusters": 0,
+            "order_changed": 0, "order_checked": 0, "catalogue_entries": 2122,
+            "catalogue_engines": 440, "failed_lines": [],
+            "regression_passed": True,
+            "ui_log_present": bool(log.strip()),
+            "ui_started": started in log,
+        }
+        return build_report.problems(facts)
+
+    bad = verdict(crashed)
+    assert bad, ("a build whose interface never created its window is reported "
+                 "as having no problems, which is how one reached a user")
+    assert any("DID NOT FINISH STARTING" in p for p in bad), (
+        f"the finding does not say what went wrong: {bad}")
+
+    # AND IT MUST STAY QUIET otherwise. A check that fires on a healthy build is
+    # a check that gets switched off, which is this project's own rule about
+    # flagging a problem rather than a pattern.
+    assert not verdict(healthy), (
+        "a build whose window was created is reported as a problem: "
+        f"{verdict(healthy)}")
+
+    # A STALE LOG IS NOT A CRASH, and must not be reported as one.
+    #
+    # This is the failure the check itself produced the first time it ran for
+    # real. CHECK-GRAPHS copies the logs out of %LOCALAPPDATA% BEFORE
+    # --selftest-ui runs, so the file the report judged was the previous
+    # session's - and the report announced that the interface had not started
+    # on a build that had started perfectly well. A check that cries wolf is
+    # worth less than no check, so "I cannot tell" is a distinct answer from
+    # "it failed".
+    def stale_verdict() -> list:
+        facts = {
+            "selftest_exit": "0", "regressions": [], "property_failures": [],
+            "engines_swept": 440, "every_engine_drew": True,
+            "same_picture_groups": 0, "like_line_chart": 0, "seed_stable": True,
+            "vector_pdf_ok": True, "startup_problem_count": 0,
+            "startup_line_count": 0, "unverified_engines": [],
+            "gallery_figures": 440, "undecided_clusters": 0,
+            "order_changed": 0, "order_checked": 0, "catalogue_entries": 2122,
+            "catalogue_engines": 440, "failed_lines": [],
+            "regression_passed": True,
+            "ui_log_present": True, "ui_started": False, "ui_log_stale": True,
+        }
+        return build_report.problems(facts)
+
+    stale = stale_verdict()
+    assert stale, "a stale interface log is passed over in silence"
+    assert not any("DID NOT FINISH STARTING" in p for p in stale), (
+        "a log from an earlier session is reported as a crash in this one: "
+        f"{stale}")
+    assert any("earlier session" in p for p in stale), (
+        f"the finding does not say the log is stale: {stale}")
+
+
+def test_a_message_the_harness_causes_is_named_rather_than_counted() -> None:
+    """Keeping the problem count worth reading, without hiding anything.
+
+    `--selftest-ui` runs under `-platform offscreen`, and Qt's offscreen plugin
+    uses the generic font database, which looks for a deployed lib/fonts and
+    complains when there is none. The Windows plugin uses the system fonts and
+    says nothing - measured on one binary: the offscreen check run logged it and
+    a normal launch minutes later did not.
+
+    Left in the count it would make every future build report at least one
+    problem for ever, and a count that is never zero is a count nobody reads.
+    This project has already paid that bill once: sixteen guaranteed-false
+    qmllint warnings were exactly what hid the seventeenth, which was real.
+
+    So the message is kept out of the VERDICT and still printed on the page
+    under its own heading with the reason. What this test pins down is that
+    both halves happen - because an exclusion that stops being visible is an
+    exclusion nobody will ever re-examine.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import build_report
+    finally:
+        sys.path.pop(0)
+
+    assert build_report.BENIGN_STARTUP, "the exclusion list is empty"
+    for needle, why in build_report.BENIGN_STARTUP:
+        # A REASON THAT CAN BE RE-CHECKED. "harmless" is not one; a date and
+        # what was run is. This is the bar that keeps the list from growing
+        # into a place inconvenient findings go to be forgotten.
+        assert "Measured" in why or "measured" in why, (
+            f"'{needle}' is excluded without a measurement behind it: {why}")
+        assert len(why) > 80, (
+            f"'{needle}' is excluded with a one-line excuse rather than "
+            f"evidence: {why}")
+
+    # And it must still reach the page. Rendering the section is what makes the
+    # exclusion auditable by the person reading the report.
+    page = build_report.render(
+        {"startup_problems": [],
+         "startup_benign": ["QFontDatabase: Cannot find font directory X"],
+         "startup_problem_count": 0, "ui_started": True, "ui_log_present": True,
+         "selftest_exit": "0", "regressions": [], "property_failures": [],
+         "engines_swept": 440, "every_engine_drew": True,
+         "same_picture_groups": 0, "like_line_chart": 0, "seed_stable": True,
+         "vector_pdf_ok": True, "unverified_engines": [],
+         "gallery_figures": 440, "undecided_clusters": 0, "order_changed": 0,
+         "order_checked": 0, "catalogue_entries": 0, "catalogue_engines": 0,
+         "failed_lines": [], "regression_passed": True, "startup_line_count": 0,
+         "when": "2026-01-01T00:00:00+00:00", "commit": "x", "branch": "y",
+         "dirty": 0, "version": "18.4.0", "kde_cold_ms": 0.0,
+         "kde_warm_ms": 0.0, "check_seconds": 0.0, "big_files_mb": {},
+         "stage_total_mb": 0.0},
+        [])
+    assert "not the program" in page, (
+        "a message excluded from the count does not appear on the page at all, "
+        "so nobody can tell it was excluded")
+    assert "why:" in page, "the page names the exclusion without its reason"
+
 
 def test_process_capability_bins_its_measurements() -> None:
     """A chart named for a distribution that drew a time series.
@@ -4309,8 +4711,7 @@ def test_a_bar_chart_can_carry_a_reference_rule() -> None:
     assert "if(s.drawLine&&n>=2){" in body, (
         "drawBar draws a reference rule as bars again")
 
-    head = _strip_comments(source[source.index("PlotSpec QtPlotBackend::prepareSpecCore"):
-                                  source.index("PlotSpec QtPlotBackend::prepareSpecCore") + 6000])
+    head = _strip_comments(_engine_chain())
     assert 'if(in.engine==QLatin1String("Bar")){' in head, (
         "a Bar chosen from the library keeps whatever drawLine its caller left "
         "set, so it can come out as a line chart")
@@ -4492,16 +4893,34 @@ def test_zero_pins_the_x_axis_only_where_zero_is_the_baseline() -> None:
     the class.
     """
     source = _backend_source()
+    # To the END OF THE FUNCTION, not 2600 characters along it.
+    #
+    # This read `source[start:start + 2600]`, and a character count is not a
+    # scope: adding eight lines of comment above the pin pushed the two lines
+    # this guard is about outside the window, and the test failed reporting
+    # that a pin it could no longer see had been removed. A guard that a
+    # comment can break is a guard that gets deleted rather than fixed.
     start = source.index("    // AND THE SAME FOR X, which had none.")
-    body = _strip_comments(source[start:start + 2600])
+    end = source.index("\n}\n", start)
+    body = _strip_comments(source[start:end])
 
-    assert "const bool pinnedLow=(zeroOnX&&xLo==0.0);" in body, (
+    assert "const bool pinnedLow=(zeroOnX&&!f.xLog&&xLo==0.0);" in body, (
         "the x pin is back to asking only whether the bound is zero, so every "
         "figure whose data starts at zero has its leftmost mark drawn half "
         "outside the frame")
-    assert "const bool pinnedHigh=(zeroOnX&&xHi==0.0);" in body, (
+    assert "const bool pinnedHigh=(zeroOnX&&!f.xLog&&xHi==0.0);" in body, (
         "the high end of the x pin no longer asks whether zero is this "
         "engine's baseline")
+    # AND THAT THE PIN IS A LINEAR ZERO.
+    #
+    # The `!f.xLog` was added when the headroom stopped skipping log axes. On a
+    # log axis the stored bound is the LOGARITHM, so a bound of 0.0 there is the
+    # value one, not the origin - and a bar measured from zero cannot be drawn
+    # on a log axis at all, because zero is not on it. Without this the pin
+    # fires on any log axis whose range happens to start at a decade boundary
+    # of 10^0 and costs that end its padding. pinZeroBaseline only clamps when
+    # the axis is linear, for the same reason, which is what makes this the
+    # same question asked twice rather than two rules.
 
     clamp = _strip_comments(source)
     assert 'const bool zeroOnX = spec.engine==QLatin1String("Horizontal Bar");' in clamp, (
@@ -4728,8 +5147,7 @@ def test_a_comet_fades() -> None:
     partly by the width so the fade survives being printed at 89 mm.
     """
     source = _backend_source()
-    start = source.index("        if(comet||ribbon){")
-    body = _strip_comments(source[start:start + 6000])
+    body = _strip_comments(_family_body(source, "draw3DMarks"))
 
     assert "p->setOpacity(0.18+0.77*age);" in body, (
         "the comet's trail is back to one uniform opacity, so Comet 3D is a "
@@ -4865,8 +5283,7 @@ def test_a_streamline_says_which_way_it_goes_and_does_not_wrap() -> None:
     the domain rather than in steps fixes both.
     """
     source = _backend_source()
-    start = source.index("    if(streaming){")
-    body = _strip_comments(source[start:start + 7000])
+    body = _strip_comments(_family_body(source, "drawStreamlines"))
 
     assert "const double maxArc=0.45*std::hypot(gu.xHi-gu.xLo,gu.yHi-gu.yLo);" in body, (
         "the streamline length is measured in steps again rather than in the "
@@ -5016,7 +5433,7 @@ def test_the_engines_that_fit_a_named_law_are_shown_that_law() -> None:
         "nothing checks the Ea the engine reports")
     assert "8.4*s/(0.42+s)" in source, (
         "the kinetics fixture no longer saturates to a known Vmax and Km")
-    assert "92.0/(1.0+std::pow(35.0/d,1.4))" in source, (
+    assert re.search(r"92\.0/\(1\.0\+std::pow\(35\.0/\w+,1\.4\)\)", source), (
         "the dose-response fixture no longer has a known EC50 and Hill slope")
     assert "12.4*std::pow(h,2.1)" in source, (
         "the rating fixture no longer follows the power law the engine fits - "
@@ -5231,8 +5648,17 @@ def test_a_note_an_engine_produced_reaches_the_page() -> None:
         "PlotAnnotation can no longer say who made it, so the refresh cannot "
         "tell an engine's note from a caller's and discards both")
 
+    # THE WHOLE FUNCTION, NOT THE FIRST THREE THOUSAND CHARACTERS OF IT.
+    #
+    # This used to slice a fixed window, and the window was wide enough until
+    # applyLimits grew a value-scale step at its top - at which point the
+    # annotation lines slid past 3,000 characters and three guards failed, none
+    # of which had an opinion that had changed. That is the same fault
+    # _compute_range_source records: a guard that names a PLACE rather than a
+    # statement. The body ends where its closing brace is, so that is what is
+    # read.
     start = source.index("PlotSpec& applyLimits(")
-    body = _strip_comments(source[start:start + 3000])
+    body = _strip_comments(source[start:source.index("\n}\n", start)])
     assert "if(note.derived) fromEngine.append(note);" in body, (
         "the refresh no longer keeps the notes a rewrite produced, so four "
         "engines are computing annotations that reach nothing")
@@ -5492,10 +5918,10 @@ def test_the_event_and_time_frequency_engines_are_shown_events_and_change() -> N
         "spaced ticks close up into a solid line")
     spikes = source[source.index("QVector<double> spikeA,spikeB,spikeC;"):
                     source.index("QVector<double> chirpTime,chirpValue;")]
-    assert "at+=-std::log(qMax(1e-9,uniform()))/rate[k];" in spikes, (
+    assert re.search(r"at\+=-std::log\(qMax\(1e-9,uniform\(\)\)\)/\w+\[k\];", spikes), (
         "the spike trains are no longer Poisson, so the events are evenly "
         "spaced and the figure is a row of rules again")
-    assert "const double rate[3]={7.5,2.8,14.0};" in spikes, (
+    assert re.search(r"const double \w+\[3\]=\{7\.5,2\.8,14\.0\};", spikes), (
         "the three trains no longer differ in rate, so there is nothing to "
         "compare between the rows")
 
@@ -5749,7 +6175,7 @@ def test_the_last_pair_reading_engines_are_given_pairs() -> None:
 
     curves = source[source.index("QVector<double> trainScore,validScore,paramTrain,paramValid;"):
                     source.index("const QHash<QString,ShapedAxes> shapedAxes{")]
-    assert "validScore.append(0.93-0.40*std::exp(-n/4.5));" in curves, (
+    assert re.search(r"validScore\.append\(0\.93-0\.40\*std::exp\(-\w+/4\.5\)\);", curves), (
         "the learning curve no longer plateaus, so the point at which more "
         "data stops paying - which is the whole reading - does not exist")
     assert "paramValid.append(0.90-0.014*(k-11.0)*(k-11.0)*0.09" in curves, (
@@ -6356,15 +6782,23 @@ def test_auto_does_not_choose_the_quadratic_method_for_large_samples() -> None:
     """
     source = _strip_comments(_estimators_source())
 
-    assert "else if(pts.size()<=kDelaunayLimit) chosen=Estimator::DelaunayLinear;" in source, (
+    # Matched by its arithmetic rather than by its exact text: the Auto ladder
+    # now lives in `chooseMethod` and writes `m.chosen`, and a guard that
+    # pinned the old spelling failed on the rename rather than on the rule.
+    assert re.search(
+        r"else if\(pts\.size\(\)<=kDelaunayLimit\)\s*(?:\w+\.)?chosen\s*=\s*"
+        r"Estimator::DelaunayLinear;", source), (
         "Auto picks a triangulation without asking whether the sample can be "
         "triangulated")
-    assert "else chosen=Estimator::ModifiedShepard;" in source, (
+    assert re.search(r"else\s+(?:\w+\.)?chosen\s*=\s*Estimator::ModifiedShepard;",
+                     source), (
         "Auto has no local method to fall to for a large sample, so it is back "
         "to choosing the quadratic one for the biggest inputs")
-    assert ("if((chosen==Estimator::DelaunayLinear||chosen==Estimator::CloughTocher)\n"
-            "       &&pts.size()>kDelaunayLimit)\n"
-            "        chosen=Estimator::ModifiedShepard;") in source, (
+    assert re.search(
+        r"if\(\(?(?:\w+\.)?chosen==Estimator::DelaunayLinear"
+        r"\|\|(?:\w+\.)?chosen==Estimator::CloughTocher\)\s*"
+        r"&&pts\.size\(\)>kDelaunayLimit\)\s*"
+        r"(?:\w+\.)?chosen=Estimator::ModifiedShepard;", source, re.S), (
         "a triangulating estimator asked for explicitly on too large a sample "
         "no longer falls back, so it returns an empty field that reads as "
         "'nothing was measured here'")
@@ -6419,15 +6853,33 @@ def test_a_sounding_labels_its_isobars_where_they_are() -> None:
     and had its descenders cut off.
     """
     source = _backend_source()
-    start = source.index("void QtPlotBackend::drawSounding(")
-    body = _strip_comments(source[start:start + 22000])
+    # drawSounding is now a dispatcher; the chrome - which is where the isobar
+    # labels are placed - is its own function.
+    body = _strip_comments(_family_body(source, "soundingFrame",
+                                        "drawSoundingChrome",
+                                        "drawSoundingBackground"))
 
-    assert ("const QPointF end=(chart==SoundingChart::Tephigram)\n"
-            "                          ? at(coolest,hPa)\n"
-            "                          : QPointF(box.left(),at(coolest,hPa).y());") in body, (
-        "the isobar label anchor is back to one rule for four charts - either "
-        "pinned to the frame, which is wrong for the rotated chart, or taken "
-        "from at(coolest,hPa), which is wrong for the skewed one")
+    # ASSERTED AS A SHAPE, not as three lines of text. The first version of
+    # this pinned the exact source of the expression, and it broke the moment
+    # the function was split and `at(...)` became `frame.at(...)` - a guard
+    # that fails on a rename it was never about. What it actually means is:
+    # the anchor asks which chart this is, and the two answers are different -
+    # one of them measured from the left edge of the frame and one of them not.
+    anchor = re.search(
+        r"const QPointF end\s*=\s*\((?:\w+\.)?chart==SoundingChart::Tephigram\)"
+        r"(.{0,200}?);", body, re.S)
+    assert anchor, (
+        "the isobar label anchor no longer asks which chart it is drawing, so "
+        "it is one rule for four charts again - either pinned to the frame, "
+        "which is wrong for the rotated chart, or taken from the cool end of "
+        "the isotherm, which is wrong for the skewed one")
+    arms = anchor.group(1)
+    assert arms.count("?") == 1 and arms.count(":") >= 1, (
+        "the anchor is no longer a choice between two placements")
+    before, after = arms.split("?", 1)[1].split(":", 1)
+    assert ("box.left()" in after) != ("box.left()" in before), (
+        "both arms of the isobar anchor measure from the same place, so the "
+        "rotated chart and the level ones are being treated alike again")
     assert "const double bottom=target.bottom()-fm.height()*2.4-10.0;" in body, (
         "the frame no longer leaves room for both rows drawn under it, so the "
         "axis note is cut off by the bottom of the canvas")
@@ -6441,3 +6893,3173 @@ def test_a_sounding_labels_its_isobars_where_they_are() -> None:
         "a label that sits inside the frame is no longer kept inside it, so "
         "the topmost isobar's number is drawn over the frame line and the "
         "readout strip above")
+
+
+def test_a_polar_ring_is_labelled_with_a_number_somebody_would_choose() -> None:
+    """312, 625, 937, 1.25e+03 — for a count of observations.
+
+    The rings were drawn at quarters of the radius and then labelled with
+    quarters of the largest value, which produces a round number only when the
+    largest value happens to be round. A wind rose whose biggest sector holds
+    1250 observations read 312 / 625 / 937 / **1.25e+03**: three values nobody
+    would have chosen, and the fourth in scientific notation. The polar
+    histogram read 24.3 / 48.5 / 72.8 / 97.
+
+    Both halves were already solved elsewhere in this file and neither was
+    reached for. `niceStep` picks the step a person would pick — it is what the
+    contour levels, the ternary grid and the sounding temperature axis all use.
+    `formatTick` gives a value the decimals its step needs and only reaches for
+    an exponent past 1e5, where `'g'` with three significant figures had turned
+    1250 into an exponent.
+
+    **The step decides the rings**, rather than the values being back-computed
+    from a radius already fixed, so the maximum rounds outward — the same thing
+    the sounding's temperature axis does, with the same second benefit: the
+    largest petal no longer runs into the outermost circle.
+
+    Wind Rose 500/1000/1500, polar histogram 20/40/60/80/100, compass
+    0.5/1.0/1.5/2.0, radar 0.2 through 1.0.
+    """
+    source = _backend_source()
+    start = source.index("void QtPlotBackend::drawPolar(")
+    body = _strip_comments(source[start:start + 5000])
+
+    assert "const double ringStep=niceStep(rMax/4.0);" in body, (
+        "the polar rings are back to quarters of whatever the largest value "
+        "happens to be, so they are labelled with numbers nobody would choose")
+    assert "rMax=ringStep*double(rings);" in body, (
+        "the maximum is no longer rounded outward to a whole number of rings, "
+        "so the outermost ring is not the value it is labelled with")
+    assert "formatTick(ringStep*double(ring),ringStep)" in body, (
+        "the ring labels are formatted by significant figures again, which is "
+        "what printed a count of 1250 as 1.25e+03")
+    assert "QString::number(rMax*double(ring)/4.0,'g',3)" not in body, (
+        "the old three-significant-figure label is back")
+    assert "const double r=radius*double(ring)/double(rings);" in body, (
+        "the rings are spaced as quarters regardless of how many are drawn, so "
+        "the circles and their numbers describe different radii")
+
+
+def test_a_soil_triangle_leaves_room_for_what_is_written_under_it() -> None:
+    """"sand" and "clay 1" written on top of each other, at the corner a reader
+    checks first.
+
+    Two footnote lines are drawn below this diagram — the class census and the
+    source — and the geometry reserved room for neither. `originY` was
+    `target.bottom() - margin*0.9`, which put the triangle's base at almost
+    exactly the height the census is written at, so a survey touching ten of
+    the eleven classes wrote straight through the bottom-left corner's own
+    labels.
+
+    **Measuring the census and truncating it does not fix this**, and that was
+    the first attempt. The line *fits* the figure's width; it simply lands on
+    top of the diagram. The room has to be reserved where the geometry is
+    decided — the same fix the sounding charts needed, for the same reason.
+
+    The census is still measured, because it is unbounded in principle: one
+    entry per populated class, joined with commas. It is ordered by count so
+    that if the line cannot hold every class the populated ones are the ones
+    that get the room, ties broken by name so the same data gives the same
+    sentence every time, and truncated by **font metrics** rather than by a
+    guessed character count — "sandy clay loam 1" is three times the width of
+    "sand 1".
+    """
+    source = _backend_source()
+    start = source.index("void QtPlotBackend::drawSoilTexture(")
+    body = _strip_comments(source[start:start + 16000])
+
+    assert "const double footnotes=fm.height()*2.6;" in body, (
+        "the soil triangle reserves no room for the two lines written under "
+        "it, so its base sits where the class census goes")
+    assert "const double originY=target.bottom()-margin*0.9-footnotes;" in body, (
+        "the triangle's base is no longer lifted clear of the footnotes")
+    assert "target.height()-2.0*margin-footnotes" in body, (
+        "the reserved footnote room is not taken out of the available height, "
+        "so the triangle is lifted into the title instead")
+    assert "if(fm.horizontalAdvance(censusLine+piece+tail)>room) break;" in body, (
+        "the class census is no longer measured before it is written, so a "
+        "survey touching every class writes past the edge of the figure")
+    assert "if(a.second!=b.second) return a.second>b.second;" in body, (
+        "the census is no longer ordered by count, so a truncated line drops "
+        "the populated classes rather than the empty tail")
+    assert "named.join(QStringLiteral(\", \"))" not in body, (
+        "the unmeasured join is back")
+
+
+def test_a_computed_reference_line_carries_its_value() -> None:
+    """Three labelled lines and a ruler.
+
+    This catalogue's standard for its fitted engines is explicit: *"every one of
+    them puts its numbers in the legend, because a chart that makes you get a
+    ruler out is a chart that gets read wrong."* The **reference rules** were
+    never held to it.
+
+    A Bland-Altman plot drew three horizontal lines labelled "bias", "+1.96 SD"
+    and "-1.96 SD" — and the bias and the limits of agreement ARE the result of
+    a Bland-Altman analysis; they are what gets quoted. The reader had to
+    measure them off the axis. The control chart did the same with "centre",
+    "UCL" and "LCL", and the X-bar chart with its grand mean.
+
+    Checked from outside by feeding the engine differences of exactly +2 with a
+    sample standard deviation of sqrt(10/9): the figure now reports **bias 2**
+    and limits at 2 +- 2.066, which is 1.96 sigma on the *sample* deviation —
+    the right convention, and a thing that could not be confirmed at all while
+    the numbers were absent.
+
+    Not every bare rule is a fault, and the guard does not ask for one: "0 dB",
+    "zero", "Cp = 0", "p = 0.05" and "genome-wide 5e-8" ARE their own value, and
+    the attribute charts already state their centre in the series label. Only
+    the rules computed from the data and left unstated were changed.
+    """
+    source = _backend_source()
+    body = _strip_comments(source)
+
+    for label, expr in (
+        ('bias %1', 'bias,0,\'g\',4'),
+        ('+1.96 SD %1', 'bias+1.96*sd,0,\'g\',4'),
+        ('-1.96 SD %1', 'bias-1.96*sd,0,\'g\',4'),
+    ):
+        assert f'QStringLiteral("{label}")' in body, (
+            f'the Bland-Altman rule "{label}" no longer carries its value, so '
+            "the limits of agreement have to be measured off the axis")
+        assert f".arg({expr})" in body, (
+            f"the value substituted into \"{label}\" is not the one the rule is "
+            "drawn at")
+
+    assert 'QStringLiteral("centre %1")\n                                                 .arg(centre,0,\'g\',4)' in body, (
+        "the control chart's centre line no longer states the centre")
+    assert 'QStringLiteral("UCL %1")' in body and 'QStringLiteral("LCL %1")' in body, (
+        "the control limits are named but not valued again")
+    assert 'QStringLiteral("centre %1").arg(grand,0,\'g\',4)' in body, (
+        "the X-bar chart's centre line no longer states the grand mean")
+
+
+def test_the_cross_correlation_says_where_its_peak_is() -> None:
+    """A correlogram whose whole answer was left to the eye.
+
+    A cross correlation exists to report the **lag of strongest correlation** —
+    the delay between two records. This engine computed 121 stems, labelled the
+    series "a x b", and stopped. The reader had to find the tallest stem by eye
+    on a 121-stem plot whose neighbours are within a few per cent of it, and
+    read its lag off the axis.
+
+    Two things this guard fixes, and the second was found only by looking at
+    the rendered figure:
+
+    1. The peak is chosen by **magnitude**, because a strong anti-correlation at
+       a lag is as much a finding as a positive one, with ties keeping the
+       smaller lag so the answer does not depend on the order the lags are
+       walked.
+    2. It is a **marked series**, not just a longer label. Putting the number
+       into the correlogram's own label achieved exactly nothing: this figure
+       has one named series, and a legend of one row is suppressed as a caption,
+       so the number was written where the reader never sees it. A second named
+       series carries it into the legend *and* puts a mark on the stem it
+       describes — the idiom the elbow's knee and the beam caustic's waist
+       already use.
+
+    Verified from outside: given a record delayed by exactly seven samples the
+    figure reports "strongest at lag 7, r 0.992".
+    """
+    source = _backend_source()
+    start = source.index('if(in.engine==QLatin1String("Cross Correlation")){')
+    body = _strip_comments(source[start:start + 4500])
+
+    assert "if(!havePeak||std::abs(r)>std::abs(peak)+1e-12){" in body, (
+        "the cross correlation no longer tracks its strongest lag, or no longer "
+        "chooses it by magnitude - a strong anti-correlation is a finding too")
+    assert 'mark.label=QStringLiteral("strongest at lag %1, r %2")' in body, (
+        "the peak lag is not reported at all, so the one number a correlogram "
+        "exists to give is left to the reader's eye")
+    assert "mark.drawMarkers=true;" in body, (
+        "the peak is named but not marked, so on a 121-stem plot the reader "
+        "still has to work out which stem the number refers to")
+    assert "out.series.append(mark);" in body, (
+        "the peak marker is built and never added, which is a legend row "
+        "describing nothing")
+
+
+def test_both_y_axis_labels_turn_the_same_way() -> None:
+    """"subgroup range" upside down beside a "subgroup mean" that read normally.
+
+    The primary y-axis label is drawn with `rotate(-90)` — bottom-to-top, the
+    convention. The secondary was drawn with `rotate(90)`, which is 180 degrees
+    from its neighbour, so on every two-axis figure the right-hand label came
+    out inverted. It does not read as a rotation choice; it reads as a font
+    fault.
+
+    Bottom-to-top on both sides is what matplotlib's twinx, Origin and Excel all
+    produce, and it is the only choice that lets a reader tilt their head once.
+
+    Six figures are affected, which is every engine with a secondary ordinate:
+    sCOD Degradation Profile, Polarisation & Power Curve, EIS Bode, Scree Plot,
+    Pareto Chart and the X-bar and R chart.
+    """
+    source = _backend_source()
+    start = source.index("if(!spec.y2Axis.label.isEmpty()){")
+    body = _strip_comments(source[start:start + 1800])
+
+    assert "p->rotate(-90);" in body, (
+        "the secondary y-axis label is rotated the opposite way to the primary "
+        "again, so it is drawn upside down next to it")
+    assert "p->rotate(90);" not in body, (
+        "the +90 rotation is back on the secondary axis label")
+
+
+def test_a_legend_label_too_long_for_its_box_is_the_reader_s_decision() -> None:
+    """"subgroup mean (n 5, 6 beyond the c…" — and the number was in the tail.
+
+    The legend box is capped at a third of the plot width, so a label longer
+    than that has to give way somewhere. It gave way one way, always: elided on
+    the right, which is where a computed value lives — "bias 0.0142", "strongest
+    at lag 3, r 0.81", "Km 2.5 mM". A figure that spent an engine's whole output
+    on a legend row and then cut the row off had reported nothing.
+
+    Wrapping is not the answer either. Twenty series each wrapping onto three
+    lines is a legend taller than the plot, and on those figures the ellipsis is
+    the right trade: the reader is matching colours, not quoting numbers.
+
+    Neither is right for every figure, so it is a setting — the same conclusion
+    the polar convention reached, and for the same reason. What this guards is
+    that BOTH branches exist and that the box is measured for the one in force:
+    a row counted as one line and drawn as three is a row drawn over its
+    neighbour, and a legend sized for wrapped rows while eliding is a box of
+    empty space.
+    """
+    source = _backend_source()
+    start = source.index("void QtPlotBackend::drawLegend(")
+    body = _strip_comments(source[start:source.index("\n// ---", start)])
+
+    assert "const bool wrapLabels=(spec.style.legendLabels==1);" in body, (
+        "the legend no longer reads what the figure asked for, so every label "
+        "is treated the same way again and a computed value is cut off the end "
+        "of the one row that reported it")
+    assert "Qt::TextWordWrap,keyFor(s)" in body, (
+        "the wrapping branch is gone - the setting offers a choice the painter "
+        "cannot carry out")
+    assert "fm.elidedText(keyFor(s),Qt::ElideRight,widest+4)" in body, (
+        "the eliding branch is gone, so a twenty-series legend wraps itself "
+        "taller than the plot it belongs to")
+
+    # The measurement, and the box built from it. Both have to be present: a
+    # lineCount that nothing sums is a measurement thrown away.
+    assert "const QRectF need=fm.boundingRect(" in body, (
+        "the wrapped height is no longer measured with the font metrics the "
+        "text is drawn with, so the box reserves a height the rows do not use")
+    assert "totalLines+=lineCount[i];" in body, (
+        "the per-row heights are measured and never summed, which is a "
+        "measurement thrown away and a box sized by series again")
+    assert "const double boxH=qMin(rowH*totalLines+8," in body, (
+        "the legend box is sized by the number of SERIES again rather than the "
+        "number of rows they occupy, so a wrapped legend overruns its own box")
+    assert "const double rowHeight=rowH*lineCount.at(i);" in body, (
+        "a legend row is a fixed height again, so a wrapped label is drawn "
+        "across the entry beneath it")
+
+    # How many entries fit. Counted in rows, not in series - the fault this
+    # replaced was a probe that stepped by one row height per SERIES.
+    assert "if(used+need>room) break;" in body, (
+        "how many legend entries fit is no longer accumulated from their real "
+        "heights, so a wrapped three-line entry is promised room for one")
+    assert "for(double probe=box.top()+4;probe+rowH<=box.bottom()-2;probe+=rowH)" not in body, (
+        "the fixed-stride fit probe is back, which counts a wrapped entry as "
+        "one row and draws the last one over the axis")
+
+
+def test_the_legend_setting_reaches_the_figure_from_the_window() -> None:
+    """A setting nothing can set is a comment.
+
+    Four links, and the chain is only as good as the weakest: the canvas has to
+    expose it to QML, the controller has to hold and persist it, the appearance
+    bar has to offer it, and the two places a canvas is created have to bind it.
+    Miss the last one and the control moves while the figure does not, which
+    reads as the setting being broken rather than unwired.
+
+    It is saved with the FIGURE as well as on the application, beside the polar
+    convention, because a notebook holds figures whose labels are short and
+    figures whose labels carry a fitted constant and its units.
+    """
+    canvas_h = (ROOT / "native/plot2d/include/PlotCanvas.h").read_text(encoding="utf-8")
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    app_h = (ROOT / "app/src/AppController.h").read_text(encoding="utf-8")
+    app_c = (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8")
+
+    assert ("Q_PROPERTY(int legendLabels READ legendLabels WRITE setLegendLabels"
+            in canvas_h), (
+        "the canvas no longer exposes the legend setting to QML, so nothing in "
+        "the interface can reach it")
+    assert "void PlotCanvas::setLegendLabels(" in canvas, (
+        "the canvas declares the property and does not implement its setter")
+    assert 'setLegendLabels(number("legendLabels"' in canvas, (
+        "the saved legend setting is written into the figure and never read "
+        "back, so reopening a figure loses it")
+    assert '{QStringLiteral("legendLabels"),spec_.style.legendLabels},' in canvas, (
+        "a figure no longer saves what it does with a long legend label")
+
+    assert "Q_PROPERTY(int plotLegendLabels" in app_h, (
+        "the controller no longer holds the legend setting")
+    assert "QStringList plotLegendLabelNames() const{" in app_h, (
+        "the two choices are no longer named, so the control is a pair of "
+        "numbers with no meaning attached")
+    assert "Shorten a label that does not fit" in app_h and \
+           "Wrap it onto more lines" in app_h, (
+        "the choices are named in numbers rather than in what they do to the "
+        "figure, which is not a choice anyone can make")
+    assert 'settings.value(QStringLiteral("plot/legendLabels")' in app_c, (
+        "the legend setting is not read back at start-up, so it resets to the "
+        "default every time the application is opened")
+    assert 'QStringLiteral("plot/legendLabels"),plotLegendLabels_' in app_c, (
+        "the legend setting is never written, so changing it lasts until the "
+        "window closes")
+
+    bar = _qml("components/FigureAppearanceBar.qml")
+    assert "root.app.plotLegendLabelNames" in bar and \
+           "root.app.plotLegendLabels = legendLabelBox.currentIndex" in bar, (
+        "the appearance bar no longer offers the choice, so the setting exists "
+        "and cannot be reached")
+
+    # EVERY file that creates a figure, found rather than listed.
+    #
+    # This named two files. One of them then had its ninety lines of canvas
+    # bindings lifted out into components/FigureCanvas.qml so that a tab bar
+    # could make more than one figure - and the guard failed, correctly, but
+    # for the wrong reason: the binding had not been lost, it had moved. A
+    # guard that names a FILE goes stale the first time that file is divided,
+    # which is the same fault the scale-variant check had when the backend was
+    # split into seven pieces.
+    #
+    # So the corpus is computed: any QML that instantiates a PlotCanvas is a
+    # place a figure is created, and every one of them has to bind the setting.
+    makers = sorted(
+        path.relative_to(ROOT / "app" / "qml").as_posix()
+        for path in (ROOT / "app/qml").rglob("*.qml")
+        if re.search(r"^\s*PlotCanvas\s*\{", _strip_comments(
+            path.read_text(encoding="utf-8")), re.M))
+    assert len(makers) >= 2, (
+        "no QML file appears to create a PlotCanvas any more, so this guard is "
+        "checking nothing - a vacuous pass, which is worse than a failure")
+    for name in makers:
+        assert "legendLabels: root.app.plotLegendLabels" in _qml(name), (
+            f"{name} creates a canvas without binding the legend setting, so "
+            "the control moves and that figure does not follow it")
+
+
+def test_the_impedance_engines_run_on_a_real_circuit() -> None:
+    """A Nyquist plot of the generic fixture is a scribble, not a semicircle.
+
+    EIS Bode and EIS Nyquist were two of the engines still drawing the shared
+    five-column fixture, which has no impedance in it. The figure rendered, drew
+    data and passed every structural check - and showed nothing an
+    electrochemist would recognise, so it could not be checked against anything.
+
+    The fixture is a Randles circuit inverted: a solution resistance in series
+    with a parallel RC. Its Nyquist locus is a semicircle from Rs to Rs+Rct,
+    apex at -Z" = Rct/2 - so the picture can be read back against the numbers it
+    was built from, which is the whole point of a shaped fixture. Rs 20 ohm,
+    Rct 100 ohm, C 10 uF: a semicircle from 20 to 120 with its apex at 50.
+
+    The Bode pair comes off the same complex impedance rather than being
+    generated separately, so the two figures cannot disagree.
+    """
+    body = _selftest_source()
+
+    assert "const double rs=20.0,rct=100.0,cap=1.0e-5;" in body, (
+        "the impedance fixture no longer states the circuit it inverts, so the "
+        "figure cannot be checked against the numbers behind it")
+    assert "const double tau=rct*cap;" in body, (
+        "the time constant is no longer derived from the circuit, so the "
+        "semicircle's apex no longer falls where the components put it")
+    assert "const double re=rs+rct/den;" in body and \
+           "const double im=-rct*(w*tau)/den;" in body, (
+        "the Randles impedance is no longer computed, so the Nyquist locus is "
+        "not a semicircle and nothing about it can be verified")
+    assert "eisMagnitude.append(std::sqrt(re*re+im*im));" in body and \
+           "eisPhase.append(std::atan2(im,re)*180.0/M_PI);" in body, (
+        "the Bode pair is no longer taken from the same complex impedance as "
+        "the Nyquist locus, so the two figures can disagree about one circuit")
+
+    assert '{QStringLiteral("EIS: Bode"),' in body, (
+        "EIS Bode is back on the generic fixture, which contains no impedance")
+    assert '{QStringLiteral("EIS: Nyquist"),' in body, (
+        "EIS Nyquist is back on the generic fixture")
+    assert 'column("Z real (ohm)",eisReal),column("Z imag (ohm)",eisImag)' in body, (
+        "the Nyquist figure no longer plots the imaginary part against the "
+        "real one, which is the only thing that makes it a Nyquist plot")
+
+
+def test_a_series_that_reports_the_whole_is_not_stacked_into_it() -> None:
+    """A peak of 1,480 mg/L drawn at 2,950, labelled 1.48e+03.
+
+    The VFA profile appends a "total VFA" line whose values are the sum of the
+    three species it has just handed to the stacked painter. The source said
+    appending it last was enough to keep it out of the stack — "drawStackedLines
+    has already stacked them and this rides on top". Nothing read that. The
+    painter walks the series in order and adds every one of them to the running
+    total, so the band came out at twice its height, and the annotation, which
+    is placed in data coordinates at the real peak, sat halfway down the picture
+    pointing at nothing.
+
+    It was invisible for as long as the engine ran on the generic five-column
+    fixture: doubling a total nobody can compute looks like a total. It showed
+    up the first time the figure was drawn from a digester whose species were
+    known.
+
+    Two places have to agree, and this is the whole reason the flag exists
+    rather than a special case in the painter: `stackedBands` computes the axis
+    range and says in its own comment that it accumulates exactly as the painter
+    does. A series excluded from one and not the other gives a frame that does
+    not contain the figure.
+    """
+    header = (ROOT / "native/plot2d/include/PlotSpec.h").read_text(encoding="utf-8")
+    assert "bool stacked = true;" in header, (
+        "a series can no longer say it is not part of the stack it is drawn "
+        "on, so a total is stacked into the total it reports")
+
+    source = _backend_source()
+
+    start = source.index("void QtPlotBackend::drawStackedLines(")
+    painter = _strip_comments(source[start:source.index("\n}\n", start)])
+    assert "if(!s.stacked){" in painter, (
+        "the stacked painter adds every series to the running total again, so "
+        "a total line doubles the band it sits on")
+    assert "p->setBrush(Qt::NoBrush);" in painter, (
+        "the unstacked series is filled, which adds its own height to a figure "
+        "whose entire content is height")
+
+    start = source.index("static StackedBands stackedBands(")
+    bands = _strip_comments(source[start:source.index("\n}\n", start)])
+    assert "if(!s.stacked){" in bands, (
+        "the axis range still stacks a series the painter does not, so the "
+        "frame is computed for a figure that is not the one drawn")
+
+    start = source.index('if(in.engine==QLatin1String("VFA Concentration Profile")){')
+    vfa = _strip_comments(source[start:start + 4000])
+    assert "total.stacked=false;" in vfa, (
+        "the VFA total is stacked into the species it is the sum of")
+
+
+def test_a_computed_number_is_not_written_where_no_legend_is_drawn() -> None:
+    """Thirteen engines reported a result into a legend row that is never drawn.
+
+    A legend of one named series is suppressed — the row would repeat what the
+    axes already say. That is right for a series called "measured" and wrong the
+    moment an engine puts its RESULT there, and a screen over all 434 prepared
+    specs found thirteen doing exactly that: the total harmonic distortion of a
+    harmonic spectrum, the scaling exponent of a DFA, the peak period of a
+    Lomb-Scargle periodogram, the principal stresses of a Mohr's circle, the
+    balanced point of a P-M interaction diagram, the net volume of a mass haul
+    diagram, the base case of a tornado, the period a light curve was folded on,
+    and the rest. Each was computed, formatted, and shown nowhere.
+
+    Three answers, chosen by what the number belongs to rather than applied as
+    one rule:
+
+    - a quantity that describes the whole figure goes in `figureNote`, under the
+      axis, where it is drawn whether there is one series or five and is
+      exported with the figure;
+    - a quantity that belongs to a POINT gets a second named series marking it,
+      which both fills the legend and ties the number to the place it refers to
+      — the idiom the cross correlation's strongest lag already uses;
+    - where a marker already existed and the envelope beside it carried the
+      name, the name moved onto the marker.
+
+    This asserts each engine reports through one of those, not through a lone
+    series label.
+    """
+    source = _backend_source()
+
+    def body(anchor: str, span: int = 6000) -> str:
+        return _strip_comments(source[source.index(anchor):source.index(anchor) + span])
+
+    # Under the figure.
+    for anchor, needle, why in [
+        ('if(in.engine==QLatin1String("Harmonic Spectrum")){',
+         'out.figureNote=(std::abs(fundamental)>1e-300)',
+         "total harmonic distortion"),
+        ('if(in.engine==QLatin1String("Tornado Diagram")){',
+         'out.figureNote=QStringLiteral("Base case %1',
+         "the base case a tornado is read around"),
+        ('if(in.engine==QLatin1String("Mass Haul Diagram")){',
+         'out.figureNote=QStringLiteral("Net %1, largest cut %2',
+         "the net volume, largest cut and largest fill"),
+        ('if(in.engine==QLatin1String("Coherence Spectrum")){',
+         'out.figureNote=QStringLiteral("Averaged over %1 window',
+         "how many windows were averaged, without which a coherence of one "
+         "cannot be told from an artefact"),
+        ('if(in.engine==QLatin1String("Mean Cumulative Function")){',
+         'out.figureNote=QStringLiteral("Mean over %1 unit',
+         "the fleet size the ordinate is a mean over"),
+        ('if(in.engine==QLatin1String("Response Spectrum")){',
+         "out.figureNote=peaks.join(",
+         "the peak spectral response and the period it falls at"),
+    ]:
+        assert needle in body(anchor), (
+            f"{anchor.split('(')[2][:40]}: {why} is no longer reported under the "
+            "figure, so with one series on the plot it is shown nowhere")
+
+    assert 'QStringLiteral("s1 %1, s2 %2, tmax %3, principal plane "' in source, (
+        "Mohr's circle no longer states its principal stresses under the "
+        "figure, and a single stress state draws no legend to put them in")
+    assert 'out.figureNote=QStringLiteral("Peak %1 at %2%3%4%5.")' in source, (
+        "the radiation pattern's beamwidth, front-to-back and sidelobe are back "
+        "in a legend row that a single-series polar figure never draws")
+    assert 'out.figureNote=QStringLiteral("Folded on a period of %1.")' in source, (
+        "the phase-folded light curve no longer says what it was folded on, "
+        "which is the only thing separating a shape from noise")
+    assert 'out.figureNote=QStringLiteral("%1 sweeps overlaid on a symbol period ' in source, (
+        "the eye diagram no longer says how many sweeps it overlays")
+    assert 'out.figureNote=QStringLiteral("Mean of %1 subjects; standard deviation ' in source, (
+        "the spaghetti plot no longer reports its subject count and spread")
+    assert 'QStringLiteral("alpha %1, scatter about the fit %2 - %3.")' in source and \
+           'line.label=QStringLiteral("fit");' in source, (
+        "the DFA's scaling exponent is back in an undrawn legend row")
+
+    # Marked, not merely named.
+    lomb = body('mark.label=QStringLiteral("peak period %1 (power %2)")', 700)
+    assert "mark.drawMarkers=true;" in lomb and "out.series.append(mark);" in lomb, (
+        "the Lomb-Scargle peak is named without being marked, so on a spectrum "
+        "with several comparable humps nothing says which one is meant")
+
+    pm = body('if(in.engine==QLatin1String("P-M Interaction Diagram")){')
+    assert 'mark.label=QStringLiteral("balanced point: M %1 at P %2")' in pm, (
+        "the balanced point's name is back on the envelope rather than on the "
+        "marker that sits at it, which leaves one named series and no legend")
+    assert 'envelope.label=QStringLiteral("interaction envelope");' in pm, (
+        "the envelope no longer carries a plain name, so the legend has one "
+        "row again and is suppressed")
+
+    # The function plot is the counter-example and is deliberately left alone:
+    # its ordinate already carries the expression, so a note would repeat it.
+    # The guard is that the reason still holds - the series label and the
+    # ordinate are the same text.
+    assert "curve.label=text;" in source, (
+        "the function plot's series no longer carries its expression")
+    assert "out.figureNote" not in body(
+        'if(in.engine.startsWith(QLatin1String("Function"))', 3000), (
+        "the function plot has gained a note repeating the expression its "
+        "ordinate already shows")
+
+
+def test_a_measured_quantity_is_written_the_way_a_person_would_write_it() -> None:
+    """"net 7555, most cut 1.376e+04" — same figure, same units, two notations.
+
+    `QString::number(v,'g',n)` leaves plain notation as soon as a value needs
+    more digits before the point than n, so the threshold that decides the
+    notation belongs to the format and not to the quantity. A sweep of every
+    label on all 434 prepared specs found thirteen in exponent form; six of them
+    were faults and they included two labels holding both notations at once (a
+    mass haul reading "net 7555, most cut 1.376e+04" and a stress-strain curve
+    reading "E 7e+04, UTS 410, yield 271.1" — all four megapascals).
+
+    One destroyed its value outright: an O-C diagram's epoch is a Julian date,
+    which needs seven figures before the point, and at three it read "2.45e+06"
+    — a five-thousand-day window rather than a night.
+
+    The other seven are correct and are deliberately untouched: a genome-wide
+    threshold of 5e-8, an Arrhenius pre-exponential, a relative roughness of
+    1e-05, a Paris coefficient, a bit error rate of 1e-12. These are written in
+    exponent form by the people who read them, and spelling them out in full
+    would be the same mistake facing the other way.
+    """
+    source = _backend_source()
+    start = source.index("QString formatMeasured(")
+    fn = _strip_comments(source[start:source.index("\n}\n", start)])
+
+    assert "if(m<1e-4||m>=1e9) return QString::number(v,'g',significant);" in fn, (
+        "the formatter no longer falls back to exponent form at the magnitudes "
+        "where a person would use it too")
+    assert "const int magnitude=int(std::floor(std::log10(m)));" in fn, (
+        "the number of decimals is no longer derived from the value's "
+        "magnitude, so significant figures are not what is kept")
+    assert "const int decimals=qBound(0,significant-1-magnitude,9);" in fn, (
+        "the decimal count no longer follows from the significant figures "
+        "asked for")
+
+    # The six call sites the sweep found, each named.
+    for needle, why in [
+        ('QStringLiteral("peak total %1").arg(formatMeasured(peak))',
+         "the VFA peak is back in exponent form"),
+        (".arg(formatMeasured(running))\n                               "
+         ".arg(formatMeasured(highest)).arg(formatMeasured(lowest));",
+         "the mass haul's net, cut and fill are back in mixed notation"),
+        (".arg(formatMeasured(epochZero,9))",
+         "the O-C epoch is back at three significant figures, which names a "
+         "five-thousand-day window rather than a Julian date"),
+        (".arg(formatMeasured(slope));",
+         "the cost-effectiveness threshold is back in exponent form"),
+        (".arg(s.label).arg(formatMeasured(line.slope)).arg(formatMeasured(peak))",
+         "the stress-strain modulus is back in exponent form beside a UTS "
+         "written plainly, in the same units"),
+        (".arg(formatMeasured(ik)).arg(formatMeasured(f.slope));",
+         "the Koutecky-Levich kinetic current and slope are back in exponent "
+         "form"),
+    ]:
+        assert needle in source, why
+
+    # And the quantities that are RIGHT in exponent form are still written that
+    # way. Applying the fix to all of them would be the same error reversed.
+    assert "genome-wide 5e-8" in source, (
+        "the genome-wide significance threshold is no longer written 5e-8, "
+        "which is how every paper reporting one writes it")
+    moody_at = source.index('if(in.engine==QLatin1String("Moody Diagram")){')
+    assert "formatMeasured" not in source[moody_at:moody_at + 6000], (
+        "the Moody diagram's relative roughness has been rewritten out of "
+        "exponent form, which is not how a pipe roughness is quoted")
+
+
+def test_the_tornado_s_base_case_is_a_line_and_not_a_bar() -> None:
+    """A one-and-a-half pixel tick under the shortest bar.
+
+    `drawFloatingRow` reads every series as a bar: one row in y, a start and an
+    end in x. The tornado's base case is the other shape — one abscissa, and the
+    two rows it should span — so it was drawn as a bar on row zero running from
+    the base case to the base case. A zero-length bar is a milestone, and a
+    milestone is never allowed to vanish, so it came out as the minimum 1.5
+    pixels: a tick under the shortest bar, on a chart whose entire reading is
+    which side of the base case each bar falls.
+
+    Two rows and one abscissa is unambiguous here. Gantt, Availability Timeline
+    and Swimmer Plot all build their bars as y={row}, so none of them can reach
+    this branch.
+    """
+    source = _backend_source()
+    start = source.index("void QtPlotBackend::drawFloatingRow(")
+    body = _strip_comments(source[start:source.index("\n}\n", start)])
+
+    assert "if(s.y.size()==2&&s.x.size()==2&&s.x[0]==s.x[1]){" in body, (
+        "a vertical rule handed to the floating-row painter is drawn as a "
+        "zero-length bar again, so the tornado's base case is a tick")
+    assert "p->drawLine(toDevice(f,s.x[0],s.y[0]),toDevice(f,s.x[1],s.y[1]));" in body, (
+        "the rule is recognised and not drawn as a line")
+
+
+def test_the_digester_engines_run_on_a_batch_fermentation() -> None:
+    """Four engines that each report a number, and nothing to check it against.
+
+    The modified Gompertz fit, the sCOD profile, the VFA stack and the fuel
+    cell were all drawing the generic five-column sweep fixture. They rendered,
+    drew data and passed every structural check, and the numbers in their
+    legends meant nothing because the data behind them meant nothing.
+
+    One batch fermentation, stated as constants and inverted, so every legend
+    can be read back against the line that produced it. The Gompertz fixture is
+    the strongest case: the equation the fixture is built from is the equation
+    the engine fits, so the legend has to return P 420, Rm 38 and lambda 6 — and
+    it does.
+    """
+    body = _selftest_source()
+
+    assert "const double potential=420.0;" in body and \
+           "const double maxRate=38.0;" in body and \
+           "const double lag=6.0;" in body, (
+        "the Gompertz fixture no longer states the three parameters it inverts, "
+        "so the fit has nothing to be checked against")
+    assert "potential*std::exp(-std::exp(inner))" in body, (
+        "the cumulative gas curve is no longer the modified Gompertz, so the "
+        "engine is not being asked to recover what the data was made with")
+    assert "const double scod0=8000.0;" in body and "const double decay=0.045;" in body, (
+        "the substrate profile is no longer first order with a stated rate, so "
+        "the removal percentage the engine derives cannot be checked")
+    assert "amplitude*(std::exp(-fall*t)-std::exp(-rise*t))" in body, (
+        "the volatile fatty acids are no longer produce-then-consume "
+        "intermediates, so the stack's total only rises and the peak the "
+        "engine reports is just the last point")
+    assert "const double ocv=0.78;" in body, (
+        "the cell no longer has a stated open-circuit voltage, so the peak "
+        "power the engine computes from P = IV is not a consequence of "
+        "anything")
+
+    for engine in ("Gompertz H₂ Kinetics", "sCOD Degradation Profile",
+                   "VFA Concentration Profile", "Polarisation & Power Curve"):
+        assert f'{{QStringLiteral("{engine}"),' in body, (
+            f"{engine} is back on the generic five-column fixture, which "
+            "contains no fermentation")
+
+    # Three of the four read a POINT out of one series. Handed a numbered
+    # column they would fit against a row index.
+    assert 'paired("cumulative H₂ (mL)",digestHour,digestBiogas)' in body, (
+        "the Gompertz fixture numbers its rows instead of carrying the time, "
+        "so the fit is against a subscript")
+    assert 'paired("sCOD",digestHour,digestScod)' in body, (
+        "the sCOD fixture numbers its rows instead of carrying the time")
+    assert 'paired("cell voltage (V)",cellCurrent,cellVoltage)' in body, (
+        "the cell fixture numbers its rows instead of carrying the current, so "
+        "the power the engine computes is voltage times row number")
+
+
+def test_the_signal_engines_run_on_signals_with_known_answers() -> None:
+    """Seven engines whose whole output is a number, and nothing to check it on.
+
+    The spectrum, the autocorrelation, the lag plot, the cross correlation, the
+    confidence ellipse and the two calculus engines were all drawing the generic
+    five-column sweep fixture. Each rendered, drew data and passed every
+    structural check, and none of it could be checked against anything.
+
+    Each fixture is now built so the answer is known before the program runs:
+
+    - **6.25 Hz and 12.5 Hz sampled at 100 Hz** — both exact divisors of the
+      sample rate, sixteen and eight samples to the cycle, so the peaks land on
+      FFT bins instead of smearing between two, and the autocorrelation of the
+      same record has to return at lag 16 and its multiples. It does. The second
+      tone is the octave at 0.4 of the amplitude, so the power ratio is checkable
+      against 0.4 squared.
+    - **A source and its echo at exactly twelve samples** under independent
+      noise. The engine correlates a[i] against b[i+lag] and the echo is
+      b[i] = a[i-12], so the strongest stem must stand at lag **+12** — which
+      also fixes the sign, the half of a cross correlation most often read
+      backwards. The figure reports "strongest at lag 12, r 0.927".
+    - **A bivariate normal with a stated covariance** — sd 2 across, sd 1 up,
+      correlation 0.7 — so the 95% ellipse can be judged. An ellipse drawn from
+      a wrong eigenvector leans at 45 degrees; this one has to lean at the
+      regression slope.
+    - **A sine over two turns**, because the derivative of sin is cos and its
+      integral from zero is 1 - cos, so both figures are checkable by eye
+      against a shape everyone knows.
+
+    The sample rate matters to the fixture's SHAPE, not only its values: the
+    spectrum reads its sample interval off its own x, so these are paired. A
+    numbered column would put the abscissa in cycles per sample and the 6.25 Hz
+    peak would appear at 0.0625 with nothing on the figure saying the units had
+    changed.
+    """
+    body = _selftest_source()
+
+    assert "std::sin(2.0*M_PI*6.25*t)" in body and "0.4*std::sin(2.0*M_PI*12.5*t)" in body, (
+        "the spectrum fixture is no longer two tones at exact divisors of the "
+        "sample rate, so the peaks smear across bins and neither the frequency "
+        "nor the power ratio can be checked")
+    assert "const double t=double(i)*0.01;" in body, (
+        "the 100 Hz sample rate is gone, so 6.25 and 12.5 Hz are no longer "
+        "whole numbers of samples to the cycle")
+    assert "lagEcho.append((i>=12?src[i-12]:0.0)+0.35*noise());" in body, (
+        "the cross-correlation fixture is no longer a source and its echo at a "
+        "known delay, so neither the lag nor its sign can be checked")
+    assert "ellipseY.append(0.7*z1+std::sqrt(1.0-0.49)*z2);" in body, (
+        "the ellipse fixture no longer has a stated correlation, so an ellipse "
+        "drawn from the wrong eigenvector looks as good as the right one")
+    assert "waveY.append(std::sin(x));" in body, (
+        "the calculus fixture is no longer a sine, so neither the derivative "
+        "nor the integral has a known shape to be judged against")
+
+    for engine in ("Power Spectral Density", "Autocorrelation", "Lag Plot",
+                   "Cross Correlation", "Confidence Ellipse", "Derivative",
+                   "Integral"):
+        assert f'{{QStringLiteral("{engine}"),' in body, (
+            f"{engine} is back on the generic five-column fixture")
+
+    assert 'paired("signal",psdTime,psdSignal)' in body, (
+        "the spectrum's fixture numbers its rows, so its abscissa is cycles "
+        "per sample while the axis is labelled in frequency")
+    assert 'paired("sin(x)",waveX,waveY)' in body, (
+        "the calculus fixture numbers its rows, so the derivative is taken "
+        "against a subscript rather than against x")
+
+
+def test_a_radial_outline_does_not_collapse_to_the_centre() -> None:
+    """A row that was lowest on four axes drew as a line through the middle.
+
+    `Bounds::scale` maps a column's minimum to 0, and on a radial figure 0 is
+    the centre — one point every spoke shares. So an outline whose row is lowest
+    on four of six axes put four vertices in the same place and came out as a
+    line rather than a shape. Worse, it asserted something the data does not
+    say: a cruise speed of 443 kt drawn at the origin of an axis whose other
+    rows are 461 to 512 reads as *none*, not as *least*.
+
+    **The star glyph already reserved an inner quarter for exactly this reason,
+    and the radar chart did not** — the same rule applied to one class of a pair
+    and not the other, which is the shape of fault this catalogue keeps
+    producing. `radialScale` is now that rule in one place, with the floor
+    stated by the caller: a quarter for a star glyph, drawn small and in
+    multiples, and 0.15 for a radar, which gets the whole canvas.
+
+    The star glyph's geometry is unchanged — it passes 0.25 and gets exactly
+    what `0.25 + 0.75 * scale(v)` gave it — so its gallery figure stays
+    byte-identical. This is a fix to the radar and a de-duplication of the star.
+    """
+    source = _backend_source()
+    start = source.index("double radialScale(")
+    fn = _strip_comments(source[start:source.index("\n}\n", start)])
+
+    assert "return floorAt+(1.0-floorAt)*b.scale(v);" in fn, (
+        "the reserved inner radius is no longer applied, so a radial minimum "
+        "is drawn at the centre again")
+
+    start = source.index('if(in.engine==QLatin1String("Radar Chart")){')
+    radar = _strip_comments(source[start:start + 3000])
+    assert "constexpr double kRadarFloor=0.15;" in radar, (
+        "the radar chart no longer reserves an inner radius")
+    assert radar.count("radialScale(") == 2, (
+        "a radar spoke is positioned by raw scale() again, so a row lowest on "
+        "several axes collapses to a point at the centre")
+    assert "spans[a].scale(" not in radar, (
+        "the radar is back to mapping an axis minimum onto the centre")
+
+    # And the star glyph goes through the same function rather than writing the
+    # arithmetic out again. A second copy is how the two drift apart.
+    star_at = source.index("const double r=range[k].valid?radialScale(")
+    assert "radialScale(range[k],v,0.25)" in source[star_at:star_at + 200], (
+        "the star glyph has its own copy of the reserved-radius arithmetic "
+        "again, which is how it and the radar come to disagree")
+    assert "0.25+0.75*(range[k]" not in source, (
+        "the star glyph's open-coded reserved radius is back")
+
+
+def test_a_venn_label_is_placed_outward_from_the_centre() -> None:
+    """"found in service" written across the overlap of the other two sets.
+
+    Every circle's label was drawn above its own circle. That is right for the
+    two side by side and wrong for the third, which sits BELOW the centre — so
+    its name landed inside the overlap of the other two: unreadable against two
+    translucent fills, and pointing at the wrong region.
+
+    A three-set Venn is the case the engine exists for, and it was the only
+    arrangement that came out wrong. The label now goes on the far side of its
+    circle from the middle of the diagram.
+    """
+    source = _backend_source()
+    start = source.index('}else if(engine==QLatin1String("Venn Diagram")){')
+    body = _strip_comments(source[start:source.index("}else if(", start + 10)])
+
+    assert "const bool below=offsets[i][1]>0.0;" in body, (
+        "the Venn label no longer asks which side of the centre its circle is "
+        "on, so the third set's name is drawn over the other two again")
+    assert "at.y()+(below?lift:-lift)" in body, (
+        "the label is placed above the circle unconditionally again")
+
+
+def test_the_structural_engines_run_on_structured_data() -> None:
+    """A sunburst of "paired", "p_value" and "flag", sized by the sum of a sine.
+
+    Eleven engines read a SHAPE rather than a measurement — a composition, a
+    profile across named axes, a set of studies with intervals, a sample whose
+    distribution is the question — and all eleven were drawing the generic
+    five-column sweep. Each rendered and drew data, and each was a picture of
+    nothing.
+
+    Two of the fixtures are demonstrations rather than decoration, and that is
+    the point of them:
+
+    - the Q-Q and probability plots get a normal sample AND a right-skewed one,
+      because the pair is what those figures are for — one plots straight, the
+      other bends away at the top. On one smooth signal neither showed the only
+      thing it exists to show;
+    - the correlation matrix gets four columns with a stated structure — B
+      follows A at 0.9, C runs against it at -0.8, D is independent — so the
+      cells can be READ rather than admired.
+
+    The calibration fixture states its own miscalibration: the observed
+    frequency runs at 0.78 of the distance the predicted probability claims,
+    either side of a half, so the figure has a slope to be checked against
+    rather than a cloud that looks about right.
+    """
+    body = _selftest_source()
+
+    assert "skewSample.append(std::exp(0.6*z)*20.0);" in body, (
+        "the Q-Q and probability plots no longer get a skewed sample beside "
+        "the normal one, so neither figure demonstrates what it is for")
+    assert "calObserved.append(0.5+0.78*(predicted-0.5)" in body, (
+        "the calibration fixture no longer states its own miscalibration, so "
+        "the figure has no slope to be checked against")
+    assert re.search(r"corrB\.append\(0\.9\*\w+\+std::sqrt\(1\.0-0\.81\)\*noise\(\)\);", body) and \
+           re.search(r"corrC\.append\(-0\.8\*\w+\+std::sqrt\(1\.0-0\.64\)\*noise\(\)\);", body), (
+        "the correlation matrix's columns no longer have a stated structure, "
+        "so its cells cannot be checked")
+    assert "pdpPrediction.append(1.0/(1.0+std::exp(-(feature-5.0))));" in body, (
+        "the partial dependence fixture is no longer a logistic with a known "
+        "inflection, so the curve has no correct answer")
+    assert re.search(r"const double \w+\[8\]=\{0\.62,0\.81,0\.70,0\.95,0\.58,0\.77,0\.69,0\.84\};", body), (
+        "the forest plot's studies no longer agree in direction while "
+        "disagreeing in size, which is the reading a forest plot is drawn for")
+    assert "const double speed[5]=" in body, (
+        "the radar fixture is back to three rows, where every axis has one row "
+        "at each extreme and the figure draws as a star of spikes")
+
+    for engine in ("Q-Q Plot", "Probability Plot", "Calibration Plot",
+                   "Partial Dependence Plot", "Fan Chart", "Correlation Matrix",
+                   "Covariance Matrix", "Forest Plot", "Radar Chart",
+                   "Sunburst", "Sankey Diagram", "Venn Diagram",
+                   "Word Cloud", "Bubble Cloud"):
+        assert f'{{QStringLiteral("{engine}"),' in body, (
+            f"{engine} is back on the generic five-column fixture")
+
+    # The composition family reads each series' TOTAL as one part, labelled by
+    # the series name - the treemap idiom. A continuous column here is a wedge
+    # sized by the sum of a sine.
+    assert 'column("found in review",{124.0})' in body, (
+        "the Venn fixture no longer has three unequal sets, so the circles "
+        "cannot show that they are scaled by their totals")
+    assert 'column("corrosion",{240.0})' in body, (
+        "the word cloud is back on a continuous column, where a word is a "
+        "column name and its weight is the sum of a signal")
+
+
+def test_the_engine_chain_is_split_but_still_one_ordered_chain() -> None:
+    """2 minutes 10 seconds, single-threaded, on every build.
+
+    `QtPlotBackend.cpp` was 1.78 MB in one translation unit, and `prepareSpecCore`
+    alone was 19,600 lines of it. A translation unit cannot be divided across
+    cores, so a one-line change to any one of 434 engines recompiled all of it,
+    serially. Measured: 130 s for that file by itself.
+
+    Split into the shared helpers plus six contiguous arms of the chain, the
+    same work measures 48 s in total and about 15 s of wall clock on six cores,
+    and a change inside one group is about 6 s. The total dropped as well as
+    the wall clock, which is the compiler's cost being superlinear in function
+    size rather than anything clever in the split.
+
+    **THE ORDER IS THE BEHAVIOUR.** Several engines are matched by a
+    `startsWith` that a later and more specific test would also match, so the
+    chain is a sequence and not a set. The groups are contiguous runs of the
+    original sequence and are called in that sequence; calling them in any other
+    order, or letting one of them return early on a spec a later group should
+    have claimed, silently re-orders the catalogue. That is what this guards.
+
+    It also guards the two things that make the split safe rather than merely
+    smaller: that the blocks are verbatim (which is why the groups return
+    `std::optional` — every `return out;` in there is untouched, and so is every
+    `return` belonging to one of the many lambdas beside them), and that the
+    rewrite-depth counter is ONE object rather than one per translation unit.
+    """
+    src = ROOT / "native/plot2d/src"
+
+    for k in range(1, 7):
+        assert (src / f"QtPlotBackendEngines{k}.cpp").exists(), (
+            f"engine group {k} is gone - either the chain was re-merged into "
+            "one translation unit, or a group was deleted and the engines in "
+            "it now fall through to `return in;` and draw unrewritten")
+
+    header = (ROOT / "native/plot2d/include/QtPlotBackend.h").read_text(encoding="utf-8")
+    for k in range(1, 7):
+        assert (f"std::optional<PlotSpec> prepareEngineGroup{k}(const PlotSpec& spec) const;"
+                in header), (
+            f"prepareEngineGroup{k} is no longer declared returning an optional - "
+            "a bool-and-out-parameter signature would mean rewriting every "
+            "`return out;` in the chain by hand, and telling them apart from "
+            "the identical-looking returns inside its lambdas")
+
+    core = (src / "QtPlotBackend.cpp").read_text(encoding="utf-8")
+    start = core.index("PlotSpec QtPlotBackend::prepareSpecCore")
+    body = _strip_comments(core[start:core.index("\n}\n", start)])
+
+    # Called in order, each one tried before the next.
+    calls = re.findall(r"prepareEngineGroup(\d)\(in\)", body)
+    assert calls == ["1", "2", "3", "4", "5", "6"], (
+        f"the engine groups are called as {calls} rather than 1 to 6 in order. "
+        "The chain is a sequence, not a set: several engines are matched by a "
+        "startsWith that a later and more specific test would also match, so "
+        "re-ordering the groups re-orders the catalogue")
+    assert body.count("if(auto r=prepareEngineGroup") == 6, (
+        "a group is called without its result being tested, so the spec it "
+        "rewrote is thrown away and the engine draws unrewritten")
+    assert "RewriteDepthGuard" in body and "return in;" in body, (
+        "prepareSpecCore no longer guards its own recursion, or no longer "
+        "returns the spec unchanged when no group claimed it")
+
+    # The chain must not have been reordered inside the groups either: group k
+    # ends where group k+1 begins, with nothing lost between them.
+    chain = _engine_chain()
+    for k in range(1, 7):
+        text = (src / f"QtPlotBackendEngines{k}.cpp").read_text(encoding="utf-8")
+        assert f"QtPlotBackend::prepareEngineGroup{k}(const PlotSpec& in) const {{" in text, (
+            f"QtPlotBackendEngines{k}.cpp does not define the group it is named "
+            "for, so one group is defined twice and another not at all")
+        assert text.rstrip().endswith("} // namespace graphvis"), (
+            f"QtPlotBackendEngines{k}.cpp does not close its namespace")
+        assert "return std::nullopt;" in text, (
+            f"group {k} cannot decline a spec, so every engine reaching it is "
+            "claimed by it and the groups after it are unreachable")
+
+    # Every engine the dispatcher can be asked for still has a branch somewhere
+    # in the chain. A group lost in a merge would show up here and nowhere else.
+    assert chain.count("in.engine==") > 300, (
+        "the engine chain has lost most of its branches, which means a group "
+        "file is not being read or was emptied")
+
+    # ONE counter, not one per translation unit.
+    shared = (src / "QtPlotBackendShared.h").read_text(encoding="utf-8")
+    assert ("inline int& rewriteDepthCounter(){ static thread_local int depth=0; "
+            "return depth; }" in shared), (
+        "the rewrite-depth counter is back to being a variable at namespace "
+        "scope. In a header that gives every translation unit its own copy, "
+        "and the recursion it guards crosses them - so each copy sees a depth "
+        "of one and the guard never fires, which is the failure it exists to "
+        "prevent")
+    assert "thread_local int gRewriteDepth" not in shared, (
+        "the per-translation-unit depth counter is back")
+
+    # The helpers are inline, not static, for the same reason.
+    assert "inline void labelMatrixAxes(" in shared and \
+           "inline double negLogFloor(" in shared, (
+        "a shared helper is no longer inline, so either it has internal "
+        "linkage in seven translation units or it will not link at all")
+
+
+def test_the_linear_light_table_is_built_once_and_safely() -> None:
+    """Two threads, one array, no synchronisation.
+
+    `simulateInPlace` builds a 256-entry gamma table the first time it runs. It
+    used to do it like this:
+
+        static double toLinear[256];
+        static bool ready=false;
+        if(!ready){ ...fill the table...; ready=true; }
+
+    and **both threads do get here.** `paintSimulated` is called from
+    `PlotCanvas::paint`, which Qt Quick runs on the scene-graph render thread,
+    and from `PlotCanvas::renderTo`, which the export path runs on the GUI
+    thread. Both reaching it for the first time at once is an unsynchronised
+    write to one array by two threads — undefined behaviour whatever the values
+    are.
+
+    It is not saved by both writing the same numbers either. The store to
+    `ready` carries no release ordering, so the second thread may observe
+    `ready == true` while the table is still the zero-initialised array it
+    started as, and a frame drawn from that table is black.
+
+    A function-local static initialised by a lambda is the fix the language
+    already provides: initialised exactly once, and every thread arriving either
+    performs that initialisation or waits and then sees the finished object. The
+    arithmetic is untouched — the table is bit-for-bit what it was.
+
+    This was the first thing found by asking a narrower question than "is there
+    a race": *what mutable static state is reachable from more than one thread?*
+    That question has an answer you can enumerate.
+    """
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    body = _strip_comments(canvas)
+
+    assert "static const std::array<double,256> toLinear=[]{" in body, (
+        "the linear-light table is no longer a once-initialised function-local "
+        "static, so two threads can build it at the same time")
+    assert "static double toLinear[256];" not in body, (
+        "the raw static array is back")
+    assert "static bool ready=false;" not in body, (
+        "the unsynchronised ready flag is back - a thread can see it set while "
+        "the table it guards is still zeroes")
+    assert "table[i]=c<=0.04045?c/12.92:std::pow((c+0.055)/1.055,2.4);" in body, (
+        "the sRGB-to-linear arithmetic changed while it was being made "
+        "thread-safe, which is two changes in one and only one of them was "
+        "asked for")
+
+
+def test_a_crash_report_carries_the_log_of_the_session_that_died() -> None:
+    """Two crash reports on record, both describing the session that wrote them.
+
+    `reportUnexpectedExit` attaches "the startup log of the run that died", and
+    its own comment said *"the next few lines of this run are about to overwrite
+    it"*. They were not about to — they already had. The truncating write to
+    `startup.log` happened a dozen lines EARLIER in `main`, so the report read
+    back this session's log, timestamped milliseconds **after** the crash it was
+    supposed to explain.
+
+    Both unexpected-exit reports on the user's machine show exactly that, which
+    is why two crashes went undiagnosed. The instrument built to explain a crash
+    had been reporting the wrong session since it was written.
+
+    `startup.log` is now renamed to `startup.previous.log` **before** the new one
+    is written, and the reporter reads that.
+
+    **The ordering is the fix**, so the ordering is what this asserts. Checking
+    only that the rename exists would pass with it in the wrong place, which is
+    the same mistake one level up.
+    """
+    main_cpp = (ROOT / "app/src/main.cpp").read_text(encoding="utf-8")
+    body = _strip_comments(main_cpp)
+
+    assert 'QFile::rename(gStartupLogPath, previousLogPath);' in body, (
+        "the previous session's startup log is no longer preserved, so a crash "
+        "report attaches the log of the session reporting the crash")
+    assert 'QFile previous(dir + QStringLiteral("/startup.previous.log"));' in body, (
+        "the crash reporter reads startup.log again, which by then is this "
+        "session's own")
+    assert 'QFile previous(dir + QStringLiteral("/startup.log"));' not in body, (
+        "the reporter is back to reading the live startup.log")
+
+    rename_at = body.index("QFile::rename(gStartupLogPath, previousLogPath);")
+    truncate_at = body.index("QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text",
+                             body.index("gStartupLogPath = logDir"))
+    assert rename_at < truncate_at, (
+        "the previous startup log is preserved AFTER this session truncates "
+        "it, which preserves nothing. That is the original bug exactly: the "
+        "step that reads a file runs after the step that overwrote it")
+
+
+def test_vtk_is_not_switched_to_on_a_scene_graph_it_cannot_run_on() -> None:
+    """It set the mode, saved it, then said "restart to use it".
+
+    `QQuickVTKItem` requires an OpenGL Qt Quick scene graph, and `main` asks for
+    OpenGL only when the *previous* session chose that renderer — so selecting it
+    now cannot change the scene graph already running. The setter used to store
+    the mode, persist it, and only then set a status line saying the renderer
+    needed something this session does not have. It had already entered the
+    state it was describing as unusable.
+
+    The QML `Loader` watches `rendererMode` and does not read status lines, so it
+    immediately loaded the VTK viewport into a Direct3D scene graph. And because
+    the mode had been persisted first, the next launch came up in it too.
+
+    The choice is still remembered — remembering it is what makes the next launch
+    start on OpenGL and the renderer work. What must not happen is switching to
+    it now.
+    """
+    app = (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8")
+    start = app.index("void AppController::setRendererMode(")
+    body = _strip_comments(app[start:app.index("\n}\n", start)])
+
+    assert 'if(value==QStringLiteral("VTK / PBR")&&!graphicsApiIsOpenGL()){' in body, (
+        "the renderer switch no longer asks whether the scene graph can carry "
+        "VTK before switching to it")
+    guard_at = body.index('!graphicsApiIsOpenGL()')
+    assign_at = body.index("rendererMode_=value;")
+    assert guard_at < assign_at, (
+        "the mode is assigned before the scene graph is checked, so the QML "
+        "Loader has already been told to bring VTK up on Direct3D by the time "
+        "anyone objects")
+    assert body[guard_at:assign_at].count("return;") >= 1, (
+        "the guard does not return, so the switch happens anyway")
+    assert 'setValue(QStringLiteral("ui/rendererMode"),value);' in body[guard_at:assign_at], (
+        "the refused choice is not remembered either, so restarting - the one "
+        "thing the message asks for - would not bring VTK up next time")
+
+
+def test_the_native_surface_is_released_before_its_window_dies() -> None:
+    """A renderer presenting to an HWND that no longer exists.
+
+    The WGPU renderer is created against this window's native handle. That handle
+    does not live as long as the window object: a `QWindow`'s platform surface is
+    destroyed and recreated whenever the window is reparented or its frame style
+    changes — and putting it into a `WindowContainer`, which is exactly what
+    selecting the Native WGPU renderer does, is a reparent.
+
+    Nothing listened for that. `QEvent::PlatformSurface` was not in the event
+    switch at all, so the surface created against the first HWND went on being
+    presented to after that HWND had been destroyed. Releasing graphics
+    resources before the platform surface goes away is Qt's stated requirement
+    for any QWindow that renders natively.
+
+    Also guarded: `ensureRenderer` attempts once. It is called from four places
+    and used to record nothing, so a surface that cannot be created was
+    re-attempted on every expose, every resize and every frame — turning a
+    failure that might have been survivable once into a loop.
+    """
+    src = (ROOT / "app/src/NativeViewportWindow.cpp").read_text(encoding="utf-8")
+    body = _strip_comments(src)
+
+    assert "case QEvent::PlatformSurface:" in body, (
+        "the viewport no longer listens for its platform surface being "
+        "destroyed, so the native renderer outlives the window handle it was "
+        "created against")
+    assert ("QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed" in body), (
+        "the surface event is handled but not the one that matters - "
+        "SurfaceAboutToBeDestroyed is the only notice given before the handle "
+        "goes away")
+    assert "void NativeViewportWindow::releaseRenderer(){" in body, (
+        "there is no single place that lets go of the native surface, so the "
+        "destructor and the surface event will drift apart")
+    assert "attemptedRenderer_=false;" in body, (
+        "releasing the renderer does not clear the attempt latch, so the next "
+        "expose refuses to create a surface for the new window")
+
+    start = body.index("void NativeViewportWindow::ensureRenderer(){")
+    ensure = body[start:body.index("\n}\n", start)]
+    assert "if(attemptedRenderer_) return;" in ensure, (
+        "a failing surface creation is retried on every expose, resize and "
+        "frame again")
+    assert "if(!api.rendererNew||!api.rendererCamera" in ensure, (
+        "the renderer entry points are called without being checked, and a "
+        "call through a null function pointer cannot be diagnosed afterwards")
+    assert 'qInfo("GraphVis: creating the native WGPU surface' in ensure, (
+        "the breadcrumb before the call into the graphics driver is gone. It "
+        "is the only thing that would tell a preserved crash log where the "
+        "process died")
+
+
+def test_the_renderer_menu_names_the_modes_the_code_reads() -> None:
+    """A menu entry that half-worked, and a difference nobody would look for.
+
+    The View ▸ Renderer menu offered "Rust / WGPU". Every piece of code that
+    reads the setting compares against **"Native WGPU"**. So choosing it from the
+    menu set a string nothing recognised: the entry never showed as checked, the
+    picker in the top bar snapped back to Qt 2-D, and `applyMapping` fell past
+    its `rendererMode_ == "Native WGPU"` branch and pushed nothing into the
+    viewport it had just switched to — while the same renderer chosen from the
+    top bar worked.
+
+    This is the silent-name-mismatch shape again: two spellings of one thing, no
+    compiler and no test between them. The guard is that the menu's names are
+    exactly the set the C++ compares against.
+    """
+    menu = _qml("components/MainMenuBar.qml")
+    app_cpp = (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8")
+    # The modes the C++ actually distinguishes.
+    for mode in ('"Qt 2-D"', '"Native WGPU"', '"VTK / PBR"'):
+        assert f'QStringLiteral({mode})' in app_cpp or mode in app_cpp, (
+            f"the controller no longer names the renderer mode {mode}")
+
+    start = menu.index('Menu {\n            title: "Renderer"')
+    block = menu[start:start + 2600]
+    assert 'name: "Native WGPU"' in block, (
+        "the renderer menu no longer offers the mode string the code reads, so "
+        "choosing that renderer from the menu sets a value nothing recognises")
+    assert 'name: "Rust / WGPU"' not in block, (
+        "the menu is back to a second spelling of the WGPU renderer")
+
+    # The menu is now the ONLY list of the three, which is the point: see
+    # test_the_renderer_choice_is_explained_somewhere_longer_than_a_name.
+    # Comments stripped: the toolbar records WHY the picker left, and the
+    # reason names the mode it used to offer.
+    assert '"Native WGPU"' not in _strip_comments(_qml("components/TopBar.qml")), (
+        "a second renderer list is back on the toolbar")
+
+
+def test_the_renderer_choice_is_explained_somewhere_longer_than_a_name() -> None:
+    """Three names, no obvious default, and picking wrong looks like a fault.
+
+    The application had no Help menu at all, and the renderer picker's tooltip
+    said "Renderer" — the control's own label — and only when the bar was
+    narrow enough to hide that label. So the one setting whose options mean
+    nothing on their own was the one with nothing explaining it.
+
+    Each menu entry now carries what its renderer is *for*, the picker's tooltip
+    describes whichever is selected at any width, and Help ▸ Which renderer
+    should I use? puts the three side by side, which is the only way to choose
+    between them.
+    """
+    menu = _qml("components/MainMenuBar.qml")
+    top = _qml("components/TopBar.qml")
+
+    assert 'title: "&Help"' in menu, (
+        "the Help menu is gone, and with it the only place the renderer choice "
+        "is explained at more than one sentence")
+    # WHERE THE EXPLANATION LIVES MOVED, AND THIS GUARD MOVED WITH IT.
+    #
+    # It used to be a hand-written Popup in MainMenuBar.qml, and this test
+    # asserted the QML that opened it - `onTriggered: rendererHelp.open()` -
+    # and then read the three renderer names out of that popup's own markup.
+    # The popup is gone: the explanation is now a topic in the generated
+    # manual, where it can be searched and linked to rather than only being
+    # reachable by somebody who already knows the menu item exists.
+    #
+    # So the assertions below are about the EXPLANATION rather than about the
+    # widget that used to hold it - which is what this test was always for.
+    # The old form would have gone on passing with the topic cut to a single
+    # sentence, as long as the popup still existed.
+    topics = json.loads((ROOT / "config" / "help_topics.json")
+                        .read_text(encoding="utf-8"))["topics"]
+    by_id = {t["id"]: t for t in topics}
+
+    opener = re.search(r'text: "Which renderer should I use\?"\s*\n\s*'
+                       r'onTriggered: root\.openHelp\("([a-z0-9-]+)", ""\)', menu)
+    assert opener, (
+        "the Help entry that opens the renderer explanation is gone, or no "
+        "longer opens the manual at a topic")
+    topic_id = opener.group(1)
+    assert topic_id in by_id, (
+        f"Help opens the manual at {topic_id!r}, which is not a topic. The "
+        "browser falls back to the first one, so the menu item would appear "
+        "to work and silently answer a different question")
+
+    body = by_id[topic_id]["body"]
+    # Longer than a name. The complaint this test records is that the one
+    # setting whose options mean nothing on their own had a tooltip repeating
+    # the control's own label.
+    assert len(body) > 400, (
+        f"the renderer topic is {len(body)} characters - that is a label, not "
+        "an explanation of a choice between three things")
+    # All three named, or it is not a comparison.
+    for mode in ("Qt 2-D", "Native WGPU", "VTK / PBR"):
+        assert mode in body, (
+            f"the renderer explanation no longer covers {mode}, so it does not "
+            "help anyone choose between three things")
+    # And the fact that actually decides it. A comparison that leaves this out
+    # is three descriptions rather than an answer.
+    assert "vector" in body.lower(), (
+        "the renderer topic no longer says which renderer can export vector, "
+        "which is the fact that decides the choice for anyone publishing a "
+        "figure")
+
+    # ONE PLACE EACH, and the menus are that place.
+    #
+    # The renderer and the window mode were on the toolbar AND in the menus, and
+    # the two lists had already drifted - the bar said "Native WGPU" while the
+    # menu said "Rust / WGPU", so one renderer behaved differently depending on
+    # which control chose it. Neither is a toolbar decision anyway: a renderer
+    # is chosen once and a window mode less often than that, while the toolbar
+    # is for what is touched while working on a figure.
+    top = _strip_comments(top)
+    assert '"Qt 2-D", "Native WGPU", "VTK / PBR"' not in top, (
+        "the renderer picker is back on the toolbar as well as in the menu, "
+        "which is two lists of the same three modes to keep in step")
+    assert "root.app.displayModeNames" not in top, (
+        "the window-mode picker is back on the toolbar as well as in View > "
+        "Display")
+    assert "root.app.displayMode" in _qml("components/MainMenuBar.qml"), (
+        "window mode is on neither the toolbar nor the menu, so it cannot be "
+        "reached at all")
+
+
+def test_send_to_workspace_is_offered_only_when_there_is_something_to_send() -> None:
+    """A button that cannot do anything must not offer to.
+
+    Reported from the built application: *"i click the send to workspace but
+    nothing is showing and there is no box of extracted data so i'm not sure how
+    it works if it is working"*.
+
+    It was working. It was refusing — correctly — and writing the refusal to the
+    status strip at the bottom of the window, which is not where anyone is
+    looking when they have just pressed a button inside a panel. Enabled by
+    `analysed` alone, it was offered on every analysed paper, including the
+    common case where all the numbers are in the figures and none of the
+    extracted tables is numeric.
+
+    The panel already held the answer: `literatureSummary.drawable` is computed
+    for the line a few rows above that reads *"None of the N extracted tables is
+    a table of numbers"*. The button simply was not asking for it.
+
+    BOTH COPIES, and that is the half this guard is really for. The action
+    appears twice — the wide pane and the side panel — and two buttons calling
+    one action must agree about when it can run, or the same paper offers it in
+    one place and refuses it in the other.
+
+    The first version of this guard asserted the gate EXPRESSION inside each
+    button's block. That was a guard against the two copies drifting, written in
+    a form that required them to be copies — it would have failed the fix that
+    removed the duplication. Asserted now as: the rule exists once, under a name,
+    and every button asks for it by that name.
+    """
+    src = _qml("workspaces/LiteratureWorkspace.qml")
+
+    # The rule, stated once. `drawable` is the question the button was not
+    # asking; wherever the answer lives, it has to be asked somewhere.
+    assert src.count("readonly property bool canSend:") == 1, (
+        "`canSend` is declared other than exactly once — the point of the "
+        "property is that the rule has one home")
+    decl = src[src.index("readonly property bool canSend:"):]
+    decl = decl[:decl.index("readonly property string sendBlocked")]
+    assert "literatureSummary.drawable > 0" in decl, (
+        "`canSend` no longer asks whether any extracted table can actually be "
+        "drawn, so on a paper whose numbers are all in its figures the button "
+        "offers an action that can only fail — and fails into the status strip, "
+        "where nobody is looking")
+
+    label = 'text: "Send extracted data to workspace"'
+    copies = src.count(label)
+    assert copies == 2, (
+        f"the send button appears {copies} times, not 2 — if a copy was added "
+        "or removed, check that every one carries the gate below")
+
+    # EACH BUTTON'S OWN BLOCK, not a count over the file.
+    #
+    # An earlier version counted occurrences of the gate and required two. There
+    # are three: the panel also colours its summary line by the same expression,
+    # legitimately, and has done all along. Counting a string across a file is
+    # not a statement about either button — the same fault this file records
+    # four times over — so each button is sliced out and asked separately.
+    at = -1
+    for n in range(copies):
+        at = src.index(label, at + 1)
+        # The button's own declaration: from its text to the end of that Button
+        # block, which the following Label begins.
+        block = src[at:src.index("Label {", at)]
+        assert "enabled: root.canSend" in block, (
+            f"send button {n + 1} of {copies} is gated by something other than "
+            "the one shared rule, which is how the two copies came apart the "
+            "first time")
+
+    # And it has to SAY why, in place. Every other disabled control in that
+    # group explains itself underneath; this was the one that did not, which is
+    # what turned a correct refusal into "the button is broken".
+    assert src.count("text: root.sendBlocked") == copies, (
+        "a send button is disabled without saying why. A greyed-out button with "
+        "no reason beside it is indistinguishable from a broken one")
+    assert "Nothing to send: none of the" in src, (
+        "the reason a send button is grey no longer names what was missing")
+
+
+def test_one_literature_action_is_not_two_buttons_under_two_names() -> None:
+    """The same call, in two panels, with two names and two enabled rules.
+
+    Reported from the built application, with a screenshot of both panels: *"why
+    is the recreat greyed out when i selected one of the graphs also it looks
+    liek hte buttons on both side greyed out might do the same thing or
+    something"*.
+
+    They did. The Library panel's "Research tools" group was the Literature
+    intelligence panel's "Actions" group written a second time —
+
+        Extract figures and tables  =  Analyze paper           analyzeLiterature()
+        Recreate selected graph     =  Reconstruct graph       lab.trace()
+        Use extracted dataset       =  Send extracted data …   importFirstLiteratureDataset()
+
+    — each pair with its own, separately written `enabled:` expression. They had
+    already drifted: "Use extracted dataset" was enabled by `analysed` alone,
+    which is precisely the condition that was wrong on its twin and was reported
+    as a broken button. One rule with two implementations is one rule that gets
+    fixed once and stays broken once.
+
+    Two things are asserted, and the second is the one that answers the
+    question actually asked. A duplicated action must not carry a second NAME —
+    two words for one thing is what made a person ask whether the two greyed
+    buttons were the same thing. And `lab.trace()` must be offered from exactly
+    one place, gated by the one shared property, with its reason in place rather
+    than in a tooltip: the report came from someone who had selected a figure
+    and had no way to learn that the four things still missing are asked for by
+    controls under that figure.
+    """
+    src = _qml("workspaces/LiteratureWorkspace.qml")
+
+    for gone in ('text: "Recreate selected graph"',
+                 'text: "Use extracted dataset"',
+                 'text: "Analyze paper"'):
+        assert gone not in src, (
+            f'{gone} is back. It is a second name for an action this workspace '
+            "already offers under another one, which is what made two greyed "
+            "buttons on opposite sides of the window unreadable as the same "
+            "thing")
+
+    # The de-render, offered once.
+    assert src.count("onClicked: lab.trace()") == 1, (
+        "lab.trace() is called from more than one button. If a second entry "
+        "point is wanted, it reads `enabled: root.canTrace` and carries "
+        "`root.traceBlocked` underneath, like the send button's two copies")
+    assert src.count("readonly property bool canTrace:") == 1
+    trace_block = src[src.index("onClicked: lab.trace()") - 400:
+                      src.index("onClicked: lab.trace()")]
+    assert "enabled: root.canTrace" in trace_block, (
+        "the reconstruct button writes its own enabled rule instead of reading "
+        "the shared one")
+
+    # SAID IN THE PANEL. A tooltip explains a disabled control only to someone
+    # who already suspects it is waiting rather than broken.
+    assert "text: root.traceBlocked" in src, (
+        "the reconstruct button is greyed with no reason beside it — the exact "
+        "complaint this guard exists for")
+
+    # And the reason has to say WHERE, because the person had already done the
+    # part they could see.
+    blocked = src[src.index("readonly property string traceBlocked:"):]
+    blocked = blocked[:blocked.index("readonly property bool canSend")]
+    assert "middle of the window" in blocked, (
+        "the reason no longer says where the missing calibration controls are. "
+        "The report was from someone who HAD selected a figure: a list of four "
+        "missing numbers with no hint of where to type them is the same dead "
+        "end in more words")
+
+    # The sentence it builds has to be a sentence. `missingForCalibration` is
+    # only ever read as the tail of "Still needs …", so an imperative branch
+    # there produces "Still needs drag a box round the plot area."
+    lab_src = _qml("components/FigureLab.qml")
+    phrases = lab_src[lab_src.index("readonly property string missingForCalibration:"):]
+    phrases = phrases[:phrases.index("// Forget the box")]
+    for imperative in ('return "choose ', 'return "drag ', 'return "click ',
+                       'return "type '):
+        assert imperative not in phrases, (
+            "missingForCalibration returns an instruction. Its only reader "
+            'prefixes it with "Still needs", so this reaches the screen as a '
+            "broken sentence under a greyed-out button")
+
+
+def test_the_restart_that_changes_the_scene_graph_carries_the_figure() -> None:
+    """"Restart GraphVis to use it" is an instruction, not a feature.
+
+    `QQuickWindow::setGraphicsApi` must be called before the first QQuickWindow
+    exists and cannot be changed afterwards, so a running session genuinely
+    cannot switch to the renderer that needs OpenGL. That is Qt's constraint and
+    not something this application can route around.
+
+    What it can do is make the restart cost nothing: stash the figure through
+    the same `figureState()` map the notebook and the project already
+    round-trip, relaunch with the same arguments, and put the figure back.
+
+    Two details are the whole difference between this working and being a
+    nuisance:
+
+    - the new process is started **before** the old one quits. A start that
+      fails after the quit is an application that simply vanished;
+    - the stashed state is **taken**, not read. Left in place it would reapply
+      itself over whatever had been done since, every time anything asked.
+    """
+    app_h = (ROOT / "app/src/AppController.h").read_text(encoding="utf-8")
+    app_cpp = (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8")
+
+    assert "Q_INVOKABLE void restartApplication(const QVariantMap& figureState" in app_h, (
+        "the application can no longer restart itself, so switching to VTK is "
+        "back to being an instruction the person has to carry out")
+    assert "Q_INVOKABLE QVariantMap takePendingFigureState();" in app_h, (
+        "nothing hands the stashed figure back, so a restart loses it")
+
+    start = app_cpp.index("void AppController::restartApplication(")
+    body = _strip_comments(app_cpp[start:app_cpp.index("\n}\n", start)])
+    quit_at = body.index("QCoreApplication::quit();")
+    start_at = body.index("QProcess::startDetached(")
+    assert start_at < quit_at, (
+        "the session quits before the replacement is started, so a failed "
+        "start leaves no application running at all")
+    assert "return;" in body[start_at:quit_at], (
+        "a failed start falls through to quit anyway, which is the same "
+        "disappearance by a longer route")
+
+    take = app_cpp[app_cpp.index("QVariantMap AppController::takePendingFigureState()"):]
+    take = _strip_comments(take[:take.index("\n}\n")])
+    assert 'settings.remove(QStringLiteral("session/pendingFigure"));' in take, (
+        "the stashed figure is read and left behind, so it reapplies itself "
+        "over later work every time anything asks")
+
+    menu = _qml("components/MainMenuBar.qml")
+    assert 'text: "Restart now to finish switching"' in menu, (
+        "there is no way to ask for the restart")
+    assert "root.app.restartApplication(" in menu, (
+        "the menu entry does not perform the restart")
+    assert "enabled: root.app.rendererNeedsRestart()" in menu, (
+        "the restart is offered when it would achieve nothing, which teaches "
+        "people to ignore it")
+
+    workspace = _qml("workspaces/VisualizeWorkspace.qml")
+    assert "root.app.takePendingFigureState()" in workspace, (
+        "the figure is stashed on the way out and never put back, so the "
+        "restart loses exactly what it promised to keep")
+
+
+def test_a_resize_does_not_throw_away_the_figure() -> None:
+    """The figure blinked out for the whole length of a splitter drag.
+
+    `scheduleFullRender` called `invalidateFullRender`, which drops the rendered
+    image because *"any edit makes a finished render stale"*. True of a changed
+    column, a changed engine, a changed colour map. **Not true of a resize**: the
+    image is still a correct picture of exactly this figure, drawn at the wrong
+    size.
+
+    `geometryChange` is one of that function's callers, so every frame of a
+    splitter drag discarded the figure and left only whatever the preview could
+    redraw inside that frame — on a dataset large enough to need a full render,
+    nothing. Hence a figure that vanishes while the splitter moves and comes back
+    when it stops.
+
+    Two halves to the fix, and both are needed:
+
+    - the rendered image is **kept** through a resize and drawn stretched, which
+      `paint` already does since it scales to the item. Slightly soft beats
+      absent;
+    - the resize is drawn in **draft**, because `dragging_` and `interacting_`
+      cover gestures on the canvas and a splitter drag is neither — so every
+      intermediate size was being rendered at full quality, which is the drag's
+      entire frame budget spent on sizes nobody will look at.
+    """
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    header = (ROOT / "native/plot2d/include/PlotCanvas.h").read_text(encoding="utf-8")
+    body = _strip_comments(canvas)
+
+    assert "enum class Retain { Nothing, RenderedImage };" in header, (
+        "a render request can no longer say the picture on screen is still "
+        "valid, so a resize discards it again")
+
+    start = body.index("void PlotCanvas::geometryChange(")
+    geom = body[start:body.index("\n}\n", start)]
+    assert "scheduleFullRender(Retain::RenderedImage);" in geom, (
+        "a resize invalidates the rendered figure again, so it vanishes for "
+        "the length of the drag")
+    assert "resizing_=true;" in geom and "resizeIdle_.start();" in geom, (
+        "a resize is no longer marked as in progress, so every intermediate "
+        "size is rendered at full quality")
+
+    start = body.index("void PlotCanvas::scheduleFullRender(")
+    sched = body[start:body.index("\n}\n", start)]
+    assert "if(retain==Retain::RenderedImage&&!fullImage_.isNull()&&showingFull_){" in sched, (
+        "the retain request is accepted and then ignored")
+    assert "readyGeneration_=generation_;" in sched, (
+        "the kept image is not re-stamped with the current generation, so "
+        "paint() rejects it as stale and the figure disappears anyway - which "
+        "is the bug with an extra step")
+
+    assert "qtBackend_.setDraft(dragging_||interacting_||resizing_);" in body, (
+        "a resize is not drawn in draft, so a splitter drag redraws the whole "
+        "figure at full quality at every size it passes through")
+
+    # The idle timer has to CLEAR the flag, or the figure stays in draft.
+    assert "resizing_=false;" in body, (
+        "nothing ends the resize, so the figure is left permanently in draft "
+        "quality after the first splitter drag")
+
+
+def test_a_three_dimensional_zoom_is_about_the_pointer() -> None:
+    """Zoom towards a peak in the corner and it moves further out of the frame.
+
+    The 2-D figures zoom about the cursor — `zoomAt` anchors on it. The 3-D ones
+    called `zoom3DBy(factor)`, which takes a factor and **no position**, so it
+    scaled about the centre of the canvas. Zooming towards something in a corner
+    pushed it out of view, and the way to look at it was to zoom in and then find
+    there was no way to get there.
+
+    Keeping a screen point fixed under a change of scale is one line of algebra.
+    A model point is drawn at `centre + (pan + M) * scale`, so for the point
+    under the cursor to stay there the pan absorbs the change:
+
+        pan += (P - centre) / scale * (scale/newScale - 1)
+
+    Two things make this safe rather than a second guess at where the figure is:
+
+    - `centre` and `scale` come from `QtPlotBackend::cameraFrameFor`, which calls
+      `makeProjection` with exactly what `draw3D` calls it with. A private copy
+      of that arithmetic in the canvas is how the frame and the picture come to
+      disagree;
+    - the pan is held in **projection units**, not pixels, so the same figure
+      exported at another size — or the full-resolution render beside the
+      preview — frames identically. A pan in pixels would survive neither.
+    """
+    header = (ROOT / "native/plot2d/include/PlotSpec.h").read_text(encoding="utf-8")
+    canvas = _strip_comments((ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8"))
+    shared = _strip_comments((ROOT / "native/plot2d/src/QtPlotBackendShared.h").read_text(encoding="utf-8"))
+    backend = _backend_source()
+
+    assert "double panX = 0.0;" in header and "double panY = 0.0;" in header, (
+        "the 3-D view has nowhere to record where the cube sits, so a zoom can "
+        "only scale about the centre")
+
+    assert "p.origin+=QPointF(panX*p.scale,-panY*p.scale);" in shared, (
+        "the projection ignores the pan, so the canvas can compute one and the "
+        "picture will not move")
+
+    # EVERY projection built from the 3-D view carries the pan - the two draw
+    # sites and the camera frame the canvas anchors on. Counted against each
+    # other rather than against a number, because the right number is "all of
+    # them" and a literal goes stale the moment a third engine family appears.
+    built = backend.count("makeProjection(target,spec.view3d.azimuth")
+    panned = backend.count("spec.view3d.panX,spec.view3d.panY")
+    assert built >= 3, (
+        "a projection built from the 3-D view has gone missing - there should "
+        "be one per 3-D draw site plus the camera frame")
+    assert panned == built, (
+        f"{built - panned} of {built} projections built from the 3-D view omit "
+        "the pan, so that engine family ignores where the figure was moved to - "
+        "or worse, the camera frame the zoom anchors on disagrees with the "
+        "picture the painter draws")
+
+    assert "QtPlotBackend::CameraFrame QtPlotBackend::cameraFrameFor(" in backend, (
+        "the canvas has no way to ask where the cube is drawn, and the only "
+        "alternative is a second copy of makeProjection's arithmetic")
+
+    start = canvas.index("void PlotCanvas::zoom3DBy(")
+    body = canvas[start:canvas.index("\n}\n", start)]
+    assert "qtBackend_.cameraFrameFor(spec_,target);" in body, (
+        "the zoom anchors on a framing it worked out for itself rather than on "
+        "the one the painter will use")
+    assert "spec_.view3d.panX+=offset.x()/frame.scale*(ratio-1.0);" in body, (
+        "the pan no longer absorbs the change of scale, so the point under the "
+        "pointer does not stay under it")
+    assert "spec_.view3d.panY-=offset.y()/frame.scale*(ratio-1.0);" in body, (
+        "the vertical pan is added rather than subtracted, or gone - screen y "
+        "grows downward and the projection's does not, so this sign is the "
+        "difference between following the pointer and running from it")
+
+    # Both gestures carry their position.
+    assert "if(view3D()) zoom3DBy(factor,e->position());" in canvas, (
+        "the wheel zooms a 3-D figure about the centre again")
+    assert "zoom3DBy(step.scale,step.centre);" in canvas, (
+        "a pinch zooms a 3-D figure about the centre again, so pinching at a "
+        "corner of a surface pushes it away")
+
+
+def test_a_mesh_is_a_grid_of_lines_and_not_every_quad_outlined() -> None:
+    """3D Mesh and 3D Topography / Surface were the same picture.
+
+    They build the identical grid from the identical data and differ by **one
+    boolean**. The "mesh" was every quad of that grid outlined, so at the 160 to
+    360 cells a real survey produces the strokes closed the gaps between them and
+    it drew as a solid block. The two engines could be told apart only by zooming
+    in far enough to see a single cell.
+
+    Two causes, both fixed:
+
+    - **the mesh drew cells, not lines.** A mesh is a grid you can see through,
+      and how many lines that is has nothing to do with how finely the surface
+      underneath was sampled. `meshDensity` counts lines; the geometry still
+      follows every cell, so a coarse mesh over fine data is still the shape of
+      the fine data.
+    - **the surface drew a lattice.** Its per-quad edge exists to close the
+      antialiasing seam between neighbours, and `darker(115)` made it do a second
+      job nobody asked for — draw a visible grid over the surface. On a fine grid
+      that lattice is what made a *surface* look like a mesh.
+
+    Measured: at 120 grid cells the automatic setting is a solid block, 10 lines
+    is an open wireframe and 24 is a medium one.
+    """
+    header = (ROOT / "native/plot2d/include/PlotSpec.h").read_text(encoding="utf-8")
+    backend = _backend_source()
+
+    assert "int meshDensity = 0;" in header, (
+        "the wireframe has no density of its own again, so it is one line per "
+        "grid cell and a dense survey draws as a solid")
+
+    start = backend.index("const int meshLines=spec.style.meshDensity>0")
+    # Wide enough to reach the surface branch below the wireframe one. Sliced
+    # before stripping, so this is raw characters and the comments in here are
+    # long.
+    body = _strip_comments(backend[start:start + 4200])
+
+    assert "const int strideX=meshLines>0?qMax(1,(g.nx-1)/meshLines):1;" in body, (
+        "the wireframe no longer strides across the grid, so every cell is a "
+        "line again")
+    # The four edges: two per quad, plus the far edges of the last row and
+    # column or the mesh has no outside.
+    assert "if(q.cy%strideY==0)" in body and "if(q.cx%strideX==0)" in body, (
+        "the wireframe draws whole quads again rather than the lines of a grid")
+    assert "if(q.cx+2==g.nx)" in body and "if(q.cy+2==g.ny)" in body, (
+        "the far edges of the last row and column are not drawn, so the mesh "
+        "is missing two of its four sides")
+
+    assert "const QColor fill=colourMapStyled(cmap,spec.style,t);" in body, (
+        "the surface's seam pen is back to a colour of its own")
+    assert "darker(115)" not in body, (
+        "the surface draws a darker lattice over itself again, which is what "
+        "made a fine-grid surface read as a mesh")
+
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    assert "void PlotCanvas::setMeshDensity(int lines){" in canvas, (
+        "the mesh density cannot be set, so the field exists and nothing "
+        "reaches it")
+    assert '{QStringLiteral("meshDensity"),spec_.style.meshDensity},' in canvas, (
+        "the mesh density is not saved with the figure")
+    assert 'setMeshDensity(number("meshDensity"' in canvas, (
+        "the saved mesh density is written and never read back")
+
+    menu = _qml("components/MainMenuBar.qml")
+    assert 'title: "Mesh lines"' in menu, (
+        "there is no way to choose the mesh density")
+    assert "root.canvas.meshDensity = modelData.lines" in menu, (
+        "the mesh menu does not set anything")
+    assert "enabled: root.canvas !== null && root.canvas.wireframeEngine" in menu, (
+        "the mesh control is offered on engines that draw no wireframe, where "
+        "it does nothing and teaches people the control is broken")
+
+
+def test_an_export_says_where_it_is_going_and_remembers() -> None:
+    """A dialog that asks how many dots per inch and not where to put them.
+
+    `exportPath` hard-coded `~/Documents/GraphVis/exports`, took no directory at
+    all, and derived the file name from the engine. So every export went to a
+    folder the person was never shown, under a name that was the same for every
+    figure of that kind, and **silently replaced** the previous one. "I exported
+    it and I don't know where it went" is the correct reaction.
+
+    Four things it now does: shows the folder, defaults to the last one used,
+    lets the name and the folder be changed, and says so when the write would
+    replace something.
+
+    The folder is remembered **only on success and only after the write** — a
+    folder that could not be written to is not one to default to next time. And
+    the dialog writes to the path it is *displaying*: two ideas of where the
+    file goes is how a dialog comes to name one folder and write to another.
+    """
+    app_h = (ROOT / "app/src/AppController.h").read_text(encoding="utf-8")
+    app_cpp = (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8")
+    dialog = _qml("components/ExportDialog.qml")
+
+    assert "QString exportDirectory() const;" in app_h, (
+        "there is no remembered export folder, so every export goes to a "
+        "hard-coded one the person is never shown")
+    assert "Q_INVOKABLE void rememberExportDirectory(const QString& directory);" in app_h, (
+        "nothing records where the last export went")
+    assert "Q_INVOKABLE bool fileExists(const QString& path) const;" in app_h, (
+        "the dialog cannot tell whether it is about to replace something")
+
+    start = app_cpp.index("QString AppController::exportDirectory() const{")
+    body = _strip_comments(app_cpp[start:app_cpp.index("\n}\n", start)])
+    assert 'value(QStringLiteral("export/lastDirectory")).toString();' in body, (
+        "the remembered folder is not read back, so it is remembered and "
+        "never used")
+    assert "QFileInfo(remembered).isDir()" in body, (
+        "a remembered folder that has since been deleted is used anyway, and "
+        "the export fails somewhere the person cannot see")
+
+    start = app_cpp.index("void AppController::rememberExportDirectory(")
+    remember = _strip_comments(app_cpp[start:app_cpp.index("\n}\n", start)])
+    assert "info.isDir()?info.absoluteFilePath():info.absolutePath();" in remember, (
+        "a file path is remembered as though it were a folder, so the next "
+        "export is written inside something that is not a directory")
+
+    assert "readonly property string targetPath:" in dialog, (
+        "the dialog has no single idea of where the file goes")
+    assert "var target = root.targetPath" in dialog, (
+        "the dialog computes the path again at write time instead of using the "
+        "one it showed, so it can name one folder and write to another")
+    assert "readonly property bool willReplace: app.fileExists(root.targetPath)" in dialog, (
+        "the dialog no longer warns that it is about to replace a file")
+    assert "root.app.rememberExportDirectory(root.folder)" in dialog, (
+        "the chosen folder is not remembered, so the next export goes back to "
+        "the default")
+    ok_at = dialog.index("if (ok) {")
+    remember_at = dialog.index("root.app.rememberExportDirectory(root.folder)")
+    assert ok_at < remember_at, (
+        "the folder is remembered whether or not the write succeeded, so a "
+        "folder that cannot be written to becomes the default")
+    assert "id: saveAs" in dialog and "FileDialog.SaveFile" in dialog, (
+        "there is no way to choose a different folder")
+
+
+def test_every_export_control_reaches_the_same_dialog() -> None:
+    """Four routes to export, and three of them were dead ends.
+
+    The ribbon's "Save figure…" button and the command palette's export entry
+    both did the same thing: `notify("Use File ▸ Save figure as…")` — a control
+    that describes its own replacement. And File ▸ Save figure as… opened a bare
+    file chooser with no format, no size, no dpi and no overwrite warning: a
+    different and **worse** dialog from the one the canvas header's Export button
+    opened, reached by the menu where people look first.
+
+    They all arrive at the same dialog now.
+
+    Two more reachability faults fixed with them:
+
+    - **Export was last in a row that scrolls.** The canvas header's actions sit
+      in a Flickable that pins them right while they fit and left once they do
+      not, so the last ones are the ones past the edge. The source already
+      carried a note admitting this button had been pushed off-screen before,
+      and it was still last. It is first now — and it is the only control in that
+      row whose absence loses work rather than convenience.
+    - **Zen and Bare have no header at all**, which is the point of them, so the
+      menu was the only route and it had no shortcut. Ctrl+E.
+    """
+    workspace = _qml("workspaces/VisualizeWorkspace.qml")
+    main = _qml("Main.qml")
+    ribbon = _qml("components/RibbonBar.qml")
+    palette = _qml("components/CommandPalette.qml")
+    menu = _qml("components/MainMenuBar.qml")
+
+    assert "function openExport() { exportDialog.open() }" in workspace, (
+        "the workspace no longer offers one way in, so each control opens "
+        "export its own way again")
+    # root.plot, not plot: `plot` stopped being the id of the single canvas
+    # and became a property naming the CURRENT figure, so that a tab bar could
+    # make several without the fifty-two references in that file having to
+    # know. The claim being guarded is unchanged - the export dialog follows
+    # the figure being edited, not a hidden one.
+    assert "canvas: root.canvas ? root.canvas : root.plot" in workspace, (
+        "the export dialog is bound to the hidden single canvas again, so in a "
+        "notebook it writes out the figure you are not looking at")
+
+    for text, where in [
+        ("root.exportRequested()", ribbon),
+        ('else if (item.id === "export") root.exportRequested()', palette),
+    ]:
+        assert text in where, (
+            "an export control is back to telling the person to use a menu "
+            "instead of doing the thing")
+    assert 'notify("Use File ▸ Save figure as…")' not in ribbon + palette, (
+        "a control that describes its own replacement is back")
+
+    # The MENU BAR's handler specifically. `openExport` is also called from the
+    # command palette's handler in this file, so the bare string passed with the
+    # menu reverted - the duplicate-match weakness again.
+    menubar_block = main[main.index("menuBar: MainMenuBar {"):]
+    menubar_block = menubar_block[:menubar_block.index("\n    }")]
+    assert "shellLoader.item.openExport()" in menubar_block, (
+        "File > Save figure as... opens the bare file chooser again, which is "
+        "a second and weaker export dialog in the menu people look at first")
+
+    assert 'shortcut: "Ctrl+E"' in menu, (
+        "export has no keyboard shortcut, and two layouts have no header to "
+        "put a button in")
+
+    # First in the row, not last. Anchored on the CANVAS dock: there are two
+    # headerActions lists in this file and the other one belongs to the sidebar.
+    actions = workspace[workspace.index("id: canvasDock"):]
+    actions = actions[actions.index("headerActions: ["):]
+    actions = actions[:actions.index("\n        ]")]
+    assert actions.index("id: exportButton") < actions.index("StatusPill"), (
+        "Export is no longer first in the canvas header row, so on a narrow "
+        "canvas it is behind the overflow chevron again")
+
+
+def test_a_colour_map_a_reader_cannot_use_is_disabled_and_says_why() -> None:
+    """Eighty-four maps offered to a reader who can use a fraction of them.
+
+    The colour-vision modes already swap the SERIES palette and the dashes, and
+    already substitute the colour MAP. What this guards is that the chooser and
+    the renderer answer the question the SAME WAY, and that the substitute is
+    the nearest map of the same role rather than one fixed fallback.
+
+    **ONE verdict.** There were two. `colourmaps::mapIsSafeFor`, from the
+    generated table, decided what to PAINT; an independent worst-collapse
+    measurement in ColourVision.h decided what to GREY OUT. They disagreed on
+    **48 of 252** map-and-reader pairs, and both halves of the disagreement were
+    visible: Jet was swapped out for a deuteranope while the chooser presented it
+    as fine, and Accent was greyed out as unusable while the figure went on being
+    painted in it. The generated table won because it measures each map against
+    the reading task its ROLE exists for and adds a lightness-monotonicity test
+    a worst-pair distance cannot express.
+
+    **The substitute keeps the ROLE and changes the MAP.** The role is what the
+    figure claims about the data - a diverging map asserts a midpoint - so it is
+    fixed. Which map inside the role is taste, and `safeSubstituteFor` answered
+    it with one map per role: every unreadable sequential map became Cividis,
+    whether the person had chosen Hot, Terrain or Gist Ncar. `nearestSafeFor`
+    picks the closest passing map of that role in CIELAB, measured in STANDARD
+    vision so the figure stays near the author's intent for everyone else.
+
+    That also fixed a defect nobody had noticed: in Monochrome the fixed answer
+    was always Gray, which runs dark to light, so a light-to-dark map like Blues
+    came back with its scale INVERTED. Nearest picks Greys, which runs the way
+    Blues does.
+    """
+    vision = _strip_comments(
+        (ROOT / "native/plot2d/include/ColourVision.h").read_text(encoding="utf-8"))
+    advice = _strip_comments(
+        (ROOT / "native/plot2d/include/ColourMapAdvice.h").read_text(encoding="utf-8"))
+    canvas_h = (ROOT / "native/plot2d/include/PlotCanvas.h").read_text(encoding="utf-8")
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    selector = _qml("components/ColourMapSelector.qml")
+
+    # --- one verdict, and it is the generated table -----------------------
+    assert "colourmaps::mapIsSafeFor" in canvas, (
+        "the renderer no longer asks the generated safety table whether the "
+        "chosen map passes")
+    assert "if(mapIsSafeFor(map,mode)) return QString();" in advice, (
+        "the warning shown beside a greyed-out map is no longer derived from "
+        "mapIsSafeFor, so the chooser and the figure can disagree again - they "
+        "did, on 48 of 252 pairs")
+    # worstCollapse must not decide SAFETY. It may still MEASURE.
+    #
+    # This asserted the name appeared nowhere in the file, which was right
+    # while the only possible use was the competing verdict. It is now also
+    # used to RANK maps that have already passed the table, for the "Best for
+    # this reader" group - a legitimate use of a measurement, and the reason
+    # the earlier note said it "survives below because it is a useful
+    # measurement". So the claim is narrowed to what it was always about: the
+    # verdict function itself must not compute one.
+    verdict = advice[advice.index("inline QString colourMapWarning("):]
+    verdict = verdict[:verdict.index("\n}\n") + 3]
+    assert "worstCollapse" not in verdict, (
+        "the warning has gone back to measuring safety for itself instead of "
+        "reading the one verdict")
+    assert "kColourMapFloor" not in advice, (
+        "a floor is back in the advice, which is a threshold - and a threshold "
+        "here is a second opinion about what is safe")
+    for gone in ("kColourMapFloor", "colourMapWarning"):
+        assert gone not in vision, (
+            f"{gone} is back in ColourVision.h, which is where the second, "
+            "competing verdict lived")
+
+    # --- the substitute keeps the role and picks the nearest --------------
+    assert "if(entry.role!=role) continue;" in advice, (
+        "the substitute is no longer confined to the chosen map's role, so a "
+        "diverging map can be replaced by a sequential one and the midpoint "
+        "the figure is drawn around silently stops existing")
+    assert "if(!mapIsSafeFor(candidate,mode)) continue;" in advice, (
+        "the substitute is not itself checked, so an unreadable map can be "
+        "offered as the fix for an unreadable map")
+    assert "if(!carriesValues(candidate)) continue;" in advice, (
+        "a flat fill can be chosen as a substitute again - White is marked safe "
+        "in Monochrome, correctly, and was the only candidate of its role, so "
+        "Prism, Flag and Colorcube were 'fixed' into a blank figure")
+    # recommendedFor, which is stronger than nearestSafeFor: it acts when the
+    # chosen map is merely ADEQUATE, not only when it fails. Seismic passes for
+    # a protanope, so under the old rule choosing Protanopia changed nothing at
+    # all, which is what was reported as the setting doing nothing.
+    assert "colourmaps::recommendedFor(chosen,vision)" in canvas, (
+        "the painted map is back on the safety bar - so a map that merely "
+        "scrapes past, like Seismic for a protanope, is left alone and turning "
+        "on colour-blind mode appears to do nothing")
+    # Measured in standard vision. Simulating the candidates through the
+    # reader's own deficiency would choose whichever map collapses the same
+    # way, which is the opposite of the intent.
+    assert "detail::labOf(c.redF(),c.greenF(),c.blueF())" in advice, (
+        "the nearest map is no longer compared in standard vision")
+    assert "asSeenBy" not in advice, (
+        "the substitute is being matched through the reader's own deficiency, "
+        "which selects for collapsing the same way as the map it replaces")
+
+    # ONE copy of the simulation. Two would be two ideas of what a protanope
+    # sees, and the verdicts would drift from the preview meant to show them.
+    assert "inline const double* visionMatrix(ColourVision mode){" in vision, (
+        "the simulation matrices are no longer shared")
+    assert "kSimProtan" not in canvas, (
+        "PlotCanvas has its own copy of the dichromat matrices again")
+    assert "detail::visionMatrix(ColourVision::Protanopia)" in canvas, (
+        "the figure preview no longer simulates through the shared matrices")
+
+    # --- and the chooser acts on it ---------------------------------------
+    assert "Q_INVOKABLE QString colourMapWarning(const QString& map) const;" in canvas_h, (
+        "the verdict cannot be asked for from QML, so the picker cannot act on it")
+    assert "QString PlotCanvas::colourMapWarning(const QString& map) const {" in canvas, (
+        "the verdict is declared and not implemented")
+    assert "root.canvas.colourMapWarning(row.modelData.label)" in selector, (
+        "the picker no longer asks whether a map is usable, so every map is "
+        "offered to every reader again")
+    assert 'enabled: row.modelData.header || row.cvWarning === ""' in selector, (
+        "an unusable map is still selectable")
+    assert "ToolTip.text: row.cvWarning" in selector, (
+        "a map is greyed out with nothing saying why, which reads as the "
+        "application being broken")
+    assert "ToolTip.visible: row.hovered && row.cvWarning !== \"\"" in selector, (
+        "the explanation is not shown on hover")
+
+
+def test_every_invokable_the_interface_can_call_is_actually_implemented():
+    """A Q_INVOKABLE declared and never defined is a LINK error, not a compile
+    error - so every local check I can run passes and the failure only appears
+    on the user's machine, at the end of a twenty-minute build.
+
+    This is how colourMapWarning shipped: declared in the header, wired into
+    ColourMapSelector.qml, exercised by its own guard, and with no body
+    anywhere. The guard above asserted the DECLARATION and the QML CALL, both
+    of which were present, which is the same vacuous shape as matching a name
+    instead of a statement: it proved the interface existed, not that calling
+    it would resolve.
+
+    So this one is generic, and deliberately not about any single method - nor
+    about any single CLASS, because the failure mode belongs to the macro and
+    not to PlotCanvas. Every Q_INVOKABLE anywhere in the program must have a
+    definition. It costs a second to run and it closes the class.
+    """
+    # header -> the .cpp files its definitions may live in. Each pairing is a
+    # link unit, not a directory: PlotCanvas is spread over the plot2d sources
+    # and AppController over the app sources, and looking in the wrong place
+    # would report every method of every class as missing.
+    units = [
+        ("native/plot2d/include/PlotCanvas.h", "native/plot2d/src", 54),
+        ("app/src/AppController.h", "app/src", 65),
+        ("app/src/ProjectWorkspace.h", "app/src", 19),
+        ("app/src/NativeViewportWindow.h", "app/src", 4),
+    ]
+
+    faults = []
+    for header_path, source_dir, floor in units:
+        header = (ROOT / header_path).read_text(encoding="utf-8")
+        bodies = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((ROOT / source_dir).glob("*.cpp"))
+        )
+        cls = Path(header_path).stem
+
+        # Comments first. PlotCanvas.h EXPLAINS Q_INVOKABLE at length - why the
+        # whole region had to be made public - and matching prose found
+        # "Q_PROPERTY" as a method name on the first run. A guard that reads
+        # comments as code reports faults that are not there, and the next
+        # person to see one of those switches the guard off.
+        code = re.sub(r"//[^\n]*", "", header)
+
+        # Q_INVOKABLE <return type...> <name>( ... then either `;`, meaning the
+        # body is in a .cpp, or `{`, meaning it is defined inline right here
+        # (axisTransformNames is, and needs no definition elsewhere). Taking
+        # only the declarations is the difference between a fault and a false
+        # alarm.
+        #
+        # The closing bracket is found by BALANCING and not by the first `)`,
+        # which was this guard's own first bug: a default argument contains
+        # brackets of its own - `QVariantMap state = QVariantMap()`,
+        # `QPointF& about = QPointF()` - so the first `)` is the default's, the
+        # text after it is `);` rather than `;`, and eleven real declarations
+        # were silently skipped. The guard passed, on nothing. Exactly the
+        # failure it exists to catch, one level up.
+        declared = []
+        for match in re.finditer(r"Q_INVOKABLE\s+[^;{)]*?(\w+)\s*\(", code):
+            depth, close = 1, -1
+            for i in range(match.end(), len(code)):
+                if code[i] == "(":
+                    depth += 1
+                elif code[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        close = i
+                        break
+                elif code[i] == ";":
+                    break            # ran past the signature: not a match
+            if close < 0:
+                continue
+            if re.match(r"\s*(const\s*)?;", code[close + 1:close + 40]):
+                declared.append(match.group(1))
+
+        assert len(declared) >= floor, (
+            f"the Q_INVOKABLE pattern found only {len(declared)} declarations "
+            f"in {header_path}, below the {floor} known to be there - so this "
+            "guard would be passing because it found nothing to check. A "
+            "vacuous pass is worse than a failure: nobody investigates one")
+
+        faults += [f"{cls}::{name}" for name in sorted(set(declared))
+                   if f"{cls}::{name}(" not in bodies]
+
+    assert not faults, (
+        "declared for QML and defined nowhere, so the application will fail to "
+        "LINK (or, worse, link against a stale object file and crash on the "
+        "first call from QML): " + ", ".join(faults))
+
+
+def test_every_theme_property_the_interface_uses_exists():
+    """`Theme.fontSizeLarge` does not exist. The help popup used it anyway.
+
+    QML resolves a singleton property at RUNTIME, so a misremembered name is
+    not a syntax error and `qmllint` passes it. What happens instead is that
+    the binding yields `undefined`, Qt logs "Unable to assign [undefined] to
+    int", and the label silently renders at the default size. It had been in
+    every startup log since the popup was written and nothing was watching.
+
+    This is the same class as the undefined Q_INVOKABLE above - a NAME that
+    resolves to nothing, where every check available locally passes and only
+    the running application knows. So it gets the same treatment: read the
+    properties Theme actually declares, read every Theme.<name> the interface
+    mentions, and require the second set to be contained in the first.
+    """
+    theme = (ROOT / "app/qml/Theme.qml").read_text(encoding="utf-8")
+    declared = set(re.findall(r"property\s+\w+\s+(\w+)\s*:", theme))
+    declared |= set(re.findall(r"function\s+(\w+)\s*\(", theme))
+    assert len(declared) > 30, (
+        "the Theme property pattern stopped matching, so this guard would pass "
+        "on an empty set - a vacuous pass nobody investigates")
+
+    used: dict[str, list[str]] = {}
+    for path in sorted((ROOT / "app/qml").rglob("*.qml")):
+        if path.name == "Theme.qml":
+            continue
+        body = _strip_comments(path.read_text(encoding="utf-8"))
+        for name in re.findall(r"\bTheme\.(\w+)", body):
+            used.setdefault(name, []).append(path.name)
+
+    missing = sorted(f"Theme.{n} ({', '.join(sorted(set(f)))})"
+                     for n, f in used.items() if n not in declared)
+    assert not missing, (
+        "referenced in QML and not declared in Theme.qml, so the binding "
+        "evaluates to undefined at runtime and the control silently falls back "
+        "to a default: " + "; ".join(missing))
+
+
+def test_a_mapping_the_panel_shows_has_been_sent_to_the_canvas():
+    """The four dropdowns showed a mapping the figure had never been told about.
+
+    MappingPanel keeps a staged mapping and two ways to move it: ``commit()``
+    copies it into the properties the COMBO BOXES display, and ``apply()`` calls
+    commit and then emits ``applyRequested()``, which is the only thing that
+    reaches the canvas.
+
+    ``resetStaging()`` — which runs on ``Component.onCompleted`` and again on
+    every ``activeDatasetChanged`` — called ``commit()``. So opening a dataset
+    filled the four dropdowns with its first four columns and told the figure
+    nothing. The canvas drew from an empty mapping, the panel printed "reads 3
+    columns and 0 are mapped" directly beneath four visible column names, and
+    the whole thing came right the moment the user changed any dropdown by hand,
+    because ``stage()`` does call ``apply()``. Nothing about that sequence
+    suggests what is wrong, which is why it was reported as the visualisations
+    being broken rather than as a mapping that had not been sent.
+
+    Guarded structurally: whatever ``resetStaging`` ends with must be the path
+    that emits, and the emitting path must still be the one that reaches QML.
+    """
+    panel = _strip_comments(_qml("components/MappingPanel.qml"))
+
+    body = panel[panel.index("function resetStaging()"):]
+    body = body[:body.index("Component.onCompleted")]
+    assert "root.apply()" in body, (
+        "resetStaging no longer applies the mapping it stages, so a freshly "
+        "opened dataset fills the dropdowns and leaves the figure with no "
+        "columns until the user changes one by hand")
+
+    assert "function apply(){ root.commit(); root.applyRequested() }" in panel, (
+        "apply() no longer both commits and emits, so the guard above is "
+        "asserting a call that does not do what it is being trusted to do")
+
+    # And the emission has to be received. A signal with no handler is the
+    # same silence by a different route.
+    workspace = _strip_comments(_qml("workspaces/VisualizeWorkspace.qml"))
+    sidebar = _strip_comments(_qml("components/ControlSidebar.qml"))
+    assert "onApplyRequested" in workspace and "onApplyRequested" in sidebar, (
+        "one of the two MappingPanel instances has lost its onApplyRequested "
+        "handler, so the mapping it stages goes nowhere")
+
+
+def test_the_column_count_beside_the_figure_comes_from_the_figure():
+    """"0 are mapped", printed beside a heat map drawn from four columns.
+
+    MappingPanel counted the mapped columns itself, by reading xColumn,
+    yColumns, zColumn and colorColumn and adding them up. PlotCanvas answers the
+    same question when it decides what to draw. Two implementations of one
+    question, and the user saw both answers at once.
+
+    The count is now PlotCanvas::columnsMapped, so the sentence cannot
+    contradict the picture it is sitting next to.
+    """
+    header = (ROOT / "native/plot2d/include/PlotCanvas.h").read_text(encoding="utf-8")
+    panel = _strip_comments(_qml("components/MappingPanel.qml"))
+
+    assert "Q_PROPERTY(int columnsMapped READ columnsMapped NOTIFY sourceChanged)" in header, (
+        "the canvas no longer publishes how many columns it holds")
+    assert "int columnsMapped() const {" in header, (
+        "columnsMapped is declared and not implemented")
+    assert "root.canvas.columnsMapped" in panel, (
+        "the panel is counting the mapped columns for itself again, so its "
+        "sentence can disagree with the figure beside it")
+    for own in ("root.canvas.zColumn", "root.canvas.colorColumn"):
+        assert own not in panel, (
+            f"{own} is read in MappingPanel again, which is how the second "
+            "count got there the first time")
+
+
+def test_the_figure_strip_the_menu_and_the_canvas_share_one_list_of_figures():
+    """Three views of the open figures, and only one list behind them.
+
+    The strip above the canvas, the Figures menu and the canvas itself all have
+    to agree about which figures exist, which is current, and what each is
+    called. The way that goes wrong in this program is well established by now:
+    a component recomputes the answer locally, the two answers drift, and the
+    user is shown both at once — a colour map greyed out in the chooser and
+    painted anyway, a column count of zero printed beside a figure drawn from
+    four columns.
+
+    So FigureTabBar owns nothing. It is handed the model and reports what was
+    done to it, and the menu is handed a list derived from the same model.
+
+    Also guarded: `plot` falls back to figure zero rather than to null. It used
+    to be the id of the single canvas and is now a property naming the CURRENT
+    figure; fifty-two bindings in the workspace read `root.plot.something`, and
+    a null during construction would break all of them at once.
+    """
+    bar = _strip_comments(_qml("components/FigureTabBar.qml"))
+    workspace = _strip_comments(_qml("workspaces/VisualizeWorkspace.qml"))
+    menu = _strip_comments(_qml("components/MainMenuBar.qml"))
+    main = _strip_comments(_qml("Main.qml"))
+
+    # The bar keeps no figures of its own.
+    assert "required property var model" in bar, (
+        "the figure strip no longer takes the model from the workspace")
+    assert "ListModel" not in bar, (
+        "the figure strip has grown its own list of figures, so it can now "
+        "disagree with the canvas about which figures exist")
+    for signal in ("signal selected(int index)", "signal closeRequested(int index)",
+                   "signal lockToggled(int index)", "signal reordered(int from, int to)"):
+        assert signal in bar, f"the strip no longer reports {signal}"
+
+    # And the workspace acts on every one of them.
+    for handler in ("onSelected:", "onCloseRequested:", "onLockToggled:",
+                    "onReordered:", "onAddRequested:"):
+        assert handler in workspace, (
+            f"the strip emits {handler[:-1]} and the workspace does not listen, "
+            "so that control does nothing — which is indistinguishable from a "
+            "broken button")
+
+    # A locked figure refuses to close, and says so.
+    close = workspace[workspace.index("function closeFigure("):]
+    close = close[:close.index("function moveFigure(")]
+    # The LOCKED branch specifically, not the function as a whole. Asserting
+    # "locked" and "notify" both appear anywhere in closeFigure passed a
+    # reversion that made the locked branch a bare `return`, because the
+    # "this is the only figure" branch further down still had a notify in it.
+    # Two conditions that are each true of a different part of the text are
+    # not a statement about either part.
+    branch = close[close.index("locked)"):close.index("figures.count <= 1")]
+    assert "notify" in branch, (
+        "closing a locked figure fails silently; it has to refuse and say why, "
+        "or it is indistinguishable from a broken button")
+
+    # plot is never null.
+    assert "? extraFigures.itemAt(root.figureIndex - 1)\n                                : figure0" in workspace, (
+        "`plot` no longer falls back to figure zero, so every binding that "
+        "reads it breaks whenever the current figure's item is not yet built")
+
+    # The menu lists the same figures, handed down rather than fetched.
+    assert "property var figureTitles: []" in menu, (
+        "the menu no longer accepts the figure list")
+    assert "signal figureSelected(int index)" in menu, (
+        "the menu cannot switch figure")
+    assert "shellLoader.item.figureTitleList" in main, (
+        "the menu's figure list is no longer bound to the workspace's, so the "
+        "menu and the strip can show different figures")
+    assert "shellLoader.item.selectFigure" in main, (
+        "choosing a figure from the menu no longer reaches the workspace")
+
+    # The strip can be turned off, and the setting is remembered.
+    controller = (ROOT / "app/src/AppController.h").read_text(encoding="utf-8")
+    assert "Q_PROPERTY(bool figureTabsVisible" in controller, (
+        "the figure strip can no longer be switched off")
+    assert '"ui/figureTabs"' in (ROOT / "app/src/AppController.cpp").read_text(
+        encoding="utf-8"), (
+        "the figure strip's visibility is not persisted, so it comes back "
+        "every launch after being turned off")
+
+
+def test_every_qml_file_is_registered_with_the_qml_module():
+    """A .qml file the build has never heard of.
+
+    Qt compiles the QML module from the explicit list in app/CMakeLists.txt. A
+    file that exists on disk and is not in that list is not in the module, so
+    `import` of its type fails at RUNTIME with "is not a type" — the file is
+    right there, the lint passes, and the application comes up broken.
+
+    This nearly shipped twice in one batch: FigureCanvas.qml and
+    FigureTabBar.qml were both written, linted and pushed before anyone thought
+    about the build list.
+
+    Same class as the undefined Q_INVOKABLE and the missing Theme property: a
+    name that resolves to nothing, invisible to every check that runs locally.
+    """
+    cmake = (ROOT / "app/CMakeLists.txt").read_text(encoding="utf-8")
+    listed = set(re.findall(r"qml/[\w/]+\.qml", cmake))
+    assert len(listed) > 30, (
+        "the QML_FILES list stopped parsing, so this guard would pass on an "
+        "empty set")
+
+    on_disk = {
+        "qml/" + p.relative_to(ROOT / "app" / "qml").as_posix()
+        for p in (ROOT / "app/qml").rglob("*.qml")
+    }
+    # Theme.qml and the VTK module are registered by other means; the comment
+    # in CMakeLists explains why the VTK one must not be in QML_FILES.
+    exempt = {p for p in on_disk if "/vtk/" in p.lower() or p.endswith("/Theme.qml")}
+    missing = sorted(on_disk - listed - exempt)
+    assert not missing, (
+        "present in app/qml and not in GRAPHVIS_QML_FILES, so the type will "
+        "not exist at runtime however well the file lints: " + ", ".join(missing))
+
+
+def test_a_floated_figure_is_the_same_figure():
+    """Floating MOVES the canvas. It must never copy it.
+
+    Two canvases showing the same engine and mapping are indistinguishable for
+    about four seconds — until a column changes, and the sidebar edits the one
+    in the workspace while the person is looking at the one in the window. A
+    figure that is presented as yours and ignores your edits is worse than no
+    floating at all, which is why the tab bar shipped with the menu item removed
+    rather than stubbed.
+
+    So: the window is handed the live item and reparents it, and puts it back
+    where it came from. Guarded here because a future change that creates a
+    FigureCanvas inside FigureWindow would look completely reasonable in a diff
+    and would silently reintroduce exactly that.
+    """
+    window = _strip_comments(_qml("components/FigureWindow.qml"))
+    workspace = _strip_comments(_qml("workspaces/VisualizeWorkspace.qml"))
+
+    assert "required property var figure" in window, (
+        "the floating window no longer takes the live figure")
+    for made in ("FigureCanvas {", "PlotCanvas {"):
+        assert made not in window, (
+            "the floating window CREATES a canvas instead of taking the live "
+            "one, so it shows a second figure that ignores every edit")
+    assert "root.figure.parent = root.contentItem" in window, (
+        "the figure is no longer moved into the window")
+    assert "root.figure.parent = root.homeParent" in window, (
+        "the figure is never put back, so unfloating loses it")
+    # A SNAPSHOT, not a binding, and taken only when the figure actually moves.
+    #
+    # Both halves of this shipped broken and between them emptied the canvas.
+    #
+    # homeParent was `required property var homeParent`, bound in the workspace
+    # to `figureItem(index).parent`. A binding on `.parent` cannot remember a
+    # parent: the instant the figure is reparented the binding re-evaluates to
+    # the window's own content item, so "put it back where it came from" meant
+    # "leave it where it is".
+    #
+    # And the take ran from Component.onCompleted, which the Instantiator runs
+    # for EVERY figure, floating or not - so on startup the one canvas was
+    # reparented into a hidden window and the workspace drew nothing at all, on
+    # every engine, while the mapping panel correctly reported it had all its
+    # columns.
+    assert "property var homeParent: null" in window, (
+        "where the figure came from is a binding again, so it tracks the move "
+        "instead of remembering what came before it")
+    assert "required property var homeParent" not in window, (
+        "homeParent is being passed in from the workspace again - the only "
+        "thing it can be bound to there is the parent it is meant to remember")
+    assert "root.homeParent = root.figure.parent" in window, (
+        "the window never records where the figure came from")
+    assert "Component.onCompleted: root.takeFigure()" not in window, (
+        "the figure is taken on creation again. The Instantiator builds a "
+        "window for every figure, so this reparents the canvas out of the "
+        "workspace on startup and nothing is ever drawn")
+    assert "if (root.figure.parent === root.contentItem) return" in window, (
+        "taking a figure this window already holds would overwrite home with "
+        "this window, stranding it here")
+
+    # Closing a floated figure must dock it first, or the reparent target dies.
+    close = workspace[workspace.index("function closeFigure("):]
+    close = close[:close.index("function moveFigure(")]
+    assert 'figures.setProperty(i, "floating", false)' in close, (
+        "closing a floated figure destroys its window while the canvas is "
+        "still inside it")
+
+    # Selecting a floated tab has to raise its window, or the tab does nothing.
+    select = workspace[workspace.index("function selectFigure("):]
+    select = select[:select.index("function toggleFigureLock(")]
+    assert "raise()" in select, (
+        "clicking the tab of a floated figure does nothing visible, which is "
+        "indistinguishable from a broken tab")
+
+    # A delegate with required properties gets NO implicit `model`.
+    #
+    # `figureTitle: model.title` threw "ReferenceError: model is not defined" at
+    # runtime and passed qmllint: declaring any required property puts a
+    # delegate into required-properties mode, and Qt stops injecting the
+    # implicit model object. The title comes from the array the workspace keeps
+    # for the Figures menu instead, which also means the window, the menu and
+    # the tab bar cannot disagree about what a figure is called.
+    inst = workspace[workspace.index("Instantiator {"):]
+    inst = inst[:inst.index("\n    }\n")]
+    assert "model.title" not in inst, (
+        "the floating window reads model.title again - the delegate declares "
+        "required properties, so there is no model to read")
+    assert "root.figureTitleList[index]" in inst, (
+        "the floating window's title no longer comes from the list the menu "
+        "and the tab bar use")
+
+    # An Instantiator, because a Window is not an Item.
+    assert "Instantiator {" in workspace, (
+        "the figure windows are back in something that can only hold Items")
+
+
+def test_colour_blind_mode_visibly_narrows_the_map_chooser():
+    """"All the colours are still available" — the setting looked inert.
+
+    Choosing a colour-vision mode changed the series palette and substituted
+    the field map, but the CHOOSER went on listing all 84 maps. Greying the
+    unusable ones was the first answer and only half of one: a greyed row is
+    still a row, still takes space, and still reads as something you might be
+    able to have. So in a colour-vision mode they are not listed at all, and the
+    list visibly shrinks — 84 for standard vision, 50 for protanopia, 6 for
+    monochrome.
+
+    Two deliberate exceptions, both guarded:
+
+    - The CHOSEN map is always listed even when it fails, or the control shows a
+      selection that is not in its own list and the note explaining the
+      substitution has nothing to attach to.
+    - A "Best for" group goes first. Hiding the bad maps answers "which can I
+      not have"; it does not answer "which should I pick", and of the maps that
+      pass, some clear the bar by a point and some by fifteen.
+    """
+    canvas = _strip_comments(
+        (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8"))
+    advice = _strip_comments(
+        (ROOT / "native/plot2d/include/ColourMapAdvice.h").read_text(encoding="utf-8"))
+    header = (ROOT / "native/plot2d/include/PlotCanvas.h").read_text(encoding="utf-8")
+    selector = _strip_comments(_qml("components/ColourMapSelector.qml"))
+    menu = _strip_comments(_qml("components/MainMenuBar.qml"))
+
+    # The list is built for a reader, so it cannot be static.
+    assert "QVariantList colourMapCategories() const;" in header, (
+        "the map list is static again, so it cannot depend on the reader and "
+        "every mode gets the same 84 maps")
+    block = canvas[canvas.index("QVariantList PlotCanvas::colourMapCategories"):]
+    block = block[:block.index("\n}\n") + 3]
+    assert "colourmaps::mapIsSafeFor(map,vision)" in block, (
+        "unusable maps are listed again")
+    assert "||map==chosen" in block, (
+        "the chosen map is dropped from the list when it fails for this reader, "
+        "so the chooser shows a selection it does not contain")
+    assert "colourmaps::bestForReader(vision)" in block, (
+        "the 'Best for' group is gone, so the chooser says which maps are ruled "
+        "out and never which to pick")
+
+    # THE RANKING IS NOT COMPUTED HERE AT ALL any more.
+    #
+    # It was, twice over: once in the generator, where the reasoning is written
+    # down - preferred tier first, "ranked by separation alone the substitute
+    # came out as Afmhot ahead of Cividis, which exists for precisely this
+    # purpose" - and once again in C++, by sorting on worstCollapse, which
+    # reproduced that exact mistake and also put Twilight below HSV, because a
+    # cyclic map scores near zero for every reader by construction.
+    #
+    # The generator now emits the whole ordering instead of only its first
+    # element, so there is one ranking, arrived at once.
+    assert "std::sort" not in advice, (
+        "the advice is ranking maps for itself again, against the reasoning "
+        "already written down beside the measurement")
+    assert "recommendedMaps(role,mode)" in advice, (
+        "the recommended maps are no longer read from the generated table")
+    safety = (ROOT / "native/plot2d/include/ColourMapSafety.h").read_text(
+        encoding="utf-8")
+    assert "inline QStringList recommendedMaps(" in safety, (
+        "the generated table no longer carries the ranking, so something else "
+        "has had to invent one")
+    cyclic = [line.split("return {")[1].split(",")[0]
+              for line in safety.splitlines()
+              if "case MapRole::Cyclic: return {" in line]
+    # Three of the four, not all four. Monochrome's cyclic recommendation is a
+    # GREY ramp, correctly: monochrome is a request for no colour rather than a
+    # question about legibility, so the answer there is not a colour map at all.
+    # Asserting all four starts by being wrong about the one case the whole
+    # design treats separately.
+    assert sum('QStringLiteral("Twilight")' in first for first in cyclic) >= 3, (
+        "the cyclic recommendation no longer starts with Twilight for the "
+        "dichromacies, which is what ranking cyclic maps by separation did "
+        "last time - it put Twilight below HSV")
+
+    # And the chooser has to notice the mode changing.
+    # COUNTED, not merely present. There are two bindings that each build a
+    # list - `entries` for the flat model and `rows` for the grouped popup -
+    # and each needs the dependency for itself. Asserting the text appears
+    # "somewhere" passed a reversion that removed it from one of them, which is
+    # the same failure as the forward-and-inverse FFT line this file already
+    # counts rather than matches.
+    assert selector.count("root.canvas.colourVision") >= 2, (
+        "one of the two map lists no longer depends on the colour-vision "
+        "setting, so it goes on showing every map after the mode changes - "
+        "which is the 'this setting does nothing' report, exactly")
+
+    assert 'title: "Colour-blind mode"' in menu, (
+        "the menu calls it something other than what it is for; 'Graph colours' "
+        "reads as a palette picker, which is half of why it was reported as "
+        "doing nothing")
+
+
+def test_the_render_thread_does_not_touch_the_debounce_timer():
+    """"QObject::startTimer: Timers cannot be started from another thread."
+
+    In startup.log since before the audit began, never explained, and listed as
+    the last open item of Tier 3b with the note that "one long session with the
+    window open will identify it". It did:
+
+        PlotCanvas::paint()          <- scene-graph RENDER thread
+          -> rebuild()               <- only does anything when dirty_
+            -> scheduleFullRender()
+              -> fullDebounce_.start()
+
+    QTimer::start() on a running timer stops it first, which is why the warnings
+    arrive in killTimer/startTimer pairs. It only fires when a rebuild is still
+    pending at paint time, which is why it appeared a handful of times across a
+    six-minute session — and never once in a --selftest-plot run, because the
+    selftest opens no window, so nothing ever paints.
+
+    That last part is why this needs a guard rather than a test: every check
+    that runs here drives the backend directly and never paints, so nothing
+    available in this repository can reproduce it. The build that found it was a
+    person using the program for six minutes.
+    """
+    canvas = (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8")
+    body = _strip_comments(canvas)
+
+    block = body[body.index("void PlotCanvas::scheduleFullRender("):]
+    block = block[:block.index("\n}\n") + 3]
+    assert "QThread::currentThread()!=thread()" in block, (
+        "scheduleFullRender no longer checks which thread it is on, and it is "
+        "reachable from paint() by way of rebuild() - so it starts a QTimer "
+        "from the scene-graph render thread")
+    assert "Qt::QueuedConnection" in block, (
+        "the off-thread call is no longer marshalled to the GUI thread")
+    # The marshal must come FIRST. A guard that runs after the work it exists
+    # to prevent is not a guard — this file records that lesson three times.
+    assert block.index("QThread::currentThread()") < block.index("++generation_"), (
+        "the thread check runs after the state it is meant to protect has "
+        "already been changed")
+
+    # And rebuild() is still what reaches it, so the hazard is still real.
+    rebuild = body[body.index("void PlotCanvas::rebuild("):]
+    rebuild = rebuild[:rebuild.index("\nvoid PlotCanvas::")]
+    assert "scheduleFullRender()" in rebuild, (
+        "rebuild no longer schedules a render - if that is deliberate the guard "
+        "above is guarding a path that no longer exists and should be revisited")
+
+
+def test_something_actually_opens_the_interface():
+    """320 guards, a 434-engine sweep, and nothing that opens a window.
+
+    Every check in this repository drives the backend directly. A QML binding is
+    only evaluated when an interface exists, so a name that resolves to nothing
+    is not a syntax error, passes qmllint, and reaches the user. In one week:
+
+    ===============================  =========================================
+    Theme.fontSizeLarge              a property that was never declared
+    root.Window.width                a property not on that type
+    FigureTabBar.qml                 a file the build had never been told about
+    PlotCanvas::colourMapWarning     declared, never defined - a LINK error
+    ===============================  =========================================
+
+    All four were invisible here and visible within seconds of launching the
+    program. `--selftest-ui` loads the real interface under -platform offscreen,
+    lets it settle, and exits non-zero if anything was logged.
+
+    It is deliberately not a test of behaviour: it cannot click anything, and it
+    would not have caught the mapping that was staged and never applied. It
+    catches the broken-name class, which was four of the five and is the
+    cheapest to catch.
+    """
+    main = (ROOT / "app/src/main.cpp").read_text(encoding="utf-8")
+    body = _strip_comments(main)
+
+    # THE COMPARISON, not the name. Asserting that "--selftest-ui" appears
+    # somewhere in the file passed a reversion that renamed the flag, because
+    # the name is also in the two diagnostic messages the check prints. A guard
+    # that matches a string rather than the statement using it is the fault this
+    # file has now caught six times.
+    assert ('QCoreApplication::arguments().contains(QStringLiteral("--selftest-ui"))'
+            in body), (
+        "nothing tests for the --selftest-ui flag any more, so the interface is "
+        "never opened and a QML name that resolves to nothing reaches the user "
+        "again")
+    assert "gStartupWarnings" in body, (
+        "nothing counts the warnings, so the check can only report that the "
+        "window appeared - which it did for every one of the faults above")
+    # Counted in the ONE handler that already sees everything, not a second
+    # collector alongside it.
+    handler = body[body.index("void graphvisMessageHandler("):]
+    handler = handler[:handler.index("\n}\n") + 3]
+    assert "gStartupWarnings.fetchAndAddOrdered(1)" in handler, (
+        "the warning count is kept somewhere other than the message handler, "
+        "so it can now disagree with the log about what was reported")
+    assert "app.exit(3)" in body, (
+        "the check no longer fails on warnings, so it reports them and returns "
+        "success - which is the same as not running it")
+
+    # And the build has to actually run it.
+    script = (ROOT / "BUILD-AND-CHECK.bat").read_text(encoding="utf-8",
+                                                      errors="replace")
+    assert "--selftest-ui" in script, (
+        "the build no longer runs the interface check, so it exists and never "
+        "runs - which is worse than not having it, because it reads as covered")
+    assert "-platform offscreen" in script, (
+        "the check is run without the offscreen platform, so it needs a display "
+        "and will fail or hang on a build machine")
+
+
+def test_every_theme_keeps_its_status_colours_apart_for_every_reader():
+    """"it worked" and "this will lose something", arriving as the same colour.
+
+    The 84 colour maps were measured through a dichromat simulation; the 108
+    interface themes never had been. Measured (tools/measure_theme_cvd.py), one
+    theme failed — and it was one of the eight *named* for colour-blindness:
+    Tritanopia Light put `positive` 3.8 dE from `danger` for a deuteranope. Its
+    danger colour also sat at 3.13:1 against its own background, under the 4.5:1
+    needed for text. Two defects in the theme a colour-blind user is most likely
+    to pick because of its name.
+
+    **The verdict is the three STATUS colours, not all four.** Measured against
+    accent as well, 23 to 33 themes "fail" per deficiency — almost all of them an
+    amber accent resembling an amber warning, which misreports nothing, because
+    the accent marks what is SELECTED rather than claiming an outcome. Taking
+    that wider number as the verdict would have hidden thirty perfectly usable
+    themes from a colour-blind reader in order to fix a resemblance.
+
+    Same lesson as the colour maps: measure against the reading task the thing
+    exists for.
+    """
+    import subprocess
+
+    tool = ROOT / "tools/measure_theme_cvd.py"
+    assert tool.exists(), (
+        "the theme measurement is gone, so nothing checks that a theme's "
+        "status colours stay apart for a colour-blind reader")
+
+    result = subprocess.run([sys.executable, str(tool)], capture_output=True,
+                            text=True, cwd=str(ROOT))
+    assert result.returncode == 0, (
+        "a theme fails the deficiency it is named for:\n" + result.stdout
+        + result.stderr)
+
+    verdict = result.stdout[result.stdout.index("=== THE VERDICT"):]
+    verdict = verdict[:verdict.index("=== POLISH")]
+    for reader in ("protanopia", "deuteranopia", "tritanopia"):
+        assert f"{reader}: 108 of 108 usable" in verdict, (
+            f"a theme's positive/warning/danger colours collapse for a reader "
+            f"with {reader}, so a success and a failure are reported in the "
+            f"same colour:\n" + verdict)
+
+
+def test_a_remembered_window_position_is_nudged_inside_not_cornered():
+    """The window opened jammed against the top-left of the screen.
+
+    preferredWindowGeometry restores the geometry of the previous session, and
+    clamped the SIZE to the work area while leaving the POSITION alone. A window
+    last closed near the right or bottom edge therefore no longer fitted — and
+    the fallback was `fitted.moveTo(area.topLeft())`, which threw away a position
+    the person had chosen in order to fix an overhang of a few pixels.
+
+    Clamping each axis instead moves it the least distance that puts it on
+    screen, so it opens as near as possible to where it was left.
+    """
+    controller = _strip_comments(
+        (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8"))
+
+    block = controller[controller.index("QRect AppController::preferredWindowGeometry"):]
+    block = block[:block.index("\n}\n") + 3]
+
+    assert "moveTo(area.topLeft())" not in block, (
+        "a remembered window position that no longer fits is thrown into the "
+        "top-left corner again instead of being nudged back on screen")
+    assert "qBound(area.left()" in block and "qBound(area.top()" in block, (
+        "the remembered position is no longer clamped per axis, so it is either "
+        "left off-screen or moved further than it needs to be")
+    # right()/bottom() are the last pixel INSIDE the rect, so the +1 matters.
+    assert "area.right()-fitted.width()+1" in block, (
+        "the horizontal clamp is off by one, which puts the window a pixel "
+        "past the edge of the work area")
+    assert "area.bottom()-fitted.height()+1" in block, (
+        "the vertical clamp is off by one")
+
+    # And the no-saved-geometry path still centres.
+    assert "work.x()+(work.width()-w)/2" in block, (
+        "a first run no longer opens centred")
+
+
+def test_the_colour_map_note_does_not_claim_a_map_that_is_not_painting():
+    """"Drawn in Cividis" — while the figure was painted in something else.
+
+    colourMapStyled returns `sampleStops(customColours, t)` whenever that list
+    is non-empty, and never consults the map at all. So with custom colours set,
+    choosing a colour-vision mode changed the map, chose a substitute, wrote
+    "drawn in Cividis" into the note — and left the figure exactly as it was,
+    because the map had not been painting it for some time.
+
+    Reported as the colour-vision setting doing nothing. It was doing everything
+    it could; the map it was acting on was not on screen.
+
+    The panel and the picture disagreeing, in the one place a person looks to
+    find out which colours they are getting, is worse than saying nothing. Both
+    the note and the sidebar label now say which of the two is actually on the
+    figure.
+    """
+    canvas = _strip_comments(
+        (ROOT / "native/plot2d/src/PlotCanvas.cpp").read_text(encoding="utf-8"))
+    bar = _strip_comments(_qml("components/FigureAppearanceBar.qml"))
+
+    note = canvas[canvas.index("QString PlotCanvas::colourVisionNote"):]
+    note = note[:note.index("\n}\n") + 3]
+    assert "usingCustomColours()" in note, (
+        "the colour-vision note describes the colour map without checking "
+        "whether the map is what is painting the figure")
+    # And it must check BEFORE describing a substitution.
+    assert note.index("usingCustomColours()") < note.index("mapIsSafeFor"), (
+        "the note decides what to say about the map before noticing the map is "
+        "not in use, so the custom-colour case falls through to a sentence "
+        "about a substitution that is not happening")
+
+    # The figure note travels into the exported PDF, so it must not claim it
+    # either.
+    applied = canvas[canvas.index("void PlotCanvas::applyColourVisionToMap"):]
+    applied = applied[:applied.index("\n}\n") + 3]
+    assert "usingCustomColours()" in applied and "figureNote" in applied, (
+        "the note printed ON the figure still names a substituted map while "
+        "custom colours are painting it - and that one is exported")
+
+    assert "!root.canvas.usingCustomColours" in bar, (
+        "the sidebar still says 'Drawn in X' while the map is not in use")
+
+
+def test_the_interface_theme_follows_the_colour_vision_setting():
+    """Eight themes built for a deficiency, and nothing that used them.
+
+    Theme.qml carries a light and a dark theme for each of protanopia,
+    deuteranopia, tritanopia and achromatopsia, each tagged with the deficiency
+    it is for. Nothing connected them to the plot colour-vision setting, so
+    choosing Protanopia tuned the figure's colours and left the application
+    itself in whatever theme happened to be on.
+
+    Three properties this has to have, each of which is a way it could be
+    written and be wrong:
+
+    - **Lightness is kept.** Someone working in a dark theme who asks for
+      protanopia gets the DARK protanopia theme. Throwing them onto a white
+      interface answers a question they did not ask.
+    - **The old theme comes back**, and the restore point is persisted — the
+      theme itself is persisted, so without that the original is gone the moment
+      the application closes.
+    - **A theme chosen by hand while a mode is on is theirs.** Otherwise picking
+      one and later leaving the mode silently undoes it.
+    """
+    theme = _strip_comments(_qml("Theme.qml"))
+    main = _strip_comments(_qml("Main.qml"))
+    header = (ROOT / "app/src/AppController.h").read_text(encoding="utf-8")
+    controller = (ROOT / "app/src/AppController.cpp").read_text(encoding="utf-8")
+
+    assert "function themeForVision(kind, wantLight)" in theme, (
+        "nothing matches a deficiency to a theme")
+    assert "if (themeLightAt(i) === wantLight) return i" in theme, (
+        "the match ignores light and dark, so asking for protanopia can throw "
+        "someone from a dark theme onto a white interface")
+    # A fallback, so a deficiency with only one lightness still switches.
+    assert "if (fallback < 0) fallback = i" in theme, (
+        "a deficiency with only one lightness available now matches nothing "
+        "rather than offering the theme that exists")
+
+    assert "Theme.themeForVision(" in main, (
+        "the colour-vision setting no longer reaches the theme")
+    assert "Theme.themeLightAt(root.app.themeIndex)" in main, (
+        "the current theme's lightness is not what the match is made against")
+    assert "root.app.themeBeforeColourVision = root.app.themeIndex" in main, (
+        "the theme in use is not remembered, so turning the mode off cannot "
+        "put it back")
+    assert "if (now === visionTheme.lastVision) return" in main, (
+        "plotColourVisionChanged is shared with the preview toggle and the "
+        "toolbar's visibility, so without comparing against the last mode seen "
+        "this fires on changes that are not mode changes")
+    assert "root.app.themeBeforeColourVision = -1" in main, (
+        "the restore point is never cleared, so a theme chosen by hand during a "
+        "mode is undone when the mode ends")
+
+    assert "Q_PROPERTY(int themeBeforeColourVision" in header, (
+        "the restore point is not exposed")
+    assert '"ui/themeBeforeColourVision"' in controller, (
+        "the restore point is not persisted, so it is lost on the restart the "
+        "persisted theme survives")
+
+
+def test_a_bar_gets_its_own_half_slot_inside_the_frame() -> None:
+    """A bar is not a point, and the axis was scaled as though it were.
+
+    Every bar is drawn CENTRED on its position and one slot wide, where the
+    slot is the distance to its nearest neighbour. The axis was fitted to the
+    positions and given five per cent of headroom — so with four categories at
+    0, 1, 2, 3 the axis ran -0.15 to 3.15 while the bars spanned -0.5 to 3.5,
+    and the first and last were drawn half outside the frame and clipped down
+    the middle. Reported as the outer bars sitting flush against the frame
+    where a categorical axis normally keeps a margin.
+
+    Five per cent is a fraction of the SPAN, so eleven categories or more and
+    the headroom already exceeds half a slot and the picture was always right.
+    That is why it read as an inconsistency in the bar chart rather than as a
+    fault.
+
+    The two things this holds: the step exists and runs, and it takes the
+    half-slot as a FLOOR on the headroom rather than adding to it — summing
+    them would open a gap beyond the outer bars on every bar figure in the
+    catalogue, which is a look nobody asked for.
+    """
+    body = _strip_comments(_compute_range_source())
+
+    assert "containOuterSlots(spec,logs,stated,b);" in body, (
+        "the half-slot step is no longer called, so the outermost bar of every "
+        "bar chart is drawn half outside its own frame again")
+    # After the headroom, because it is a floor on it. Called before, the
+    # headroom would then be added on top of the slot and the gap would double.
+    assert body.index("addHeadroom(") < body.index("containOuterSlots(spec"), (
+        "containOuterSlots runs before addHeadroom, so the five per cent is "
+        "added on top of the half-slot instead of being the floor it sits on")
+    step = body[body.index("static void containOuterSlots"):]
+    step = step[:step.index("\n}\n")]
+    assert "qMin(lo,first-slot*0.5)" in step and "qMax(hi,last+slot*0.5)" in step, (
+        "the half-slot is being assigned rather than taken as the wider of the "
+        "two, so a bar figure with enough categories loses the headroom it had")
+    # The same question the painter asks. A second way of measuring a slot is a
+    # second answer waiting to disagree with the first, which is the whole
+    # shape of this defect.
+    assert "slotWidthFrom" in _strip_comments(_backend_source()), (
+        "the painters no longer measure a slot with slotWidthFrom, so the "
+        "frame and the painter can come to disagree about how wide a bar is")
+    # A stated bound is never moved, the same as in the headroom step.
+    assert "if(!loStated)" in step and "if(!hiStated)" in step, (
+        "the half-slot moves a bound the figure stated, so a typed axis limit "
+        "is quietly widened")
+
+
+def test_the_frame_check_measures_a_figure_with_no_grid_on_it() -> None:
+    """The gridline that was reported as data.
+
+    The property check scans a band 2-4 px inside the plot frame and asks
+    whether the engine drew its DATA there. The topmost gridline is drawn at
+    the topmost TICK, and a tick lands wherever the round numbers fall: the
+    u-Chart's axis runs to 0.2013 with its last tick at 0.20, which puts that
+    gridline three pixels below the frame — inside the band, end to end. It was
+    reported as a frame overrun for months, and so was the Isochron Plot, whose
+    last x tick sits the same distance inside the right-hand frame.
+
+    Rendering without a grid is what makes the question the check asks the
+    question it measures. Excluding pixels that look like the grid colour would
+    be a guess about colours; excluding the rows a gridline is near would hide
+    any real mark that reached them, which is exactly what is being looked for.
+    """
+    body = _strip_comments(_selftest_source())
+
+    assert "bare.style.gridVisible=false;" in body, (
+        "the frame check measures a figure with its grid drawn on it again, so "
+        "any engine whose last tick lands near the frame is reported as "
+        "drawing its data there")
+    # And the questions asked afterwards must be asked of THAT render. The
+    # legend rectangle, the prepared spec and the range all came from a
+    # different backend once, which is how the check and the renderer came to
+    # disagree about what a field is.
+    assert "QtPlotBackend& bareBack=plain;" in body, (
+        "the frame check reads the legend rectangle and the range from a "
+        "backend other than the one whose picture it is measuring")
+    # And every question in that block goes through it. `bareBack` and
+    # `bareShot` are named apart from the `backend` and `wide` of the
+    # canvas-edge check above rather than shadowing them, because the audit
+    # reported the shadowing - "an edit in the wrong place compiles" - and on a
+    # check whose entire fault was two answers coming from two different
+    # renders, a reader who cannot see which render a line is about is the last
+    # thing wanted.
+    block = body[body.index("PlotSpec bare=base;"):]
+    block = block[:block.index("++frameChecked;")]
+    for stale in ("backend.lastLegendRect", "backend.preparedFor",
+                  "backend.rangeFor", "wide.pixel"):
+        assert stale not in block, (
+            f"the frame check still reads {stale} from the render with the "
+            "grid on it")
+
+
+def test_the_frame_check_asks_the_prepared_engine_whether_it_is_a_field() -> None:
+    """usesColourMap answers for the name that gets DRAWN.
+
+    Its parameter is called `preparedEngine` and `render` passes the rewritten
+    spec. The check passed the name the user chose, so an engine that becomes a
+    field during the rewrite was judged as though it were a series: the
+    Rainflow Matrix is prepared as a 2-D Heatmap and was reported as running
+    off both sides, which is what a heatmap does, because its cells span
+    exactly the bounds and a region has no headroom.
+
+    The comment above it claimed the check and the renderer "cannot come to
+    disagree about what a field is" because they call the same function. They
+    called it with different arguments. Sharing a function is not enough; it
+    has to be asked the same question about the same object.
+    """
+    body = _strip_comments(_selftest_source())
+
+    assert "QtPlotBackend::usesColourMap(prepared.engine)" in body, (
+        "the frame check asks the chosen engine name whether it is a field, so "
+        "every engine that becomes one during the rewrite is judged as a series")
+
+
+def test_a_frame_overrun_fails_the_run() -> None:
+    """The word "asserted" was a claim and not a fact.
+
+    The report line said "%d put one on an edge fitted to the data, which is
+    asserted" while the list it printed was only ever reported — so a run with
+    eleven engines drawing into their own frames exited zero and said so in a
+    sentence that read like a guarantee. Reporting was right while the eleven
+    were unjudged; leaving the word there was not.
+
+    All eleven have since been worked through: eight rendering defects, two
+    measurement faults in the check itself, and two engines whose furniture is
+    drawn on the frame on purpose and are named in `kFrameFurniture`.
+    """
+    body = _strip_comments(_selftest_source())
+
+    # THE APPEND MUST RUN, not merely appear.
+    #
+    # This first asked whether the text `failures.append(QStringLiteral("frame
+    # overrun...` was in the file, and it was proved by putting `if(false)`
+    # in front of that very line - which left the text exactly where it was and
+    # the guard passed. That is this project's third recorded root cause,
+    # verbatim: a guard matching a NAME rather than a STATEMENT.
+    #
+    # So the match runs from the end of the printf above it to the append, with
+    # only whitespace allowed between the two. Anything put in front of the
+    # append to stop it running is in that gap.
+    assert re.search(
+        r"\)\);\s*failures\.append\(QStringLiteral\(\"frame overrun", body), (
+        "a frame overrun is reported and not failed, so an engine that loses "
+        "its headroom exits zero")
+    assert "kFrameFurniture" in body, (
+        "the verified exception list is gone, so either the check is failing "
+        "on two correct figures or it is no longer asked of them")
+    # A name that matches no engine excuses nothing and reads in the report as
+    # though it does. Eight of kOrderFree's seventeen names were in that state
+    # for months, which is why every such list here is checked against the
+    # engines actually swept.
+    assert "frame-furniture list names %d engine(s)" in body, (
+        "the furniture list is no longer checked against the catalogue, so a "
+        "misspelt name silently excuses nothing")
+
+
+def test_the_interface_tests_can_load_the_components_that_contain_a_canvas() -> None:
+    """Four QML files were untestable, two of them the main workspaces.
+
+    `FigureCanvas` and `FigureCell` contain a `PlotCanvas`, which is a C++ type
+    and not in the module the interface tests stage; `VisualizeWorkspace` and
+    `NotebookCanvas` contain those. Every test that tried got "Type
+    NotebookCanvas unavailable" and the file went untested, quietly, for as long
+    as those tests have existed.
+
+    What lived in that hole: the notebook's figure delegate re-declared a
+    `required property int index` that FigureCell already had, so every cell in
+    the notebook answered 0 when asked which figure it was — clicking any figure
+    selected the first and the close button on any figure removed the first,
+    while the figures themselves drew correctly.
+
+    The stand-in is GENERATED from the header. A hand-written one is a second
+    declaration of the canvas's interface, free to drift — and a double that has
+    a property the real type has lost passes a test the application fails, which
+    is worse than no test at all.
+    """
+    runner = (ROOT / "tools" / "run_ui_tests.py").read_text(encoding="utf-8")
+
+    assert "def stage_native_stand_ins" in runner, (
+        "the C++ stand-ins are no longer generated, so every component that "
+        "contains a PlotCanvas is untestable again")
+    assert '"AppController": ROOT / "app" / "src" / "AppController.h"' in runner, (
+        "the controller stand-in is gone, so every test hands over a QtObject "
+        "with the four properties it happens to need - an incomplete sketch of "
+        "a type with 119 of them, and one warning per missing one")
+    assert '"ProjectWorkspace": ROOT / "app" / "src" / "ProjectWorkspace.h"' in runner, (
+        "app.project is a pointer property with nothing behind it again, so "
+        "every panel that reads through it raises a TypeError")
+    assert "MAP_PROPERTY_BUILDERS" in runner and "uiLayoutAsMap" in runner, (
+        "the layout spec's keys are no longer read out of uiLayoutAsMap, so the "
+        "stand-in serves an empty map: every `spec.<key>` the workspace reads is "
+        "undefined and the seven layout dimensions cannot be driven at all")
+    assert "def stage_newer_qt_shims" in runner, (
+        "the QtQuick version shim is gone, so VisualizeWorkspace fails to load "
+        "on any Qt older than 6.8 with 'WindowContainer is not a type', which "
+        "reads as a defect in the workspace")
+    assert '"PlotCanvas": ROOT / "native" / "plot2d" / "include" / "PlotCanvas.h"' in runner, (
+        "the PlotCanvas stand-in is no longer read out of PlotCanvas.h, so it "
+        "is a second declaration of that type's interface and free to drift")
+    assert "stage_native_stand_ins(out)" in runner, (
+        "the stand-ins are generated and never listed in the qmldir, so nothing "
+        "can resolve them")
+    # A hand-written one next to the real components would shadow the generated
+    # one and be exactly the drifting copy this avoids.
+    stray = list((ROOT / "app" / "qml").rglob("PlotCanvas.qml"))
+    assert not stray, (
+        f"a hand-written PlotCanvas stand-in is checked in at {stray}, which "
+        "shadows the one generated from the header")
+
+
+def test_the_notebook_delegate_does_not_shadow_the_cell_s_index() -> None:
+    """A property declared twice, and every figure answering zero.
+
+    `FigureCell` declares `required property int index`. The Repeater's delegate
+    re-declared it, which shadows the base's copy: the base's required property
+    was never initialised and the shadow's value came from `index: cell.index`,
+    a binding on itself. Both sat at the default for every row.
+
+    The figures drew, and drew correctly, which is why it survived —
+    `current`, `onSelected` and `onRemoveRequested` all read that number, so the
+    notebook looked like it worked and acted on the first figure whatever you
+    clicked.
+
+    A Repeater injects the model index into a required property declared in the
+    delegate's BASE type, so neither line was needed.
+    """
+    book = (ROOT / "app" / "qml" / "workspaces" / "NotebookCanvas.qml").read_text(
+        encoding="utf-8")
+    delegate = book[book.index("delegate: FigureCell {"):]
+    delegate = delegate[:delegate.index("\n                    }")]
+    delegate = re.sub(r"//[^\n]*", "", delegate)
+
+    assert "required property int index" not in delegate, (
+        "the notebook delegate re-declares FigureCell's index, so every cell "
+        "reports figure zero and remove and select act on the wrong figure")
+    assert not re.search(r"\bindex:\s*cell\.index", delegate), (
+        "the notebook delegate binds index to itself, which leaves it at its "
+        "default however the model is filled")
+
+
+def test_the_workspace_declares_openexport_on_its_root() -> None:
+    """Export was unreachable from every route, again.
+
+    `function openExport()` was declared four levels deep inside a SplitView
+    rather than on the workspace's root object, so it was not a member of the
+    component at all — `typeof workspace.openExport` measured `undefined`. The
+    header button's `onClicked: root.openExport()` raised "not a function" when
+    pressed, and Main.qml guards File > Export with
+    `if (shellLoader.item && shellLoader.item.openExport)`, which is false, so
+    that menu item did nothing in silence.
+
+    The function's own comment records it being written to fix exactly this:
+    "there were four routes and three of them were dead ends ... now they all
+    arrive here". Misplacing it put all four back.
+
+    Asserted on the brace depth, because that is what was wrong. A file-scope id
+    is visible at any depth, so `exportDialog.open()` worked from down there and
+    nothing about the body looked amiss; the only thing the depth cost was a
+    caller's ability to NAME the function.
+    """
+    text = (ROOT / "app" / "qml" / "workspaces" / "VisualizeWorkspace.qml").read_text(
+        encoding="utf-8")
+
+    depth, found = 0, None
+    for line in text.split("\n"):
+        stripped = re.sub(r"//.*", "", line)
+        stripped = re.sub(r'"[^"]*"', "", stripped)
+        if re.match(r"\s*function openExport\s*\(", line):
+            found = depth
+            break
+        depth += stripped.count("{") - stripped.count("}")
+
+    assert found is not None, "VisualizeWorkspace has no openExport at all"
+    assert found == 1, (
+        f"openExport is declared {found} braces deep instead of on the root, so "
+        "it is not a member of the workspace: the export button raises 'not a "
+        "function' and File > Export silently does nothing")
+
+
+def test_a_check_that_cannot_run_says_so_instead_of_blaming_the_file() -> None:
+    """A missing package was reported as a defect in a header.
+
+    `designed_colourmaps_stale` answers its question by running
+    `tools/design_cvd_colourmaps.py --check`, which needs numpy. On a machine
+    without it the import failed, the script exited non-zero with a traceback,
+    and the audit reported that traceback as the finding "the designed
+    colour-vision palettes are not what the designer produces" — a verdict on a
+    file, delivered because a package was missing, with a Python stack trace
+    where the evidence should be. That is a check crying wolf, which is how a
+    check gets ignored and then deleted.
+
+    The sibling `theme_cvd_tags_stale` had already met this and says so in a
+    six-line comment. This check was written beside it and did not carry the
+    rule across — the root cause this project has recorded more than any other.
+
+    Returning quietly, which is what the sibling did, is only half right: a
+    check that has not run for months then reads exactly like a check that
+    passes. So a check that cannot run records that, and the report prints it
+    beside "what this pass did not look at".
+
+    Told apart by the EXIT CODE — 0 up to date, 1 out of date, 2 could not run —
+    rather than by reading the output for words. The script knows which of the
+    three happened; nothing downstream should have to infer it.
+    """
+    for name, subject in (("design_cvd_colourmaps.py", "file"),
+                          ("measure_theme_cvd.py", "themes")):
+        text = (ROOT / "tools" / name).read_text(encoding="utf-8")
+        assert "CANNOT_RUN = 2" in text, (
+            f"{name} no longer distinguishes 'could not run' from 'out of "
+            "date', so the audit is back to guessing from its output")
+        assert "except ImportError" in text, (
+            f"{name} lets a missing package escape as a traceback, which the "
+            "audit then reports as a defect in the thing being checked")
+        assert f"says nothing about the {subject}" in text, (
+            f"{name}'s cannot-run message no longer says that it is not a "
+            "verdict on what it was checking")
+
+    checks = (ROOT / "tools" / "audit" / "checks_project.py").read_text(
+        encoding="utf-8")
+    assert checks.count("p.checks_not_run.append(") >= 3, (
+        "a check that cannot run is silent again, so it is indistinguishable "
+        "in the report from a check that passed")
+    # BOTH checks, counted. The first version of this asserted that the string
+    # `if res.returncode != 1:` appeared, and disabling it in one of the two
+    # left the other's copy in the file - so the guard passed on a check that
+    # had gone back to guessing. Matching a name rather than a statement, in a
+    # test written to catch exactly that.
+    assert checks.count("if res.returncode != 1:") >= 2, (
+        "one of the tool-running checks tells 'could not run' from 'out of "
+        "date' by reading its output again rather than by the exit code")
+
+    report = (ROOT / "tools" / "audit" / "report.py").read_text(encoding="utf-8")
+    assert "Checks that could not run here" in report, (
+        "the report no longer says which checks did not run, so their silence "
+        "reads as a pass")
+    assert "checks_not_run" in (
+        ROOT / "tools" / "audit" / "project.py").read_text(encoding="utf-8"), (
+        "the project model has nowhere to record a check that could not run")
+
+
+def test_the_writable_formats_are_one_list_not_two() -> None:
+    """The dialog offers what the writer can actually write.
+
+    `AppController::exportableExtensions()` decides what a Save-as dialog
+    offers and refuses a suffix before the request is ever sent;
+    `exporter.WRITERS` decides what actually gets written. Two lists, one
+    question — and this project's most-recorded fault is exactly that shape.
+
+    The import side already lives with it: `importableExtensions()` carries 149
+    extensions written out by hand with a comment saying "kept in step with
+    importer.py's READERS registry", and nothing checks that it is. This is the
+    check the new half gets, so the drift has somewhere to be caught rather
+    than a comment asking someone to remember.
+
+    A format in C++ and not in the writer is the bad direction: the dialog
+    offers it, the person picks it, and the service refuses after the fact.
+    """
+    from graphvis_science.data.exporter import ALL_EXT
+
+    source = (ROOT / "app" / "src" / "AppController.cpp").read_text(encoding="utf-8")
+    body = source[source.index("QStringList AppController::exportableExtensions"):]
+    body = body[:body.index("\n}")]
+    in_cpp = set(re.findall(r'QStringLiteral\("([a-z0-9]+)"\)', body))
+    in_python = {e.lstrip(".") for e in ALL_EXT}
+
+    offered_but_unwritable = sorted(in_cpp - in_python)
+    assert not offered_but_unwritable, (
+        "the Save-as dialog offers formats the writer will refuse: "
+        + ", ".join(offered_but_unwritable))
+
+    writable_but_hidden = sorted(in_python - in_cpp)
+    assert not writable_but_hidden, (
+        "the writer can write these and the dialog never offers them: "
+        + ", ".join(writable_but_hidden))

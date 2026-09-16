@@ -80,7 +80,7 @@ ColumnLayout {
     GvGroupBox {
         title: "Colour scale"
         Layout.fillWidth: true
-        visible: root.colour && root.colour.used === true
+        visible: !!(root.colour && root.colour.used === true)
 
         ColumnLayout {
             anchors.fill: parent
@@ -176,7 +176,13 @@ ColumnLayout {
                 snapMode: Slider.SnapAlways
                 // 0 is the continuous ramp and 1 is a figure painted one
                 // colour, which nobody means - so the bar steps from 0 to 2.
-                value: root.colour.levels
+                // GUARDED BECAUSE `colour` CAN BE A MAP WITH NO KEYS.
+                // RangePanel exists before a canvas does, and then
+                // `root.colour` is `({})` - so this read was `undefined`,
+                // which Qt refuses to put in a double and logs. Every
+                // other read of this map compares rather than assigns,
+                // which is why this was the only one that showed.
+                value: root.colour.levels > 0 ? root.colour.levels : 0
                 onMoved: root.canvas.setColourLevels(levels.value < 2 ? 0 : levels.value)
                 ToolTip.visible: levels.hovered
                 ToolTip.text: "Left for a continuous ramp, right for that many discrete bands"

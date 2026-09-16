@@ -1,5 +1,7 @@
 #include "NativeViewportWindow.h"
 #include "NativeApi.h"
+// QPlatformSurfaceEvent: the event that says the HWND is going away.
+#include <QPlatformSurfaceEvent>
 #include <QMouseEvent>
 #include <QNativeGestureEvent>
 #include <QResizeEvent>
@@ -13,19 +15,83 @@
 #endif
 
 NativeViewportWindow::NativeViewportWindow(QObject* parent):QWindow(){ setParent(qobject_cast<QWindow*>(parent)); setTitle(QStringLiteral("GraphVis Native WGPU Viewport")); }
-NativeViewportWindow::~NativeViewportWindow(){ if(renderer_&&NativeApi::instance().rendererFree) NativeApi::instance().rendererFree(renderer_); }
+NativeViewportWindow::~NativeViewportWindow(){ releaseRenderer(); }
+
+// Let go of the native surface.
+//
+// THE RENDERER IS TIED TO AN HWND, and that HWND does not live as long as this
+// object does. A QWindow's platform surface is destroyed and recreated whenever
+// the window is reparented or its frame style changes - putting this window
+// into a WindowContainer, which is exactly what selecting the Native WGPU
+// renderer does, is a reparent. Nothing here listened for that, so the surface
+// created against the first HWND went on being presented to after that HWND had
+// been destroyed. Qt's own rule for a QWindow that renders natively is that the
+// graphics resources must be released before the platform surface goes away;
+// this is that release.
+//
+// The attempt latch is cleared with it, so the next expose creates a surface
+// against the new window rather than refusing because an earlier one succeeded.
+void NativeViewportWindow::releaseRenderer(){
+    if(renderer_&&NativeApi::instance().rendererFree)
+        NativeApi::instance().rendererFree(renderer_);
+    renderer_=nullptr;
+    attemptedRenderer_=false;
+}
 
 void NativeViewportWindow::ensureRenderer(){
     if(renderer_||!isExposed()) return;
-    auto& api=NativeApi::instance(); if(!api.available()) return;
+    // ONE ATTEMPT. Not one per expose, resize and frame.
+    //
+    // This is called from exposeEvent, resizeEvent, requestNativeFrame and
+    // mapDataset, and it returned without recording that it had already tried
+    // - so a surface that cannot be created was re-attempted on every one of
+    // those, for the life of the window. If the attempt is slow, that is a
+    // stall on every frame; if it dies inside the driver, it dies again on
+    // every frame, and a fault that might have been survivable once becomes an
+    // unrecoverable loop.
+    if(attemptedRenderer_) return;
+    attemptedRenderer_=true;
+
+    auto& api=NativeApi::instance();
+    if(!api.available()){
+        lastError_=QStringLiteral("The native library is not loaded: %1").arg(api.error());
+        emit nativeStatusChanged(lastError_);
+        return;
+    }
+    // Checked rather than assumed. NativeApi::load only reports success when
+    // every symbol resolved, so this should never fire - but calling through a
+    // null function pointer is not a failure that can be diagnosed afterwards,
+    // and setPointStyle a few lines below has always checked its own pointer.
+    // Whatever is true of one of them is true of all of them.
+    if(!api.rendererNew||!api.rendererCamera||!api.rendererRender||!api.rendererResize){
+        lastError_=QStringLiteral("The native library is missing a renderer entry point");
+        emit nativeStatusChanged(lastError_);
+        return;
+    }
 #ifdef Q_OS_WIN
     const auto hwnd=static_cast<qintptr>(winId()); const auto hinst=reinterpret_cast<qintptr>(GetModuleHandleW(nullptr));
-    renderer_=api.rendererNew(hwnd,hinst,qMax(2,width()),qMax(2,height()));
+    // A BREADCRUMB IMMEDIATELY BEFORE THE DANGEROUS CALL.
+    //
+    // gv_renderer_new_win32 goes into Rust and then into a graphics driver. A
+    // panic crossing an FFI boundary, or a driver that takes the process down,
+    // leaves nothing behind that says where it happened. This line is written
+    // through the Qt message handler into startup.log, which the next launch
+    // now preserves as startup.previous.log - so a session that dies in here
+    // ends its log on this sentence instead of ending it in silence.
+    qInfo("GraphVis: creating the native WGPU surface (%dx%d)",
+          qMax(2,width()),qMax(2,height()));
+    renderer_=api.rendererNew(hwnd,hinst,unsigned(qMax(2,width())),unsigned(qMax(2,height())));
+    qInfo("GraphVis: native WGPU surface %s",renderer_?"created":"refused");
 #else
     renderer_=nullptr;
+    lastError_=QStringLiteral("The native WGPU viewport is implemented for Windows only");
 #endif
     if(renderer_) { pushCamera(); emit nativeStatusChanged(QStringLiteral("Native WGPU direct presentation active")); }
-    else { lastError_=QStringLiteral("Unable to create native WGPU surface"); emit nativeStatusChanged(lastError_); }
+    else {
+        if(lastError_.isEmpty())
+            lastError_=QStringLiteral("Unable to create a native WGPU surface on this display");
+        emit nativeStatusChanged(lastError_);
+    }
 }
 void NativeViewportWindow::exposeEvent(QExposeEvent*){ensureRenderer(); if(isExposed())requestNativeFrame();}
 void NativeViewportWindow::resizeEvent(QResizeEvent* e){ensureRenderer();if(renderer_)NativeApi::instance().rendererResize(renderer_,qMax(2,e->size().width()),qMax(2,e->size().height()));requestNativeFrame();}
@@ -113,6 +179,17 @@ bool NativeViewportWindow::event(QEvent* e){
         return handleTouch(static_cast<QTouchEvent*>(e));
     case QEvent::NativeGesture:
         if(handleNativeGesture(static_cast<QNativeGestureEvent*>(e))){ e->accept(); return true; }
+        break;
+    case QEvent::PlatformSurface:
+        // The one event that says the HWND underneath is going away. See
+        // releaseRenderer: without this the native surface outlived the window
+        // it was created against.
+        if(static_cast<QPlatformSurfaceEvent*>(e)->surfaceEventType()
+           ==QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed){
+            qInfo("GraphVis: native viewport surface about to be destroyed; "
+                  "releasing the WGPU renderer");
+            releaseRenderer();
+        }
         break;
     default:
         break;

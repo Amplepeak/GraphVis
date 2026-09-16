@@ -1,6 +1,7 @@
 #include "PlotSelfTest.h"
 #include "ColourVision.h"
 #include "QtPlotBackend.h"
+#include "SurfaceEstimators.h"
 
 #include <QCryptographicHash>
 #include <QHashSeed>
@@ -18,6 +19,9 @@
 #include <QPdfWriter>
 #include <QElapsedTimer>
 #include <QtMath>
+#include <algorithm>
+#include <cstring>
+#include <limits>
 #include <cmath>
 #include <cstdio>
 
@@ -465,6 +469,15 @@ SweepInputs sweepInputs(){
     QVector<double> predictorX,responseY,noisyX,noisyY;
     QVector<double> arSeries,seasonTime,seasonValue,seasonPeriod;
     QVector<double> chaos,driveA,driveB;
+    QVector<double> psdTime,psdSignal,lagSource,lagEcho,ellipseX,ellipseY;
+    QVector<double> waveX,waveY;
+    QVector<double> normalSample,skewSample;
+    QVector<double> calObserved,calPredicted;
+    QVector<double> pdpFeature,pdpPrediction;
+    QVector<double> fanTime,fanValue;
+    QVector<double> corrA,corrB,corrC,corrD;
+    QVector<double> forestEstimate,forestLow,forestHigh;
+    QVector<double> radarSpeed,radarRange,radarPayload,radarCost,radarNoise,radarReadiness;
     QVector<double> bodeFreq,bodeGain,bodePhase;
     QVector<double> planSize,planAccept;
     QVector<double> stepTime,stepCurrent,cycleIndex,cycleEfficiency;
@@ -532,6 +545,144 @@ SweepInputs sweepInputs(){
             const double shared=std::sin(2.0*M_PI*double(i)*0.05);
             driveA.append(shared+2.0*noise());
             driveB.append(0.9*shared+2.0*noise());
+        }
+        // ------------------------------------------- signals with known answers
+        //
+        // Four engines whose whole output is one number, all of them running on
+        // the generic five-column sweep until now, so none of those numbers
+        // could be checked against anything.
+        //
+        // A spectrum at 6.25 Hz and 12.5 Hz, sampled at 100 Hz. Both are exact
+        // divisors of the sample rate - sixteen and eight samples to the cycle
+        // - so the peaks land on FFT bins rather than smeared between two, and
+        // the autocorrelation of the same record has to come back at lag 16
+        // and its multiples. The second tone is deliberately the octave: a
+        // reader can check the power ratio against 0.4 squared.
+        for(int i=0;i<512;++i){
+            const double t=double(i)*0.01;
+            psdTime.append(t);
+            psdSignal.append(std::sin(2.0*M_PI*6.25*t)
+                             +0.4*std::sin(2.0*M_PI*12.5*t)
+                             +0.05*noise());
+        }
+        // A source and its echo, delayed by exactly TWELVE samples, under
+        // independent noise. The engine correlates a[i] against b[i+lag] and
+        // the echo is b[i] = a[i-12], so the strongest stem has to stand at
+        // lag +12 and the sign of the lag says which series leads - which is
+        // the half of a cross correlation a reader most often gets backwards.
+        {
+            QVector<double> src;
+            for(int i=0;i<400;++i) src.append(noise());
+            for(int i=0;i<400;++i){
+                lagSource.append(src[i]);
+                lagEcho.append((i>=12?src[i-12]:0.0)+0.35*noise());
+            }
+        }
+        // A bivariate normal with a STATED covariance: sd 2 across, sd 1 up,
+        // correlation 0.7. The 95% ellipse the engine derives can then be
+        // checked - it should lean right, and its long axis should be close to
+        // atan of the regression slope rather than to 45 degrees, which is the
+        // thing an ellipse drawn from a wrong eigenvector gets wrong.
+        for(int i=0;i<300;++i){
+            const double z1=noise(),z2=noise();
+            ellipseX.append(2.0*z1);
+            ellipseY.append(0.7*z1+std::sqrt(1.0-0.49)*z2);
+        }
+        // A sine over two full turns, for the two engines that do calculus:
+        // the derivative of sin is cos, and the integral from zero is
+        // 1 - cos, so both figures can be checked by eye against a shape
+        // everyone knows. On the generic fixture neither could.
+        for(int i=0;i<=200;++i){
+            const double x=4.0*M_PI*double(i)/200.0;
+            waveX.append(x);
+            waveY.append(std::sin(x));
+        }
+        // ------------------------------------- distributions and diagnostics
+        //
+        // A normal sample and a right-skewed one, side by side, because that
+        // pair IS what a Q-Q plot and a probability plot are for: the normal
+        // one has to come out straight and the skewed one has to bend away
+        // from the line at the top. On the generic fixture both were the same
+        // smooth signal, so neither figure demonstrated the only thing it
+        // exists to show.
+        for(int i=0;i<200;++i){
+            const double z=noise();
+            normalSample.append(50.0+8.0*z);
+            skewSample.append(std::exp(0.6*z)*20.0);
+        }
+        // A model that is OVER-CONFIDENT by a stated amount: the observed
+        // frequency runs at 0.78 of the distance the predicted probability
+        // claims, either side of a half. So the calibration line has to come
+        // back with a slope near 0.78 against the diagonal - a number the
+        // figure can be checked on rather than a cloud that looks about right.
+        for(int i=0;i<=18;++i){
+            const double predicted=0.05+0.05*double(i);
+            calPredicted.append(predicted);
+            calObserved.append(0.5+0.78*(predicted-0.5)+0.012*noise());
+        }
+        // A logistic response to one feature, centred at 5 with unit scale, so
+        // the partial dependence curve has a known inflection and known
+        // asymptotes rather than being a shape with no correct answer.
+        for(int i=0;i<=80;++i){
+            const double feature=10.0*double(i)/80.0;
+            pdpFeature.append(feature);
+            pdpPrediction.append(1.0/(1.0+std::exp(-(feature-5.0))));
+        }
+        // Twenty-four periods of history for the fan to be projected from. The
+        // engine builds the bands itself, so what the fixture owes it is a
+        // record long enough to estimate a drift and a spread from.
+        for(int i=0;i<24;++i){
+            fanTime.append(double(i));
+            fanValue.append(100.0+1.8*double(i)+2.5*noise());
+        }
+        // FOUR COLUMNS WITH A STATED CORRELATION STRUCTURE, so the matrix can
+        // be read rather than admired: B follows A closely, C runs against it,
+        // D is independent. The cells must come back near +0.9, -0.8 and 0,
+        // with ones down the diagonal.
+        for(int i=0;i<240;++i){
+            const double draw=noise();
+            corrA.append(draw);
+            corrB.append(0.9*draw+std::sqrt(1.0-0.81)*noise());
+            corrC.append(-0.8*draw+std::sqrt(1.0-0.64)*noise());
+            corrD.append(noise());
+        }
+        // Eight studies of one treatment, each a risk ratio with its interval.
+        // Every interval contains 0.72 and six of the eight exclude 1, which
+        // is the reading a forest plot is drawn for: the individual studies
+        // disagree about the size and agree about the direction.
+        {
+            const double riskRatio[8]={0.62,0.81,0.70,0.95,0.58,0.77,0.69,0.84};
+            const double width[8]={0.18,0.26,0.14,0.34,0.22,0.16,0.12,0.30};
+            for(int i=0;i<8;++i){
+                forestEstimate.append(riskRatio[i]);
+                forestLow.append(riskRatio[i]-width[i]);
+                forestHigh.append(riskRatio[i]+width[i]);
+            }
+        }
+        // Three aircraft on six axes. A radar chart scales each spoke to its
+        // own column, which is the only way axes in knots, nautical miles,
+        // tonnes and decibels can share a figure - and on the generic fixture
+        // every spoke carried the same signal, so all three outlines were the
+        // same hexagon.
+        //
+        // FIVE rows, not three. The engine scales each spoke to its own
+        // column's range, so the lowest row on any axis sits at the centre and
+        // the highest at the rim whatever the row count - and with only three
+        // outlines every axis had one at each extreme and one between, which
+        // draws as a star of spikes rather than as a comparison. Five gives
+        // the middle rows somewhere to be.
+        {
+            const double speed[5]={470.0,512.0,443.0,489.0,461.0};
+            const double range[5]={3100.0,2450.0,3800.0,2900.0,3350.0};
+            const double payload[5]={18.4,22.1,15.2,19.8,17.1};
+            const double cost[5]={7.8,9.4,6.9,8.3,7.4};
+            const double noiseLevel[5]={88.0,94.0,83.0,90.0,86.0};
+            const double readiness[5]={0.91,0.84,0.88,0.86,0.93};
+            for(int i=0;i<5;++i){
+                radarSpeed.append(speed[i]);       radarRange.append(range[i]);
+                radarPayload.append(payload[i]);   radarCost.append(cost[i]);
+                radarNoise.append(noiseLevel[i]);  radarReadiness.append(readiness[i]);
+            }
         }
         // A first-order loop: -20 dB per decade through 0 dB.
         for(int i=0;i<80;++i){
@@ -1210,6 +1361,10 @@ SweepInputs sweepInputs(){
     QVector<double> pcrQuantity,pcrThreshold;
     QVector<double> meltTemperature,meltFluorescence;
     QVector<double> cultureTime,cultureDensity;
+    QVector<double> eisFrequency,eisMagnitude,eisPhase,eisReal,eisImag;
+    QVector<double> digestHour,digestBiogas,digestScod;
+    QVector<double> vfaAcetate,vfaPropionate,vfaButyrate;
+    QVector<double> cellCurrent,cellVoltage;
     QVector<double> childAge,childHeight;
     QVector<double> fieldStrength,fluxDensity;
     QVector<double> motorSpeed,motorTorque,loadTorque;
@@ -1268,6 +1423,109 @@ SweepInputs sweepInputs(){
         for(int i=0;i<400;++i){
             const double age=double(i%40)*0.5;
             childAge.append(age); childHeight.append(50.0+4.0*age+3.0*deviate());
+        }
+        // A RANDLES-SHAPED CELL WITH ROUND CONSTANTS, so both EIS engines can
+        // be checked rather than admired. Z = Rs + Rct / (1 + j w Rct C) with
+        // Rs = 20 ohm, Rct = 100 ohm, C = 10 uF, so tau = Rct C = 1 ms.
+        //
+        // Every feature of both figures is then known before the program runs:
+        //   Nyquist  a semicircle from Z' = 20 (high frequency) to Z' = 120
+        //            (low), apex -Z" = Rct/2 = 50 at Z' = Rs + Rct/2 = 70.
+        //   Bode     |Z| falling from 120 to 20, phase a single negative
+        //            trough at f = 1/(2 pi tau) = 159.2 Hz.
+        //
+        // Both engines had no data of their own and were drawing the generic
+        // five-column sweep: the Bode figure showed a 0/1 flag zigzagging
+        // across a pair of spirals, on axes labelled "paired" and "p_value".
+        {
+            const double rs=20.0,rct=100.0,cap=1.0e-5;
+            const double tau=rct*cap;
+            for(int i=0;i<=60;++i){
+                // Six decades, ten points each, because a spectrum is read on
+                // a logarithmic frequency axis.
+                const double f=std::pow(10.0,-1.0+double(i)/10.0);
+                const double w=2.0*M_PI*f;
+                const double den=1.0+(w*tau)*(w*tau);
+                const double re=rs+rct/den;
+                const double im=-rct*(w*tau)/den;
+                eisFrequency.append(f);
+                eisMagnitude.append(std::sqrt(re*re+im*im));
+                eisPhase.append(std::atan2(im,re)*180.0/M_PI);
+                eisReal.append(re);
+                eisImag.append(im);
+            }
+        }
+
+        // ---------------------------------------------- a batch digester
+        //
+        // Four engines from the process side of the catalogue - the modified
+        // Gompertz fit, the sCOD profile, the VFA stack and the fuel cell -
+        // were all still drawing the generic five-column sweep. Each of them
+        // reports a number, and none of those numbers could be checked
+        // against anything, because the data behind them meant nothing.
+        //
+        // One batch fermentation, stated as constants and then inverted, so
+        // every legend on all four figures can be read back against the line
+        // that produced it.
+        {
+            // Modified Gompertz. H(t) = P exp(-exp(Rm e/P (lambda - t) + 1)),
+            // which is the equation the engine fits, so its legend should
+            // return these three numbers and not merely something near them.
+            const double potential=420.0;     // P,      mL H2
+            const double maxRate=38.0;        // Rm,     mL/h
+            const double lag=6.0;             // lambda, h
+            const double eulerE=2.718281828459045;
+
+            // sCOD by first order. C(t) = C0 exp(-k t), k stated, so the
+            // removal the engine derives on its second axis is known too:
+            // after 48 h at k = 0.045/h the substrate is down to
+            // 8000 exp(-2.16) = 921 mg/L, which is 88.5% removal.
+            const double scod0=8000.0;        // mg/L
+            const double decay=0.045;         // 1/h
+
+            for(int i=0;i<=48;++i){
+                const double t=double(i);
+                digestHour.append(t);
+
+                const double inner=maxRate*eulerE/potential*(lag-t)+1.0;
+                digestBiogas.append(inner>700.0
+                                    ? 0.0
+                                    : potential*std::exp(-std::exp(inner)));
+
+                digestScod.append(scod0*std::exp(-decay*t));
+
+                // The three volatile fatty acids, in the order a digester
+                // produces and consumes them: acetate is the terminal
+                // intermediate and persists, propionate is the slow one and
+                // peaks late, butyrate appears first and is consumed. Each is
+                // a difference of exponentials, which is what a produce-then-
+                // consume intermediate is, so the stack the engine draws has a
+                // total that rises and falls rather than a total that only
+                // rises.
+                const auto pulse=[t](double amplitude,double rise,double fall){
+                    return amplitude*(std::exp(-fall*t)-std::exp(-rise*t));
+                };
+                vfaButyrate.append(pulse(900.0,0.40,0.11));
+                vfaPropionate.append(pulse(700.0,0.16,0.05));
+                vfaAcetate.append(pulse(1400.0,0.55,0.08));
+            }
+
+            // The cell, at the end of the run. A polarisation curve is the
+            // open-circuit voltage less the three losses, and the engine
+            // computes power from it as P = IV rather than reading a column,
+            // so the peak power is a consequence of these constants and not a
+            // number anyone typed: with OCV 0.78 V and 12 ohm cm2 of internal
+            // resistance the maximum falls at about 32 uA/cm2.
+            const double ocv=0.78;            // V
+            const double area=12.0;           // ohm cm2, ohmic + activation
+            for(int i=0;i<=64;++i){
+                const double current=double(i)*1.0;   // uA/cm2
+                const double volts=ocv-area*current*1e-3
+                                   -0.02*std::log1p(current*0.35);
+                if(volts<=0.0) break;
+                cellCurrent.append(current);
+                cellVoltage.append(volts);
+            }
         }
         for(int i=0;i<=360;++i){
             const double theta=2.0*M_PI*double(i)/360.0;
@@ -2144,7 +2402,7 @@ SweepInputs sweepInputs(){
     // what the engine measures: slope below the break, CLmax at it.
     QVector<double> liftAlpha,liftCl,liftClFlap;
     for(int i=0;i<=26;++i){
-        const double a=-4.0+double(i);
+        const double alpha=-4.0+double(i);
         // Post-stall the curve DROPS AND LEVELS, it does not dive. A bare
         // quadratic falloff took CL to -6 by 22 degrees, which is not a wing:
         // a stalled aerofoil sheds most of its lift and then sits on a rough
@@ -2156,9 +2414,9 @@ SweepInputs sweepInputs(){
             const double d=a-brk;
             return qMax(slope*(brk+zero)*0.45,linear-fall*d*d);
         };
-        liftAlpha.append(a);
-        liftCl.append(post(a,0.098,1.6,13.0,0.030));
-        liftClFlap.append(post(a,0.101,6.2,10.0,0.034));
+        liftAlpha.append(alpha);
+        liftCl.append(post(alpha,0.098,1.6,13.0,0.030));
+        liftClFlap.append(post(alpha,0.101,6.2,10.0,0.034));
     }
 
     // A flight profile: climb, cruise at level, step climb, descent. In
@@ -2295,12 +2553,12 @@ SweepInputs sweepInputs(){
             return 410.0-980.0*(e-0.115)*(e-0.115);                 // necking
         };
         for(int i=0;i<=24;++i){                                     // elastic
-            const double e=yieldStrain*double(i)/24.0;
-            ssStrain.append(e); ssStress.append(stressAt(e));
+            const double strain=yieldStrain*double(i)/24.0;
+            ssStrain.append(strain); ssStress.append(stressAt(strain));
         }
         for(int i=1;i<=70;++i){                                     // plastic
-            const double e=yieldStrain+(0.20-yieldStrain)*double(i)/70.0;
-            ssStrain.append(e); ssStress.append(stressAt(e));
+            const double strain=yieldStrain+(0.20-yieldStrain)*double(i)/70.0;
+            ssStrain.append(strain); ssStress.append(stressAt(strain));
         }
     }
 
@@ -2346,9 +2604,9 @@ SweepInputs sweepInputs(){
     // with a small intercept and a couple of tenths of a per cent of noise.
     QVector<double> calConc,calSignal;
     for(int i=0;i<=7;++i){
-        const double c=double(i)*0.8;
-        calConc.append(c);
-        calSignal.append(0.012+0.1873*c+0.0025*std::sin(double(i)*2.7));
+        const double conc=double(i)*0.8;
+        calConc.append(conc);
+        calSignal.append(0.012+0.1873*conc+0.0025*std::sin(double(i)*2.7));
     }
 
     // Enzyme kinetics that actually saturate: Vmax 8.4, Km 0.42 mM.
@@ -2363,9 +2621,9 @@ SweepInputs sweepInputs(){
     // across four decades of dose so both plateaus are on the figure.
     QVector<double> doseConc,doseEffect;
     for(int i=0;i<18;++i){
-        const double d=0.5*std::pow(10.0,double(i)/4.5);
-        doseConc.append(d);
-        doseEffect.append(4.0+92.0/(1.0+std::pow(35.0/d,1.4))
+        const double dose=0.5*std::pow(10.0,double(i)/4.5);
+        doseConc.append(dose);
+        doseEffect.append(4.0+92.0/(1.0+std::pow(35.0/dose,1.4))
                           +0.6*std::sin(double(i)*2.2));
     }
 
@@ -2501,11 +2759,11 @@ SweepInputs sweepInputs(){
         const double lon[8]={-3.19,-2.24,-1.55,-1.47,-0.13,-2.59,-1.90,-4.25};
         const double lat[8]={55.95,53.48,53.80,53.38,51.51,51.45,52.48,55.86};
         int k=0;
-        for(int a=0;a<8;++a) for(int b=0;b<8;++b){
-            if(a==b) continue;
-            if((a*8+b)%3) continue;                 // a sample, not the full matrix
-            odOLon.append(lon[a]); odOLat.append(lat[a]);
-            odDLon.append(lon[b]); odDLat.append(lat[b]);
+        for(int from=0;from<8;++from) for(int to=0;to<8;++to){
+            if(from==to) continue;
+            if((from*8+to)%3) continue;             // a sample, not the full matrix
+            odOLon.append(lon[from]); odOLat.append(lat[from]);
+            odDLon.append(lon[to]);   odDLat.append(lat[to]);
             odCount.append(400.0+9000.0*std::fmod(double(++k)*0.61803398875,1.0));
         }
     }
@@ -2757,9 +3015,9 @@ SweepInputs sweepInputs(){
     // the whole reading of a slope graph and needs few enough lines to follow.
     QVector<double> beforeRate,afterRate;
     {
-        const double b[12]={62.1,58.4,71.0,49.8,66.2,55.5,73.4,44.9,60.0,68.8,51.2,57.7};
-        const double a[12]={71.3,66.0,69.5,58.2,74.1,52.0,80.2,53.6,59.1,72.4,46.8,64.9};
-        for(int i=0;i<12;++i){ beforeRate.append(b[i]); afterRate.append(a[i]); }
+        const double before[12]={62.1,58.4,71.0,49.8,66.2,55.5,73.4,44.9,60.0,68.8,51.2,57.7};
+        const double after[12]={71.3,66.0,69.5,58.2,74.1,52.0,80.2,53.6,59.1,72.4,46.8,64.9};
+        for(int i=0;i<12;++i){ beforeRate.append(before[i]); afterRate.append(after[i]); }
     }
 
     // A waterfall with LOSSES in it. Every step was positive, so the chart was
@@ -2854,10 +3112,10 @@ SweepInputs sweepInputs(){
     QVector<double> dailyFlow;
     {
         quint32 st=0x6C078965u;
-        for(int d=0;d<365;++d){
+        for(int day=0;day<365;++day){
             st^=st<<13; st^=st>>17; st^=st<<5;
             const double u=double(st)/4294967296.0;
-            const double season=0.35+0.65*(0.5+0.5*std::cos(double(d)/365.0*2.0*M_PI));
+            const double season=0.35+0.65*(0.5+0.5*std::cos(double(day)/365.0*2.0*M_PI));
             const double base=2.4*season;
             const double storm=(u>0.93)?(14.0*season*(u-0.93)/0.07):0.0;
             dailyFlow.append(base+storm+0.5*u*season);
@@ -2987,11 +3245,11 @@ SweepInputs sweepInputs(){
             return double(st)/4294967296.0;
         };
         QVector<double>* train[3]={&spikeA,&spikeB,&spikeC};
-        const double rate[3]={7.5,2.8,14.0};                 // per second
+        const double hertz[3]={7.5,2.8,14.0};               // per second
         for(int k=0;k<3;++k){
             double at=0.0;
             while(at<6.0){
-                at+=-std::log(qMax(1e-9,uniform()))/rate[k];  // Poisson arrivals
+                at+=-std::log(qMax(1e-9,uniform()))/hertz[k]; // Poisson arrivals
                 if(at<6.0) train[k]->append(at);
             }
         }
@@ -3174,9 +3432,9 @@ SweepInputs sweepInputs(){
     // more data stops paying, against a hyperparameter having a best value.
     QVector<double> trainScore,validScore,paramTrain,paramValid;
     for(int i=0;i<24;++i){
-        const double n=double(i+1);
-        trainScore.append(0.995-0.06*std::exp(-n/3.0));
-        validScore.append(0.93-0.40*std::exp(-n/4.5));
+        const double samples=double(i+1);
+        trainScore.append(0.995-0.06*std::exp(-samples/3.0));
+        validScore.append(0.93-0.40*std::exp(-samples/4.5));
         const double k=double(i+1);
         paramTrain.append(qMin(0.999,0.55+0.021*k));
         paramValid.append(0.90-0.014*(k-11.0)*(k-11.0)*0.09-0.02*std::exp(-k/2.0));
@@ -3616,6 +3874,87 @@ SweepInputs sweepInputs(){
             {column("t",chaos),column("value",chaos)}},
         {QStringLiteral("Coherence Spectrum"),
             {column("a",driveA),column("b",driveB)}},
+        // The spectrum reads the sample interval off its own x, so this is
+        // paired: numbered rows would put the frequency axis in cycles per
+        // sample and the 6.25 Hz peak would land at 0.0625 with nothing on the
+        // figure saying the units had changed.
+        {QStringLiteral("Power Spectral Density"),
+            {paired("signal",psdTime,psdSignal)}},
+        {QStringLiteral("Autocorrelation"),
+            {paired("signal",psdTime,psdSignal)}},
+        {QStringLiteral("Lag Plot"),
+            {paired("signal",psdTime,psdSignal)}},
+        {QStringLiteral("Cross Correlation"),
+            {column("source",lagSource),column("echo",lagEcho)}},
+        {QStringLiteral("Confidence Ellipse"),
+            {column("x",ellipseX),column("y",ellipseY)}},
+        {QStringLiteral("Derivative"),
+            {paired("sin(x)",waveX,waveY)}},
+        {QStringLiteral("Integral"),
+            {paired("sin(x)",waveX,waveY)}},
+        // A normal sample and a right-skewed one TOGETHER, because the pair is
+        // the demonstration: one plots straight and the other bends away.
+        {QStringLiteral("Q-Q Plot"),
+            {column("normal",normalSample),column("right-skewed",skewSample)}},
+        {QStringLiteral("Probability Plot"),
+            {column("normal",normalSample),column("right-skewed",skewSample)}},
+        // Observed first, predicted second - the order the engine reads.
+        {QStringLiteral("Calibration Plot"),
+            {column("observed frequency",calObserved),
+             column("predicted probability",calPredicted)}},
+        {QStringLiteral("Partial Dependence Plot"),
+            {column("feature",pdpFeature),column("prediction",pdpPrediction)}},
+        {QStringLiteral("Fan Chart"),
+            {paired("history",fanTime,fanValue)}},
+        {QStringLiteral("Correlation Matrix"),
+            {column("A",corrA),column("B",corrB),column("C",corrC),column("D",corrD)}},
+        {QStringLiteral("Covariance Matrix"),
+            {column("A",corrA),column("B",corrB),column("C",corrC),column("D",corrD)}},
+        // Estimate, lower limit, upper limit - three columns in that order.
+        {QStringLiteral("Forest Plot"),
+            {column("risk ratio",forestEstimate),column("lower",forestLow),
+             column("upper",forestHigh)}},
+        // One spoke per column, one outline per row.
+        {QStringLiteral("Radar Chart"),
+            {column("cruise (kt)",radarSpeed),column("range (nm)",radarRange),
+             column("payload (t)",radarPayload),column("cost (M)",radarCost),
+             column("noise (dB)",radarNoise),column("readiness",radarReadiness)}},
+        // The composition family: each mapped series contributes its TOTAL as
+        // one part of the whole, labelled by the series name - the same shape
+        // the treemap fixture above uses. Handed the generic five-column sweep
+        // these drew five wedges called "paired", "p_value" and so on, sized by
+        // the sum of a continuous signal, which is a picture of nothing.
+        {QStringLiteral("Sunburst"),{column("propulsion",{38.0}),
+                                     column("avionics",{24.0}),
+                                     column("structures",{19.0}),
+                                     column("interiors",{12.0}),
+                                     column("ground support",{7.0})}},
+        {QStringLiteral("Sankey Diagram"),{column("recovered",{5200.0}),
+                                           column("reused",{2600.0}),
+                                           column("incinerated",{1450.0}),
+                                           column("landfill",{620.0})}},
+        // Three sets, so the diagram draws three circles rather than the two
+        // it falls back to. The sizes are deliberately unequal: the circles are
+        // scaled by their totals, which a fixture of equal sets cannot show.
+        {QStringLiteral("Venn Diagram"),{column("found in review",{124.0}),
+                                         column("found by tests",{86.0}),
+                                         column("found in service",{31.0})}},
+        {QStringLiteral("Word Cloud"),{column("corrosion",{240.0}),
+                                       column("fatigue",{186.0}),
+                                       column("fastener",{131.0}),
+                                       column("seal",{104.0}),
+                                       column("bearing",{77.0}),
+                                       column("actuator",{58.0}),
+                                       column("harness",{41.0}),
+                                       column("bracket",{29.0}),
+                                       column("fairing",{18.0}),
+                                       column("placard",{11.0})}},
+        {QStringLiteral("Bubble Cloud"),{column("engine",{310.0}),
+                                         column("hydraulics",{190.0}),
+                                         column("landing gear",{145.0}),
+                                         column("electrical",{98.0}),
+                                         column("cabin",{64.0}),
+                                         column("APU",{37.0})}},
         {QStringLiteral("Bode Plot"),
             {column("frequency",bodeFreq),column("gain",bodeGain),
              column("phase",bodePhase)}},
@@ -3818,6 +4157,29 @@ SweepInputs sweepInputs(){
         {QStringLiteral("Donut"),{column("share",categoryValue)}},
         {QStringLiteral("Stem"),{column("measured",categoryValue)}},
         {QStringLiteral("Lollipop"),{column("measured",categoryValue)}},
+        // THE MAINSTREAM SHAPES THE CATALOGUE WAS MISSING.
+        //
+        // Each needs a fixture of its own because each is read for something
+        // the generic five-column sweep cannot show. A bump chart wants a few
+        // competitors over a few rounds, with overtakes in it - handed 240
+        // rounds of continuous signal it draws a solid band and demonstrates
+        // nothing. A dial wants one number against a stated range. A bullet
+        // wants a measure and a target side by side. A Marimekko wants columns
+        // of VERY different sizes, because unequal widths are the whole reason
+        // it is not a stacked bar.
+        {QStringLiteral("Bump Chart"),{column("Northern",{2.0,3.0,3.0,4.0,5.0,5.0,6.0,7.0}),
+                                       column("Eastern", {5.0,4.0,4.0,3.0,3.0,2.0,2.0,2.0}),
+                                       column("Central", {1.0,1.0,2.0,2.0,1.0,1.0,1.0,1.0}),
+                                       column("Western", {4.0,5.0,5.0,5.0,4.0,4.0,3.0,3.0}),
+                                       column("Southern",{3.0,2.0,1.0,1.0,2.0,3.0,4.0,5.0})}},
+        {QStringLiteral("Dumbbell Plot"),{column("2019",{31.0,44.0,22.0,58.0,17.0,39.0,48.0}),
+                                          column("2024",{47.0,51.0,19.0,72.0,35.0,38.0,66.0})}},
+        {QStringLiteral("Gauge"),{column("uptime (%)",{97.4})}},
+        {QStringLiteral("Bullet Chart"),{column("achieved",{412.0,268.0,355.0,190.0,301.0}),
+                                         column("target",  {380.0,300.0,330.0,240.0,280.0})}},
+        {QStringLiteral("Marimekko Chart"),{column("retail",   {480.0,120.0, 60.0, 30.0}),
+                                            column("wholesale",{210.0,190.0, 40.0, 25.0}),
+                                            column("online",   {130.0, 90.0,110.0, 15.0})}},
         // One column per PART: drawTreemap sums each series and lays the
         // totals out as tiles, so a single column is a single tile filling the
         // whole area - which is a rectangle, not a treemap. Same shape as
@@ -3854,6 +4216,28 @@ SweepInputs sweepInputs(){
             {column("temperature",meltTemperature),column("fluorescence",meltFluorescence)}},
         {QStringLiteral("Growth Rate (OD)"),
             {column("time",cultureTime),column("OD",cultureDensity)}},
+        {QStringLiteral("EIS: Bode"),
+            {column("frequency (Hz)",eisFrequency),column("|Z| (ohm)",eisMagnitude),
+             column("phase (deg)",eisPhase)}},
+        {QStringLiteral("EIS: Nyquist"),
+            {column("Z real (ohm)",eisReal),column("Z imag (ohm)",eisImag)}},
+        // The batch digester. Three of the four read a POINT out of one series
+        // - time against the measurement - so they are paired rather than
+        // numbered; a numbered column would hand the engine its own row index
+        // as the time, and a Gompertz fitted against a subscript returns three
+        // numbers that mean nothing.
+        {QStringLiteral("Gompertz H₂ Kinetics"),
+            {paired("cumulative H₂ (mL)",digestHour,digestBiogas)}},
+        {QStringLiteral("sCOD Degradation Profile"),
+            {paired("sCOD",digestHour,digestScod)}},
+        // The stack is the exception: it reads three measured species, and the
+        // engine numbers the rows itself.
+        {QStringLiteral("VFA Concentration Profile"),
+            {column("acetate (mg/L)",vfaAcetate),
+             column("propionate (mg/L)",vfaPropionate),
+             column("butyrate (mg/L)",vfaButyrate)}},
+        {QStringLiteral("Polarisation & Power Curve"),
+            {paired("cell voltage (V)",cellCurrent,cellVoltage)}},
         {QStringLiteral("Growth Percentile Chart"),
             {column("age",childAge),column("height",childHeight)}},
         {QStringLiteral("Hysteresis Loop (B-H)"),
@@ -4428,6 +4812,36 @@ bool runEngineSweep(const QString& galleryDir){
     }
 
     printf("selftest: swept %d engines\n",int(engines.size()));
+
+    // HOW MANY ENGINES RUN ON DATA BUILT FOR THEM - the Tier 4 number, printed
+    // rather than remembered.
+    //
+    // It was a figure in a document: "384 of 434 engines shaped". The
+    // catalogue reached 440 and the figure did not move, because nothing
+    // recomputed it - and a number in prose has no way to notice that the
+    // thing it describes has changed. The same disease as the graph-pack
+    // counts, which were six short for the same reason.
+    //
+    // Counted against THIS sweep's engine list rather than against the size of
+    // the shaped table, so a shaped fixture left behind for an engine that no
+    // longer exists cannot inflate it.
+    {
+        int withOwn=0;
+        QStringList generic;
+        for(const QString& engine:engines){
+            if(shaped.contains(engine)) ++withOwn;
+            else generic.append(engine);
+        }
+        printf("selftest: %d of %d engines run on a fixture built for them; "
+               "%d use the shared five columns\n",
+               withOwn,int(engines.size()),int(generic.size()));
+        // Named, not just counted. "50 remain" is a number nobody can act on;
+        // a list is a worklist, and most of these should STAY generic - a line
+        // chart, a box plot and a histogram have no law to invert.
+        if(!generic.isEmpty())
+            printf("selftest: on the shared fixture: %s\n",
+                   qPrintable(generic.join(QStringLiteral(", "))));
+    }
     // Asserted, now that the list has been read.
     //
     // This arrived as a report, because every exception list in this file was
@@ -4820,6 +5234,69 @@ bool runRegressionChecks(){
         }
     }
 
+    // ------------------------------------------- 1d. the right-hand y axis
+    //
+    // A COLUMN THE PERSON PUT ON THE SECOND AXIS HAS TO GET THERE.
+    //
+    // The secondary-axis path was complete and used by eight engines, and no
+    // mapping role reached it - the interface could not ask for it at all. The
+    // role is now offered wherever `honoursSecondaryAxis` says it will be
+    // obeyed, and that answer is measured rather than listed, so what is
+    // checked here is the measurement itself and then the picture it promises.
+    {
+        QtPlotBackend backend;
+
+        // The two answers that have to differ, and WHY they differ. A Line
+        // Chart passes the mapped series through, so asking moves one of them.
+        // A Pareto Chart marks its own cumulative series whatever it is handed,
+        // so asking changes nothing about what it draws - and a probe that only
+        // looked for a secondary series, rather than for the flag making the
+        // difference, would say yes here and put the role on an engine that
+        // silently ignores it.
+        if(!backend.honoursSecondaryAxis(QStringLiteral("Line Chart")))
+            failures.append(QStringLiteral("Line Chart draws the series it is given, so it "
+                                           "honours a secondary-axis request - the probe says "
+                                           "it does not, and the mapping role will be hidden"));
+        if(backend.honoursSecondaryAxis(QStringLiteral("Pareto Chart")))
+            failures.append(QStringLiteral("Pareto Chart rebuilds its own series and marks its "
+                                           "own cumulative line, so a mapped column cannot "
+                                           "reach the second axis - the probe says it can, and "
+                                           "the role will be offered where it does nothing"));
+
+        // And the picture. Two specs, identical but for which axis the second
+        // series is drawn against; they must not render the same, and the flag
+        // must survive preparation.
+        PlotSpec one=whiteSpec(QStringLiteral("Line Chart"));
+        PlotSeries left; left.label=QStringLiteral("temperature");
+        PlotSeries right; right.label=QStringLiteral("pressure");
+        for(int i=0;i<12;++i){
+            left.x.append(double(i)); left.y.append(20.0+double(i));
+            right.x.append(double(i)); right.y.append(101000.0+double(i)*40.0);
+        }
+        one.series={left,right};
+        PlotSpec two=one;
+        two.series[1].secondaryAxis=true;
+
+        const PlotSpec prepared=backend.preparedFor(two);
+        bool kept=false;
+        for(const PlotSeries& drawn:prepared.series)
+            if(drawn.secondaryAxis){ kept=true; break; }
+        if(!kept)
+            failures.append(QStringLiteral("Line Chart dropped the secondary-axis flag during "
+                                           "preparation, so the mapped column would be drawn "
+                                           "against the left axis with a right one labelled"));
+
+        // The point of a second axis: a series in pascals and a series in
+        // degrees, each readable. On one axis the temperature is a flat line
+        // along the floor, so this is not a subtle difference and a pixel
+        // comparison is an honest test of it.
+        if(renderToImage(backend,one)==renderToImage(backend,two))
+            failures.append(QStringLiteral("Line Chart drew the same figure with and without "
+                                           "the second series on its own axis - a series four "
+                                           "decades away from the other cannot look the same "
+                                           "on one axis as on two"));
+    }
+
     // -------------------------------------------------------------- 2. bars
     // drawBar used to place bar i at plotArea.left() + slot*(i+0.5), ignoring
     // s.x[i] entirely, so bars stood under an axis they did not correspond to.
@@ -4987,13 +5464,975 @@ bool runRegressionChecks(){
         }
     }
 
+    // ------------------------------------------------------------------
+    // THE ORDER AND THE FREQUENCY, recovered from figures built to contain a
+    // known one. Tier 4 in miniature: invert the law, then read the answer off
+    // the picture.
+    //
+    // Both of these engines drew the right shape and named nothing, and both
+    // were fixed by naming the number. The naming is easy to get wrong in a way
+    // no rendering check can see - the first cut-off rule here reported AR(42)
+    // on a series that is AR(2) by construction, because at sixty lags about
+    // three sit outside a 95% band by chance and it took the last of them. The
+    // gallery showed that instantly; nothing else would have.
+    {
+        QtPlotBackend backend;
+
+        // An AR(2) with phi1 = 0.6, phi2 = -0.3 - the same law the shaped
+        // fixture uses, restated here so this check does not depend on a
+        // fixture table someone may re-tune for a different engine.
+        PlotSeries ar;
+        ar.label=QStringLiteral("value");
+        {
+            unsigned seed=20260915u;
+            const auto noise=[&seed]{
+                seed=seed*1664525u+1013904223u;
+                return (double(seed>>8)/double(1u<<24)-0.5)*0.6;
+            };
+            double prev1=0.0,prev2=0.0;
+            for(int i=0;i<600;++i){
+                const double v=0.6*prev1-0.3*prev2+noise();
+                ar.x.append(double(i)); ar.y.append(v);
+                prev2=prev1; prev1=v;
+            }
+        }
+        PlotSpec pacf=whiteSpec(QStringLiteral("Partial Autocorrelation"));
+        pacf.series={ar,ar};
+        const PlotSpec prepPacf=backend.preparedFor(pacf);
+        int reported=-1;
+        for(const PlotSeries& s:prepPacf.series){
+            if(!s.label.startsWith(QLatin1String("suggests AR("))) continue;
+            bool ok=false;
+            const int v=s.label.mid(12).chopped(1).toInt(&ok);
+            if(ok) reported=v;
+        }
+        if(reported<0){
+            failures.append(QStringLiteral("Partial Autocorrelation names no model order, "
+                                           "so the one number a PACF is read for is not on "
+                                           "the figure"));
+        }else if(reported!=2){
+            failures.append(QStringLiteral("Partial Autocorrelation says AR(%1) for a series "
+                                           "built as AR(2) with phi1=0.6, phi2=-0.3")
+                                .arg(reported));
+        }
+
+        // A signal with one dominant tone at a known frequency. dt = 0.01 s, so
+        // 6.25 Hz lands on an exact FFT bin for a 1024-point transform and the
+        // answer is not a rounding of the bin spacing.
+        PlotSeries tone;
+        tone.label=QStringLiteral("signal");
+        for(int i=0;i<1024;++i){
+            const double t=double(i)*0.01;
+            tone.x.append(t);
+            tone.y.append(std::sin(2.0*M_PI*6.25*t)+0.2*std::sin(2.0*M_PI*12.5*t));
+        }
+        PlotSpec psd=whiteSpec(QStringLiteral("Power Spectral Density"));
+        psd.series={tone};
+        const PlotSpec prepPsd=backend.preparedFor(psd);
+        double peakHz=std::numeric_limits<double>::quiet_NaN();
+        for(const PlotSeries& s:prepPsd.series){
+            if(!s.label.startsWith(QLatin1String("peak "))) continue;
+            peakHz=s.label.section(QLatin1Char(' '),1,1).toDouble();
+        }
+        // The pooled estimate, on two studies whose weights are known exactly.
+        //
+        // Inverse-variance weighting with se1 = 1 and se2 = sqrt(3) gives
+        // weights of 1 and 1/3, so estimates of 2 and 4 pool to
+        // (1*2 + (1/3)*4) / (4/3) = 2.5. Nothing about that depends on the
+        // engine's internals: it is the arithmetic the method is defined by.
+        //
+        // OFF unless asked for, so this also checks the parameter is read - a
+        // pooled estimate that appeared by default would put a summary row on
+        // every forest plot whether or not the studies are poolable.
+        {
+            PlotSeries est,lo,hi;
+            est.label=QStringLiteral("estimate");
+            const double se1=1.0,se2=std::sqrt(3.0);
+            est.y={2.0,4.0};
+            lo.y={2.0-1.96*se1,4.0-1.96*se2};
+            hi.y={2.0+1.96*se1,4.0+1.96*se2};
+            PlotSpec plain=whiteSpec(QStringLiteral("Forest Plot"));
+            plain.series={est,lo,hi};
+            const PlotSpec prepPlain=backend.preparedFor(plain);
+            for(const PlotSeries& s2:prepPlain.series)
+                if(s2.label.startsWith(QLatin1String("pooled ")))
+                    failures.append(QStringLiteral("Forest Plot draws a pooled estimate "
+                                                   "without being asked - where the null "
+                                                   "sits depends on the measure, which the "
+                                                   "data cannot say"));
+
+            PlotSpec asked=plain;
+            asked.parameters.insert(QStringLiteral("pooled"),1.0);
+            const PlotSpec prepAsked=backend.preparedFor(asked);
+            double pooled=std::numeric_limits<double>::quiet_NaN();
+            for(const PlotSeries& s2:prepAsked.series)
+                if(s2.label.startsWith(QLatin1String("pooled "))&&!s2.y.isEmpty())
+                    pooled=s2.y[0];
+            if(pooled!=pooled){
+                failures.append(QStringLiteral("Forest Plot was asked for a pooled estimate "
+                                               "and produced none"));
+            }else if(std::abs(pooled-2.5)>0.01){
+                failures.append(QStringLiteral("Forest Plot pools two studies (2 at se 1, "
+                                               "4 at se sqrt3) to %1; inverse-variance "
+                                               "weighting gives 2.5").arg(pooled,0,'f',4));
+            }
+        }
+
+        if(peakHz!=peakHz){
+            failures.append(QStringLiteral("Power Spectral Density names no peak frequency, "
+                                           "which is the question a spectrum is read to answer"));
+        }else if(std::abs(peakHz-6.25)>0.05){
+            failures.append(QStringLiteral("Power Spectral Density says its peak is at %1 Hz "
+                                           "for a signal whose dominant tone is 6.25 Hz")
+                                .arg(peakHz,0,'f',4));
+        }
+    }
+
+    // ============================================================ 11. NEW ENGINES
+    //
+    // AN ENGINE IS NOT IN THE CATALOGUE UNTIL SOMETHING HERE MEASURES IT.
+    //
+    // The sweep already proves every engine draws, and draws a picture no other
+    // engine draws. That is Tier 1 and it is not verification: a bump chart
+    // that ranked backwards, a dial whose sweep ignored its scale and a
+    // Marimekko whose widths were all equal would each pass it comfortably.
+    //
+    // So each engine added to the catalogue is checked here against data whose
+    // answer is arithmetic rather than opinion, and the catalogue records which
+    // engines have such a check - see tools/mark_verified_engines.py. An engine
+    // with no entry here is shown in the library as unverified rather than
+    // quietly offered as though it were known to be right.
+    //
+    // The two that are DATA REWRITES are checked on the prepared spec, because
+    // the rewrite is the whole of what could be wrong. The three that are
+    // PAINTERS have no derived numbers to read, so they are checked on pixels -
+    // and by PROPORTION rather than position, so the check measures the claim
+    // the figure makes and not the layout arithmetic that happens to place it.
+    {
+        QtPlotBackend backend;
+        const auto imageOf=[&backend](const PlotSpec& spec,int w,int h){
+            QImage canvas(w,h,QImage::Format_ARGB32_Premultiplied);
+            canvas.fill(Qt::white);
+            QPainter painter(&canvas);
+            backend.render(&painter,QRectF(0,0,w,h),spec);
+            painter.end();
+            return canvas;
+        };
+        // Pixels close enough to a series colour to be that series' ink.
+        // Generous, because antialiasing puts a fringe of blends around every
+        // edge and a strict match would count only the interior.
+        const auto inkCount=[](const QImage& img,const QColor& want){
+            int n=0;
+            for(int y=0;y<img.height();++y)
+                for(int x=0;x<img.width();++x){
+                    const QColor c=img.pixelColor(x,y);
+                    if(std::abs(c.red()-want.red())<=18
+                       &&std::abs(c.green()-want.green())<=18
+                       &&std::abs(c.blue()-want.blue())<=18) ++n;
+                }
+            return n;
+        };
+        const auto series=[](const QString& label,const QVector<double>& v,
+                             const QColor& colour){
+            PlotSeries s; s.label=label; s.color=colour;
+            for(int i=0;i<v.size();++i) s.x.append(double(i));
+            s.y=v;
+            return s;
+        };
+        const QColor kInk[3]={QColor(0x21,0x96,0xf3),QColor(0xe5,0x39,0x35),
+                              QColor(0x43,0xa0,0x47)};
+
+        // ---- Bump Chart: the ranks, including a tie and a missing round.
+        //
+        // Round 0 is 10, 30, 20, 30, 5. B and D tie at the top, so both take
+        // the AVERAGE of the two places they occupy - 1.5 - and the next
+        // competitor is third, not second. Round 1 drops A entirely: a
+        // competitor that was not there has no place in that round, and the
+        // other four rank among themselves.
+        {
+            const double nan=std::numeric_limits<double>::quiet_NaN();
+            PlotSpec bump=whiteSpec(QStringLiteral("Bump Chart"));
+            bump.series={series(QStringLiteral("A"),{10.0,nan},kInk[0]),
+                         series(QStringLiteral("B"),{30.0,40.0},kInk[1]),
+                         series(QStringLiteral("C"),{20.0,10.0},kInk[2]),
+                         series(QStringLiteral("D"),{30.0,30.0},kInk[0]),
+                         series(QStringLiteral("E"),{ 5.0,20.0},kInk[1])};
+            const PlotSpec prep=backend.preparedFor(bump);
+            const double want0[5]={4.0,1.5,3.0,1.5,5.0};
+            const double want1[5]={nan,1.0,4.0,2.0,3.0};
+            if(prep.series.size()!=5){
+                failures.append(QStringLiteral("Bump Chart draws %1 series for five "
+                                               "competitors").arg(prep.series.size()));
+            }else{
+                for(int c=0;c<5;++c){
+                    if(prep.series.at(c).y.size()<2){
+                        failures.append(QStringLiteral("Bump Chart gives competitor %1 "
+                                                       "fewer than two rounds").arg(c));
+                        continue;
+                    }
+                    const double got0=prep.series.at(c).y.at(0);
+                    const double got1=prep.series.at(c).y.at(1);
+                    if(std::abs(got0-want0[c])>1e-9)
+                        failures.append(QStringLiteral("Bump Chart places competitor %1 at "
+                                                       "%2 in round 0; the values 10,30,20,"
+                                                       "30,5 put it at %3 (a tie shares the "
+                                                       "averaged place)")
+                                            .arg(c).arg(got0).arg(want0[c]));
+                    const bool wantMissing=(c==0);
+                    const bool gotMissing=!(got1==got1);
+                    if(wantMissing!=gotMissing)
+                        failures.append(QStringLiteral("Bump Chart %1 a place to a "
+                                                       "competitor that was %2 in round 1")
+                                            .arg(gotMissing?QStringLiteral("withholds")
+                                                           :QStringLiteral("gives"),
+                                                 wantMissing?QStringLiteral("absent")
+                                                            :QStringLiteral("present")));
+                    else if(!wantMissing&&std::abs(got1-want1[c])>1e-9)
+                        failures.append(QStringLiteral("Bump Chart places competitor %1 at "
+                                                       "%2 in round 1; ranking the four "
+                                                       "present puts it at %3")
+                                            .arg(c).arg(got1).arg(want1[c]));
+                }
+            }
+            // First place at the TOP. Negating the ranks would also put it
+            // there and would label the axis -1, -2, -3.
+            if(!prep.yAxis.inverted)
+                failures.append(QStringLiteral("Bump Chart does not invert its axis, so "
+                                               "first place is drawn at the bottom"));
+        }
+
+        // ---- Dumbbell Plot: transposed, so the frame is ruled in the values.
+        {
+            PlotSpec dumb=whiteSpec(QStringLiteral("Dumbbell Plot"));
+            dumb.series={series(QStringLiteral("before"),{10.0,20.0,30.0},kInk[0]),
+                         series(QStringLiteral("after"), {40.0,25.0, 5.0},kInk[1])};
+            const PlotSpec prep=backend.preparedFor(dumb);
+            const double wantX[2][3]={{10.0,20.0,30.0},{40.0,25.0,5.0}};
+            if(prep.series.size()!=2){
+                failures.append(QStringLiteral("Dumbbell Plot draws %1 series for two "
+                                               "measurements").arg(prep.series.size()));
+            }else{
+                for(int s2=0;s2<2;++s2){
+                    const PlotSeries& got=prep.series.at(s2);
+                    if(got.x.size()!=3||got.y.size()!=3){
+                        failures.append(QStringLiteral("Dumbbell Plot gives series %1 "
+                                                       "%2 points for three categories")
+                                            .arg(s2).arg(got.x.size()));
+                        continue;
+                    }
+                    for(int i=0;i<3;++i){
+                        if(std::abs(got.x.at(i)-wantX[s2][i])>1e-9)
+                            failures.append(QStringLiteral("Dumbbell Plot puts %1 along x "
+                                                           "for row %2 of series %3; the "
+                                                           "measurement is %4 - the value "
+                                                           "has to be the abscissa or the "
+                                                           "frame is ruled in the wrong "
+                                                           "quantity")
+                                                .arg(got.x.at(i)).arg(i).arg(s2)
+                                                .arg(wantX[s2][i]));
+                        if(std::abs(got.y.at(i)-double(i))>1e-9)
+                            failures.append(QStringLiteral("Dumbbell Plot puts row %1 of "
+                                                           "series %2 on lane %3")
+                                                .arg(i).arg(s2).arg(got.y.at(i)));
+                    }
+                }
+            }
+        }
+
+        // ---- Gauge: the sweep is proportional to the reading.
+        //
+        // Measured as a RATIO of arc ink between three renders on one stated
+        // scale, so nothing here depends on where the dial is placed, how thick
+        // it is, or what angle it starts at - only on the one claim a dial
+        // makes, that the coloured fraction of the sweep is the value's
+        // fraction of the range. The arc has constant width, so its ink is
+        // proportional to the angle it covers.
+        {
+            const auto dial=[&](double value,bool stated){
+                PlotSpec g=whiteSpec(QStringLiteral("Gauge"));
+                g.title.clear();          // no title ink to confuse the count
+                g.series={series(QStringLiteral("m"),{value},kInk[0])};
+                if(stated){ g.yAxis.min=0.0; g.yAxis.max=200.0; }
+                return inkCount(imageOf(g,420,420),kInk[0]);
+            };
+            const int quarter=dial(50.0,true);
+            const int half=dial(100.0,true);
+            const int full=dial(200.0,true);
+            if(quarter<200){
+                failures.append(QStringLiteral("Gauge draws almost no arc for a reading of "
+                                               "50 on a 0-200 dial (%1 pixels)").arg(quarter));
+            }else{
+                const double r2=double(half)/double(quarter);
+                const double r4=double(full)/double(quarter);
+                if(std::abs(r2-2.0)>0.12)
+                    failures.append(QStringLiteral("Gauge sweeps %1 times as far for 100 as "
+                                                   "for 50 on a 0-200 dial; it must be twice")
+                                        .arg(r2,0,'f',3));
+                if(std::abs(r4-4.0)>0.20)
+                    failures.append(QStringLiteral("Gauge sweeps %1 times as far for 200 as "
+                                                   "for 50 on a 0-200 dial; it must be four "
+                                                   "times").arg(r4,0,'f',3));
+            }
+            // THE SCALE IS NOT THE READING.
+            //
+            // With no limits stated the dial used to end at the largest number
+            // in the column, which for one reading is the reading - so every
+            // value drew a completely full ring and the sweep said nothing.
+            // 97.4 must round up to 100 and draw 97.4% of the arc, which is
+            // what the same reading on a stated 0-100 scale draws.
+            PlotSpec inferred=whiteSpec(QStringLiteral("Gauge"));
+            inferred.title.clear();
+            inferred.series={series(QStringLiteral("m"),{97.4},kInk[0])};
+            PlotSpec stated=inferred;
+            stated.yAxis.min=0.0; stated.yAxis.max=100.0;
+            PlotSpec brimful=inferred;
+            brimful.yAxis.min=0.0; brimful.yAxis.max=97.4;
+            const int a=inkCount(imageOf(inferred,420,420),kInk[0]);
+            const int b=inkCount(imageOf(stated,420,420),kInk[0]);
+            const int c=inkCount(imageOf(brimful,420,420),kInk[0]);
+            if(b>0&&std::abs(double(a)-double(b))/double(b)>0.03)
+                failures.append(QStringLiteral("Gauge with no stated scale draws %1 pixels "
+                                               "of arc for 97.4 where a stated 0-100 scale "
+                                               "draws %2; the inferred scale must round up "
+                                               "to 100 rather than end at the reading")
+                                    .arg(a).arg(b));
+            if(c>0&&double(a)/double(c)>0.995)
+                failures.append(QStringLiteral("Gauge draws as full a ring for 97.4 with an "
+                                               "inferred scale as with a scale ending at "
+                                               "97.4, so the sweep carries no reading"));
+        }
+
+        // ---- Bullet Chart: bar length is proportional to the measure, on ONE
+        // scale shared by every strip. Both halves matter: a panel of strips
+        // each scaled to itself cannot be compared, which is the entire reason
+        // this figure exists rather than a row of dials.
+        {
+            PlotSpec bullet=whiteSpec(QStringLiteral("Bullet Chart"));
+            bullet.title.clear();
+            bullet.series={series(QStringLiteral("m"),{25.0,50.0,100.0},kInk[0])};
+            bullet.yAxis.min=0.0; bullet.yAxis.max=100.0;
+            const QImage img=imageOf(bullet,600,360);
+            // The longest run of bar ink on each image row, grouped into bands.
+            QVector<int> bandBest;
+            int best=0; bool inBand=false;
+            for(int y=0;y<img.height();++y){
+                int run=0,rowBest=0;
+                for(int x=0;x<img.width();++x){
+                    const QColor c=img.pixelColor(x,y);
+                    const bool ink=std::abs(c.red()-kInk[0].red())<=18
+                                 &&std::abs(c.green()-kInk[0].green())<=18
+                                 &&std::abs(c.blue()-kInk[0].blue())<=18;
+                    run=ink?run+1:0;
+                    rowBest=qMax(rowBest,run);
+                }
+                if(rowBest>2){ inBand=true; best=qMax(best,rowBest); }
+                else if(inBand){ bandBest.append(best); best=0; inBand=false; }
+            }
+            if(inBand) bandBest.append(best);
+            if(bandBest.size()!=3){
+                failures.append(QStringLiteral("Bullet Chart draws %1 bars for three "
+                                               "measures").arg(bandBest.size()));
+            }else{
+                const double r2=double(bandBest.at(1))/double(bandBest.at(0));
+                const double r4=double(bandBest.at(2))/double(bandBest.at(0));
+                if(std::abs(r2-2.0)>0.06)
+                    failures.append(QStringLiteral("Bullet Chart draws 50 as %1 times the "
+                                                   "length of 25 on a shared 0-100 scale; "
+                                                   "it must be twice").arg(r2,0,'f',3));
+                if(std::abs(r4-4.0)>0.10)
+                    failures.append(QStringLiteral("Bullet Chart draws 100 as %1 times the "
+                                                   "length of 25 on a shared 0-100 scale; "
+                                                   "it must be four times - strips scaled "
+                                                   "to themselves cannot be compared")
+                                        .arg(r4,0,'f',3));
+            }
+        }
+
+        // ---- Marimekko: the widths carry the totals and the heights the
+        // shares. Both are checked, because a Marimekko whose columns are all
+        // the same width is a hundred-percent stacked bar wearing its name.
+        {
+            PlotSpec mek=whiteSpec(QStringLiteral("Marimekko Chart"));
+            mek.title.clear();
+            // Column totals 300 and 100, so the first column is three times
+            // the width of the second. Within the first, 200 against 100, so
+            // the first segment is twice the height of the second.
+            mek.series={series(QStringLiteral("p"),{200.0,50.0},kInk[0]),
+                        series(QStringLiteral("q"),{100.0,50.0},kInk[1])};
+            const QImage img=imageOf(mek,600,400);
+            const auto isInk=[&](const QColor& c,const QColor& want){
+                return std::abs(c.red()-want.red())<=18
+                     &&std::abs(c.green()-want.green())<=18
+                     &&std::abs(c.blue()-want.blue())<=18;
+            };
+            // THE COLUMNS FIRST, because a height is only meaningful inside one.
+            //
+            // This check failed on its first run at 1.331 and the ENGINE WAS
+            // RIGHT: it took the tallest run of each colour anywhere in the
+            // figure, so the 200 segment of the first column (two thirds of the
+            // height) was being compared with the 50 segment of the SECOND
+            // column (one half of it) - 1.333, which is what it measured. A
+            // share is a share of its own column and has to be read inside it.
+            QVector<int> inkPerX(img.width(),0);
+            for(int x=0;x<img.width();++x)
+                for(int y=0;y<img.height();++y){
+                    const QColor c=img.pixelColor(x,y);
+                    if(isInk(c,kInk[0])||isInk(c,kInk[1])){ ++inkPerX[x]; break; }
+                }
+            QVector<QPoint> columns;      // x from, x to
+            int firstX=-1;
+            for(int x=0;x<img.width();++x){
+                if(inkPerX[x]>0){ if(firstX<0) firstX=x; }
+                else if(firstX>=0){ columns.append(QPoint(firstX,x-1)); firstX=-1; }
+            }
+            if(firstX>=0) columns.append(QPoint(firstX,img.width()-1));
+
+            if(columns.size()!=2){
+                failures.append(QStringLiteral("Marimekko Chart draws %1 columns for two "
+                                               "categories").arg(columns.size()));
+            }else{
+                // The widths carry the totals: 300 against 100.
+                const double wide0=double(columns.at(0).y()-columns.at(0).x()+1);
+                const double wide1=double(columns.at(1).y()-columns.at(1).x()+1);
+                const double widths=wide0/wide1;
+                if(std::abs(widths-3.0)>0.20)
+                    failures.append(QStringLiteral("Marimekko Chart draws a column totalling "
+                                                   "300 at %1 times the width of one "
+                                                   "totalling 100; it must be three times - "
+                                                   "equal widths make this a stacked bar")
+                                        .arg(widths,0,'f',3));
+
+                // The heights carry the shares, WITHIN a column: 200 against
+                // 100 in the first, which is two to one.
+                // The TALLEST run across the column's whole width, not the run
+                // at its middle.
+                //
+                // At the middle this measured 2.130 rather than 2, and the
+                // engine was right again: each segment carries its share
+                // written across the centre of it in the background colour, so
+                // a vertical line through the middle is broken by the text. The
+                // smaller segment loses proportionally more of itself to a
+                // label that is the same size in both, which inflates the
+                // ratio. Anywhere clear of the text gives the true height, so
+                // the maximum over the column's width is that height.
+                int tallP=0,tallQ=0;
+                for(int x=columns.at(0).x();x<=columns.at(0).y();++x){
+                    int runP=0,runQ=0;
+                    for(int y=0;y<img.height();++y){
+                        const QColor c=img.pixelColor(x,y);
+                        runP=isInk(c,kInk[0])?runP+1:0; tallP=qMax(tallP,runP);
+                        runQ=isInk(c,kInk[1])?runQ+1:0; tallQ=qMax(tallQ,runQ);
+                    }
+                }
+                if(tallP<10||tallQ<10){
+                    failures.append(QStringLiteral("Marimekko Chart draws no measurable "
+                                                   "segments in its first column (%1 and %2 "
+                                                   "pixels tall)").arg(tallP).arg(tallQ));
+                }else{
+                    const double shape=double(tallP)/double(tallQ);
+                    if(std::abs(shape-2.0)>0.12)
+                        failures.append(QStringLiteral("Marimekko Chart draws the 200 segment "
+                                                       "%1 times the height of the 100 segment "
+                                                       "in a column totalling 300; it must be "
+                                                       "twice").arg(shape,0,'f',3));
+                }
+            }
+        }
+
+        // ---- Choropleth: the fill follows the VALUE, not the row order.
+        //
+        // Two square regions side by side, rendered TWICE with the two values
+        // swapped between them. The pictures must swap their colours too.
+        //
+        // Why this shape and not "the colours are what the ramp says": the
+        // ramp lives in QtPlotBackendShared.h, which this file does not
+        // include, so there is nothing here to compare a colour against. The
+        // swap needs no such reference and is strictly stronger than the
+        // obvious alternative - "the two regions differ" passes for an engine
+        // that colours by region INDEX, ignores the value column entirely, or
+        // hands out palette entries in row order. All three draw the same
+        // picture both times and are caught here.
+        {
+            const auto squares=[&](double a,double b){
+                PlotSpec cho=whiteSpec(QStringLiteral("Choropleth"));
+                cho.title.clear();
+                // Two unit squares: longitude 0..1 and 2..3, both latitude
+                // 0..1, so they sit side by side with clear space between.
+                cho.series={
+                    series(QStringLiteral("longitude"),
+                           {0.0,1.0,1.0,0.0, 2.0,3.0,3.0,2.0},kInk[0]),
+                    series(QStringLiteral("latitude"),
+                           {0.0,0.0,1.0,1.0, 0.0,0.0,1.0,1.0},kInk[1]),
+                    series(QStringLiteral("region_id"),
+                           {0.0,0.0,0.0,0.0, 1.0,1.0,1.0,1.0},kInk[2]),
+                    series(QStringLiteral("value"),
+                           {a,a,a,a, b,b,b,b},kInk[0])};
+                return imageOf(cho,600,400);
+            };
+
+            // The two colours that occupy the most of the middle row, and
+            // where each sits.
+            //
+            // TOTALLED PER COLOUR rather than taken as the longest unbroken
+            // run: a grid line through a square splits its fill into two runs,
+            // and the two longest runs would then be two halves of the SAME
+            // region. Totalling also keeps the colour bar out of the answer -
+            // it is a gradient, so every colour in it is a few pixels wide.
+            const auto dominant=[](const QImage& img){
+                struct Band { QColor colour; int count=0; double sumX=0; };
+                QVector<Band> bands;
+                const int y=img.height()/2;
+                for(int x=0;x<img.width();++x){
+                    const QColor c=img.pixelColor(x,y);
+                    if(c.red()>240&&c.green()>240&&c.blue()>240) continue;
+                    int at=-1;
+                    for(int i=0;i<bands.size();++i)
+                        if(std::abs(c.red()-bands[i].colour.red())<=6
+                           &&std::abs(c.green()-bands[i].colour.green())<=6
+                           &&std::abs(c.blue()-bands[i].colour.blue())<=6){ at=i; break; }
+                    if(at<0){ bands.append(Band{c,0,0.0}); at=bands.size()-1; }
+                    ++bands[at].count;
+                    bands[at].sumX+=double(x);
+                }
+                std::sort(bands.begin(),bands.end(),
+                          [](const Band& l,const Band& r){ return l.count>r.count; });
+                QVector<QPair<QColor,double>> top;
+                for(int i=0;i<bands.size()&&i<2;++i)
+                    if(bands[i].count>=8)
+                        top.append(qMakePair(bands[i].colour,
+                                             bands[i].sumX/double(bands[i].count)));
+                std::sort(top.begin(),top.end(),
+                          [](const QPair<QColor,double>& l,
+                             const QPair<QColor,double>& r){ return l.second<r.second; });
+                return top;
+            };
+
+            const QVector<QPair<QColor,double>> first=dominant(squares(10.0,20.0));
+            const QVector<QPair<QColor,double>> swapped=dominant(squares(20.0,10.0));
+            const auto same=[](const QColor& a,const QColor& b){
+                return std::abs(a.red()-b.red())<=8
+                     &&std::abs(a.green()-b.green())<=8
+                     &&std::abs(a.blue()-b.blue())<=8;
+            };
+            if(first.size()<2||swapped.size()<2){
+                failures.append(QStringLiteral("Choropleth fills %1 region(s) of two")
+                                    .arg(first.size()));
+            }else if(same(first.at(0).first,first.at(1).first)){
+                failures.append(QStringLiteral("Choropleth paints two different values "
+                                               "the same colour"));
+            }else if(!same(first.at(0).first,swapped.at(1).first)
+                   ||!same(first.at(1).first,swapped.at(0).first)){
+                failures.append(QStringLiteral("Choropleth does not follow the value "
+                                               "column - swapping the two values left "
+                                               "the two colours where they were"));
+            }
+        }
+    }
+
+    // ------------------------------------ the value scale, and what it claims
+    //
+    // Three scales, and each makes a DIFFERENT claim about what a colour means.
+    // The one that matters most is quantile, because it is the one whose claim
+    // is easy to state and easy to get wrong: equal COUNT per class. A skewed
+    // column is exactly where a linear ramp fails and exactly where an
+    // off-by-one in the break arithmetic would still look plausible.
+    //
+    // Measured on the arithmetic rather than on pixels, because the claim is
+    // arithmetic. The picture is checked separately below: the same skewed data
+    // drawn linear and drawn quantile must not come out as the same figure, or
+    // the setting did nothing.
+    {
+        // Skewed on purpose - most regions small, a few large - which is what
+        // population, income and incidence all look like and what a linear
+        // ramp cannot show.
+        QVector<double> skewed;
+        for(int i=0;i<200;++i) skewed.append(std::pow(1.045,double(i)));
+
+        const int classes=5;
+        const QVector<double> breaks=quantileBreaks(skewed,classes);
+        if(breaks.size()!=classes+1){
+            failures.append(QStringLiteral("quantile classing produced %1 edges for "
+                                           "%2 classes").arg(breaks.size()).arg(classes));
+        }else{
+            ColourScale sc;
+            sc.kind=ColourScale::Quantile;
+            sc.lo=skewed.first(); sc.hi=skewed.last();
+            sc.breaks=breaks;
+
+            // EQUAL COUNT PER CLASS, which is the whole claim.
+            QVector<int> perClass(classes,0);
+            for(double v:skewed){
+                const double t=scalePosition(v,sc);
+                const int cls=qBound(0,int(t*double(classes)),classes-1);
+                ++perClass[cls];
+            }
+            const int want=skewed.size()/classes;
+            for(int i=0;i<classes;++i)
+                if(std::abs(perClass[i]-want)>want/4){
+                    failures.append(QStringLiteral("quantile class %1 holds %2 of %3 "
+                                                   "regions, not about %4 - the classing "
+                                                   "is not by count")
+                                    .arg(i).arg(perClass[i]).arg(skewed.size()).arg(want));
+                    break;
+                }
+
+            // THE KEY AND THE MAP ASK THE SAME FUNCTION. Asserted rather than
+            // assumed, because a key that disagrees with its map is
+            // indistinguishable on the page from one that agrees: every value
+            // inside a class must land on that class's single position, which
+            // is the position the bar paints that block.
+            for(int i=0;i<classes;++i){
+                const double mid=0.5*(breaks[i]+breaks[i+1]);
+                const double classCentre=(double(i)+0.5)/double(classes);
+                if(std::abs(scalePosition(mid,sc)-classCentre)>1e-12){
+                    failures.append(QStringLiteral("a value in quantile class %1 does "
+                                                   "not sit where the key paints that "
+                                                   "class").arg(i));
+                    break;
+                }
+            }
+            // A value below the first edge or above the last still has to have
+            // a colour: a region exactly at the minimum is in the first class.
+            if(scalePosition(breaks.first(),sc)!=0.5/double(classes)
+               ||scalePosition(breaks.last(),sc)!=(double(classes)-0.5)/double(classes))
+                failures.append(QStringLiteral("the extreme values fall outside every "
+                                               "quantile class"));
+        }
+
+        // Log10 REFUSES what it cannot place, rather than inventing a spot for
+        // it. A zero on a logarithmic ramp is not the bottom of the scale.
+        ColourScale lg; lg.kind=ColourScale::Log10; lg.lo=1.0; lg.hi=1000.0;
+        if(scalePosition(0.0,lg)==scalePosition(0.0,lg))
+            failures.append(QStringLiteral("a log10 colour scale placed a zero on the "
+                                           "ramp instead of refusing it"));
+        if(std::abs(scalePosition(10.0,lg)-1.0/3.0)>1e-12
+           ||std::abs(scalePosition(100.0,lg)-2.0/3.0)>1e-12)
+            failures.append(QStringLiteral("a log10 colour scale is not logarithmic"));
+
+        // And the scales must actually change the figure. A setting that draws
+        // the same picture is a setting that does nothing, which is how the
+        // pooled-estimate option and the scale variants were each caught.
+        {
+            QtPlotBackend backend;
+            const auto drawScale=[&](int choice){
+                PlotSpec spec=whiteSpec(QStringLiteral("Choropleth"));
+                PlotSeries lon,lat,region,value;
+                for(int r=0;r<6;++r){
+                    const double x0=double(r);
+                    const double corners[4][2]={{0,0},{1,0},{1,1},{0,1}};
+                    for(const auto& c:corners){
+                        lon.y.append(x0+c[0]); lat.y.append(c[1]);
+                        region.y.append(double(r));
+                        value.y.append(std::pow(6.0,double(r)));   // heavily skewed
+                    }
+                }
+                lon.x=lon.y; lat.x=lat.y; region.x=region.y; value.x=value.y;
+                value.label=QStringLiteral("value");
+                spec.series={lon,lat,region,value};
+                spec.parameters.insert(QStringLiteral("valueScale"),double(choice));
+                spec.parameters.insert(QStringLiteral("classes"),3.0);
+                QImage img(420,320,QImage::Format_RGB32);
+                img.fill(Qt::white);
+                QPainter p(&img);
+                backend.render(&p,QRectF(0,0,420,320),spec);
+                p.end();
+                return img;
+            };
+            const QImage linear=drawScale(0),quantile=drawScale(2);
+            if(linear==quantile)
+                failures.append(QStringLiteral("the Choropleth value scale draws the "
+                                               "same picture on linear and quantile, so "
+                                               "the setting does nothing"));
+        }
+    }
+
+    // ------------------------------------------- the in-frame view, measured
+    //
+    // The engines with no axes could not be moved at all until this existed,
+    // so the thing to prove is that the view REACHES THE PAINTER - which is
+    // exactly what the 3-D camera failed to do for a whole session, and failed
+    // silently: the number changed, the cached prepared spec did not, and the
+    // figure was redrawn identically. Every assertion below is therefore a
+    // comparison of PICTURES. A test on spec.frameView would have passed all
+    // the way through the bug it exists to catch.
+    //
+    // ONE BACKEND for all of them, deliberately. A fresh QtPlotBackend has an
+    // empty prepared-spec cache, so a per-render backend passes this no matter
+    // how broken the caching is - the 3-D camera note above records that exact
+    // mistake being made by an earlier probe.
+    {
+        QtPlotBackend backend;
+        const auto shot=[&backend](const PlotSpec& spec){
+            QImage img(360,300,QImage::Format_RGB32);
+            img.fill(Qt::white);
+            QPainter p(&img);
+            backend.render(&p,QRectF(0,0,360,300),spec);
+            p.end();
+            return img;
+        };
+        // How much ink, and where it sits. A treemap is blocks of colour, so
+        // the count of non-white pixels and their centre of mass together say
+        // whether the figure moved, grew, or did neither.
+        struct Ink { int count=0; double cx=0.0, cy=0.0; };
+        const auto ink=[](const QImage& img){
+            Ink out; double sx=0.0, sy=0.0;
+            for(int y=0;y<img.height();++y)
+                for(int x=0;x<img.width();++x){
+                    const QRgb c=img.pixel(x,y);
+                    if(qRed(c)>245&&qGreen(c)>245&&qBlue(c)>245) continue;
+                    ++out.count; sx+=x; sy+=y;
+                }
+            if(out.count>0){ out.cx=sx/out.count; out.cy=sy/out.count; }
+            return out;
+        };
+
+        PlotSeries parts;
+        parts.label=QStringLiteral("share");
+        for(int i=0;i<8;++i){ parts.x.append(i); parts.y.append(10.0+i*7.0); }
+
+        // Treemap: no axes, so viewInteractive is false for it, and it is one
+        // of the sixty-six engines this exists for.
+        PlotSpec flat=whiteSpec(QStringLiteral("Treemap"));
+        flat.series={parts};
+
+        const QImage still=shot(flat);
+        const Ink stillInk=ink(still);
+
+        if(stillInk.count<200){
+            failures.append(QStringLiteral("in-frame view: the Treemap fixture drew "
+                                           "almost nothing, so every check below "
+                                           "would pass on an empty picture"));
+        }else{
+            // 1. A PAN MOVES THE FIGURE, and moves it the right way.
+            PlotSpec panned=flat;
+            panned.frameView.panX=0.15;         // a fraction of the frame, rightwards
+            const Ink pannedInk=ink(shot(panned));
+            if(pannedInk.cx<=stillInk.cx+5.0)
+                failures.append(QStringLiteral("in-frame view: panning a Treemap right "
+                                               "did not move its ink right (centre %1 "
+                                               "-> %2) - the view is not reaching the "
+                                               "painter")
+                                .arg(stillInk.cx,0,'f',1).arg(pannedInk.cx,0,'f',1));
+
+            // 2. A ZOOM MAKES IT BIGGER. Clipped to the frame, so more of the
+            // frame is covered rather than the same ink spread thinner.
+            PlotSpec zoomed=flat;
+            zoomed.frameView.zoom=2.0;
+            const Ink zoomedInk=ink(shot(zoomed));
+            if(zoomedInk.count<=stillInk.count)
+                failures.append(QStringLiteral("in-frame view: a 2x zoom on a Treemap "
+                                               "did not increase its ink (%1 -> %2)")
+                                .arg(stillInk.count).arg(zoomedInk.count));
+
+            // 2b. AND BY EXACTLY AS MUCH AS IT SAYS.
+            //
+            // "More ink than before" was the whole of the zoom check, and it
+            // is the check that missed a real bug: when render() was split,
+            // applyFrameView ended up called twice on every axis-less engine.
+            // applyFrameView COMPOSES onto the painter's matrix rather than
+            // setting it, so a zoom of 2 drew at 4 and a pan of 0.15 moved
+            // 0.30 - and the figure still had more ink, still moved rightwards
+            // and still came back on reset, so every assertion here passed.
+            //
+            // MEASURED ON A PIE, not on the Treemap, and that is the point of
+            // this block rather than an incidental choice. A treemap fills its
+            // frame, so past a small zoom its ink count saturates against the
+            // clip and stops carrying the magnitude; its centroid barely moves
+            // for the same reason. A pie is a disc with white around it, so
+            // its ink is an AREA and area goes as the square of the zoom -
+            // which makes the difference between zoom z and zoom z-squared
+            // impossible to miss.
+            //
+            // 1.5x should give 2.25x the ink. Applied twice it is 2.25x the
+            // zoom, so 5x the ink or a disc clipped by the frame - either way
+            // far past the bar below, and far above the tolerance a disc's
+            // antialiased edge needs.
+            {
+                PlotSpec disc=whiteSpec(QStringLiteral("Pie"));
+                disc.series={parts};
+                const int plain=ink(shot(disc)).count;
+                PlotSpec bigger=disc;
+                bigger.frameView.zoom=1.5;
+                const int grown=ink(shot(bigger)).count;
+                if(plain<200){
+                    failures.append(QStringLiteral(
+                        "in-frame view: the Pie fixture drew almost nothing, so "
+                        "the magnitude check below would pass on an empty picture"));
+                }else if(grown<=plain){
+                    failures.append(QStringLiteral(
+                        "in-frame view: a 1.5x zoom on a Pie did not enlarge it "
+                        "(%1 -> %2)").arg(plain).arg(grown));
+                }else if(double(grown)>3.0*double(plain)){
+                    failures.append(QStringLiteral(
+                        "in-frame view: a 1.5x zoom on a Pie multiplied its ink by "
+                        "%1, where the square of the zoom is 2.25 - the transform "
+                        "is being applied more than once")
+                        .arg(double(grown)/double(plain),0,'f',2));
+                }
+            }
+
+            // 3. RESETTING IT RESTORES THE PICTURE EXACTLY. Not approximately:
+            // a view is a way of looking, and clearing it has to give back the
+            // figure that was there - otherwise Reset view leaves something
+            // subtly unlike what it started from, which nobody would notice
+            // and everybody would inherit.
+            PlotSpec back=panned;
+            back.frameView=PlotFrameView{};
+            if(shot(back)!=still)
+                failures.append(QStringLiteral("in-frame view: clearing the view did "
+                                               "not restore the original picture"));
+
+            // 4. IT LEAVES FRAMED ENGINES ALONE. applyFrameView is called only
+            // in the axis-less branch of render(), and this is the assertion
+            // that says so: a Line Chart carrying the same view must draw
+            // exactly as it does without it, because on those engines the axis
+            // range IS the view and two views at once would fight.
+            PlotSpec line=whiteSpec(QStringLiteral("Line Chart"));
+            line.series={parts};
+            PlotSpec lineMoved=line;
+            lineMoved.frameView.panX=0.15;
+            lineMoved.frameView.zoom=2.0;
+            if(shot(lineMoved)!=shot(line))
+                failures.append(QStringLiteral("in-frame view: it changed a Line Chart, "
+                                               "which has axes and must be unaffected"));
+        }
+    }
+
+    // ------------------------------ the field estimators, across their matrix
+    //
+    // NOTHING HERE TOUCHED estimateField BEFORE THIS, and the gallery cannot
+    // stand in for it. The sweep renders contours and surfaces with DEFAULT
+    // settings, so one estimator of sixteen ran, and one branch each of
+    // failure-footprint, bridging and mask-display. Four fifths of a
+    // 507-line function with complexity 166 had no coverage at all - and it is
+    // the function most in need of being split, which cannot be done safely
+    // against a measurement that cannot see the change.
+    //
+    // So this walks the matrix: every implemented estimator against every
+    // extrapolation, footprint, bridging and mask-display. What it asserts are
+    // PROPERTIES rather than stored numbers, so it does not have to be
+    // rewritten every time an estimator is legitimately improved:
+    //
+    //   * a node is never both "outside the hull" and a measurement;
+    //   * a value is finite wherever the field does not say it is unknown;
+    //   * clamping to the observed range is obeyed when it is asked for;
+    //   * masking and bridging are counted consistently with their flags.
+    //
+    // The FINGERPRINT is printed rather than asserted, and that is the part a
+    // refactor uses: run it before and after, and identical output is the
+    // evidence that 7,680 cases came out the same. A stored constant here
+    // would have to be updated on every deliberate change, which is how a
+    // golden test becomes something people edit until it passes.
+    {
+        const auto matrixSample=[](bool onLattice){
+            QVector<ScatterPoint> pts;
+            if(onLattice){
+                for(int iy=0;iy<12;++iy) for(int ix=0;ix<12;++ix){
+                    const double x=double(ix)/11.0,y=double(iy)/11.0;
+                    pts.push_back({x,y,std::sin(3.0*x)*std::cos(2.5*y)+0.4*x});
+                }
+            }else{
+                quint32 st=0x13579BDFu;
+                for(int i=0;i<140;++i){
+                    st^=st<<13; st^=st>>17; st^=st<<5;
+                    const double x=double(st)/4294967296.0;
+                    st^=st<<13; st^=st>>17; st^=st<<5;
+                    const double y=double(st)/4294967296.0;
+                    pts.push_back({x,y,std::sin(3.0*x)*std::cos(2.5*y)+0.4*x});
+                }
+            }
+            // Some runs failed. Their coordinates are real and their value is
+            // not, which is the case the footprint and bridging controls exist
+            // for and the one a fixture without them never reaches.
+            for(int i=0;i<pts.size();i+=17)
+                pts[i].v=std::numeric_limits<double>::quiet_NaN();
+            return pts;
+        };
+
+        quint64 print=1469598103934665603ull;
+        const auto mix=[&print](quint64 v){ print^=v; print*=1099511628211ull; };
+        const QStringList estNames=estimatorNames();
+        int cases=0;
+        QString firstBad;
+
+        for(int e=0;e<estNames.size()&&firstBad.isEmpty();++e){
+            const Estimator est=static_cast<Estimator>(e);
+            if(!estimatorImplemented(est)) continue;
+            for(int extrap=0;extrap<5;++extrap)
+            for(int foot=0;foot<4;++foot)
+            for(int bridge=0;bridge<4;++bridge)
+            for(int show=0;show<6;++show){
+                EstimatorSettings s;
+                s.estimator=est;
+                s.extrapolation=static_cast<Extrapolation>(extrap);
+                s.footprint=static_cast<FailureFootprint>(foot);
+                s.bridging=static_cast<Bridging>(bridge);
+                s.invalidDisplay=static_cast<InvalidDisplay>(show);
+                s.kriging=(extrap+foot)%3;
+                s.valuePolicy=static_cast<ValuePolicy>((foot+show)%2);
+                const bool lattice=((e+extrap)%2)==0;
+                const EstimatedField f=
+                    estimateField(matrixSample(lattice),41,33,0.0,1.0,0.0,1.0,s);
+                ++cases;
+
+                mix(quint64(f.nx)); mix(quint64(f.ny));
+                int masked=0,bridged=0;
+                for(int k=0;k<f.value.size();++k){
+                    const double v=f.value[k];
+                    if(v!=v) mix(0x4E614Eull^quint64(k));
+                    else { quint64 bits; std::memcpy(&bits,&v,sizeof(bits));
+                           mix(bits^quint64(k)); }
+                    if(k<f.failed.size()&&f.failed[k]) ++masked;
+                    if(k<f.bridged.size()&&f.bridged[k]) ++bridged;
+                    // A value that is present must be a number. An infinity
+                    // reaches the painter as a coordinate and draws nothing,
+                    // silently - the same class as the padding overflow
+                    // computeRange guards against.
+                    if(v==v&&!std::isfinite(v)&&firstBad.isEmpty())
+                        firstBad=QStringLiteral("%1: non-finite value at node %2")
+                                 .arg(estNames[e]).arg(k);
+                }
+                for(int k=0;k<f.outsideHull.size();++k)
+                    if(f.outsideHull[k]) mix(0x51ull^quint64(k));
+                for(int k=0;k<f.estimated.size();++k)
+                    if(f.estimated[k]) mix(0x52ull^quint64(k));
+
+                if(firstBad.isEmpty()&&f.valid){
+                    if(masked!=f.failedCount)
+                        firstBad=QStringLiteral("%1: failedCount says %2, the flags "
+                                                "say %3").arg(estNames[e])
+                                 .arg(f.failedCount).arg(masked);
+                    else if(bridged!=f.bridgedCount)
+                        firstBad=QStringLiteral("%1: bridgedCount says %2, the flags "
+                                                "say %3").arg(estNames[e])
+                                 .arg(f.bridgedCount).arg(bridged);
+                }
+            }
+        }
+
+        if(!firstBad.isEmpty()) failures.append(firstBad);
+        printf("selftest: field estimators, %d cases over %d implemented "
+               "methods x extrapolation x footprint x bridging x mask display; "
+               "fingerprint %016llx\n",
+               cases,
+               int(std::count_if(estNames.begin(),estNames.end(),
+                                 [&estNames](const QString& n){
+                                     return estimatorImplemented(static_cast<Estimator>(
+                                         estNames.indexOf(n))); })),
+               (unsigned long long)print);
+    }
+
     if(!failures.isEmpty()){
         for(const QString& f:failures) printf("selftest: REGRESSION: %s\n",qPrintable(f));
         printf("selftest: %d regression check(s) FAILED\n",int(failures.size()));
         return false;
     }
     printf("selftest: regression checks passed (prepared-spec cache, engine parameters, "
-           "3-D camera, bar positions, horizontal bars, waterfall, correlation agreement)\n");
+           "3-D camera, bar positions, horizontal bars, waterfall, correlation agreement, "
+           "PACF order, PSD peak, pooled estimate, the six new engines "
+           "measured: bump ranks, dumbbell transpose, gauge sweep, bullet "
+           "scale, marimekko widths, choropleth value-to-colour, and the "
+           "in-frame view: pan, zoom, reset, and framed engines left alone)\n");
     return true;
 }
 
@@ -5221,8 +6660,46 @@ bool runPropertyChecks(bool report){
         QStringLiteral("Correlation Matrix"),QStringLiteral("Q-Q Plot"),
         QStringLiteral("Beeswarm"),QStringLiteral("Ridgeline")};
 
-    int orderChecked=0,flatChecked=0,edgeChecked=0;
-    QStringList orderChanged,edgeTouched,flatNoisy,orderSkipped;
+    // ENGINES WHOSE FURNITURE IS DRAWN ON THE FRAME, on purpose, and which
+    // therefore cannot answer the question the frame check asks.
+    //
+    // The check asks whether an engine drew its DATA onto its own frame, and
+    // everything else it counted as data has now been removed at the source:
+    // the legend by the rectangle the painter records, the grid by rendering
+    // without one, a field by asking the prepared name, a bound the engine
+    // stated by asking whether it stated one. What is left are two engines that
+    // draw furniture of their own INSIDE the plot area and against its edges,
+    // where no amount of headroom would move it, because it is not measured
+    // against the axes at all:
+    //
+    //   * Scatter + Marginals hangs a histogram from the top frame and another
+    //     from the right one. The bars of a marginal are drawn from the frame
+    //     inwards - that is what makes them read as marginals - so the frame
+    //     edge is where they belong, exactly like a bar's baseline.
+    //   * The Tripartite Response Spectrum is a nomogram. Its constant-
+    //     displacement and constant-acceleration rulings run corner to corner
+    //     by construction and carry their own labels at both ends, and the note
+    //     explaining the two families is printed along the bottom inside the
+    //     frame. Those rulings ARE the figure; a tripartite plot without them
+    //     is a log-log line chart.
+    //
+    // Each was looked at, as a picture, with the grid off, before being written
+    // here - the same standard as kOrderFree above, and for the same reason:
+    // the alternative was leaving the check reporting two figures that are
+    // right, forever, which is how a check gets ignored and then removed.
+    //
+    // This is the whole exception list. It is two names, both verified, and it
+    // is what lets the overrun result below be a FAILURE rather than a note.
+    static const QSet<QString> kFrameFurniture{
+        QStringLiteral("Scatter + Marginals"),
+        QStringLiteral("Tripartite Response Spectrum")};
+
+    int orderChecked=0,flatChecked=0,edgeChecked=0,frameChecked=0;
+    QStringList orderChanged,edgeTouched,flatNoisy,orderSkipped,frameTouched;
+    // Ink on a frame edge that was FITTED TO THE DATA, as against one drawn at
+    // the axis origin. The second is a baseline doing its job; the first is the
+    // headroom having been lost.
+    QStringList frameOverrun;
 
     // A name in the exception list that no engine answers to asserts nothing,
     // and reads in the report as though it does. Checked against the engines
@@ -5235,6 +6712,20 @@ bool runPropertyChecks(bool report){
         if(!unknown.isEmpty()){
             printf("property: FAILED - order-free list names %d engine(s) that "
                    "do not exist: %s\n",
+                   int(unknown.size()),qPrintable(unknown.join(QStringLiteral(", "))));
+            return false;
+        }
+        // The same guard on the furniture list, for the same reason: a name
+        // that matches no engine excuses nothing and reads in the report as
+        // though it does. Eight of kOrderFree's seventeen names were in that
+        // state for months.
+        unknown.clear();
+        for(const QString& name:kFrameFurniture)
+            if(!engines.contains(name)) unknown.append(name);
+        std::sort(unknown.begin(),unknown.end());
+        if(!unknown.isEmpty()){
+            printf("property: FAILED - frame-furniture list names %d engine(s) "
+                   "that do not exist: %s\n",
                    int(unknown.size()),qPrintable(unknown.join(QStringLiteral(", "))));
             return false;
         }
@@ -5334,6 +6825,316 @@ bool runPropertyChecks(bool report){
             ++edgeChecked;
             QtPlotBackend backend;
             const QImage wide=renderToImage(backend,base,900,640);
+
+
+            // ---- DATA ON THE PLOT FRAME, which is a different question.
+            //
+            // The check above asks whether ink reaches the edge of the CANVAS,
+            // which catches a label hanging off the figure. It says nothing
+            // about a bar drawn to the exact top of its own value axis, and
+            // that was recorded as an open item for weeks on the strength of
+            // the canvas check passing - two different properties, one of them
+            // standing in for the other.
+            //
+            // computeRange now adds five per cent of headroom to both axes, so
+            // the topmost mark should sit clear of the frame. This asserts it,
+            // because a pad nothing measures is a pad that can be lost to the
+            // next special case in a function that already has several.
+            //
+            // The band examined is 2-4 px INSIDE the frame line, so the
+            // rectangle drawn on the boundary is never counted, and the
+            // threshold is 2% of that edge - one antialiased pixel from a
+            // curve that comes close is not a figure drawn to its frame.
+            //
+            // NOT ASKED OF EVERY ENGINE. The pad deliberately excludes
+            // column-shaped engines: a heat map, a field or an image fills its
+            // frame by construction - it is a picture of a region, and a
+            // region has no headroom. Asking those engines this question would
+            // report the exclusion as the defect, which is the "rule right for
+            // one class applied to all" fault this file keeps catching. They
+            // are identified by having drawn ink along a whole edge on BOTH
+            // opposing sides, which is what filling the frame looks like and
+            // what a bar chart with one tall bar never does.
+            const QRectF pa=backend.lastPlotArea();
+            if(pa.width()>40.0&&pa.height()>40.0){
+                const int L=int(pa.left()),R=int(pa.right());
+                const int T=int(pa.top()),B=int(pa.bottom());
+                // THE GRID IS NOT DATA EITHER, and it was being counted as if
+                // it were - by a measurement, not a guess this time.
+                //
+                // The band scanned below is 2-4 px inside the frame. The
+                // topmost gridline is drawn at the topmost TICK, and a tick
+                // lands wherever the round numbers fall: the u-Chart's axis
+                // runs to 0.2013 with its last tick at 0.20, which puts that
+                // gridline 3 px below the frame - inside the band, end to end.
+                // 817 of 818 columns in one row of three, which is 33% of the
+                // band pooled: past the 2% graze threshold, nowhere near the
+                // 80% that reads as an edge filled on purpose. So the check
+                // reported a horizontal rule of chrome as the engine drawing
+                // its data onto its own frame, and did the same on the right of
+                // an Isochron Plot whose last x tick sits 3 px inside the frame
+                // for the same reason.
+                //
+                // Measured, not guessed: the count with the legend excluded and
+                // the count without it were the same number, 817, which is what
+                // said the ink was neither the legend nor a mark but one
+                // continuous line. The note below records the legend theory
+                // failing on this same figure; this is what it actually was.
+                //
+                // Turned off at the source rather than filtered out of the
+                // picture. Excluding pixels that look like the grid colour
+                // would be a guess about colours, and excluding the rows a
+                // gridline is near would hide any real mark that reached them -
+                // which is precisely the thing being looked for. Rendering
+                // without the grid leaves an image in which every mark is the
+                // engine's, so the question the check asks is the question it
+                // measures. `gridVisible` is a style flag and prepareSpec never
+                // touches it, unlike `legendVisible`, which is why this works
+                // where suppressing the legend did not.
+                PlotSpec bare=base;
+                bare.style.gridVisible=false;
+                QtPlotBackend plain;
+                const QImage bareShot=renderToImage(plain,bare,900,640);
+                // NAMED APART FROM THE RENDER ABOVE, not shadowing it.
+                //
+                // The first version of this called them `wide` and `backend`
+                // again, on the reasoning that every question below has to be
+                // asked of the render being measured and shadowing made that
+                // automatic. The audit reported both as an inner name hiding an
+                // outer one - "an edit in the wrong place compiles" - and on a
+                // check whose entire fault was two answers coming from two
+                // different renders, a reader who cannot see at a glance which
+                // render a line is about is the last thing wanted here.
+                QtPlotBackend& bareBack=plain;
+                // THE LEGEND IS NOT DATA, and it is drawn INSIDE the plot
+                // area - pinned to a corner, its border a few pixels in from
+                // two edges, which is exactly the band scanned below. So it is
+                // excluded: the question is what the DATA did near the frame.
+                //
+                // Suppressing the legend for this render does not work -
+                // prepareSpec sets `legendVisible` per engine and puts it back -
+                // so the painter records where it drew one and this skips that
+                // rectangle. Grown by a pixel, because the rounded border is
+                // antialiased outwards.
+                //
+                // THIS DID NOT EXPLAIN THE u-CHART, which was the suspicion it
+                // was written for. That figure's topmost point sits at 0.192 on
+                // an axis running to 0.20, its legend is in the top-right, and
+                // excluding the legend changed the count by nothing - so
+                // whatever ink is in its top band is something else, and the
+                // engine stays on the list below unexplained. Recorded rather
+                // than quietly dropped: a theory that turned out to be wrong is
+                // worth the next reader knowing about, so they do not spend the
+                // same hour on it.
+                const QRectF key=bareBack.lastLegendRect().adjusted(-1,-1,1,1);
+                const auto inky=[&](int x,int y){
+                    if(x<0||y<0||x>=bareShot.width()||y>=bareShot.height()) return false;
+                    if(!key.isNull()&&key.contains(QPointF(x,y))) return false;
+                    const QRgb p=bareShot.pixel(x,y);
+                    return qRed(p)<235||qGreen(p)<235||qBlue(p)<235;
+                };
+                int top=0,bot=0,left=0,right=0;
+                for(int x=L+4;x<=R-4;++x)
+                    for(int k=2;k<=4;++k){
+                        if(inky(x,T+k)) ++top;
+                        if(inky(x,B-k)) ++bot;
+                    }
+                for(int y=T+4;y<=B-4;++y)
+                    for(int k=2;k<=4;++k){
+                        if(inky(L+k,y)) ++left;
+                        if(inky(R-k,y)) ++right;
+                    }
+                const double w=double(R-L)*3.0,h=double(B-T)*3.0;
+                // A MARK GRAZING THE FRAME AND AN EDGE FILLED ON PURPOSE LOOK
+                // DIFFERENT, and the difference is how much of the edge is
+                // covered.
+                //
+                // A histogram's bars all start at zero and zero is the bottom
+                // of its axis, so its bottom edge is covered almost end to
+                // end - that is the baseline doing its job, not a figure drawn
+                // into its own frame. A heat map covers all four the same way.
+                // What item 3 was about is the opposite shape: one or two
+                // marks reaching the end of an axis that was fitted to the
+                // data, which covers a little of that edge.
+                //
+                // So an edge covered more than four fifths is read as
+                // deliberate and left out. Between 2% and 80% is a mark on the
+                // frame, and that is what gets named.
+                const double graze=0.02,deliberate=0.80;
+                const auto onFrame=[&](double count,double edge){
+                    return count>edge*graze&&count<edge*deliberate;
+                };
+                // JUDGED BY THE AXIS, NOT BY THE NAME.
+                //
+                // This was reported and not asserted, with a note saying the
+                // thirty-six engines it names "have not been judged" and that
+                // asserting them would need "a hand-kept exception list nobody
+                // has verified". That list is now unnecessary, because the
+                // thing that separates a correct touch from a wrong one is
+                // measurable and was sitting in the spec all along.
+                //
+                // A bar chart's bars stand ON the bottom frame, and that is
+                // right, because the bottom of its axis IS ZERO and the bars
+                // are measured from zero. An ECDF starts at zero, a density
+                // falls to zero at its tails, a probability runs 0 to 1. In
+                // every one of those the ink is at the axis's origin and the
+                // frame is where the origin is drawn.
+                //
+                // A scree plot's largest eigenvalue touching the TOP is a
+                // different thing entirely: that edge is the data's own
+                // maximum, and the five per cent of headroom computeRange adds
+                // exists precisely so the topmost mark sits clear of it. Ink
+                // there means the headroom was lost.
+                //
+                // So the rule is: ink on an edge whose axis value is zero is
+                // deliberate; ink on an edge fitted to the data is a failure.
+                // No exception list, and an engine added next week is judged
+                // by the same question as the rest.
+                // A PICTURE OF A REGION HAS NO HEADROOM, and the program
+                // already knows which engines those are: an engine that colours
+                // by a value is showing a region rather than a series, and a
+                // region fills the frame it is drawn in by construction. The
+                // coverage test above was meant to catch these - it excludes an
+                // edge more than four fifths covered - but a hex grid or a
+                // vector field covers each edge partly, in the band between the
+                // two thresholds, so it fell through into the report.
+                //
+                // Asked of the same function render() asks when it decides
+                // whether a figure can be thinned for draft, so the two cannot
+                // come to disagree about what a field is.
+                // ASKED OF THE PREPARED NAME, which is the only name that
+                // function answers for. Its parameter is called
+                // `preparedEngine` and render() passes the rewritten spec; this
+                // passed the name the user chose, so an engine that becomes a
+                // field during the rewrite was judged as though it were a
+                // series. The Rainflow Matrix is prepared as a 2D Heatmap and
+                // was reported as running off both sides - which is what a
+                // heatmap does, because a heatmap's cells span exactly the
+                // bounds and a region has no headroom.
+                //
+                // The note above claims the check and render "cannot come to
+                // disagree about what a field is" because they call the same
+                // function. They called it with different arguments, so they
+                // disagreed anyway. Sharing the function is not enough; it has
+                // to be asked the same question about the same object.
+                const PlotSpec prepared=bareBack.preparedFor(base);
+                const bool fieldEngine=QtPlotBackend::usesColourMap(prepared.engine);
+                // A SECOND AXIS MEANS THE INK MIGHT NOT BE THIS AXIS'S.
+                //
+                // The scree plot's cumulative share reaches 100% and runs along
+                // the top frame, which is exactly right: 100% is the top of the
+                // axis THAT line is drawn against, and the eigenvalue axis on
+                // the left has plenty of headroom. A pixel test cannot tell
+                // which of two axes a mark belongs to, so on these engines the
+                // top and bottom are not judged at all - the Pareto chart is
+                // the same shape, and guessing would have called both wrong.
+                //
+                // The sides are still judged: a secondary axis is a second y,
+                // never a second x.
+                // Asked of the PREPARED spec: `secondaryAxis` is a property of
+                // a series and it is the ENGINE that sets it, during the
+                // rewrite, because the engine is what knows the quantity it
+                // derived is not the one it was given. The chosen spec has no
+                // such series and reading it there would always say no.
+                bool twoAxes=false;
+                for(const PlotSeries& drawn:prepared.series)
+                    if(drawn.secondaryAxis){ twoAxes=true; break; }
+                const QtPlotBackend::DataRange span=bareBack.rangeFor(base);
+                // On a log axis the stored bound is the logarithm, so zero
+                // there means a decade and not an origin. A log axis has no
+                // origin to sit on, so nothing on it counts as deliberate.
+                const auto atOrigin=[](double value,bool logarithmic){
+                    return !logarithmic&&qFuzzyIsNull(value);
+                };
+                // A NORMALISED AXIS IS DEFINITIONAL AT BOTH ENDS.
+                //
+                // Parallel Coordinates scales every variable to 0..1, so the
+                // largest value of each is exactly 1.0 and sits on the top
+                // frame - which is the axis saying what it is, not headroom
+                // lost. Same for any probability or share axis: a receiver
+                // operating characteristic reaches (1,1) by construction.
+                //
+                // Recognised by the range being exactly zero to one, which is
+                // what a normalisation produces and what a measured quantity
+                // essentially never does.
+                const auto normalised=[](double lo,double hi,bool logarithmic){
+                    return !logarithmic&&qFuzzyIsNull(lo)&&qFuzzyCompare(hi,1.0);
+                };
+                const bool yNormalised=normalised(span.yLo,span.yHi,span.yLog);
+                const bool xNormalised=normalised(span.xLo,span.xHi,span.xLog);
+                // A BOUND THE ENGINE STATED IS NOT AN EDGE FITTED TO THE DATA,
+                // and the whole judgement above turns on that difference.
+                //
+                // The reasoning at the top of this block is "ink on an edge
+                // fitted to the data is a failure, because computeRange adds
+                // five per cent of headroom so the outermost mark sits clear of
+                // it". That argument only holds where computeRange chose the
+                // bound. Where the engine wrote one down, the headroom step
+                // steps aside on purpose - see StatedBounds in computeRange,
+                // "headroom must not move a bound somebody typed" - so there is
+                // no headroom to have lost, and ink on that edge is the engine
+                // getting the frame it asked for.
+                //
+                // Three figures were reported for this and all three are
+                // right: a Tripartite Response Spectrum is a nomogram whose
+                // axes are fixed decades and whose diagonal grid runs corner to
+                // corner; a Dalitz Plot states the kinematic region and draws
+                // its boundary on it; an Isochron Plot states the x range its
+                // regression is drawn across. Calling these failures would have
+                // meant either turning the build red on three correct figures
+                // or writing them into an exception list - and an exception
+                // list is what this check was built to avoid.
+                //
+                // The normalised test just above is the same idea reached by
+                // guesswork: "a range of exactly zero to one is a definition,
+                // not a measurement". It stays, because a normalising engine
+                // scales its own data rather than stating a limit and so is not
+                // caught here, but this is the direct question and that is the
+                // inference from a symptom.
+                const bool xLoStated=!isUnset(prepared.xAxis.min);
+                const bool xHiStated=!isUnset(prepared.xAxis.max);
+                const bool yLoStated=!isUnset(prepared.yAxis.min);
+                const bool yHiStated=!isUnset(prepared.yAxis.max);
+                QStringList onOrigin,onStated,onFittedEdge;
+                const auto judge=[&](bool touched,double bound,bool logarithmic,
+                                     bool stated,const char* side){
+                    if(!touched) return;
+                    QStringList& into=atOrigin(bound,logarithmic)?onOrigin
+                                     :(stated?onStated:onFittedEdge);
+                    into<<QString::fromLatin1(side);
+                };
+                if(!fieldEngine&&!kFrameFurniture.contains(engine)){
+                    if(!twoAxes){
+                        judge(onFrame(top,w)&&!yNormalised,span.yHi,span.yLog,yHiStated,"top");
+                        judge(onFrame(bot,w),span.yLo,span.yLog,yLoStated,"bottom");
+                    }
+                    judge(onFrame(left,h),  span.xLo,span.xLog,xLoStated,"left");
+                    judge(onFrame(right,h)&&!xNormalised,span.xHi,span.xLog,xHiStated,"right");
+                }
+                if(!onOrigin.isEmpty())
+                    frameTouched.append(QStringLiteral("%1 (%2, at the axis origin)")
+                                        .arg(engine,onOrigin.join(QLatin1Char('/'))));
+                if(!onStated.isEmpty())
+                    frameTouched.append(QStringLiteral("%1 (%2, on a bound the engine stated)")
+                                        .arg(engine,onStated.join(QLatin1Char('/'))));
+                if(!onFittedEdge.isEmpty()){
+                    frameOverrun.append(QStringLiteral("%1 (%2)")
+                                        .arg(engine,onFittedEdge.join(QLatin1Char('/'))));
+                    // The picture, when asked for one. A name and an edge say
+                    // where the ink is and nothing about whether it is a mark
+                    // pressed against its frame or a rule drawn there on
+                    // purpose, and only looking answers that.
+                    if(report&&!qEnvironmentVariableIsEmpty("GRAPHVIS_PROPERTY_DUMP")){
+                        QString safe=engine;
+                        safe.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9]+")),
+                                     QStringLiteral("_"));
+                        bareShot.save(qEnvironmentVariable("GRAPHVIS_PROPERTY_DUMP")
+                                  +QStringLiteral("/frame_")+safe+QStringLiteral(".png"));
+                    }
+                }
+                ++frameChecked;
+            }
+
             const QString sides=edgesTouched(wide);
             if(!sides.isEmpty()){
                 edgeTouched.append(QStringLiteral("%1 (%2)").arg(engine,sides));
@@ -5368,6 +7169,196 @@ bool runPropertyChecks(bool report){
         printf("property: edge checked on %d engines, %d touch the canvas edge\n",
                edgeChecked,int(edgeTouched.size()));
         for(const QString& e:edgeTouched) printf("  edge: %s\n",qPrintable(e));
+        // STILL REPORTED, NOT ASSERTED - but the number it reports has changed
+        // shape, and that is the point of the work behind it.
+        //
+        // It used to name THIRTY-SIX engines and the note here said they "have
+        // not been judged", that asserting them would need "a hand-kept
+        // exception list nobody has verified", and that a name joins an
+        // asserted set only after a run shows it behaved. That is the right
+        // standard and the list was never going to get written.
+        //
+        // What the list needed was not judgement but a QUESTION, and the
+        // question was in the spec all along: is the edge the ink sits on the
+        // axis's ORIGIN, or is it an edge fitted to the data? A bar stands on
+        // the bottom frame because the bottom of its axis is zero and the bar
+        // is measured from zero. A scree plot's largest eigenvalue touching the
+        // top is the opposite: that edge is the data's own maximum, and the
+        // five per cent of headroom computeRange adds exists so it does not.
+        //
+        // Three classes are now separated by measurement rather than by name:
+        //
+        //   at the origin      the axis value at that edge is zero
+        //   a field            the engine colours by value, so it draws a
+        //                      REGION and a region has no headroom
+        //   normalised         the axis runs exactly 0 to 1, so both ends are
+        //                      definitional - Parallel Coordinates scales every
+        //                      variable, and 1.0 at the top is the scaling
+        //
+        // and engines with a second ordinate are not judged top or bottom at
+        // all, because a pixel test cannot tell which of two axes a mark
+        // belongs to and the scree plot's cumulative share genuinely reaches
+        // 100% on its own.
+        //
+        // Thirty-six became eleven, and the eleven were then worked through one
+        // at a time. Every one turned out to be a different question being
+        // answered, and NOT ONE of them was an engine that had lost its
+        // headroom - which is what the check was written to find:
+        //
+        //   Bar, Horizontal Bar, Global Sensitivity and Waterfall drew their
+        //     outermost bar half outside the frame. A bar is one slot wide and
+        //     the axis was fitted to the bar POSITIONS, so the outer half-slots
+        //     had nowhere to go. containOuterSlots in computeRange now measures
+        //     the slot the same way the painter does.
+        //   Power Spectral Density, Paschen Curve and the Tripartite's ends
+        //     were a log axis getting no headroom at all. The bounds there are
+        //     already logarithms, so five per cent of the span is five per cent
+        //     of the drawn axis; there was no reason for the exclusion and it
+        //     clipped the outermost mark of every log figure in the catalogue.
+        //   Rainflow Matrix is prepared as a 2-D Heatmap, and the field test
+        //     was being asked the name the user chose rather than the one that
+        //     gets drawn.
+        //   Dalitz Plot states its own kinematic bounds. Ink on a bound the
+        //     engine stated is the engine getting the frame it asked for, and
+        //     the headroom step deliberately does not touch such a bound.
+        //   u-Chart and Isochron Plot were a GRIDLINE. The last tick can land
+        //     two or three pixels inside the frame, which is the band this
+        //     scans, and a gridline covers it end to end. The measurement that
+        //     settled it: the count with the legend excluded and the count
+        //     without it were the same number.
+        //   Scatter + Marginals and the Tripartite's rulings are furniture the
+        //     engine draws against its own frame - see kFrameFurniture.
+        //
+        // Eleven reports, eight rendering defects fixed, two measurement faults
+        // in this check itself, one verified exception list of two names. The
+        // check is asserted from here on.
+        //
+        // The two engines this check was written for are clear: Global
+        // Sensitivity's longest bar stopped running into the right-hand frame
+        // and Box Plot's fifth box no longer sits on the top one, both fixed
+        // by the five per cent of headroom computeRange now adds. That is what
+        // this number guards.
+        //
+        // THE WORD "ASSERTED" USED TO BE A CLAIM AND NOT A FACT. This printed
+        // "which is asserted" while the list it printed was only ever reported,
+        // so a run with eleven engines drawing into their own frames exited
+        // zero and said so in a sentence that read like a guarantee. Reporting
+        // was the right thing while the eleven were unjudged; leaving the word
+        // there was not.
+        printf("property: plot frame checked on %d engines; %d put a mark on an "
+               "axis ORIGIN or a bound the engine stated, which is the frame "
+               "doing its job; %d put one on an edge fitted to the data\n",
+               frameChecked,int(frameTouched.size()),int(frameOverrun.size()));
+        for(const QString& e:frameTouched) printf("  baseline: %s\n",qPrintable(e));
+        for(const QString& e:frameOverrun) printf("  overrun:  %s\n",qPrintable(e));
+    }
+    if(!frameOverrun.isEmpty()){
+        // Printed again outside the `report` block, because a failure has to
+        // say why on a run that was not asked for the full listing.
+        printf("property: FAILED - %d engine(s) drew a mark on an edge fitted "
+               "to the data, where computeRange's headroom should have kept it "
+               "clear: %s\n",
+               int(frameOverrun.size()),
+               qPrintable(frameOverrun.join(QStringLiteral("; "))));
+        failures.append(QStringLiteral("frame overrun: %1")
+                            .arg(frameOverrun.join(QStringLiteral("; "))));
+    }
+
+    // ------------------- A BLANK FIGURE MUST NOT BE A SILENT ONE
+    //
+    // Reported with two screenshots of 3D Mesh on two datasets: one drew a
+    // surface, the other drew a canvas with nothing on it whatever - no cube,
+    // no axes, not even the title - and said nothing, while the mapping panel
+    // said in green that the engine had the three columns it reads. It did.
+    // Having a column and being able to draw an axis from it are different
+    // questions and only the first was being asked.
+    //
+    // The rule this asserts is the general one, not the one bug: an engine may
+    // refuse a dataset, and refusing is often right, but it may not refuse in
+    // silence. A blank rectangle with no explanation is indistinguishable from
+    // a broken program, and it was read as one.
+    //
+    // Measured by INK, against the background the backend itself filled. That
+    // is the only definition of "blank" that cannot be argued with, and it
+    // costs one render per case. `explainEmpty` is the one thing allowed to
+    // speak; if it has nothing to say about a figure with no ink on it, this
+    // fails and names the engine and the dataset shape.
+    {
+        struct Shape { const char* what; QVector<double> x,y,z; };
+        const int rows=400;
+        QVector<double> gx,gy,gz,flat,nan2;
+        for(int iy=0;iy<20;++iy) for(int ix=0;ix<20;++ix){
+            gx.append(double(ix)); gy.append(double(iy));
+            gz.append(std::sin(ix*0.4)*std::cos(iy*0.3));
+        }
+        flat.fill(0.375,gx.size());
+        nan2.fill(std::numeric_limits<double>::quiet_NaN(),gx.size());
+        QVector<double> scatterX,scatterY;
+        for(int i=0;i<rows;++i){
+            const double t=double(i)/double(rows-1);
+            scatterX.append(std::sin(6.0*t)+t);
+            scatterY.append(std::cos(5.0*t));
+        }
+        QVector<double> scatterFlat(rows,2.5);
+        QVector<double> scatterNan(rows,std::numeric_limits<double>::quiet_NaN());
+
+        const QVector<Shape> shapes={
+            {"a column with no numeric values",   gx,      gy,   nan2},
+            {"a column that never varies",        gx,      flat, gz},
+            {"both of those, scattered",          scatterX,scatterFlat,scatterNan},
+        };
+        // The engines that read three columns as x, y and a third thing, which
+        // is the family the report came from and the family whose painters
+        // return before drawing.
+        const QStringList threeColumn={
+            QStringLiteral("3D Mesh"),QStringLiteral("3D Topography / Surface"),
+            QStringLiteral("3D Scatter"),QStringLiteral("3D Contour"),
+            QStringLiteral("Surface + Contours"),QStringLiteral("2D Heatmap"),
+            QStringLiteral("2D Contour"),QStringLiteral("Hexbin Density"),
+            QStringLiteral("2D Histogram")};
+
+        int blankFound=0,checked=0;
+        for(const QString& engine:threeColumn){
+            for(const Shape& shape:shapes){
+                PlotSpec spec;
+                spec.engine=engine;
+                const auto column=[&](const char* name,const QVector<double>& v){
+                    PlotSeries s; s.label=QString::fromLatin1(name); s.y=v;
+                    s.x.resize(v.size());
+                    for(int i=0;i<v.size();++i) s.x[i]=double(i);
+                    return s;
+                };
+                spec.series={column("alpha",shape.x),column("beta",shape.y),
+                             column("gamma",shape.z)};
+                QImage img(560,420,QImage::Format_ARGB32);
+                img.fill(Qt::magenta);
+                {
+                    QPainter painter(&img);
+                    QtPlotBackend back;
+                    PlotSpec drawn=spec;
+                    back.render(&painter,QRectF(0,0,560,420),drawn);
+                }
+                const QRgb background=img.pixel(1,1);
+                int ink=0;
+                for(int py=0;py<img.height()&&ink==0;++py)
+                    for(int px=0;px<img.width();++px)
+                        if(img.pixel(px,py)!=background){ ink=1; break; }
+                ++checked;
+                if(ink) continue;
+                ++blankFound;
+                QtPlotBackend back;
+                const QString why=QtPlotBackend::explainEmpty(spec,back.preparedFor(spec));
+                if(why.isEmpty())
+                    failures.append(QStringLiteral(
+                        "%1 drew nothing at all on %2 and said nothing about it - "
+                        "a blank canvas with no explanation reads as a broken "
+                        "program, and was reported as one")
+                        .arg(engine,QString::fromLatin1(shape.what)));
+            }
+        }
+        if(report)
+            printf("property: blank-figure explanations, %d renders, %d came out "
+                   "with no ink and every one of those says why\n",checked,blankFound);
     }
 
     for(const QString& e:orderChanged)
@@ -5386,7 +7377,7 @@ bool runPropertyChecks(bool report){
         printf("selftest: %d property check(s) FAILED\n",int(failures.size()));
         return false;
     }
-    printf("selftest: property checks passed (row order, constant columns, canvas edge)\n");
+    printf("selftest: property checks passed (row order, constant columns, canvas edge, blank-figure explanations)\n");
     return true;
 }
 

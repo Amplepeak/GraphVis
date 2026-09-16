@@ -1,4 +1,9 @@
 #pragma once
+// The palettes designed for a colour-vision deficiency, registered in `all()`
+// below alongside the inherited ones so that a name is a name wherever it is
+// used - in a figure, a colour bar, a saved .gvfig or a theme. Included first
+// because it declares its own namespaces.
+#include "ColourMapsCvd.h"
 // =========================================================================
 // ColourMaps.h - GENERATED. Do not edit by hand; run tools/gen_colourmaps.py.
 //
@@ -1546,8 +1551,13 @@ static const unsigned char kWhite[kStops][3]={
 // name -> table, and the categories, in the order they are offered.
 struct Entry { const char* name; const unsigned char (*table)[3]; };
 
+// THE DESIGNED PALETTES ARE ORDINARY COLOUR MAPS. Registered here, in the same
+// list, so that everything which takes a colour-map name takes them too - the
+// figure, the colour bar, a saved .gvfig, a theme. A second list consulted only
+// by the picker would be a map a person could choose and not save.
 inline const QVector<Entry>& all(){
-    static const QVector<Entry> entries{
+    static const QVector<Entry> entries=[]{
+        QVector<Entry> out{
         {"Parula",kParula},
         {"Viridis",kViridis},
         {"Plasma",kPlasma},
@@ -1632,8 +1642,20 @@ inline const QVector<Entry>& all(){
         {"Flag",kFlag},
         {"Colorcube",kColorcube},
         {"White",kWhite}
-    };
+        };
+        for(const CvdEntry& e:designed()) out.append({e.name,e.table});
+        return out;
+    }();
     return entries;
+}
+
+// The names of the designed palettes, in the order the designer emitted them:
+// grey ramps first, then each deficiency's palettes from fewest categories to
+// most, which is the order somebody choosing reads them in.
+inline QStringList cvdCategoryNames(){
+    QStringList out;
+    for(const CvdEntry& e:designed()) out.append(QString::fromLatin1(e.name));
+    return out;
 }
 
 // The categories, exactly as GraphVis 17 grouped them. A flat list of eighty
@@ -1647,7 +1669,12 @@ inline const QVector<QPair<QString,QStringList>>& categories(){
         {QStringLiteral("Seasonal & Shading"),{QStringLiteral("Cool"),QStringLiteral("Spring"),QStringLiteral("Summer"),QStringLiteral("Autumn"),QStringLiteral("Winter"),QStringLiteral("Binary"),QStringLiteral("Gist Gray"),QStringLiteral("Gist Yarg")}},
         {QStringLiteral("Terrain, Ocean & Field"),{QStringLiteral("Terrain"),QStringLiteral("Ocean"),QStringLiteral("Gist Earth"),QStringLiteral("Gist Ncar"),QStringLiteral("Gnuplot"),QStringLiteral("Gnuplot2"),QStringLiteral("Nipy Spectral"),QStringLiteral("Rainbow"),QStringLiteral("Gist Rainbow"),QStringLiteral("Jet")}},
         {QStringLiteral("Categorical"),{QStringLiteral("Lines"),QStringLiteral("Tab10"),QStringLiteral("Tab20"),QStringLiteral("Tab20b"),QStringLiteral("Tab20c"),QStringLiteral("Set1"),QStringLiteral("Set2"),QStringLiteral("Set3"),QStringLiteral("Paired"),QStringLiteral("Accent"),QStringLiteral("Dark2"),QStringLiteral("Pastel1"),QStringLiteral("Pastel2")}},
-        {QStringLiteral("Specialized & Utility"),{QStringLiteral("Prism"),QStringLiteral("Flag"),QStringLiteral("Colorcube"),QStringLiteral("White")}}
+        {QStringLiteral("Specialized & Utility"),{QStringLiteral("Prism"),QStringLiteral("Flag"),QStringLiteral("Colorcube"),QStringLiteral("White")}},
+        // The designed palettes, appended as their own category so the
+        // measurement tool knows which reading task to score each against -
+        // a palette with no category is a palette with no role, and the
+        // scorer would have nothing to measure it as.
+        {QStringLiteral("Colour-blind (designed)"),cvdCategoryNames()}
     };
     return cats;
 }

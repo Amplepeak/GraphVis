@@ -11,7 +11,7 @@ import pandas as pd
 # unguarded means every peak-area and surface-integral result dies with
 # AttributeError on any current NumPy, surfaced to the user as a raw traceback.
 _trapz = getattr(np, "trapezoid", None) or np.trapz
-from scipy import optimize, signal, special
+from scipy import optimize, signal
 
 from graphvis_science.runtime import get_logger
 
@@ -219,7 +219,10 @@ def fit_registered_model(x, y, model: str, initial: Sequence[float] | None = Non
         raise ValueError(f"{model} requires more than {len(names)} finite observations.")
     if initial is None:
         # Deliberately broad, data-scaled initial values; users can override.
-        xspan=max(float(np.ptp(xx)),1e-9); yspan=max(float(np.ptp(yy)),1e-9)
+        # Only the x span is used, by the rate-like parameters below. There
+        # was a `yspan` beside it that nothing ever read: the amplitude-like
+        # names take nanmax/nanmin directly, which is the y scale already.
+        xspan=max(float(np.ptp(xx)),1e-9)
         p0=np.ones(len(names),dtype=float)
         for i,n in enumerate(names):
             nl=n.lower()

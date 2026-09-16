@@ -4,7 +4,6 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 import json, re
-import numpy as np
 import pandas as pd
 from graphvis_science.literature.extractor import extract_literature, LiteratureExtraction
 from graphvis_science.literature.vlm import VLMProvider, VLMObservation

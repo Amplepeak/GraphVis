@@ -29,9 +29,18 @@ PanelScroll {
     readonly property bool engineApi: engineApiCheck.checked
 
     function applyPreset(index) {
+        // THERE MAY BE NO PRESETS. `solverPresets()` is read from a
+        // configuration file, so an empty or unreadable one leaves this
+        // list empty - and reading `.command` off row zero of an empty
+        // list is a TypeError at load, not a missing preset. The panel
+        // then half-builds and the fields it did not reach keep whatever
+        // they had.
+        var chosen = root.presets && index >= 0 && index < root.presets.length
+                     ? root.presets[index] : null
+        if (!chosen) return
         root.presetIndex = index
-        commandField.text = root.presets[index].command
-        patternField.text = root.presets[index].outputs
+        commandField.text = chosen.command ? chosen.command : ""
+        patternField.text = chosen.outputs ? chosen.outputs : ""
     }
 
     FileDialog {

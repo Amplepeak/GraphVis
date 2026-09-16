@@ -35,6 +35,14 @@ class AppController final : public QObject {
     // layout gives it a place to be.
     Q_PROPERTY(QString messageLog READ messageLog NOTIFY messageLogChanged)
     Q_PROPERTY(QString workspaceName READ workspaceName NOTIFY stateChanged)
+    // WHAT THIS WINDOW IS SHOWING, in the title bar.
+    //
+    // It used to be "GraphVis 18 - " + workspaceName, and workspaceName is a
+    // mirror of a field in the native core's state that nothing ever sets - so
+    // the title read "Untitled" for every session, including sessions with a
+    // named project open. Two notions of the same thing, and the window was
+    // reading the one that had never been wired up.
+    Q_PROPERTY(QString windowTitle READ windowTitle NOTIFY windowTitleChanged)
     Q_PROPERTY(QString rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString busyLabel READ busyLabel NOTIFY busyChanged)
@@ -139,6 +147,13 @@ class AppController final : public QObject {
     // most people never open. The menu is always there; this is for the people
     // who do change it often, and it is their choice to make rather than ours.
     Q_PROPERTY(bool colourVisionToolbarVisible READ colourVisionToolbarVisible WRITE setColourVisionToolbarVisible NOTIFY plotColourVisionChanged)
+    // The strip of open figures, above the canvas.
+    //
+    // Persisted, unlike the colour-vision PREVIEW below and like the
+    // colour-vision strip above: it is a property of how the person wants the
+    // window arranged, not a way of looking at one figure, so reopening into
+    // the arrangement they left is right rather than a lie.
+    Q_PROPERTY(bool figureTabsVisible READ figureTabsVisible WRITE setFigureTabsVisible NOTIFY figureTabsChanged)
     // Show the figure as a reader with the chosen deficiency sees it.
     //
     // NOT persisted, deliberately. Every other setting here is a property of
@@ -203,6 +218,8 @@ class AppController final : public QObject {
     // every figure, so the operator chooses. 0 keeps what every figure drew
     // before the choice existed.
     Q_PROPERTY(int plotPolarConvention READ plotPolarConvention WRITE setPlotPolarConvention NOTIFY plotDisplayChanged)
+    Q_PROPERTY(int plotLegendLabels READ plotLegendLabels WRITE setPlotLegendLabels NOTIFY plotDisplayChanged)
+    Q_PROPERTY(QStringList plotLegendLabelNames READ plotLegendLabelNames CONSTANT)
     Q_PROPERTY(QStringList plotPolarConventionNames READ plotPolarConventionNames CONSTANT)
     // Numbers on the axes. On by default: an axis with a name and no scale can
     // be looked at and not read.
@@ -303,6 +320,14 @@ class AppController final : public QObject {
     // Persisted UI theme index. Kept in C++ so QML needs no QtCore module,
     // whose absence from the deployed layout stopped the app from starting.
     Q_PROPERTY(int themeIndex READ themeIndex WRITE setThemeIndex NOTIFY themeIndexChanged)
+    // The theme to go back to when the colour-vision mode is turned off.
+    //
+    // Persisted, and that is the point: choosing Protanopia switches the
+    // interface to the protanopia theme, and the theme itself is persisted, so
+    // without remembering this the original is gone the moment the application
+    // closes. -1 means "nothing to restore" - either the mode has never been
+    // on, or it was turned off again and the debt is settled.
+    Q_PROPERTY(int themeBeforeColourVision READ themeBeforeColourVision WRITE setThemeBeforeColourVision NOTIFY themeIndexChanged)
     // How the window opens: 0 windowed, 1 maximised, 2 fullscreen,
     // 3 borderless. Persisted alongside the theme.
     Q_PROPERTY(int displayMode READ displayMode WRITE setDisplayMode NOTIFY displayModeChanged)
@@ -357,6 +382,7 @@ public:
     QStringList activeColumns() const;
     QString status() const{return status_;}
     QString workspaceName() const{return workspaceName_;}
+    QString windowTitle() const;
     QString rendererMode() const{return rendererMode_;}
     bool busy() const{return busy_;}
     QString busyLabel() const{return busyLabel_;}
@@ -418,6 +444,8 @@ public:
     bool componentsBusy() const{return componentProcess_.state()!=QProcess::NotRunning;}
     QString componentsOutput() const{return componentTail_.join(QLatin1Char('\n'));}
     int themeIndex() const{return themeIndex_;}
+    int themeBeforeColourVision() const{return themeBeforeCvd_;}
+    void setThemeBeforeColourVision(int value);
     int displayMode() const{return displayMode_;}
     void setDisplayMode(int value);
     QStringList displayModeNames() const;
@@ -453,13 +481,77 @@ public:
     void setNavRailCollapsed(bool value);
     void setWorkspaceMode(const QString& value);
 
+    // WRITING A DATASET BACK OUT, which nothing could do.
+    //
+    // The importer has 149 readers and had no writer at all, and the manual
+    // stated it as a limitation: "a dataset on disk is read and never written
+    // back". A person could clean a column, convert its units, derive a ratio
+    // or run an analysis, and had no way to keep any of it except as a
+    // picture.
+    //
+    // The SOURCE file is still never touched - that half of the contract is
+    // worth keeping, because an imported file is usually somebody's instrument
+    // output. This writes the dataset the program is holding to a path the
+    // person chooses, and refuses to replace an existing file unless asked.
+    //
+    // `columns` empty means all of them, in the dataset's own order.
+    Q_INVOKABLE bool exportDataset(const QUrl& url, const QStringList& columns = {},
+                                   bool overwrite = false);
+    // Same reason as importDatasetPath: a native path with a space or a
+    // backslash does not survive being concatenated into a URL.
+    Q_INVOKABLE bool exportDatasetPath(const QString& path,
+                                       const QStringList& columns = {},
+                                       bool overwrite = false);
+    // What a Save-as dialog should offer, grouped, read from the writer
+    // registry itself rather than written out a second time here.
+    Q_INVOKABLE QStringList exportableExtensions() const;
+
     Q_INVOKABLE bool importDataset(const QUrl& url);
     // Same reason as ProjectWorkspace::openProjectPath: a native path with a
     // space or a backslash does not survive being concatenated into a URL.
     Q_INVOKABLE bool importDatasetPath(const QString& path);
+    // The same import, keeping the region OUTLINES instead of one point per
+    // feature. A choropleth is drawn from boundaries and they are the one
+    // thing the ordinary geospatial import throws away - see
+    // importer.py's _r_geo_boundaries.
+    // What the analysed paper actually yielded, in the terms the person needs:
+    // how many extracted tables can be DRAWN, how many figures there are, and
+    // one sentence saying what to do next. See literatureSummary() for why the
+    // count of "datasets" on its own was worse than useless.
+    // The in-application help. Loaded once from the embedded resource, so it
+    // works with no network and no installed documentation - which is the
+    // whole point of shipping it inside the program.
+    Q_PROPERTY(QVariantList helpTopics READ helpTopics CONSTANT)
+    QVariantList helpTopics() const;
+    // The sections the topics are grouped into, in the order they are meant to
+    // be read. Eighty-six topics in one flat list is a list nobody scans.
+    Q_PROPERTY(QVariantList helpSections READ helpSections CONSTANT)
+    QVariantList helpSections() const;
+    // The citation styles the figure exporter understands, in the order the
+    // picker should show them: the three this program's users actually use,
+    // then the rest alphabetically.
+    //
+    // Read from the SAME generated file the science service's table is written
+    // to, rather than listed again in QML. A hand-kept list there is what let
+    // the picker offer four styles while the formatter silently applied one,
+    // and a person who chose IEEE got APA with nothing on screen to say so.
+    Q_PROPERTY(QVariantList citationStyles READ citationStyles CONSTANT)
+    QVariantList citationStyles() const;
+
+    Q_PROPERTY(QVariantMap literatureSummary READ literatureSummary NOTIFY literatureChanged)
+    QVariantMap literatureSummary() const { return literatureSummary_; }
+
+    Q_INVOKABLE bool importRegionBoundaries(const QUrl& url);
+    Q_INVOKABLE bool importRegionBoundariesPath(const QString& path);
+    Q_INVOKABLE bool readsRegionBoundaries(const QString& path) const;
     // Qt file-dialog nameFilters covering every format the importer
     // handles. Mirrors services/python/graphvis_science/data/importer.py.
     Q_INVOKABLE QStringList importNameFilters() const;
+    // The Save-as filter list, generated from exportableExtensions() for the
+    // same reason its import twin is generated: a hand-written second copy
+    // drifts, and a dialog that offers a format the writer refuses is worse
+    // than one that offers fewer.
+    Q_INVOKABLE QStringList exportNameFilters() const;
     Q_INVOKABLE bool applyMapping(const QString& x,const QString& y,const QString& z,const QString& color,double pointSize,double opacity,bool invertOpacity,int voxelBins,bool smartRender=true,int smartProfile=1);
     Q_INVOKABLE void setPointStyle(double pointSize,double opacity,bool invertOpacity);
     Q_INVOKABLE QString runSql(const QString& sql);
@@ -502,9 +594,11 @@ public:
     ProjectWorkspace* project() const{return project_;}
     int plotColourVision() const{return plotColourVision_;}
     bool colourVisionToolbarVisible() const{return colourVisionToolbar_;}
+    bool figureTabsVisible() const{return figureTabs_;}
     bool plotColourVisionPreview() const{return colourVisionPreview_;}
     void setPlotColourVisionPreview(bool on);
     void setColourVisionToolbarVisible(bool on);
+    void setFigureTabsVisible(bool on);
     QString plotColourMap() const{return plotColourMap_;}
     void setPlotColourMap(const QString& name);
     int fullRenderPolicy() const{return fullRenderPolicy_;}
@@ -534,6 +628,12 @@ public:
     int plotPieLabels() const{return plotPieLabels_;}
     int plotPolarConvention() const{return plotPolarConvention_;}
     void setPlotPolarConvention(int mode);
+    int plotLegendLabels() const{return plotLegendLabels_;}
+    void setPlotLegendLabels(int mode);
+    QStringList plotLegendLabelNames() const{
+        return {QStringLiteral("Shorten a label that does not fit"),
+                QStringLiteral("Wrap it onto more lines")};
+    }
     QStringList plotPolarConventionNames() const{
         return {QStringLiteral("Mathematical — 0° right, anticlockwise"),
                 QStringLiteral("Compass — 0° north, clockwise")};
@@ -663,6 +763,27 @@ public:
     Q_INVOKABLE void derenderHeatmap(const QVariantMap& request);
     Q_INVOKABLE bool exportProjectState(const QUrl& url);
     Q_INVOKABLE void notify(const QString& message){ setStatus(message); }
+    // RESTART IN PLACE, CARRYING THE FIGURE.
+    //
+    // The Qt Quick scene graph's graphics API is chosen once, before the first
+    // QQuickWindow exists - QQuickWindow::setGraphicsApi has to be called
+    // before then and cannot be changed afterwards. So VTK / PBR, which needs
+    // OpenGL, genuinely cannot be switched to inside a running session. That is
+    // Qt's constraint and not something this application can route around.
+    //
+    // What it CAN do is make the restart cost nothing. The figure on screen is
+    // stashed through the same figureState() map the notebook and the project
+    // already round-trip, the process relaunches itself with the same
+    // arguments, and the next session puts the figure back. The person clicks
+    // once and comes back where they were.
+    Q_INVOKABLE void restartApplication(const QVariantMap& figureState=QVariantMap());
+    // The figure the previous session was showing when it restarted itself, or
+    // an empty map. Read once by the workspace and then cleared, so it cannot
+    // reapply itself over work done since.
+    Q_INVOKABLE QVariantMap takePendingFigureState();
+    // Whether a restart would bring a renderer the current session cannot
+    // reach. Drives the offer in the status line and the menu.
+    Q_INVOKABLE bool rendererNeedsRestart() const;
 
     // Fuzzy catalogue search, ported from GraphVis 17
     // src/graphvis/rendering/graph_library.py (fuzzy_score / search_entries).
@@ -672,6 +793,16 @@ public:
     // Absolute path for a figure export, creating the directory. Keeps QML
     // from having to know anything about the filesystem layout.
     Q_INVOKABLE QString exportPath(const QString& baseName,const QString& extension) const;
+    // The folder an export defaults to: the last one used, or
+    // ~/Documents/GraphVis/exports until there has been one. A property so the
+    // dialog can SHOW it - the old behaviour was a hard-coded folder nobody
+    // was ever told about.
+    Q_PROPERTY(QString exportDirectory READ exportDirectory NOTIFY exportDirectoryChanged)
+    QString exportDirectory() const;
+    Q_INVOKABLE void rememberExportDirectory(const QString& directory);
+    // Whether an export would replace an existing file. It used to overwrite
+    // in silence.
+    Q_INVOKABLE bool fileExists(const QString& path) const;
     // The same suggestion as a file URL, for a Save dialog's currentFile, and
     // the reverse conversion for what one hands back. QML gets URLs from a
     // FileDialog and the canvas takes paths; doing this in QML with string
@@ -737,8 +868,10 @@ public:
 signals:
     void stateChanged();
     void activeDatasetChanged();
+    void windowTitleChanged();
     void statusChanged();
     void rendererModeChanged();
+    void exportDirectoryChanged();
     void busyChanged();
     void sqlResultChanged();
     void experimentalUiChanged();
@@ -748,8 +881,12 @@ signals:
     void analysisChanged();
     void analysisCatalogueChanged();
     void scienceServiceAvailabilityChanged();
+    // A dataset has been written to disk. Carries the path so a panel can say
+    // where it went rather than only that it worked.
+    void datasetExported(const QString& path);
     void literatureAiChanged();
     void importLogChanged();
+    void figureTabsChanged();
     void plotColourVisionChanged();
     void plotDisplayChanged();
     void recentsChanged();
@@ -780,6 +917,7 @@ private:
     ProjectWorkspace* project_=nullptr;
     int plotColourVision_=0;
     bool colourVisionToolbar_=false;        // off until asked for; see the property
+    bool figureTabs_=true;                  // on: it is how figures are switched
     bool colourVisionPreview_=false;        // a view, not a setting; never persisted
     QString plotColourMap_;                 // empty means Viridis
     int fullRenderPolicy_=0;                // 0 automatic, 1 always ask, 2 ask when slow
@@ -793,6 +931,7 @@ private:
     int plotGridDensityY_=0;                // 0 = one fewer than across
     int plotPieLabels_=0;                   // 0 = a legend, which always fits
     int plotPolarConvention_=0;             // 0 = mathematical, as every figure was
+    int plotLegendLabels_=0;                // 0 = elide, which is what every figure did
     bool plotScaleLabels_=true;
     int plotFieldInterpolation_=2;          // Linear
     int plotFieldEstimator_=-1;
@@ -818,6 +957,21 @@ private:
     void loadRecents();
     void saveRecents();
     QStringList importQueue_;
+    // Paths queued as BOUNDARIES rather than points. Kept beside the queue
+    // rather than in it so that importQueue_ stays a list of paths and every
+    // other reader of it is untouched; consumed and erased when the path is
+    // pumped.
+    QHash<QString,QString> importGeometry_;
+    QVariantMap literatureSummary_;
+    QVariantMap summariseLiterature() const;
+    mutable QVariantList helpTopics_;
+    mutable QVariantList citationStyles_;
+    void loadCitationStyles() const;
+    mutable QVariantList helpSections_;
+    // Both caches are filled by ONE read of the resource. Two readers of one
+    // file is two answers to one question, which is how a topic ends up in a
+    // section the other reader has never heard of.
+    void loadHelp() const;
     // Converted Arrow file -> the file the user actually chose, so the log row
     // stays on their file rather than sprouting a second row for a temporary.
     QHash<QString,QString> convertedFrom_;
@@ -839,6 +993,10 @@ private:
     // Set while a non-native file is being converted to Arrow by the
     // science service, so the reply knows to import the result.
     QString pendingConvertSource_;
+    // Which file the running io.export is writing, so the reply can name it.
+    // Same shape as pendingConvertSource_ above, and for the same reason: the
+    // reply carries the result and not the question.
+    QString pendingExportTarget_;
     QVariantList scanRecommendations_;
     QVariantMap scanSummary_;
     bool scanning_=false;
@@ -879,6 +1037,7 @@ private:
     bool startComponentScript(const QStringList& arguments,const QString& mode);
     QString componentScriptPath() const;
     int themeIndex_=0;
+    int themeBeforeCvd_=-1;
     int displayMode_=1;
     void loadGraphCatalogue();
     static double fuzzyScore(const QString& query,const QVariantMap& entry);
