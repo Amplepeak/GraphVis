@@ -1392,6 +1392,118 @@ def dead_function(p, out: list) -> None:
                 suggestion="Remove it, or wire it up."))
 
 
+
+# --------------------------------------------------------------------------
+describe(
+    "iterator_pair_from_temporaries",
+    "begin() and end() taken from two separate calls",
+    "`C(f().begin(), f().end())` calls f TWICE. Each call returns its own "
+    "temporary, so the iterators come from two different containers: the range "
+    "walks from the first one's start looking for the second one's end, never "
+    "finds it, and runs off the end of the buffer. It is undefined behaviour "
+    "that usually presents as an access violation somewhere inside the "
+    "container library, a long way from the line that caused it.",
+    "A `.begin()` applied to the result of a CALL, paired with a `.end()` on a "
+    "call within the same argument list - and only where the callee is a "
+    "function in this project whose declared return type is not a reference. A "
+    "callee this audit cannot see the declaration of is left alone.",
+    "A function returning by value that the parser recorded as returning a "
+    "reference, or the reverse. The return-type test is what keeps "
+    "`std::sort(it.value().begin(), it.value().end())` - correct code, because "
+    "QMap::iterator::value() returns a reference - from being reported: that "
+    "callee is not a project function, so it is never considered.")
+
+
+def _call_before(toks, close: int):
+    """The callee name for a `)` that closes a call, or "" if it is not one."""
+    depth = 0
+    j = close
+    while j >= 0:
+        if toks[j].is_code and toks[j].text == ")":
+            depth += 1
+        elif toks[j].is_code and toks[j].text == "(":
+            depth -= 1
+            if depth == 0:
+                break
+        j -= 1
+    if j < 0:
+        return ""
+    k = j - 1
+    while k >= 0 and not toks[k].is_code:
+        k -= 1
+    if k < 0 or toks[k].kind != "id":
+        return ""
+    return toks[k].text
+
+
+def _temporary_iterator(toks, i: int, word: str, by_value: set) -> str:
+    """Is toks[i] the `begin`/`end` of `<projectCall>().<word>()`?
+
+    Returns the callee name when it is, "" otherwise.
+    """
+    if toks[i].kind != "id" or toks[i].text != word:
+        return ""
+    j = i - 1
+    while j >= 0 and not toks[j].is_code:
+        j -= 1
+    if j < 0 or toks[j].text not in (".", "->"):
+        return ""
+    k = j - 1
+    while k >= 0 and not toks[k].is_code:
+        k -= 1
+    if k < 0 or toks[k].text != ")":
+        return ""
+    name = _call_before(toks, k)
+    return name if name in by_value else ""
+
+
+def iterator_pair_from_temporaries(p, out: list) -> None:
+    # Functions this project declares that hand back a VALUE. A reference
+    # return is fine - `it.value().begin()` and `it.value().end()` name the
+    # same object - and an unknown callee is left alone rather than guessed at.
+    by_value: set = set()
+    for f in p.funcs:
+        ret = (f.ret or "").strip()
+        if not ret or "&" in ret or ret in ("void",):
+            continue
+        by_value.add(f.name)
+    for f in p.funcs:
+        if "&" in (f.ret or ""):
+            by_value.discard(f.name)
+
+    for u in p.units:
+        toks = u.toks
+        for i, tok in enumerate(toks):
+            first = _temporary_iterator(toks, i, "begin", by_value)
+            if not first:
+                continue
+            # The partner, within the same argument list. Sixty code tokens is
+            # comfortably more than one argument and comfortably less than the
+            # next statement.
+            seen = 0
+            for j in range(i + 1, min(i + 200, len(toks))):
+                if not toks[j].is_code:
+                    continue
+                seen += 1
+                if seen > 60 or toks[j].text == ";":
+                    break
+                second = _temporary_iterator(toks, j, "end", by_value)
+                if not second:
+                    continue
+                out.append(Finding(
+                    "iterator_pair_from_temporaries", u.rel, toks[i].line, "",
+                    f"`{first}()` is called twice to make one iterator pair",
+                    why=("Each call returns its own temporary, so begin() and "
+                         "end() come from different containers. The range never "
+                         "terminates at a valid point and reads past the end of "
+                         "the first one."),
+                    evidence=f"L{toks[i].line}: {_line(u, toks[i].line)}",
+                    severity="high", confidence="likely", category="correctness",
+                    suggestion="Call it once into a local, then take begin() and "
+                               "end() from that."))
+                break
+
+
 ALL = [
     guard_after_use,
     frozen_list_rule,
@@ -1415,4 +1527,5 @@ ALL = [
     leftover_marker,
     shadowed_declaration,
     dead_function,
+    iterator_pair_from_temporaries,
 ]

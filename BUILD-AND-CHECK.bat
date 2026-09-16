@@ -140,9 +140,24 @@ if errorlevel 1 (
   set "UITESTRC=1"
 )
 
+REM A CRASH IS NOT A WARNING, and this could not tell them apart.
+REM
+REM `if errorlevel 1` is true for both, so the build that died with an access
+REM violation on every launch printed the same "[WARNING] the interface
+REM reported warnings" as a build with one stray QML name - and then carried on
+REM and exited 0. The exit code already says which happened:
+REM
+REM     0  loaded, walked, said nothing
+REM     3  loaded and complained about a name       -> a warning
+REM     1  QML produced no root object              -> a failure
+REM  else  did not survive being started            -> a failure
+REM
 echo   ... interface
 "%~dp0build\stage\graphvis.exe" --selftest-ui -platform offscreen
-if errorlevel 1 (
+set "UIEXIT=%ERRORLEVEL%"
+if "%UIEXIT%"=="0" (
+  echo   [OK] interface loaded clean and walked
+) else if "%UIEXIT%"=="3" (
   echo.
   echo   [WARNING] The interface reported warnings while starting.
   echo             See the startup log named above. The build is fine;
@@ -150,30 +165,90 @@ if errorlevel 1 (
   echo             does not exist.
   set "UIRC=1"
 ) else (
-  echo   [OK] interface loaded clean
+  echo.
+  echo   [FAILED] The interface DID NOT SURVIVE being started ^(exit %UIEXIT%^).
+  echo            That is a crash, not a warning. startup.log stops at the
+  echo            last thing it managed to write; Windows records the faulting
+  echo            module under Application Error in Event Viewer, and
+  echo            COLLECT-CRASH-REPORT.bat gathers both.
+  set "UICRASH=1"
 )
 
 REM THE LOG THE REPORT READS MUST BE THE LOG THIS RUN WROTE.
 REM
 REM CHECK-GRAPHS.bat copies the %LOCALAPPDATA% logs into graph-check\ during
 REM its step [2/3] above - which happens BEFORE --selftest-ui runs. So the
-REM startup.log the report went on to judge was always from an EARLIER
-REM session, never from the interface check it was describing. That is how a
-REM build whose every launch died with an access violation was reported as
-REM "problems: none", and its trend line read "better  startup.log problems
-REM 2 -> 0 (down)": the report was reading a log written by something else.
+REM startup.log the report went on to judge was always from an EARLIER session,
+REM never from the interface check it was describing. That is how a build whose
+REM every launch died with an access violation was reported as "problems:
+REM none", and its trend line read "better  startup.log problems 2 -> 0 (down)":
+REM the report was reading a log written by something else.
 REM
-REM Copied again here, after the interface has actually been started, so the
-REM report describes this run. Kept as a copy rather than by pointing the
-REM report at %LOCALAPPDATA% because graph-check\ is the directory that gets
-REM attached to a bug report, and a report citing a file nobody sent is not
-REM evidence.
+REM This block has now been lost once, to a patch built from a stale copy of
+REM this file, and the report's own staleness guard is what noticed. If it goes
+REM missing again the symptom is the same: the report says it cannot tell
+REM whether the interface started.
 for %%D in (
   "%LOCALAPPDATA%\GraphVis\GraphVis 18.4\18.4\logs"
   "%LOCALAPPDATA%\GraphVis\18.4\logs"
   "%LOCALAPPDATA%\GraphVis\GraphVis 18.4\logs"
 ) do (
   if exist "%%~D\startup.log" copy /y "%%~D\startup.log" "%~dp0graph-check\" >nul 2>&1
+)
+
+REM ---- and again as somebody who has never run it ------------------
+REM
+REM EVERY CHECK ABOVE RUNS AS YOU. Your %LOCALAPPDATA% has settings, an arrow
+REM cache, a scan cache and a previous session with a dataset in it, and the
+REM interface restores all of that on the way up. A person installing this for
+REM the first time has none of it, and that is a different path through the
+REM same code: no cached dataset, no figure to restore, every default taken
+REM rather than read back.
+REM
+REM Nobody has ever run it. It is also the only path that matters for a first
+REM impression, which is the one thing a release cannot get a second go at.
+REM
+REM Done by pointing %LOCALAPPDATA% at an empty folder for one run. `setlocal`
+REM at the top of this script keeps that change inside it, so your real profile
+REM is untouched - and the app writes its log into the temporary one, which is
+REM copied out below so the report and a person can both read it.
+echo   ... interface, first run ^(empty profile^)
+REM
+REM POINTING %LOCALAPPDATA% SOMEWHERE ELSE DID NOT WORK, and did not say so.
+REM That was the first attempt and it silently did nothing: on Windows
+REM QStandardPaths asks the shell through SHGetKnownFolderPath rather than
+REM reading that variable, so the app went on writing to the real profile, the
+REM redirected folder stayed empty, and this step produced no log at all -
+REM twice, without failing, because there was nothing to find.
+REM
+REM --first-run does it inside the app, where the path is actually decided:
+REM Qt's test-mode location, emptied first. Nothing is renamed and the real
+REM profile is never touched, so an interrupted run leaves nothing to restore.
+"%~dp0build\stage\graphvis.exe" --selftest-ui --first-run -platform offscreen
+set "FRESHEXIT=%ERRORLEVEL%"
+
+REM The first run writes into the qttest profile; copy its log out beside the
+REM ordinary one. Kept separate, because "works for you" and "works for someone
+REM new" are two questions and the report should say which one failed.
+for %%D in (
+  "%LOCALAPPDATA%\qttest\GraphVis\GraphVis 18.4\18.4\logs"
+  "%LOCALAPPDATA%\qttest\GraphVis\18.4\logs"
+) do (
+  if exist "%%~D\startup.log" copy /y "%%~D\startup.log" "%~dp0graph-check\startup-firstrun.log" >nul 2>&1
+)
+
+if "%FRESHEXIT%"=="0" (
+  echo   [OK] first run clean
+) else if "%FRESHEXIT%"=="3" (
+  echo   [WARNING] The FIRST RUN reported warnings. See
+  echo             graph-check\startup-firstrun.log
+  set "FRESHRC=1"
+) else (
+  echo.
+  echo   [FAILED] The interface DID NOT SURVIVE a first run ^(exit %FRESHEXIT%^).
+  echo            It starts for you because your profile already has settings
+  echo            and a cached dataset; a new install has neither.
+  set "FRESHCRASH=1"
 )
 
 REM ---- one page, for a person or for Claude ------------------------
@@ -210,5 +285,39 @@ echo Full output:
 echo   graph-check\selftest-output.txt   the sweep, the checks, the clusters
 echo   gallery\                          one PNG per engine
 echo.
+
+REM ---- the verdict, which this script used to collect and discard --------
+REM
+REM UIRC and UITESTRC were set by the two blocks above and then read by
+REM nothing at all: every run ended `exit /b 0`, and the only trace of a
+REM failure was a line that had scrolled past several minutes earlier. A flag
+REM that is set and never read is a check that reports nothing - which is how
+REM an interface that crashed on every launch finished this script looking
+REM exactly like one that did not.
+REM
+REM So the end of the run says what failed, and the exit code means something.
+set "VERDICT=0"
+if defined UICRASH set "VERDICT=1"
+if defined FRESHCRASH set "VERDICT=1"
+if defined UITESTRC set "VERDICT=1"
+if "%VERDICT%"=="0" (
+  if defined UIRC (
+    echo VERDICT: built and checked, with warnings from the interface.
+  ) else if defined FRESHRC (
+    echo VERDICT: built and checked, with warnings on a first run only.
+  ) else (
+    echo VERDICT: built and checked, nothing to report.
+  )
+) else (
+  echo ================================================================
+  echo  VERDICT: SOMETHING FAILED
+  echo ================================================================
+  if defined UICRASH echo   - the interface did not survive being started
+  if defined FRESHCRASH echo   - the interface did not survive a FIRST run ^(empty profile^)
+  if defined UITESTRC echo   - an interface test failed
+  echo.
+  echo  build-reports\REPORT.md has the detail.
+)
+echo.
 pause
-exit /b 0
+exit /b %VERDICT%

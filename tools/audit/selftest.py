@@ -396,6 +396,22 @@ int good(const Counter& c){
     return t;
 }
 """),
+    # The crash of 16 September, reduced to its shape. The negative is the fix
+    # that shipped: one call into a local, then begin() and end() from that.
+    ("iterator_pair_from_temporaries", """
+struct S { };
+QStringList extensions(){ return QStringList(); }
+QSet<QString> names(){
+    return QSet<QString>(extensions().begin(), extensions().end());
+}
+""", """
+struct S { };
+QStringList extensions(){ return QStringList(); }
+QSet<QString> names(){
+    const QStringList all = extensions();
+    return QSet<QString>(all.begin(), all.end());
+}
+"""),
 ]
 
 

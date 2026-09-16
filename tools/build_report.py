@@ -39,17 +39,33 @@ CHECK = ROOT / "graph-check"
 
 # STARTUP MESSAGES CAUSED BY THE CHECK RATHER THAN BY THE PROGRAM.
 #
-# Each entry is (a substring of the message, why it is not the program's fault).
-# The "why" must name a measurement someone else can repeat - what was run,
-# what came out. Nothing goes in here because it looks harmless.
-BENIGN_STARTUP = (
-    ("QFontDatabase: Cannot find font directory",
-     "emitted only under `-platform offscreen`, which is how --selftest-ui "
-     "runs: Qt's offscreen plugin uses the generic font database and looks for "
-     "a deployed lib/fonts, where the Windows plugin uses the system fonts and "
-     "says nothing. Measured 2026-09-16: the offscreen check run at 17:45:57 "
-     "logged it and a normal launch of the same binary at 18:08:58 did not."),
-)
+# THE PROGRAM SAYS WHICH THEY ARE. THIS FILE DOES NOT DECIDE.
+#
+# This was a table of message substrings kept here, with a justification beside
+# each. It worked, and it was the second answer to a question the program was
+# already answering for itself: --selftest-ui counted the font-directory warning
+# and exited 3 while this report, matching the same message against the table
+# below, printed "problems: none". Every run disagreed with itself, and which
+# verdict a reader believed depended on which one they read.
+#
+# main.cpp now marks such a line as it writes it - `[HARNESS: <reason>]`, on the
+# same line as the message, with the reason it was written for. It marks a line
+# only when it KNOWS: the font message is excused when, and only when, the
+# binary was launched with the offscreen platform this check uses. So the two
+# sides cannot drift, because there is only one side.
+#
+# Kept as a pattern rather than a fixed string so a log written by a binary from
+# before this marker existed still reports as it did - it simply finds nothing.
+#
+# MATCHED ANYWHERE ON THE LINE, not anchored to its end. Anchored, this missed
+# the first real marked message: Qt's font warning carries a note after a
+# newline, so the marker landed at the end of the SECOND physical line while the
+# text that identifies the fault sat on the first. The report saw an unmarked
+# warning and counted it - the marker was written, correct, and in a place this
+# pattern could not see. main.cpp now writes the marker straight after the level
+# and flattens the message onto one line; this stays unanchored so the position
+# of the marker is not a second thing to keep in step.
+HARNESS_MARK = re.compile(r"\s*\[HARNESS:\s*(?P<why>[^\]]*)\]\s*")
 
 REPORTS = ROOT / "build-reports"
 HISTORY = REPORTS / "history.json"
@@ -76,6 +92,82 @@ def git(*args: str) -> str:
         return out.stdout.strip() if out.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+def read_facts_from_log(log: str) -> dict:
+    """What startup.log says went wrong, deduplicated and sorted by whose fault.
+
+    A FUNCTION, not a passage inside collect(), so it can be handed a log and
+    asked what it makes of it. It used to be reachable only by putting a file on
+    disk in the right place, which meant the rule it implements - which lines
+    count against the build - was pinned down by nothing.
+
+    DEDUPLICATED, because one fault repeats. The first real run of this reported
+    "24 warning/error line(s)" and all 24 were one QML binding, logged twice per
+    occurrence over two sessions. A count of lines measures how often a delegate
+    was rebuilt; a count of distinct messages measures how many things are
+    wrong, which is the question. The timestamp and the duplicated [WARNING]
+    prefix are stripped so the same fault collapses to one entry with a tally.
+
+    MESSAGES THE HARNESS CAUSES, NOT THE PROGRAM - separated out, never hidden.
+    A problem count that is permanently non-zero is a problem count nobody
+    reads, and this project has already paid for that once: sixteen
+    guaranteed-false qmllint warnings were what hid the seventeenth, which was
+    real. So a line the program marked as an artefact of HOW it was launched is
+    kept out of the count - and still printed under its own heading, with the
+    reason the program gave, so it cannot quietly become permanent cover for
+    something else. The judgement is the program's; see HARNESS_MARK.
+    """
+    facts: dict = {}
+    # ONE MESSAGE, ONE LINE - reassembled here, whatever wrote the log.
+    #
+    # Qt writes multi-line messages, and this reader works a line at a time, so a
+    # wrapped message arrived as two unrelated things: the half naming the fault,
+    # and a half nothing recognised. That is how the font warning's [HARNESS]
+    # marker - written, correct, and sitting on the continuation line - was not
+    # seen, and the message it excuses was counted against the build.
+    #
+    # main.cpp now flattens as it writes, so new logs need none of this. It is
+    # still done here, because the old logs on disk are read by the same code and
+    # because the next multi-line message Qt invents should not need a second
+    # fix. Every entry begins with an ISO timestamp; a line that does not is a
+    # continuation of the one above it.
+    stamped = re.compile(r"^\d{4}-\d{2}-\d{2}T")
+    joined: list[str] = []
+    for raw in log.splitlines():
+        if joined and not stamped.match(raw):
+            joined[-1] = joined[-1] + "  |  " + raw.strip()
+        else:
+            joined.append(raw.strip())
+    bad = [l for l in joined
+           if re.search(r"\b(WARNING|ERROR|Cannot|cannot|undefined|is not a|"
+                        r"TypeError|ReferenceError)\b", l)]
+    seen: dict[str, int] = {}
+    benign: dict[str, int] = {}
+    harness_reasons: dict[str, str] = {}
+    for line in bad:
+        key = re.sub(r"^\S+\s+", "", line)                 # timestamp
+        # Any level, not the three that happened to be listed: a [CRITICAL] kept
+        # its prefix and so counted as a different fault from the same message
+        # logged as a [WARNING].
+        key = re.sub(r"^(QML:|\[(?:DEBUG|INFO|WARNING|CRITICAL|FATAL)\])\s*", "", key)
+        mark = HARNESS_MARK.search(key)
+        if mark:
+            key = HARNESS_MARK.sub(" ", key).strip()
+        key = re.sub(r"\s+\(qrc:.*\)$", "", key)           # trailing source ref
+        if mark:
+            benign[key] = benign.get(key, 0) + 1
+            harness_reasons[key] = mark.group("why").strip()
+        else:
+            seen[key] = seen.get(key, 0) + 1
+    facts["startup_harness_reasons"] = harness_reasons
+    facts["startup_problems"] = [f"{k}   [x{n}]" if n > 1 else k
+                                 for k, n in list(seen.items())[:25]]
+    facts["startup_problem_count"] = len(seen)
+    facts["startup_benign"] = [f"{k}   [x{n}]" if n > 1 else k
+                               for k, n in list(benign.items())[:25]]
+    facts["startup_line_count"] = len(bad)
+    return facts
 
 
 def collect() -> dict:
@@ -164,52 +256,7 @@ def collect() -> dict:
     facts["ui_log_stale"] = bool(
         log.strip() and summary_path.exists() and log_path.exists()
         and log_path.stat().st_mtime < summary_path.stat().st_mtime - 1)
-    bad = [l.strip() for l in log.splitlines()
-           if re.search(r"\b(WARNING|ERROR|Cannot|cannot|undefined|is not a|"
-                        r"TypeError|ReferenceError)\b", l)]
-    # DEDUPLICATED, because one fault repeats.
-    #
-    # The first real run of this reported "24 warning/error line(s)" and all 24
-    # were one QML binding, logged twice per occurrence over two sessions. A
-    # count of lines measures how often a delegate was rebuilt; a count of
-    # distinct messages measures how many things are wrong, which is the
-    # question. The timestamp and the duplicated [WARNING] prefix are stripped
-    # so the same fault collapses to one entry with a tally.
-    seen: dict[str, int] = {}
-    for line in bad:
-        key = re.sub(r"^\S+\s+", "", line)                 # timestamp
-        key = re.sub(r"^(QML:|\[WARNING\]|\[INFO\])\s*", "", key)
-        key = re.sub(r"\s+\(qrc:.*\)$", "", key)           # trailing source ref
-        seen[key] = seen.get(key, 0) + 1
-
-    # MESSAGES THE HARNESS CAUSES, NOT THE PROGRAM - separated out, never
-    # hidden.
-    #
-    # A problem count that is permanently non-zero is a problem count nobody
-    # reads, and this project has already paid for that once: sixteen
-    # guaranteed-false qmllint warnings were what hid the seventeenth, which
-    # was real. So a message proven to be an artefact of HOW the check runs is
-    # kept out of the count - and still printed below under its own heading,
-    # with the reason, so it cannot quietly become permanent cover for
-    # something else.
-    #
-    # THE BAR FOR THIS LIST IS A MEASUREMENT, not an opinion. Each entry names
-    # what was run, what came out, and when. An entry nobody can re-check is an
-    # excuse rather than a finding, and gets removed.
-    #
-    # The list is deliberately short and deliberately awkward to add to.
-    benign: dict[str, int] = {}
-    for key in list(seen):
-        for needle, _why in BENIGN_STARTUP:
-            if needle in key:
-                benign[key] = seen.pop(key)
-                break
-    facts["startup_problems"] = [f"{k}   [x{n}]" if n > 1 else k
-                                 for k, n in list(seen.items())[:25]]
-    facts["startup_problem_count"] = len(seen)
-    facts["startup_benign"] = [f"{k}   [x{n}]" if n > 1 else k
-                               for k, n in list(benign.items())[:25]]
-    facts["startup_line_count"] = len(bad)
+    facts.update(read_facts_from_log(log))
 
     # DID THE INTERFACE ACTUALLY START? Counting complaints cannot answer that.
     #
@@ -387,6 +434,25 @@ def render(now: dict, history: list[dict]) -> str:
         title = head[0].lstrip("# ").strip() if head else ""
         L.append("## Passive audit")
         L.append(f"- {title}  (build-reports/AUDIT.md)")
+        # WHEN IT WAS RUN, because this page does not run it.
+        #
+        # The audit writes AUDIT.md on its own schedule and this report quotes
+        # the top of it. A build report once carried "17 standing · nothing new"
+        # from a pass two hours and several pushes old, stated in the present
+        # tense beside numbers that were minutes old - which is the stale
+        # startup.log again, one file along. The date line comes across too, and
+        # an audit older than the check phase says so in as many words.
+        stamp = next((l for l in head[1:6] if l.strip().startswith("- 20")), "")
+        if stamp:
+            L.append(f"  {stamp.strip().lstrip('- ')}")
+        try:
+            behind = time.time() - audit.stat().st_mtime
+        except OSError:
+            behind = 0.0
+        if behind > max(2 * 3600.0, float(now.get("check_seconds") or 0) * 2):
+            L.append(f"  NOT RE-RUN FOR THIS BUILD - AUDIT.md is "
+                     f"{behind / 3600.0:.1f} h old, so the line above describes "
+                     f"the source as it was then. Run PASSIVE-AUDIT.bat.")
         grab = False
         for line in head:
             if line.startswith("## New since the last pass"):
@@ -410,10 +476,12 @@ def render(now: dict, history: list[dict]) -> str:
     # forgotten. If one of these ever stops being an artefact, it is still on
     # the page for somebody to notice.
     if now.get("startup_benign"):
-        L.append("## startup.log — known to be the check, not the program")
-        L += [f"    {l}" for l in now["startup_benign"]]
-        for needle, why in BENIGN_STARTUP:
-            if any(needle in l for l in now["startup_benign"]):
+        L.append("## startup.log — the program says the check caused these")
+        for entry in now["startup_benign"]:
+            L.append(f"    {entry}")
+            key = re.sub(r"\s+\[x\d+\]$", "", entry)
+            why = (now.get("startup_harness_reasons") or {}).get(key)
+            if why:
                 L.append(f"      why: {why}")
         L.append("")
 

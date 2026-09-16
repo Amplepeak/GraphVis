@@ -5297,6 +5297,183 @@ bool runRegressionChecks(){
                                            "on one axis as on two"));
     }
 
+    // ------------------------------------------- 1e. the marginal strips
+    //
+    // WHERE THE MARGINALS GO IS A CHOICE, AND BOTH ANSWERS HAVE TO WORK.
+    //
+    // Over the data keeps the whole frame for the scatter and can hide points
+    // under a dense cloud; in a gutter hides nothing and costs the scatter the
+    // space. Neither is right for every dataset, so the figure says which - and
+    // a control that says which is worth exactly as much as the proof that it
+    // does something.
+    //
+    // The layout half is the part that can silently fail. The painter draws the
+    // strips outside the plot area, and computeFrame has to have taken that
+    // space out of the plot area first. If it did not, the scatter would be the
+    // same size either way and the strips would be painted over the margin - a
+    // figure that looks almost right. So the last check below measures the
+    // SCATTER, not the strips.
+    {
+        QtPlotBackend backend;
+        PlotSpec cloud=whiteSpec(QStringLiteral("Scatter + Marginals"));
+        // TWO SERIES, EACH ONE A COLUMN IN .y. This engine is a PAIR engine -
+        // columnPlan lists it beside Bland-Altman and ROC - so its prepare step
+        // reads series 0 as the abscissa column and series 1 as the ordinate
+        // column and builds the joint cloud from them.
+        //
+        // This fixture used to hand it a single ready-made x/y series, which is
+        // the shape almost every other engine here takes. derivedAs clears the
+        // series list, the `series.size()>=2` branch that refills it never ran,
+        // and the engine was asked to draw a figure with no data in it. Every
+        // check below then measured a blank frame: the placement check passed
+        // on the frame moving, the size check failed because nothing was drawn
+        // to resize, and the layout check read 299 - the right-hand edge of the
+        // half-canvas it scans - from the bottom axis rule at both settings.
+        //
+        // A check that cannot reach the code it names is not a check that
+        // failed; it is a check that was never run. This one hid a real defect
+        // in the drawing half for as long as it stood.
+        PlotSeries columnX,columnY;
+        columnX.label=QStringLiteral("x"); columnY.label=QStringLiteral("y");
+        // Two modes in x, so a marginal has a shape worth reading and the
+        // cloud reaches both ends of the frame - which is the case where an
+        // overlaid strip covers data.
+        for(int i=0;i<160;++i){
+            const double t=double(i)/159.0;
+            columnX.x.append(i); columnX.y.append(t<0.5?t*0.8:0.6+t*0.9);
+            columnY.x.append(i); columnY.y.append(std::sin(t*6.28318)*0.5+t);
+        }
+        cloud.series={columnX,columnY};
+
+        PlotSpec overlay=cloud;
+        PlotSpec gutter=cloud;
+        gutter.parameters.insert(QStringLiteral("marginalPlace"),1.0);
+
+        const QImage overlayShot=renderToImage(backend,overlay,600,440);
+        const QImage gutterShot=renderToImage(backend,gutter,600,440);
+        if(overlayShot==gutterShot)
+            failures.append(QStringLiteral("Scatter + Marginals drew the same figure "
+                                           "with the marginals over the data and in a "
+                                           "gutter, so the placement control does "
+                                           "nothing"));
+
+        // TWO MEASUREMENTS, AND THE CHROME IS WHAT SEPARATES THEM.
+        //
+        // The frame is drawn in greys; the data and the strips are drawn in the
+        // series colour. So the rightmost GREY pixel across the middle of the
+        // canvas is the plot area's right-hand spine, and the rightmost
+        // COLOURED pixel anywhere is the furthest right anything drawn from the
+        // data reaches. Those two numbers answer both halves of this control
+        // and they answer them in opposite directions, which is what makes them
+        // worth measuring.
+        auto rightSpine=[](const QImage& img){
+            int rightmost=-1;
+            // The middle band only: the title sits above the frame and the tick
+            // labels below it, and both are grey too.
+            for(int y=int(img.height()*0.40);y<int(img.height()*0.60);++y)
+                for(int x=0;x<img.width();++x){
+                    const QRgb c=img.pixel(x,y);
+                    const int hi=qMax(qRed(c),qMax(qGreen(c),qBlue(c)));
+                    const int lo=qMin(qRed(c),qMin(qGreen(c),qBlue(c)));
+                    if(hi-lo<=24&&hi<235) rightmost=qMax(rightmost,x);
+                }
+            return rightmost;
+        };
+        auto rightInk=[](const QImage& img){
+            int rightmost=-1;
+            for(int y=0;y<img.height();++y)
+                for(int x=0;x<img.width();++x){
+                    const QRgb c=img.pixel(x,y);
+                    const int hi=qMax(qRed(c),qMax(qGreen(c),qBlue(c)));
+                    const int lo=qMin(qRed(c),qMin(qGreen(c),qBlue(c)));
+                    if(hi-lo>40) rightmost=qMax(rightmost,x);
+                }
+            return rightmost;
+        };
+
+        // THE STRIPS HAVE TO BE ON THE PAGE, not merely have room made for them.
+        //
+        // render() wraps every framed engine in a clip to the plot area, which
+        // is right for all of them except this one: a gutter strip is drawn in
+        // the band computeFrame took OUT of the plot area, so it lands exactly
+        // where that clip removes it. The reservation lives in computeFrame and
+        // the painting in drawScatterMarginals, and the figure that comes out
+        // when only the first of them works - a smaller scatter with an empty
+        // band beside it - is the "almost right" picture the note above warns
+        // about. It was what this engine actually drew. The check above it
+        // compared whole images, and the shrunken plot area alone made those
+        // differ, so it passed on a figure with no strips in it.
+        //
+        // Overlaid, every coloured pixel is inside the frame, so the colour
+        // stops at or before the spine. In a gutter the right-hand strip is
+        // outside it, so the colour must reach PAST the spine. Clipped away,
+        // the gutter figure behaves like the overlaid one and this fails by the
+        // width of the band rather than by a pixel.
+        const int overlaySpine=rightSpine(overlayShot),overlayInk=rightInk(overlayShot);
+        const int gutterSpine=rightSpine(gutterShot),gutterInk=rightInk(gutterShot);
+        if(overlayInk>overlaySpine)
+            failures.append(QStringLiteral("Scatter + Marginals drew data outside the "
+                                           "frame (%1 past a spine at %2) with the "
+                                           "marginals set over the data, where "
+                                           "everything it draws belongs inside it")
+                            .arg(overlayInk).arg(overlaySpine));
+        if(gutterInk<=gutterSpine)
+            failures.append(QStringLiteral("Scatter + Marginals in a gutter put no ink "
+                                           "outside the plot area (colour stops at %1, "
+                                           "spine at %2), so the space is reserved and "
+                                           "the strips are not drawn in it")
+                            .arg(gutterInk).arg(gutterSpine));
+
+        // A FIGURE NOBODY HAS TOUCHED MUST RENDER AS IT ALWAYS DID. The size
+        // control's default is a sixth written as a percentage, and a default
+        // that is 17 rather than 100/6 would move every one of the gallery's
+        // Scatter + Marginals figures by a pixel - which the gallery would
+        // catch, but only after the fact and without saying why.
+        PlotSpec stated=cloud;
+        stated.parameters.insert(QStringLiteral("marginalPlace"),0.0);
+        stated.parameters.insert(QStringLiteral("marginalSize"),100.0/6.0);
+        if(renderToImage(backend,stated,600,440)!=overlayShot)
+            failures.append(QStringLiteral("Scatter + Marginals: stating the default "
+                                           "marginal size drew a different figure from "
+                                           "stating nothing, so the default is not the "
+                                           "size the strips were always drawn at"));
+
+        PlotSpec bigger=overlay;
+        bigger.parameters.insert(QStringLiteral("marginalSize"),32.0);
+        if(renderToImage(backend,bigger,600,440)==overlayShot)
+            failures.append(QStringLiteral("Scatter + Marginals ignored the marginal "
+                                           "size, so the strip is a sixth of the frame "
+                                           "whatever the figure asks for"));
+
+        // THE LAYOUT, measured on the FRAME. Widening the gutter takes the
+        // space out of the plot area, so the right-hand spine must move left.
+        //
+        // This was measured on the scatter, as the rightmost ink in the
+        // bottom-left quarter of the canvas, on the reasoning that the quarter
+        // holds scatter and nothing else. It holds the grid too - 0xd8d8d8 is
+        // darker than the threshold that reading used - so it returned the same
+        // number at every setting and reported a missing reservation that was
+        // there. Worse, the scatter is the wrong thing to measure here: a
+        // narrower plot area pulls the cloud's RIGHT-hand lobe leftwards into
+        // the quarter being scanned, so the honest version of that measurement
+        // can move either way. The spine can only move one way.
+        PlotSpec narrow=gutter,wide=gutter;
+        narrow.parameters.insert(QStringLiteral("marginalSize"),6.0);
+        wide.parameters.insert(QStringLiteral("marginalSize"),34.0);
+        const int narrowEdge=rightSpine(renderToImage(backend,narrow,600,440));
+        const int wideEdge=rightSpine(renderToImage(backend,wide,600,440));
+        if(narrowEdge<0||wideEdge<0)
+            failures.append(QStringLiteral("Scatter + Marginals drew no frame to measure, "
+                                           "so the gutter measurement below proves "
+                                           "nothing"));
+        else if(wideEdge>=narrowEdge)
+            failures.append(QStringLiteral("Scatter + Marginals: a wider gutter did not "
+                                           "give the scatter less room (%1 -> %2), so "
+                                           "computeFrame is not reserving the space the "
+                                           "strips are painted in")
+                            .arg(narrowEdge).arg(wideEdge));
+    }
+
     // -------------------------------------------------------------- 2. bars
     // drawBar used to place bar i at plotArea.left() + slot*(i+0.5), ignoring
     // s.x[i] entirely, so bars stood under an axis they did not correspond to.

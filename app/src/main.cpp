@@ -9,7 +9,10 @@
 #include <QMutex>
 #include <QThread>
 #include <QAtomicInt>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QTimer>
+#include <functional>
 #include <QQmlApplicationEngine>
 #include <QQmlError>
 #include <QQuickStyle>
@@ -135,9 +138,45 @@ void appendStartupLog(const QString& line)
 // a file for somebody to notice. See the flag for what that is worth.
 QAtomicInt gStartupWarnings{0};
 
+// WAS THIS MESSAGE CAUSED BY THE PROGRAM, OR BY HOW THE CHECK LAUNCHED IT?
+//
+// ONE QUESTION, ONE ANSWER, and it used to have two. --selftest-ui counted the
+// font-directory warning and exited 3; tools/build_report.py matched the same
+// message against a list of its own and reported "problems: none". Both were
+// defensible and they disagreed on every run, which is the shape this project
+// pays for most often - and the one the reader resolves by believing whichever
+// of the two they happened to read.
+//
+// The answer belongs here because this is the side that KNOWS. The check runs
+// the binary under `-platform offscreen`; Qt's offscreen plugin uses the
+// generic font database and looks for a deployed lib/fonts, where the Windows
+// plugin uses the system fonts and says nothing. Measured 2026-09-16: the
+// offscreen run at 17:45:57 logged it and a normal launch of the same binary at
+// 18:08:58 did not. A normal launch therefore never reaches this branch, and if
+// the message ever appears WITHOUT the offscreen platform it is counted, which
+// is exactly right - that would be the program's fault.
+//
+// The log line carries the reason with it, so the report reads a STATEMENT
+// rather than matching a message by name in a table of its own. A table of
+// names in a second file is how a message that stopped being harmless goes on
+// being excused.
+bool gOffscreenPlatform = false;
+
+QString harnessCause(QtMsgType type, const QString& message)
+{
+    if (type != QtWarningMsg && type != QtCriticalMsg)
+        return QString();
+    if (gOffscreenPlatform
+        && message.contains(QLatin1String("QFontDatabase: Cannot find font directory")))
+        return QStringLiteral("caused by -platform offscreen, which is how the check "
+                              "runs this binary; a normal launch does not emit it");
+    return QString();
+}
+
 void graphvisMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)
 {
-    if (type == QtWarningMsg || type == QtCriticalMsg)
+    const QString harness = harnessCause(type, message);
+    if ((type == QtWarningMsg || type == QtCriticalMsg) && harness.isEmpty())
         gStartupWarnings.fetchAndAddOrdered(1);
     QString level;
     switch (type) {
@@ -174,8 +213,32 @@ void graphvisMessageHandler(QtMsgType type, const QMessageLogContext& context, c
                          current && current == gui ? QStringLiteral(" = GUI")
                                                    : QStringLiteral(" != GUI"));
     }
-    appendStartupLog(QStringLiteral("[%1] %2%3%4")
-                         .arg(level, message,
+    // ONE MESSAGE, ONE LINE. Qt writes multi-line messages - the font warning
+    // carries a two-sentence note after a newline - and the report reads this
+    // file a line at a time. Left as it came, the first physical line held the
+    // text that identifies the fault and the SECOND held the [HARNESS] marker,
+    // so the report saw an unmarked warning followed by a line it did not
+    // recognise, and counted the very message the marker exists to excuse. The
+    // marker was written and correct; it was on the wrong line.
+    //
+    // Flattened here rather than worked around there, because a message split
+    // across lines is a message any line-based reader can only half see. The
+    // wrap is kept visible as "  |  " so nothing is silently run together.
+    // ASCII, not a middle dot: QLatin1String compares byte by byte, so a
+    // non-ASCII literal in one can never match - there is a standing check for
+    // exactly that, and it caught this one.
+    QString flat = message;
+    flat.replace(QLatin1String("\r\n"), QLatin1String("\n"));
+    flat.replace(QLatin1Char('\n'), QLatin1String("  |  "));
+    appendStartupLog(QStringLiteral("[%1]%2 %3%4%5")
+                         .arg(level,
+                              // IMMEDIATELY AFTER THE LEVEL, before the message
+                              // rather than after it. The message's length and
+                              // shape are Qt's business; this marker's position
+                              // must not depend on them.
+                              harness.isEmpty() ? QString()
+                                                : QStringLiteral(" [HARNESS: %1]").arg(harness),
+                              flat,
                               context.file ? QStringLiteral("  (%1:%2)").arg(QString::fromUtf8(context.file)).arg(context.line)
                                            : QString(),
                               where));
@@ -202,8 +265,230 @@ void showFatalStartupMessage(const QString& reason)
 }
 }
 
+// ---------------------------------------------------------------------------
+// The interface, ACTUALLY WALKED.
+//
+// WHY THIS EXISTS, in one sentence: on 16 September a build shipped that died
+// with an access violation on every single launch, and every check this project
+// runs said it was fine.
+//
+// The fault was `QSet<QString>(f().begin(), f().end())` in AppController -
+// two calls, two temporaries, an iterator pair straddling both - reached from a
+// QML binding on a file dialog in the Data panel. Why nothing saw it:
+//
+//   the 440-engine sweep and the gallery never construct an AppController;
+//   the QML interface tests use GENERATED STAND-INS for AppController and
+//     PlotCanvas, so the stand-in's exportNameFilters() returned an empty list
+//     and the real one was never called;
+//   qmllint cannot see into C++ at all;
+//   --selftest-ui below opened the window, which crashed - and the build report
+//     counted warning lines in a log the dead process never wrote to, so zero
+//     complaints scored as an improvement.
+//
+// The common shape: a defect in real C++ reached from a QML binding is
+// invisible to every check that does not build the real objects AND then touch
+// the panel that reads them. --selftest-ui builds the real objects. It has
+// never touched a panel - its own note above says so: "It is deliberately NOT
+// a test of behaviour."
+//
+// So this walks. It puts the shell into each workspace and each layout in turn,
+// adds and removes a figure, and ATTRIBUTES every warning to the step that
+// caused it. "Opening Data produced 2 warnings" is a bug report; "the interface
+// produced 2 warnings" is a puzzle.
+//
+// REPORTING, NOT YET ASSERTING. This pass names what it found and does not fail
+// the build on it, for the same reason the frame-overrun check spent a week
+// reporting before it was allowed to fail: a check whose first act is to break
+// the build is a check that gets switched off before anyone reads it. Once a
+// few clean runs have gone by, the count below becomes a failure.
+//
+// It also must never be the thing that takes the program down. Every step is
+// skipped with a named reason when its precondition is absent, and nothing here
+// throws.
+namespace {
+
+// Pump the event loop for a while. Bindings evaluate on completion, but a
+// Loader, an Instantiator and anything deferred by Qt.callLater land a turn or
+// two later - which is most of what changing a workspace sets off.
+void settleFor(int ms)
+{
+    QElapsedTimer t;
+    t.start();
+    while (t.elapsed() < ms)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+}
+
+// The first object whose QML type name starts with `prefix`. QML types get
+// metaobject names like "VisualizeWorkspace_QMLTYPE_42", so the prefix is the
+// component's own file name and nothing else can match it.
+QObject* findQmlType(QObject* from, const char* prefix)
+{
+    if (!from)
+        return nullptr;
+    if (QLatin1StringView(from->metaObject()->className()).startsWith(QLatin1StringView(prefix)))
+        return from;
+    const QObjectList kids = from->children();
+    for (QObject* kid : kids)
+        if (QObject* found = findQmlType(kid, prefix))
+            return found;
+    return nullptr;
+}
+
+struct StepResult {
+    QString name;
+    int warnings = 0;
+    QString skipped;        // empty when the step ran
+    QString failed;         // empty when the step was satisfied
+};
+
+// Run one step and charge it with whatever the interface complained about
+// while it was running.
+StepResult runStep(const QString& name, const std::function<QString()>& body, int settleMs)
+{
+    StepResult r;
+    r.name = name;
+    const int before = gStartupWarnings.loadAcquire();
+    r.failed = body();
+    settleFor(settleMs);
+    r.warnings = gStartupWarnings.loadAcquire() - before;
+    return r;
+}
+
+int walkTheInterface(AppController& controller, QQmlApplicationEngine& engine)
+{
+    QList<StepResult> results;
+
+    QObject* shell = engine.rootObjects().isEmpty() ? nullptr
+                                                    : engine.rootObjects().constFirst();
+
+    // ---- every workspace ------------------------------------------------
+    //
+    // This is the step that would have caught the crash: the Data workspace
+    // builds DataWorkspace, whose Save dialog binds `nameFilters` to the
+    // controller method that walked off the end of a freed buffer.
+    const QStringList modes{QStringLiteral("Home"), QStringLiteral("Literature"),
+                            QStringLiteral("Visualize"), QStringLiteral("Data"),
+                            QStringLiteral("Analysis"), QStringLiteral("Publish")};
+    const QString startingMode = controller.workspaceMode();
+    for (const QString& mode : modes) {
+        results.append(runStep(QStringLiteral("workspace: %1").arg(mode),
+                               [&controller, &mode]() -> QString {
+                                   controller.setWorkspaceMode(mode);
+                                   return QString();
+                               }, 220));
+    }
+    controller.setWorkspaceMode(startingMode);
+    settleFor(120);
+
+    // ---- every window shape ---------------------------------------------
+    //
+    // Each layout builds a different shell: different rails, different panels,
+    // a different secondary panel. tst_workspace_loads already does this
+    // against stand-ins; this does it against the real controller and the real
+    // canvas, which is the difference that matters.
+    const QStringList layouts = controller.uiLayoutNames();
+    const int startingLayout = controller.uiLayout();
+    for (int i = 0; i < layouts.size(); ++i) {
+        results.append(runStep(QStringLiteral("layout %1: %2").arg(i).arg(layouts.at(i)),
+                               [&controller, i]() -> QString {
+                                   controller.setUiLayout(i);
+                                   return QString();
+                               }, 180));
+    }
+    controller.setUiLayout(startingLayout);
+    settleFor(200);
+
+    // ---- figures, which is where pressing things matters ----------------
+    //
+    // The notebook delegate that reported every figure as figure zero was
+    // invisible to everything until something selected a figure that was not
+    // the first. This adds one, selects it, and closes it, checking the count
+    // each time - so a close button that removes the wrong figure shows up as
+    // a number rather than as a picture nobody looked at.
+    results.append(runStep(QStringLiteral("figures: add, select, close"),
+        [shell]() -> QString {
+            QObject* ws = findQmlType(shell, "VisualizeWorkspace");
+            if (!ws)
+                return QStringLiteral("SKIP: no VisualizeWorkspace in the tree");
+            const QVariant countBefore = ws->property("figureCount");
+            if (!countBefore.isValid())
+                return QStringLiteral("SKIP: VisualizeWorkspace has no figureCount");
+            const int before = countBefore.toInt();
+            if (!QMetaObject::invokeMethod(ws, "addFigure"))
+                return QStringLiteral("SKIP: addFigure could not be invoked");
+            settleFor(200);
+            const int added = ws->property("figureCount").toInt();
+            if (added != before + 1)
+                return QStringLiteral("adding a figure left %1 figures, expected %2")
+                       .arg(added).arg(before + 1);
+            if (!QMetaObject::invokeMethod(ws, "selectFigure", Q_ARG(QVariant, QVariant(before))))
+                return QStringLiteral("SKIP: selectFigure could not be invoked");
+            settleFor(150);
+            const int chosen = ws->property("figureIndex").toInt();
+            if (chosen != before)
+                return QStringLiteral("selecting figure %1 left figure %2 current")
+                       .arg(before).arg(chosen);
+            if (!QMetaObject::invokeMethod(ws, "closeFigure", Q_ARG(QVariant, QVariant(before))))
+                return QStringLiteral("SKIP: closeFigure could not be invoked");
+            settleFor(200);
+            const int after = ws->property("figureCount").toInt();
+            if (after != before)
+                return QStringLiteral("closing the figure just added left %1, expected %2")
+                       .arg(after).arg(before);
+            return QString();
+        }, 150));
+
+    // ---- what it found ---------------------------------------------------
+    int noisy = 0;
+    int unsatisfied = 0;
+    for (const StepResult& r : results) {
+        const bool isSkip = r.failed.startsWith(QLatin1String("SKIP:"));
+        if (r.warnings > 0 || !r.failed.isEmpty()) {
+            QString line = QStringLiteral("--selftest-ui: %1").arg(r.name);
+            if (r.warnings > 0)
+                line += QStringLiteral("  [%1 warning(s)]").arg(r.warnings);
+            if (!r.failed.isEmpty())
+                line += QStringLiteral("  %1").arg(r.failed);
+            appendStartupLog(line);
+            fprintf(stderr, "%s\n", qPrintable(line));
+        }
+        if (r.warnings > 0)
+            ++noisy;
+        if (!r.failed.isEmpty() && !isSkip)
+            ++unsatisfied;
+    }
+    const QString summary =
+        QStringLiteral("--selftest-ui: walked %1 step(s); %2 produced warnings, "
+                       "%3 did not do what they claim")
+        .arg(results.size()).arg(noisy).arg(unsatisfied);
+    appendStartupLog(summary);
+    fprintf(stderr, "%s\n", qPrintable(summary));
+    return unsatisfied;
+}
+
+} // namespace
+
+
 int main(int argc, char *argv[])
 {
+    // READ FROM argv, NOT FROM QGuiApplication::platformName().
+    //
+    // The platform name is only available once the application object exists,
+    // and messages are logged before that. Read here, before anything can be
+    // logged, so harnessCause gives the same answer on the first message as on
+    // the last. Both spellings, because the check writes `-platform offscreen`
+    // and Qt also accepts `-platform=offscreen`.
+    for (int i = 1; i < argc; ++i) {
+        const QString arg = QString::fromLocal8Bit(argv[i]);
+        if (arg == QLatin1String("-platform") && i + 1 < argc)
+            gOffscreenPlatform = QString::fromLocal8Bit(argv[i + 1])
+                                     .startsWith(QLatin1String("offscreen"));
+        else if (arg.startsWith(QLatin1String("-platform=")))
+            gOffscreenPlatform = arg.mid(10).startsWith(QLatin1String("offscreen"));
+    }
+    if (qEnvironmentVariable("QT_QPA_PLATFORM").startsWith(QLatin1String("offscreen")))
+        gOffscreenPlatform = true;
+
     QGuiApplication::setOrganizationName(QStringLiteral("GraphVis"));
     QGuiApplication::setOrganizationDomain(QStringLiteral("graphvis.local"));
     QGuiApplication::setApplicationName(QStringLiteral("GraphVis 18.4"));
@@ -302,6 +587,41 @@ int main(int argc, char *argv[])
             const bool propertiesOk = graphvis::runPropertyChecks(true);
             return (exportOk && enginesOk && regressionOk && propertiesOk) ? 0 : 1;
         }
+    }
+
+    // --first-run: START AS SOMEBODY WHO HAS NEVER RUN THIS.
+    //
+    // Every check this project has ever run does so as the developer, whose
+    // %LOCALAPPDATA% holds settings, an arrow cache, a scan cache and a
+    // previous session with a dataset in it - all of which the interface
+    // restores on the way up. A new install has none of that, and it is a
+    // different path through the same code: no cached dataset, no figure to
+    // restore, every default taken rather than read back. Nobody had ever run
+    // it, and it is the one path a release cannot get a second go at.
+    //
+    // WHY NOT JUST POINT %LOCALAPPDATA% SOMEWHERE ELSE - which is what the
+    // build script tried first, and why it silently did nothing. On Windows
+    // QStandardPaths does not read that variable: it asks the shell, through
+    // SHGetKnownFolderPath(FOLDERID_LocalAppData). So the app went on writing
+    // to the real profile, the redirected folder stayed empty, and the check
+    // reported nothing because there was nothing to find. Measured: two full
+    // runs produced no startup-firstrun.log at all.
+    //
+    // Qt has the switch this actually needs. setTestModeEnabled(true) moves
+    // every writable standard path into a `qttest` subfolder - so this writes
+    // to a place of its own, never touches the real profile, and cannot
+    // corrupt a session by being interrupted. Emptying it first is what makes
+    // the run a FIRST one rather than a second.
+    if (QCoreApplication::arguments().contains(QStringLiteral("--first-run"))) {
+        QStandardPaths::setTestModeEnabled(true);
+        const QString fresh =
+            QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        if (!fresh.isEmpty())
+            QDir(fresh).removeRecursively();
+        QStandardPaths::setTestModeEnabled(true);
+        fprintf(stderr, "--first-run: starting with an empty profile at\n  %s\n",
+                qPrintable(QStandardPaths::writableLocation(
+                    QStandardPaths::AppLocalDataLocation)));
     }
 
     const QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
@@ -416,6 +736,7 @@ int main(int argc, char *argv[])
     splash.finish();
     appendStartupLog(QStringLiteral("Main QML window created successfully; entering event loop"));
 
+    
     // --selftest-ui
     //
     // THE ONE CHECK NOTHING ELSE HERE PERFORMS: it opens the interface.
@@ -439,19 +760,32 @@ int main(int argc, char *argv[])
     // under -platform offscreen from BUILD-AND-CHECK, needs no display, and
     // takes about a second.
     //
-    // It is deliberately NOT a test of behaviour. It cannot click anything and
-    // it would not have caught the mapping bug above, which needs a dataset and
-    // a panel. It catches the broken-name class, which is four of the five and
-    // the cheapest to catch.
+    // IT USED TO SAY, HERE, that this was "deliberately NOT a test of
+    // behaviour - it cannot click anything", and that it "would not have caught
+    // the mapping bug above, which needs a dataset and a panel".
+    //
+    // That was true and it was the hole a crash walked through: a build that
+    // died on every launch passed this check, because the fault was in real C++
+    // reached from a binding on a panel this never opened. So it presses things
+    // now - see walkTheInterface above, which puts the shell into each
+    // workspace and each layout and adds, selects and closes a figure.
+    //
+    // The two halves are still separate on purpose. The count below is about
+    // STARTING and fails the build, unchanged. The walk reports and does not
+    // fail yet.
     if (QCoreApplication::arguments().contains(QStringLiteral("--selftest-ui"))) {
         // Two turns of the event loop, then a moment: bindings evaluate when
         // the component completes, but a Loader, an Instantiator and anything
         // deferred by Qt.callLater land a turn or two later - and the figure
         // restore in VisualizeWorkspace is exactly that.
         QCoreApplication::processEvents();
-        QTimer::singleShot(1200, &app, [&app]{
+        QTimer::singleShot(1200, &app, [&app, &controller, &engine]{
             QCoreApplication::processEvents();
+            // The count from STARTING, taken before the walk adds to it, so the
+            // existing verdict keeps meaning exactly what it meant before.
             const int warnings = gStartupWarnings.loadAcquire();
+            // Then press things. Reporting only - see walkTheInterface.
+            walkTheInterface(controller, engine);
             if (warnings > 0) {
                 fprintf(stderr,
                         "--selftest-ui: the interface produced %d warning(s) "

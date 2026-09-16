@@ -361,9 +361,27 @@ def read_estimators() -> dict:
 
 
 def read_engine_parameters() -> list[dict]:
-    """Engines that declare tunable constants, with the help text they carry."""
+    """Engines that declare tunable constants, with the help text they carry.
+
+    THE RETURN TYPE IS PART OF THE ANCHOR, because a CALL to this function
+    matches its name just as well as the definition does - and now there is one
+    earlier in the file than the definition. `declaresMarginalPlacement` asks
+    `QtPlotBackend::engineParameters(engine)` whether an engine declares a
+    marginal placement, `_body_of` takes the FIRST match, and the body it
+    returned was the two-line helper. No parameters were found, the whole
+    "Engines with constants of their own" topic silently disappeared from the
+    manual, and what the build reported was a dead cross-reference pointing at
+    the missing page - a true statement about the wrong thing.
+
+    The count guard below is the other half. A reader that finds nothing must
+    say so: this manual is generated from the code precisely so it cannot drift,
+    and an extractor that quietly returns an empty list is drift with a clean
+    exit code.
+    """
     path = ROOT / "native" / "plot2d" / "src" / "QtPlotBackend.cpp"
-    body = _body_of(path, r"QtPlotBackend::engineParameters\s*\(")
+    body = _body_of(
+        path,
+        r"QVector<QtPlotBackend::EngineParameter>\s+QtPlotBackend::engineParameters\s*\(")
     out = []
     for m in re.finditer(r'engine\s*==\s*QLatin1String\s*\(\s*"((?:[^"\\]|\\.)*)"\s*\)',
                          body):
@@ -389,6 +407,8 @@ def read_engine_parameters() -> list[dict]:
             i = end
         if params:
             out.append({"engine": _unescape(m.group(1)), "parameters": params})
+    if len(out) < 3:
+        raise Stale(path, "at least 3 engines declaring constants", str(len(out)))
     return out
 
 

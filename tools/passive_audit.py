@@ -274,6 +274,68 @@ def explain(check_id: str) -> int:
     return 0
 
 
+
+def report_changed(findings, ref: str) -> int:
+    """Every finding in a file this working tree has touched.
+
+    WHY THIS IS A DIFFERENT QUESTION FROM "what is new".
+    
+    The pass already tells new findings from standing ones, and that is the
+    right question most days: a finding that has been there a week is not what
+    broke this afternoon. But it is the wrong question on the afternoon you
+    changed forty files, because a STANDING finding in a file you have just
+    edited is far more likely to matter than a new one in a file nobody has
+    touched since June. The code you are holding is the code you can still fix
+    cheaply, and it is where your attention already is.
+
+    Earned rather than invented: on 16 September four defects reached a build in
+    one day and every one of them was in a file edited that day - two of them in
+    files that already carried standing findings nobody had read, because they
+    were nineteen entries down a list sorted by severity across the whole tree.
+
+    Untracked files count. A file added and not yet committed is the newest code
+    in the tree, which makes it the most interesting, and `git diff` alone does
+    not mention it.
+    """
+    import subprocess
+
+    def git(*args):
+        try:
+            r = subprocess.run(("git",) + args, cwd=ROOT, capture_output=True,
+                               text=True, timeout=30)
+            return r.stdout.splitlines() if r.returncode == 0 else []
+        except (OSError, subprocess.SubprocessError):
+            return []
+
+    touched = set(git("diff", "--name-only", ref))
+    touched |= set(git("diff", "--name-only", "--cached"))
+    touched |= set(git("ls-files", "--others", "--exclude-standard"))
+    touched = {f.strip().replace("\\", "/") for f in touched if f.strip()}
+    if not touched:
+        print(f"nothing has changed since {ref}, so there is nothing to look at")
+        return 0
+
+    hits = [f for f in findings if f.file.replace("\\", "/") in touched]
+    by_file: dict = {}
+    for f in hits:
+        by_file.setdefault(f.file, []).append(f)
+
+    print(f"{len(touched)} file(s) changed since {ref}; "
+          f"{len(hits)} finding(s) in them, of {len(findings)} in the tree")
+    if not hits:
+        # SAID OUT LOUD. "No output" and "nothing to report" read the same, and
+        # this whole tool exists because those two were once indistinguishable.
+        print("nothing standing in any file you have touched")
+        return 0
+    print()
+    for path in sorted(by_file):
+        print(f"{path}")
+        for f in sorted(by_file[path], key=lambda x: x.line):
+            print(f"  L{f.line:<6} [{f.check}] {f.what}")
+        print()
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="GraphVis passive audit",
@@ -296,6 +358,9 @@ def main() -> int:
     ap.add_argument("--explain", metavar="CHECK",
                     help="print one check's reasoning and method")
     ap.add_argument("--list", action="store_true", help="list every check")
+    ap.add_argument("--changed", nargs="?", const="HEAD", metavar="REF",
+                    help="only findings in files git says have changed since "
+                         "REF (default HEAD: everything not yet committed)")
     args = ap.parse_args()
 
     if args.explain:
@@ -312,6 +377,8 @@ def main() -> int:
         return watch(args.period, args.idle)
 
     findings, _fresh = run_once(do_selftest=True)
+    if args.changed:
+        return report_changed(findings, args.changed)
     if args.accept:
         reporter.write_baseline(BASELINE, findings)
         print(f"noted {len(findings)} finding(s) as known")

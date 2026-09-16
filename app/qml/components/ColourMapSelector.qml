@@ -32,10 +32,30 @@ ComboBox {
     // that, the plot toolbar does not.
     property bool autoHide: true
 
-    readonly property string currentMap: root.canvas.colourMap === ""
+    // THE CANVAS CAN BE NULL, and `required` does not mean otherwise.
+    //
+    // `required property var canvas` says a value must be PASSED; it says
+    // nothing about that value being an object. In the Notebook layout it is
+    // null for the first moments of the window's life - NotebookCanvas keeps
+    // `currentCanvas: null` until its first FigureCell completes - and this
+    // component is built before that happens.
+    //
+    // Four bindings below read straight through it, and the interface walk in
+    // --selftest-ui found all four on the same startup:
+    //
+    //   L35  colourMap   L81 colourMapCategories()
+    //   L116 colourMapCategories()   L171 colourMapPreview()
+    //
+    // Two of them sit on the line AFTER a guarded read of the same object -
+    // `var vision = root.canvas ? root.canvas.colourVision : 0` - which is this
+    // project's most-recorded root cause in miniature: the rule applied once
+    // and not carried to the line beside it.
+    readonly property bool hasCanvas: !!root.canvas
+    readonly property string currentMap: !root.hasCanvas
+                                         || root.canvas.colourMap === ""
                                          ? "Viridis" : root.canvas.colourMap
 
-    visible: !root.autoHide || root.canvas.usesColourMap
+    visible: !root.autoHide || (root.hasCanvas && root.canvas.usesColourMap)
     width: root.visible ? root.implicitWidth : 0
 
     // Wide enough for the longest map name and not a pixel more.
@@ -78,7 +98,7 @@ ComboBox {
         // list rebuild the moment the mode does.
         var vision = root.canvas ? root.canvas.colourVision : 0
         void vision
-        var cats = root.canvas.colourMapCategories()
+        var cats = root.hasCanvas ? root.canvas.colourMapCategories() : []
         for (var c = 0; c < cats.length; ++c) {
             var maps = cats[c].maps
             for (var m = 0; m < maps.length; ++m)
@@ -113,7 +133,7 @@ ComboBox {
         // Same dependency as `entries` above, for the same reason.
         var vision = root.canvas ? root.canvas.colourVision : 0
         void vision
-        var cats = root.canvas.colourMapCategories()
+        var cats = root.hasCanvas ? root.canvas.colourMapCategories() : []
         for (var c = 0; c < cats.length; ++c) {
             var name = cats[c].name
             var maps = cats[c].maps
@@ -168,7 +188,8 @@ ComboBox {
             Layout.preferredWidth: 34
             Layout.preferredHeight: 11
             fillMode: Image.Stretch
-            source: root.canvas.colourMapPreview(root.currentMap, 68, 22)
+            source: root.hasCanvas
+                    ? root.canvas.colourMapPreview(root.currentMap, 68, 22) : ""
         }
         Label {
             text: root.displayText

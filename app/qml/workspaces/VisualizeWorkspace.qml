@@ -164,7 +164,27 @@ Item {
             // the Figures menu, so this needs nothing new and cannot disagree
             // with what the menu and the tab bar show.
             figure: root.figureItem(index)
-            figureTitle: index < root.figureTitleList.length
+            // INDEX IS -1 WHILE THE DELEGATE IS BEING DESTROYED.
+            //
+            // Qt sets it to -1 on the way out, and the binding re-evaluates one
+            // last time before the object goes. `-1 < length` is perfectly
+            // true, so the guard passed and `figureTitleList[-1]` handed back
+            // `undefined` - which Qt then refused to put in a QString:
+            //
+            //   VisualizeWorkspace.qml:167: Unable to assign [undefined] to QString
+            //
+            // Once per figure closed. The interface walk in --selftest-ui found
+            // it by adding a figure and closing it again, which is the only way
+            // to make a delegate be destroyed.
+            //
+            // THE FIRST FIX FOR THIS WAS AIMED AT THE WRONG END: it made
+            // refreshFigureTitles incapable of putting `undefined` IN the
+            // array, on the theory that a row read mid-change came back without
+            // a title. The array was never the problem - a negative subscript
+            // into a perfectly good array was - and the warning survived the
+            // fix unchanged, which is how the theory was disproved. Reverted,
+            // rather than left in place looking like it did something.
+            figureTitle: index >= 0 && index < root.figureTitleList.length
                          ? root.figureTitleList[index] : ""
             visible: floating
             onDocked: root.toggleFigureFloat(index)

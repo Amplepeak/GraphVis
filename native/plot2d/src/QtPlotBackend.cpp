@@ -1229,6 +1229,42 @@ static bool settleSecondaryAxis(const PlotSpec& spec,const AxisLogs& f,AxisBound
     return false;
 }
 
+// ---- the marginal strips, asked once ------------------------------------
+//
+// ONE QUESTION, ONE ANSWER. The layout has to reserve exactly the space the
+// painter is about to fill, and the painter has to fill exactly the space the
+// layout reserved. Two readings of "how big is a marginal strip" would be two
+// numbers that stay equal by coincidence - which is this project's most
+// expensive recurring mistake, and the reason these are functions rather than
+// two copies of the same arithmetic in two files.
+// Asked of the engine's DECLARED parameters rather than of its name. A
+// parameter left over from a different engine - the canvas keeps what was
+// typed for the engine you left - would otherwise reserve a gutter on a figure
+// that draws nothing in it.
+static bool declaresMarginalPlacement(const QString& engine){
+    const QVector<QtPlotBackend::EngineParameter> declared=
+        QtPlotBackend::engineParameters(engine);
+    for(const QtPlotBackend::EngineParameter& ep:declared)
+        if(ep.key==QLatin1String("marginalPlace")) return true;
+    return false;
+}
+static bool marginalGutter(const PlotSpec& spec){
+    return declaresMarginalPlacement(spec.engine)
+        && int(spec.parameter(QStringLiteral("marginalPlace"),0.0)+0.5)==1;
+}
+// A SIXTH EXACTLY, when nobody has said otherwise. The control shows it as 17
+// and steps in whole per cent, but the default is the number the strips were
+// always drawn at - so a figure nobody has touched renders byte-for-byte what
+// it rendered before this control existed, which is what the 440-figure
+// gallery is for.
+static double marginalFraction(const PlotSpec& spec){
+    // Bounded here as well as in the control, because a spec can be written by
+    // a saved figure or by a script, and a strip taking the whole frame is not
+    // a figure.
+    const double percent=spec.parameter(QStringLiteral("marginalSize"),100.0/6.0);
+    return qBound(0.05,percent/100.0,0.35);
+}
+
 } // namespace
 
 QtPlotBackend::Frame QtPlotBackend::computeRange(const PlotSpec& spec) const {
@@ -1430,6 +1466,28 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
               +fm.horizontalAdvance(QStringLiteral("-0.00e+00"))+4.0  // its numbers
               +fm.height()*1.4;                                       // the caption
     }
+    // ROOM FOR MARGINAL STRIPS, when the figure asks for them in a gutter.
+    //
+    // Reserved here for the same reason the colour bar's room and the second
+    // ordinate's room are, six lines apart: a mark drawn over the frame is a
+    // mark drawn over data. The note above drawScatterMarginals used to say a
+    // gutter would mean "computeFrame reserving space that every other engine
+    // sharing the frame does not want" - which is what the two blocks above
+    // already do, keyed on the engine and on the frame. The objection was to a
+    // mechanism that was already here and already exercised.
+    //
+    // Asked of the SPEC rather than of a list of engine names: a gutter is
+    // reserved when the figure has marginals and has asked for them outside
+    // the plot area, and no other engine sets either.
+    // The WIDTH half is taken here, because the note below is laid out in what
+    // is left. The HEIGHT half waits until the note's own height is known - the
+    // band is a share of the space the plot area actually gets, exactly as the
+    // right-hand one is, and computing it from a fixed bottom margin would both
+    // be wrong on a figure carrying a note and put a second copy of the plot
+    // area's own height arithmetic in this function.
+    const double marginalShare=marginalGutter(spec)?marginalFraction(spec):0.0;
+    if(marginalShare>0.0)
+        right+=qMax(10.0,target.width()-left-right)*marginalShare;
     // Room for the figure note, when there is one. Taken out of the plot area
     // rather than drawn under it: the canvas is the size it is, and a note
     // painted below kMarginBottom would fall off the bottom of an export.
@@ -1438,9 +1496,12 @@ QtPlotBackend::Frame QtPlotBackend::computeFrame(QPainter* p,const QRectF& targe
                                            p->device(),0,0,noteWidth).height();
     const double bottomMargin=kMarginBottom+(noteHeight>0?noteHeight+6.0:0.0);
 
-    f.plotArea=QRectF(target.left()+left,target.top()+kMarginTop,
+    const double usableHeight=qMax(10.0,target.height()-kMarginTop-bottomMargin);
+    const double marginalTop=usableHeight*marginalShare;
+
+    f.plotArea=QRectF(target.left()+left,target.top()+kMarginTop+marginalTop,
                       noteWidth,
-                      qMax(10.0,target.height()-kMarginTop-bottomMargin));
+                      qMax(10.0,usableHeight-marginalTop));
 
     // ONE UNIT ACROSS IS ONE UNIT UP, where the figure says so.
     //
@@ -2167,28 +2228,75 @@ void QtPlotBackend::drawScatterMarginals(QPainter* p,const Frame& f,const PlotSp
     for(int k=0;k<kBins;++k){ peakX=qMax(peakX,alongX[k]); peakY=qMax(peakY,alongY[k]); }
     if(!(peakX>0.0)||!(peakY>0.0)) return;
 
-    // A sixth of the frame each. Enough to read a shape, little enough that
-    // the strip cannot be mistaken for the data it sits over.
-    const double bandH=f.plotArea.height()/6.0;
-    const double bandW=f.plotArea.width()/6.0;
+    // HOW BIG, AND WHERE - both read from the same two functions the layout
+    // read. See marginalFraction: a figure nobody has touched gets exactly the
+    // sixth of the frame these strips were always drawn at.
+    const bool gutter=marginalGutter(spec);
+    const double fraction=marginalFraction(spec);
     const double binW=f.plotArea.width()/double(kBins);
     const double binH=f.plotArea.height()/double(kBins);
+    // WHERE A BAR STANDS. In a gutter each strip is a histogram in its own
+    // right, so its baseline is the edge it shares with the scatter and it
+    // grows away from it - up, and to the right. Over the data there is no
+    // baseline to share, so each hangs from the frame it is drawn against, the
+    // way a rule does. A small gap keeps a gutter strip from being welded to
+    // the axis it belongs to.
+    constexpr double kGutterGap=4.0;
+    const double xBase=f.plotArea.top()-kGutterGap;      // gutter only
+    const double yBase=f.plotArea.right()+kGutterGap;    // gutter only
+    // Over the data the strip is measured against the plot area it sits in. In
+    // a gutter it is measured against the band computeFrame took OUT of the
+    // plot area - which is `fraction` of the frame BEFORE the cut, and so is
+    // `fraction/(1-fraction)` of what is left - less the gap, or the tallest
+    // bar would overshoot the band into the margin above it. The arithmetic is
+    // the inverse of the layout's on purpose: the painter must fill exactly
+    // what the layout reserved, and a second independent guess at the size is
+    // how the two come to disagree.
+    const double bandH=gutter
+        ?qMax(1.0,f.plotArea.height()*fraction/(1.0-fraction)-kGutterGap)
+        :f.plotArea.height()*fraction;
+    const double bandW=gutter
+        ?qMax(1.0,f.plotArea.width()*fraction/(1.0-fraction)-kGutterGap)
+        :f.plotArea.width()*fraction;
 
     QColor ink=spec.series.first().color;
-    ink.setAlphaF(0.30);
+    // OPAQUE IN A GUTTER. The 30% wash exists so the points underneath stay
+    // visible; in a gutter there are no points underneath, and a washed-out
+    // histogram against white then reads as a rendering fault rather than as a
+    // deliberately quiet mark.
+    ink.setAlphaF(gutter?0.85:0.30);
     p->save();
-    p->setClipRect(f.plotArea);
+    // THE CLIP IS SET BY render(), NOT HERE, and a gutter strip has to get out
+    // of it.
+    //
+    // render() wraps every framed engine in setClipRect(plotArea) - which is
+    // right for all of them, because a framed engine draws inside its frame.
+    // These strips are the exception: in a gutter they are drawn in the band
+    // computeFrame took OUT of the plot area, so the enclosing clip removed
+    // every one of them. The reservation still happened, so the figure came
+    // out with a correctly shrunken scatter and an empty band beside it - the
+    // "almost right" picture this section was written to catch, and it went
+    // uncaught because the fixture below fed the engine a spec it draws
+    // nothing from at all. Both faults are fixed; this is the drawing half.
+    //
+    // setClipping(false) rather than a wider setClipRect: the band's extent is
+    // the layout's arithmetic, not a second guess at it, and the bandH/bandW
+    // above are the exact inverse of what computeFrame reserved. The save()
+    // above puts render()'s clip back.
+    if(gutter) p->setClipping(false);
+    else       p->setClipRect(f.plotArea);
     p->setPen(Qt::NoPen);
     p->setBrush(ink);
     for(int k=0;k<kBins;++k){
         const double h=alongX[k]/peakX*bandH;
         if(h>0.0)
-            p->drawRect(QRectF(f.plotArea.left()+k*binW,f.plotArea.top(),binW,h));
+            p->drawRect(QRectF(f.plotArea.left()+k*binW,
+                               gutter?xBase-h:f.plotArea.top(),binW,h));
         const double w=alongY[k]/peakY*bandW;
         // k counts UP the y axis, and device y counts down, so the strip is
         // built from the bottom of the plot area rather than the top.
         if(w>0.0)
-            p->drawRect(QRectF(f.plotArea.right()-w,
+            p->drawRect(QRectF(gutter?yBase:f.plotArea.right()-w,
                                f.plotArea.bottom()-(k+1)*binH,w,binH));
     }
     p->restore();
@@ -3732,6 +3840,41 @@ QVector<QtPlotBackend::EngineParameter> QtPlotBackend::engineParameters(const QS
                             "chooses where no effect sits, which the data "
                             "cannot say."),
              0.0,0.0,2.0,0}};
+    }
+    if(engine==QLatin1String("Scatter + Marginals")){
+        // WHERE THE MARGINALS GO, because neither answer is right for every
+        // dataset and the data cannot say which.
+        //
+        // Over the data - the original and still the default - keeps the whole
+        // frame for the scatter, which is the primary graphic. The strips are
+        // translucent and capped, so the points underneath stay visible. On a
+        // dense cloud reaching the right-hand frame they stop being visible
+        // enough, and a dark patch is then indistinguishable from a dense one.
+        //
+        // In a gutter is the conventional joint plot. It cannot hide anything,
+        // and it costs the scatter about a third of its area - which on a
+        // figure that is already small, or one being read for the joint cloud
+        // rather than the two distributions, is the wrong trade.
+        //
+        // Size is separate from placement because they are separate questions.
+        // A sixth was the only answer available; a reader comparing two modes
+        // in one variable may want a third, and a reader who wants the strips
+        // as a hint may want a tenth.
+        return {
+            {QStringLiteral("marginalPlace"),QStringLiteral("Marginals"),
+             QString(),
+             QStringLiteral("0 over the data, translucent, keeping the whole "
+                            "frame for the scatter. 1 in a reserved gutter "
+                            "outside the plot area, which hides nothing and "
+                            "costs the scatter the space it takes."),
+             0.0,0.0,1.0,0},
+            {QStringLiteral("marginalSize"),QStringLiteral("Marginal size"),
+             QStringLiteral("% of frame"),
+             QStringLiteral("How much of the frame each strip spans. About a "
+                            "sixth - 17% - is enough to read a shape and little "
+                            "enough that a strip cannot be mistaken for the "
+                            "data it sits over."),
+             100.0/6.0,5.0,35.0,0}};
     }
     // EVERY COLOUR-MAPPED ENGINE GETS THE SAME CHOICE, last, so a named engine
     // above keeps its own list.
