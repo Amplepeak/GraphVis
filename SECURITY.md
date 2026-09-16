@@ -2,10 +2,9 @@
 
 ## Reporting a vulnerability
 
-Please do not open a public issue for a security problem. Use the private
-reporting channel on whichever forge you are reading this on — "Report a
-vulnerability" under the Security tab on GitHub, or a private issue on
-Codeberg — and give it a few days for a first reply.
+Please do not open a public issue for a security problem. Use private
+vulnerability reporting — "Report a vulnerability" under this repository's
+Security tab — and give it a few days for a first reply.
 
 Include what you did, what happened, and which version (`VERSION`, or Help ▸
 About in the application).
