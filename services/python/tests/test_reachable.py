@@ -4618,9 +4618,16 @@ def test_a_message_the_harness_causes_is_named_rather_than_counted() -> None:
     This project has already paid that bill once: sixteen guaranteed-false
     qmllint warnings were exactly what hid the seventeenth, which was real.
 
-    So the message is kept out of the VERDICT and still printed on the page
-    under its own heading with the reason. What this test pins down is that
-    both halves happen - because an exclusion that stops being visible is an
+    ONE QUESTION, ONE ANSWER. The report used to hold its own table of message
+    substrings to excuse, while --selftest-ui counted the same message and
+    exited 3 - two answers to "is this the program's fault", disagreeing on
+    every run, and which verdict a reader believed depended on which one they
+    read. main.cpp now marks the line as it writes it, with its reason, and the
+    report reads the mark.
+
+    So what this pins down is the reading, not a list: a marked line is excused,
+    an unmarked one is counted however familiar it looks, and the reason still
+    reaches the page - because an exclusion that stops being visible is an
     exclusion nobody will ever re-examine.
     """
     sys.path.insert(0, str(ROOT / "tools"))
@@ -4629,22 +4636,71 @@ def test_a_message_the_harness_causes_is_named_rather_than_counted() -> None:
     finally:
         sys.path.pop(0)
 
-    assert build_report.BENIGN_STARTUP, "the exclusion list is empty"
-    for needle, why in build_report.BENIGN_STARTUP:
-        # A REASON THAT CAN BE RE-CHECKED. "harmless" is not one; a date and
-        # what was run is. This is the bar that keeps the list from growing
-        # into a place inconvenient findings go to be forgotten.
-        assert "Measured" in why or "measured" in why, (
-            f"'{needle}' is excluded without a measurement behind it: {why}")
-        assert len(why) > 80, (
-            f"'{needle}' is excluded with a one-line excuse rather than "
-            f"evidence: {why}")
+    marked = ("2026-01-01T00:00:00.000  [WARNING] QFontDatabase: Cannot find font "
+              "directory  [HARNESS: caused by -platform offscreen, which is how "
+              "the check runs this binary]")
+    plain = ("2026-01-01T00:00:00.000  [WARNING] TypeError: Property 'advanceWidth' "
+             "of object QQuickTextMetrics is not a function")
+    facts = build_report.read_facts_from_log(marked + "\n" + plain + "\n")
+    assert facts["startup_problem_count"] == 1, (
+        "the marked line was counted as a problem, or the unmarked one was not: "
+        f"{facts['startup_problems']} / {facts['startup_benign']}")
+    assert any("TypeError" in p for p in facts["startup_problems"]), (
+        f"the real fault did not survive the split: {facts['startup_problems']}")
+    assert any("QFontDatabase" in b for b in facts["startup_benign"]), (
+        f"the marked line was not separated out: {facts['startup_benign']}")
+    assert "offscreen" in " ".join(facts["startup_harness_reasons"].values()), (
+        "the reason the program gave was dropped on the way to the report")
+
+    # THE SAME MESSAGE WITHOUT THE MARK IS COUNTED. This is the half a table of
+    # substrings could not do: the font message is the program's fault when it
+    # appears on a normal launch, and only the program knows which launch it
+    # was.
+    unmarked = ("2026-01-01T00:00:00.000  [WARNING] QFontDatabase: Cannot find "
+                "font directory")
+    assert build_report.read_facts_from_log(unmarked + "\n")["startup_problem_count"] == 1, (
+        "the same message without the program's mark was excused anyway, so the "
+        "report is still making that judgement itself")
+
+    # THE MARK GOES BEFORE THE MESSAGE, and this is the line that proves why.
+    #
+    # Verbatim from the first build that carried the marker. Qt's font warning
+    # has a note after a NEWLINE, so with the marker written at the end of the
+    # message it landed on the second physical line while the text naming the
+    # fault sat on the first. The report read a line at a time, saw an unmarked
+    # warning, and counted the very message the marker exists to excuse - which
+    # looked exactly like the marker not working.
+    #
+    # main.cpp now writes the marker straight after the level and flattens the
+    # message onto one line. Both spellings are checked: the one it writes now,
+    # and the wrapped one a binary from that build produced, which must still be
+    # read correctly rather than counted.
+    first_build = (
+        "2026-09-16T20:45:37.959  [WARNING] QFontDatabase: Cannot find font "
+        "directory <install>/lib/fonts.\n"
+        "Note that Qt no longer ships fonts. Deploy some or switch to fontconfig."
+        "  [HARNESS: caused by -platform offscreen, which is how the check runs "
+        "this binary; a normal launch does not emit it]")
+    now_written = (
+        "2026-09-16T20:45:37.959  [WARNING] [HARNESS: caused by -platform "
+        "offscreen, which is how the check runs this binary] QFontDatabase: "
+        "Cannot find font directory <install>/lib/fonts.  |  "
+        "Note that Qt no longer ships fonts.")
+    assert build_report.read_facts_from_log(now_written + "\n")["startup_problem_count"] == 0, (
+        "the marker as main.cpp writes it is not being read, so a message the "
+        "program has excused is counted against the build")
+    assert build_report.read_facts_from_log(first_build + "\n")["startup_problem_count"] == 0, (
+        "a wrapped message whose marker fell onto the next line is counted - "
+        "which is the fault this pair of assertions exists for")
 
     # And it must still reach the page. Rendering the section is what makes the
     # exclusion auditable by the person reading the report.
     page = build_report.render(
         {"startup_problems": [],
          "startup_benign": ["QFontDatabase: Cannot find font directory X"],
+         "startup_harness_reasons": {
+             "QFontDatabase: Cannot find font directory X":
+                 "caused by -platform offscreen, which is how the check runs it"},
          "startup_problem_count": 0, "ui_started": True, "ui_log_present": True,
          "selftest_exit": "0", "regressions": [], "property_failures": [],
          "engines_swept": 440, "every_engine_drew": True,
@@ -4658,10 +4714,47 @@ def test_a_message_the_harness_causes_is_named_rather_than_counted() -> None:
          "kde_warm_ms": 0.0, "check_seconds": 0.0, "big_files_mb": {},
          "stage_total_mb": 0.0},
         [])
-    assert "not the program" in page, (
+    assert "the check caused these" in page, (
         "a message excluded from the count does not appear on the page at all, "
         "so nobody can tell it was excluded")
     assert "why:" in page, "the page names the exclusion without its reason"
+
+
+def test_an_audit_the_report_did_not_run_says_when_it_ran() -> None:
+    """A two-hour-old audit quoted in the present tense beside fresh numbers.
+
+    The build report repeats the passive audit's top line so that a build is
+    never read without also seeing what the standing audit found. It does not
+    RUN the audit, though, and AUDIT.md is written on its own schedule - so a
+    report carried "17 standing · Nothing new" from a pass taken two hours and
+    several pushes earlier, at a point when that audit's own self-test was
+    failing. Nothing on the page said so.
+
+    That is the stale startup.log again, one file along: the same reading, a
+    different source, and the same reason it is dangerous - a number with no
+    date on it is taken for a current one. The date comes across now, and an
+    audit older than the check phase is labelled rather than quoted quietly.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import build_report
+    finally:
+        sys.path.pop(0)
+
+    source = (ROOT / "tools" / "build_report.py").read_text(encoding="utf-8")
+    start = source.index('audit = REPORTS / "AUDIT.md"')
+    block = source[start:start + 2000]
+    assert "NOT RE-RUN FOR THIS BUILD" in block, (
+        "the report quotes AUDIT.md without ever saying the audit might predate "
+        "the build it is printed beside")
+    assert "audit.stat().st_mtime" in block, (
+        "the staleness is asserted rather than measured - the report has to ask "
+        "the file how old it is, not assume")
+    # The date line from AUDIT.md itself, not just the file's mtime: a file
+    # copied or touched has a new mtime and the same contents.
+    assert 'startswith("- 20")' in block, (
+        "the audit's own timestamp line is not carried onto the page, so the "
+        "only evidence of its age is a file modification time")
 
 
 def test_process_capability_bins_its_measurements() -> None:
@@ -6213,7 +6306,16 @@ def test_a_thread_warning_says_which_thread() -> None:
     assert "name.isEmpty() ? QString() : QStringLiteral(\" \\\"%1\\\"\").arg(name)" in body, (
         "the thread's name is no longer logged - Qt names its own threads, and "
         "the name is usually the whole answer")
-    assert "where));" in body, (
+    # THE NOTE HAS TO REACH THE LOG LINE, asked of the call rather than of the
+    # punctuation. This read `"where));" in body`, which is the same question
+    # answered by where the argument happens to fall in the list: adding a
+    # further argument after it - the [HARNESS: ...] marker - moved `where` off
+    # the end and failed a check about a feature that had not changed. A guard
+    # that matches a PLACE rather than a STATEMENT is on this project's list of
+    # recurring root causes, and this was one.
+    call = body[body.index("appendStartupLog(QStringLiteral(\"[%1]"):]
+    call = call[:call.index(";")]
+    assert re.search(r"\bwhere\b", call), (
         "the thread note is built and not appended to the log line")
 
 

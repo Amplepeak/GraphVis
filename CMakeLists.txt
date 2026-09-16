@@ -80,7 +80,7 @@ if(GRAPHVIS_BUILD_RUST)
     "${CMAKE_SOURCE_DIR}/native/crates/*/Cargo.toml")
   if(DEFINED ENV{CARGO_TARGET_DIR})
     # The build environment exports this as a native Windows path. Left as-is it
-    # is pasted verbatim into cmake_install.cmake, where "C:\GraphVis\.cache"
+    # is pasted verbatim into cmake_install.cmake, where "C:\src\GraphVis\.cache"
     # is an invalid escape and the whole install script fails to parse - which
     # silently left graphvis_ffi.dll out of the staged application.
     file(TO_CMAKE_PATH "$ENV{CARGO_TARGET_DIR}" GRAPHVIS_RUST_TARGET_DIR)

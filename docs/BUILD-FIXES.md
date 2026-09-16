@@ -12,7 +12,7 @@ next, which is why it looked like a single unfixable "won't compile" problem.
 `sxstrace` said:
 
 ```
-ManifestPath = C:\GraphVis\build\windows-fast\graphvis.exe
+ManifestPath = C:\src\GraphVis\build\windows-fast\graphvis.exe
 ERROR: Line 6: The required attribute level is missing from element requestedExecutionLevel.
 ```
 
@@ -121,7 +121,7 @@ than erroring, so the whole UI tree received `undefined` and every
 CMake Error at build/windows-fast/cmake_install.cmake:57 (file):
   Syntax error in cmake code at .../cmake_install.cmake:57
   when parsing string
-    C:\GraphVis\.cache\cargo-target/release/graphvis_ffi.dll
+    C:\src\GraphVis\.cache\cargo-target/release/graphvis_ffi.dll
   Invalid character escape '\G'.
 ```
 

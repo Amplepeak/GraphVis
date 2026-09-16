@@ -107,7 +107,7 @@ def test_harvard_quotes_the_title_and_uses_pp() -> None:
 
 
 def test_initials_cover_every_forename() -> None:
-    """'Johann Sebastian' is two forenames, so APA wants 'H. Y.', not 'H.'."""
+    """'Johann Sebastian' is two forenames, so APA wants 'J. S.', not 'J.'."""
     assert "Bach, J. S." in to_text(RECORD, "apa")
 
 

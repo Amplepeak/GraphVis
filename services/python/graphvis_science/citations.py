@@ -180,7 +180,7 @@ STYLES = citation_styles.keys() + ("bibtex",)
 
 
 def _initials(given: str) -> str:
-    """'Johann Sebastian' -> 'H. Y.' - every forename, not just the first."""
+    """'Johann Sebastian' -> 'J. S.' - every forename, not just the first."""
     return " ".join(f"{part[0]}." for part in str(given).split() if part)
 
 

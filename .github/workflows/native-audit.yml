@@ -2,7 +2,7 @@ name: Native Migration Audit
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
   rust-audit:

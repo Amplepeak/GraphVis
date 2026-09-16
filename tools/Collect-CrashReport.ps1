@@ -3,7 +3,8 @@
 # GraphVis writes a running log of every Qt message to
 #   %LOCALAPPDATA%\GraphVis\GraphVis 18.4\18.4\logs\startup.log
 # which lives outside the project folder. This copies it, plus the Windows
-# error records for graphvis.exe, into C:\GraphVis\crash-report.txt.
+# error records for graphvis.exe, into crash-report.txt beside this
+# repository (the script derives the location from its own path).
 $ErrorActionPreference = 'Continue'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Out  = Join-Path $Root 'crash-report.txt'
