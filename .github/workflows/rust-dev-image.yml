@@ -1,13 +1,20 @@
 name: Publish Prewarmed Rust Dev Image
+# BY HAND ONLY. This publishes a prewarmed build image to the container
+# registry, and nothing in this repository needs it any more - native-audit.yml
+# stopped running inside it, because depending on an image another workflow has
+# to publish first meant the audit could never run on a fresh clone.
+#
+# It was also on a `push` trigger with a paths filter, and a paths filter does
+# not apply to a TAG push. So tagging v18.4.0 ran it, it failed, and the
+# repository showed a red mark for a job whose output nothing consumes. A check
+# that fails without telling anybody anything is worse than no check: it teaches
+# people to ignore the red ones.
+#
+# Left here, and runnable from the Actions tab, for whoever wants the faster
+# audit back. Restoring it means publishing this image and then putting the
+# `container:` key back in native-audit.yml.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'native/Cargo.toml'
-      - 'native/Cargo.lock'
-      - 'native/crates/**/Cargo.toml'
-      - 'rust-toolchain.toml'
-      - 'infra/Dockerfile.rust-dev'
 
 permissions:
   contents: read
