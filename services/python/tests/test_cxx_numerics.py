@@ -302,6 +302,17 @@ def test_a_log_axis_always_carries_at_least_one_label(tmp_path: Path) -> None:
     cpp.write_text(program, encoding="utf-8")
     binary = tmp_path / "logticks"
     qt = "/usr/include/x86_64-linux-gnu/qt6"
+    # ASKED BEFORE COMPILING, because "is Qt installed" is a question about the
+    # machine and not about the compiler's wording. Without this the test fell
+    # through to the stderr check below, which looked for the string "QtCore" -
+    # and the error a bare runner actually produces is
+    #     fatal error: QString: No such file or directory
+    # naming the header the program included, not the directory it lives in. A
+    # guard that matches a NAME rather than the CONDITION, which is this
+    # project's most expensive recurring mistake, and it failed the science
+    # workflow - a job whose own comment says it runs deliberately without Qt.
+    if not (Path(qt) / "QtCore" / "QString").exists():
+        pytest.skip(f"no Qt 6 headers at {qt} to compile against")
     build = subprocess.run(
         ["g++", "-O1", "-std=c++20", "-fPIC", "-o", str(binary), str(cpp),
          "-I", qt, "-I", f"{qt}/QtCore", "-lQt6Core"],
@@ -311,8 +322,9 @@ def test_a_log_axis_always_carries_at_least_one_label(tmp_path: Path) -> None:
         # reporting it as a skip is how a check quietly stops checking - the
         # first version of this test did exactly that, reporting "no Qt 6
         # headers" for a compile error that had nothing to do with headers.
-        if "QtCore" in build.stderr and "No such file" in build.stderr:
-            pytest.skip("no Qt 6 headers to compile against")
+        # Any Qt header, not one directory's name: see the note above.
+        if re.search(r"fatal error: Q[A-Za-z0-9_]*: No such file", build.stderr):
+            pytest.skip("a Qt 6 header is missing, so this cannot be compiled here")
         raise AssertionError(
             "the extracted logTicks did not compile:\n" + build.stderr[:1500])
 

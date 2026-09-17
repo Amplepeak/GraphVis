@@ -74,7 +74,12 @@ pub struct PbrSettings {
 
 impl Default for PbrSettings {
     fn default() -> Self {
-        Self { roughness: 0.35, metallic: 0.0, specular: 0.45, normal_strength: 0.0 }
+        Self {
+            roughness: 0.35,
+            metallic: 0.0,
+            specular: 0.45,
+            normal_strength: 0.0,
+        }
     }
 }
 
@@ -117,7 +122,12 @@ pub struct AppSnapshot {
 
 impl Default for AppSnapshot {
     fn default() -> Self {
-        Self { workspace_name: "Untitled".into(), datasets: vec![], active_dataset: None, plots: vec![] }
+        Self {
+            workspace_name: "Untitled".into(),
+            datasets: vec![],
+            active_dataset: None,
+            plots: vec![],
+        }
     }
 }
 
@@ -134,7 +144,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn snapshot(&self) -> AppSnapshot { self.inner.read().clone() }
+    pub fn snapshot(&self) -> AppSnapshot {
+        self.inner.read().clone()
+    }
 
     fn replace(&self, next: AppSnapshot, record_history: bool) {
         if record_history {
@@ -150,7 +162,9 @@ impl AppState {
         let mut next = self.snapshot();
         match command {
             Command::AddDataset(dataset) => {
-                if next.datasets.iter().all(|d| d.id != dataset.id) { next.datasets.push(dataset.clone()); }
+                if next.datasets.iter().all(|d| d.id != dataset.id) {
+                    next.datasets.push(dataset.clone());
+                }
                 next.active_dataset = Some(dataset.id);
             }
             Command::SetActiveDataset(id) => next.active_dataset = id,
@@ -164,22 +178,50 @@ impl AppState {
         self.replace(next, true);
     }
 
-    pub fn add_dataset(&self, dataset: DatasetMeta) { self.execute(Command::AddDataset(dataset)); }
-    pub fn set_plot(&self, plot: PlotSpec) { self.execute(Command::SetPlot(plot)); }
+    pub fn add_dataset(&self, dataset: DatasetMeta) {
+        self.execute(Command::AddDataset(dataset));
+    }
+    pub fn set_plot(&self, plot: PlotSpec) {
+        self.execute(Command::SetPlot(plot));
+    }
 
-    pub fn set_mapping(&self, dataset_id: Uuid, mapping: VariableMapping, point_size: f32, opacity: f32, aggregation: String) -> Uuid {
+    pub fn set_mapping(
+        &self,
+        dataset_id: Uuid,
+        mapping: VariableMapping,
+        point_size: f32,
+        opacity: f32,
+        aggregation: String,
+    ) -> Uuid {
         let current = self.snapshot();
-        let existing = current.plots.iter().find(|p| p.dataset_id == dataset_id && p.kind == "point-cloud").cloned();
+        let existing = current
+            .plots
+            .iter()
+            .find(|p| p.dataset_id == dataset_id && p.kind == "point-cloud")
+            .cloned();
         let id = existing.as_ref().map(|p| p.id).unwrap_or_else(Uuid::new_v4);
         let plot = PlotSpec {
             id,
             kind: "point-cloud".into(),
-            title: existing.as_ref().map(|p| p.title.clone()).unwrap_or_else(|| "Scientific point cloud".into()),
+            title: existing
+                .as_ref()
+                .map(|p| p.title.clone())
+                .unwrap_or_else(|| "Scientific point cloud".into()),
             dataset_id,
             mapping,
-            axis_scales: existing.as_ref().map(|p| p.axis_scales.clone()).unwrap_or([AxisScale::Linear, AxisScale::Linear, AxisScale::Linear]),
-            ranges: existing.as_ref().map(|p| p.ranges.clone()).unwrap_or([None, None, None]),
-            colormap: existing.as_ref().map(|p| p.colormap.clone()).unwrap_or_else(|| "Viridis".into()),
+            axis_scales: existing.as_ref().map(|p| p.axis_scales.clone()).unwrap_or([
+                AxisScale::Linear,
+                AxisScale::Linear,
+                AxisScale::Linear,
+            ]),
+            ranges: existing
+                .as_ref()
+                .map(|p| p.ranges.clone())
+                .unwrap_or([None, None, None]),
+            colormap: existing
+                .as_ref()
+                .map(|p| p.colormap.clone())
+                .unwrap_or_else(|| "Viridis".into()),
             point_size,
             opacity,
             aggregation,
@@ -191,7 +233,9 @@ impl AppState {
 
     pub fn undo(&self) -> bool {
         let mut h = self.history.write();
-        let Some(previous) = h.undo.pop() else { return false; };
+        let Some(previous) = h.undo.pop() else {
+            return false;
+        };
         h.redo.push(self.snapshot());
         *self.inner.write() = previous;
         true
@@ -199,7 +243,9 @@ impl AppState {
 
     pub fn redo(&self) -> bool {
         let mut h = self.history.write();
-        let Some(next) = h.redo.pop() else { return false; };
+        let Some(next) = h.redo.pop() else {
+            return false;
+        };
         h.undo.push(self.snapshot());
         *self.inner.write() = next;
         true
