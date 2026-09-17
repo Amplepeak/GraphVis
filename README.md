@@ -1,13 +1,82 @@
-# GraphVis 18.4
+# GraphVis
 
-**Fast native graph visualization. Install it, launch it, visualize.**
+**A desktop plotting program for people who publish figures.** It reads your
+data and the papers around it, tells you which chart types actually fit, gets
+the numbers back out of a published figure, and exports at a journal's real
+measurements.
 
-**Not sure what you downloaded?** Open [`START_HERE.txt`](START_HERE.txt) before running a script. A folder without `Install.exe` is source code and must be built before it can run.
+Qt/QML and C++ over a Rust core, with VTK for the 3-D viewport. It runs offline.
+No account, no telemetry, nothing leaves the machine unless you configure it to.
 
-GraphVis is a Qt/QML desktop application backed by a precompiled Rust/WGPU/DataFusion/Arrow core and native VTK rendering. Public releases are built so end users do **not** need Rust, Cargo, CMake, Python, or a developer toolchain.
+---
 
+## Quick guide
+
+Five minutes, start to finish. Everything below is a button in the application.
+
+**1. Get it running.**
+A release archive installs without a toolchain — `Install.exe` on Windows,
+`install.sh` on Linux. From source it is `install.bat` / `bash install.sh` once,
+then `run.bat` / `bash run.sh`. Details in
+[Building from source](#building-from-source).
+
+**2. Bring data in.** *Home ▸ Import scientific dataset.*
+CSV and Excel work out of the box. The Science add-on adds MATLAB, HDF5,
+NetCDF, Arrow and the rest, converted on import and handed to the same loader a
+CSV uses, so what plots is identical whichever door it came in by. A format
+whose Python package is missing says exactly what to install rather than
+failing quietly.
+
+**3. Ask what to plot.** *Visualize ▸ **Go — scan and draw the best**.*
+This is the part worth knowing about. The scanner profiles every variable,
+tests the relationships between them, reads the column names for meaning, and
+then ranks concrete engines **with the axis mapping to use** — not "try a
+scatter plot" but this column on x, that one on y, this one on colour. Results
+are cached against a fingerprint of the dataset, so asking again is instant and
+changing the data re-scans.
+
+**4. Or choose yourself.** 440 engines in 46 categories, 2,122 catalogued
+entries. The catalogue is searchable and every entry carries a preview, so you
+are picking from pictures rather than from names.
+
+**5. Bring the literature in.** *Literature ▸ Open literature ▸ **Extract
+figures and tables**.*
+PDFs are parsed with pdfplumber and PyMuPDF for text and tables. What it finds
+becomes context for step 3, so the recommendation knows what the papers around
+your data already plot. **Compare with active dataset** puts their numbers
+beside yours.
+
+**6. Get the numbers out of a published chart.**
+Give it a figure image and calibrate the axes by clicking two known points on
+each. It returns the data behind the curve. Linear, logarithmic, reciprocal
+(Arrhenius) and symlog axes are all handled. Median error is 0.17% against a
+clean synthetic figure — see [What is verified](#what-is-verified-and-what-is-not)
+before trusting it on a scanned page.
+
+**7. Export for the journal.** *Save figure.*
+Pick one of 65 publication profiles, 61 of them real publishers. The figure is
+**re-rendered** at that width, resolution and text size rather than scaled —
+shrinking a screen figure to 89 mm takes its 8 pt labels down to about 3 pt, and
+that is what comes back from a copy editor. PDF, SVG and PNG.
+
+**8. Paste it into the paper.**
+The LaTeX panel writes the float, the caption, the label and the note in the
+order your style wants them, in any of 51 citation styles. APA puts the caption
+above the figure and the note below. IEEE, Nature and Harvard caption below.
+That is why the style changes the block and not only the reference list.
+
+**Optional, off by default.** A local Transformers model or an
+OpenAI-compatible endpoint can improve figure classification. Nothing is sent
+anywhere unless you set it up, and API keys are read from the environment and
+never stored.
+
+---
 
 ## Downloaded a public release?
+
+**Not sure what you downloaded?** Open [`START_HERE.txt`](START_HERE.txt) before
+running a script. A folder without `Install.exe` is source code and must be
+built before it can run.
 
 ### Windows
 Open the ZIP and double-click **`Install.exe`**. That is the main entry point.
@@ -29,7 +98,7 @@ The Linux archive preserves executable permissions and carries the precompiled G
 - **Graphviz:** not currently called by the desktop/native runtime, so it is not bundled or installed. Ready-to-enable prerequisite handling is retained for a future feature that truly requires it.
 - **Developer/CI folders:** `.github/`, `dev/`, `infra/`, `tests/`, `tools/`, and build scripts never go into the end-user archive.
 
-## Source checkout quick start
+## Building from source
 
 The project root has the same entry points on both supported platforms:
 
@@ -73,12 +142,13 @@ checked than to imply it has been checked everywhere.
 
 **Verified**
 
-- All 434 catalogue engines render — 2,116 catalogue entries, every one
+- All 440 catalogue engines render — 2,122 catalogue entries, every one
   producing output, checked against its own empty-frame baseline. Observed
-  rather than inferred: the sweep of 12 September 2026 covered all 434 and
-  reported `every engine drew data`. The same run checked 434 engines for
-  sensitivity to a constant column and 434 for drawing off the canvas edge,
-  with nothing to report in either.
+  rather than inferred: the sweep of 16 September 2026 covered all 440, reported
+  `every engine drew data`, and produced a 440-figure gallery byte-identical to
+  the stored baseline. The same run checked every engine for sensitivity to a
+  constant column and for drawing off the canvas edge, with nothing to report in
+  either.
 - Analysis results against closed-form answers: descriptive statistics, t-tests,
   ANOVA, Cohen's d, p-value adjustment, power, regression, curve and surface
   fitting, uncertainty propagation, unit conversion, FFT, Weibull, PCA, peak
