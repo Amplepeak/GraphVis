@@ -1,3 +1,19 @@
+# The Rust audit and dead-code scan.
+#
+# NO CONTAINER. This ran inside
+# ghcr.io/<owner>/graphvis-rust-dev:rust-1.98.0 - a prewarmed image that
+# infra/Dockerfile.rust-dev builds and rust-dev-image.yml publishes. That image
+# has never been published, so every run of this job died on `Docker pull failed
+# with exit code 1` before reaching a single line of the audit. A workflow that
+# depends on an artefact another workflow has to produce first fails on the
+# repository's very first push, which is exactly what it did.
+#
+# The image is a cache, not a requirement: scripts/audit_cull.sh needs cargo and
+# rustc, and treats cargo-machete and ripgrep as optional. The runner has rustup
+# already, rust-toolchain.toml pins 1.98.0, and cargo installs that toolchain on
+# first use. So the audit runs here with no image at all, and the prewarmed one
+# goes back to being what it was meant to be - a speed-up somebody can adopt
+# later by restoring the `container:` key once the image exists.
 name: Native Migration Audit
 on:
   pull_request:
@@ -7,9 +23,22 @@ on:
 jobs:
   rust-audit:
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/graphvis-rust-dev:rust-1.98.0
     steps:
       - uses: actions/checkout@v4
+
+      # rust-toolchain.toml decides the version. Naming it again here would be a
+      # second answer to one question, and the two would drift.
+      - name: Toolchain from rust-toolchain.toml
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          cargo --version
+          rustc --version
+
+      # Optional in the script, so failing to install one must not fail the job.
+      # That part of the scan is skipped instead, and the script says so.
+      - name: Optional scanners
+        continue-on-error: true
+        run: cargo install --locked cargo-machete --version 0.9.2
+
       - name: Locked audit and dead-code scan
         run: bash scripts/audit_cull.sh

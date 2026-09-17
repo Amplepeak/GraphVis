@@ -33,7 +33,7 @@ from graphvis_science.citation_styles import (
 CANONICAL = {
     "authors": [
         {"family": "Okonkwo", "given": "Maria J."},
-        {"family": "Bach", "given": "Liang Wei"},
+        {"family": "Zhao", "given": "Liang Wei"},
         {"family": "Andersson", "given": "Sofia"},
     ],
     "year": 2023,
@@ -57,170 +57,170 @@ DEGENERATE = {"title": "Untitled"}
 
 EXPECTED: dict[str, str] = {
     "apa": (
-        "Okonkwo, M. J., Chen, L. W., & Andersson, S. (2023). Turbulent mixing "
+        "Okonkwo, M. J., Zhao, L. W., & Andersson, S. (2023). Turbulent mixing "
         "in stratified planetary boundary layers: A spectral approach. Journal "
         "of Geophysical Research: Atmospheres, 128(14), 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "harvard": (
-        "Okonkwo, M.J., Chen, L.W. and Andersson, S. (2023) ‘Turbulent mixing "
+        "Okonkwo, M.J., Zhao, L.W. and Andersson, S. (2023) ‘Turbulent mixing "
         "in stratified planetary boundary layers: a spectral approach’, "
         "Journal of Geophysical Research: Atmospheres, 128(14), pp. 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "ieee": (
-        "M. J. Okonkwo, L. W. Chen, and S. Andersson, “Turbulent mixing in "
+        "M. J. Okonkwo, L. W. Zhao, and S. Andersson, “Turbulent mixing in "
         "stratified planetary boundary layers: A spectral approach,” J. "
         "Geophys. Res. Atmos., vol. 128, no. 14, pp. 2451–2470, Jul. 2023, "
         "doi: 10.1029/2023JD038745."
     ),
     "aaa": (
-        "Okonkwo, Maria J., Liang Wei Chen, and Sofia Andersson. 2023. "
+        "Okonkwo, Maria J., Liang Wei Zhao, and Sofia Andersson. 2023. "
         "“Turbulent Mixing in Stratified Planetary Boundary Layers: A Spectral "
         "Approach.” Journal of Geophysical Research: Atmospheres 128 (14): "
         "2451–2470. https://doi.org/10.1029/2023JD038745."
     ),
     "aas": (
-        "Okonkwo, M. J., Chen, L. W., & Andersson, S. 2023, JGRA, 128, 2451, "
+        "Okonkwo, M. J., Zhao, L. W., & Andersson, S. 2023, JGRA, 128, 2451, "
         "doi:10.1029/2023JD038745"
     ),
     "acm": (
-        "Maria J. Okonkwo, Liang Wei Chen, and Sofia Andersson. 2023. "
+        "Maria J. Okonkwo, Liang Wei Zhao, and Sofia Andersson. 2023. "
         "Turbulent mixing in stratified planetary boundary layers: A spectral "
         "approach. J. Geophys. Res. Atmos. 128, 14 (Jul. 2023), 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "acs": (
-        "Okonkwo, M. J.; Chen, L. W.; Andersson, S. Turbulent mixing in "
+        "Okonkwo, M. J.; Zhao, L. W.; Andersson, S. Turbulent mixing in "
         "stratified planetary boundary layers: A spectral approach. J. "
         "Geophys. Res.: Atmos. 2023, 128 (14), 2451–2470. "
         "DOI: 10.1029/2023JD038745."
     ),
     "agu": (
-        "Okonkwo, M. J., Chen, L. W., & Andersson, S. (2023). Turbulent mixing "
+        "Okonkwo, M. J., Zhao, L. W., & Andersson, S. (2023). Turbulent mixing "
         "in stratified planetary boundary layers: A spectral approach. Journal "
         "of Geophysical Research: Atmospheres, 128(14), 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "aiaa": (
-        "Okonkwo, M. J., Chen, L. W., and Andersson, S., “Turbulent Mixing in "
+        "Okonkwo, M. J., Zhao, L. W., and Andersson, S., “Turbulent Mixing in "
         "Stratified Planetary Boundary Layers: A Spectral Approach,” Journal "
         "of Geophysical Research: Atmospheres, Vol. 128, No. 14, 2023, "
         "pp. 2451–2470. https://doi.org/10.1029/2023JD038745"
     ),
     "aip": (
-        "M. J. Okonkwo, L. W. Chen, and S. Andersson, J. Geophys. Res. Atmos. "
+        "M. J. Okonkwo, L. W. Zhao, and S. Andersson, J. Geophys. Res. Atmos. "
         "128, 2451 (2023), https://doi.org/10.1029/2023JD038745."
     ),
     "ama": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos. "
         "2023;128(14):2451-2470. doi:10.1029/2023JD038745"
     ),
     "ams-math": (
-        "M. J. Okonkwo, L. W. Chen, and S. Andersson, Turbulent mixing in "
+        "M. J. Okonkwo, L. W. Zhao, and S. Andersson, Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach, J. "
         "Geophys. Res. Atmos. 128 (2023), no. 14, 2451–2470, "
         "DOI 10.1029/2023JD038745."
     ),
     "ams-met": (
-        "Okonkwo, M. J., L. W. Chen, and S. Andersson, 2023: Turbulent mixing "
+        "Okonkwo, M. J., L. W. Zhao, and S. Andersson, 2023: Turbulent mixing "
         "in stratified planetary boundary layers. J. Geophys. Res. Atmos., "
         "128, 2451–2470, https://doi.org/10.1029/2023JD038745."
     ),
     "aps": (
-        "M. J. Okonkwo, L. W. Chen, and S. Andersson, “Turbulent mixing in "
+        "M. J. Okonkwo, L. W. Zhao, and S. Andersson, “Turbulent mixing in "
         "stratified planetary boundary layers: A spectral approach,” J. "
         "Geophys. Res. Atmos. 128, 2451 (2023)."
     ),
     "apsa": (
-        "Okonkwo, Maria J., Liang Wei Chen, and Sofia Andersson. 2023. "
+        "Okonkwo, Maria J., Liang Wei Zhao, and Sofia Andersson. 2023. "
         "“Turbulent Mixing in Stratified Planetary Boundary Layers: A Spectral "
         "Approach.” Journal of Geophysical Research: Atmospheres 128 (14): "
         "2451–69. doi: 10.1029/2023JD038745."
     ),
     "asa": (
-        "Okonkwo, Maria J., Liang Wei Chen, and Sofia Andersson. 2023. "
+        "Okonkwo, Maria J., Liang Wei Zhao, and Sofia Andersson. 2023. "
         "“Turbulent Mixing in Stratified Planetary Boundary Layers: A Spectral "
         "Approach.” Journal of Geophysical Research: Atmospheres "
         "128(14):2451–70. doi:10.1029/2023JD038745."
     ),
     "asce": (
-        "Okonkwo, M. J., L. W. Chen, and S. Andersson. 2023. “Turbulent mixing "
+        "Okonkwo, M. J., L. W. Zhao, and S. Andersson. 2023. “Turbulent mixing "
         "in stratified planetary boundary layers: A spectral approach.” J. "
         "Geophys. Res. Atmos., 128 (14), 2451–2470, "
         "https://doi.org/10.1029/2023JD038745."
     ),
     "asme": (
-        "Okonkwo, M. J., Chen, L. W., and Andersson, S., 2023, “Turbulent "
+        "Okonkwo, M. J., Zhao, L. W., and Andersson, S., 2023, “Turbulent "
         "Mixing in Stratified Planetary Boundary Layers: A Spectral Approach,” "
         "J. Geophys. Res. Atmos., 128(14), pp. 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "bmj": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos "
         "2023;128(14): 2451-70. doi:10.1029/2023JD038745"
     ),
     "cambridge-a": (
-        "Okonkwo MJ, Chen LW and Andersson S (2023) Turbulent mixing in "
+        "Okonkwo MJ, Zhao LW and Andersson S (2023) Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach. Journal of "
         "Geophysical Research: Atmospheres 128(14), 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "cambridge-b": (
-        "Okonkwo M.J., Chen L.W. and Andersson S. (2023) Turbulent mixing in "
+        "Okonkwo M.J., Zhao L.W. and Andersson S. (2023) Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach. Journal of "
         "Geophysical Research: Atmospheres 128(14), 2451–2470. "
         "https://doi.org/10.1029/2023JD038745"
     ),
     "chicago-ad": (
-        "Okonkwo, Maria J., Liang Wei Chen, and Sofia Andersson. 2023. "
+        "Okonkwo, Maria J., Liang Wei Zhao, and Sofia Andersson. 2023. "
         "“Turbulent Mixing in Stratified Planetary Boundary Layers: A Spectral "
         "Approach.” Journal of Geophysical Research: Atmospheres 128 (14): "
         "2451–70. https://doi.org/10.1029/2023JD038745."
     ),
     "chicago-nb": (
-        "Okonkwo, Maria J., Liang Wei Chen, and Sofia Andersson. “Turbulent "
+        "Okonkwo, Maria J., Liang Wei Zhao, and Sofia Andersson. “Turbulent "
         "Mixing in Stratified Planetary Boundary Layers: A Spectral Approach.” "
         "Journal of Geophysical Research: Atmospheres 128, no. 14 (2023): "
         "2451–70. https://doi.org/10.1029/2023JD038745."
     ),
     "cite-them-right": (
-        "Okonkwo, M.J., Chen, L.W. and Andersson, S. (2023) ‘Turbulent mixing "
+        "Okonkwo, M.J., Zhao, L.W. and Andersson, S. (2023) ‘Turbulent mixing "
         "in stratified planetary boundary layers: a spectral approach’, "
         "Journal of Geophysical Research: Atmospheres, 128(14), pp. 2451–2470. "
         "Available at: https://doi.org/10.1029/2023JD038745."
     ),
     "copernicus": (
-        "Okonkwo, M. J., Chen, L. W., and Andersson, S.: Turbulent mixing in "
+        "Okonkwo, M. J., Zhao, L. W., and Andersson, S.: Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach, J. "
         "Geophys. Res. Atmos., 128, 2451–2470, "
         "https://doi.org/10.1029/2023JD038745, 2023."
     ),
     "cse-citation-name": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos. "
         "2023;128(14):2451–2470. https://doi.org/10.1029/2023JD038745"
     ),
     "cse-citation-sequence": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos. "
         "2023;128(14):2451–2470. https://doi.org/10.1029/2023JD038745"
     ),
     "cse-name-year": (
-        "Okonkwo MJ, Chen LW, Andersson S. 2023. Turbulent mixing in "
+        "Okonkwo MJ, Zhao LW, Andersson S. 2023. Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach. J Geophys "
         "Res Atmos. 128(14):2451–2470. https://doi.org/10.1029/2023JD038745"
     ),
     "elsevier-harvard": (
-        "Okonkwo, M.J., Chen, L.W., Andersson, S., 2023. Turbulent mixing in "
+        "Okonkwo, M.J., Zhao, L.W., Andersson, S., 2023. Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach. Journal of "
         "Geophysical Research: Atmospheres 128 (14), 2451–2470. "
         "doi:10.1029/2023JD038745."
     ),
     "gsa": (
-        "Okonkwo, M.J., Chen, L.W., and Andersson, S., 2023, Turbulent mixing "
+        "Okonkwo, M.J., Zhao, L.W., and Andersson, S., 2023, Turbulent mixing "
         "in stratified planetary boundary layers: A spectral approach: Journal "
         "of Geophysical Research: Atmospheres, v. 128, no. 14, p. 2451–2470, "
         "https://doi.org/10.1029/2023JD038745."
@@ -233,11 +233,11 @@ EXPECTED: dict[str, str] = {
         "https://doi.org/10.1029/2023JD038745"
     ),
     "iop": (
-        "Okonkwo M J, Chen L W and Andersson S 2023 J. Geophys. Res. Atmos. "
+        "Okonkwo M J, Zhao L W and Andersson S 2023 J. Geophys. Res. Atmos. "
         "128 2451"
     ),
     "jama": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos. "
         "2023;128(14):2451-2470. doi:10.1029/2023JD038745"
     ),
@@ -248,37 +248,37 @@ EXPECTED: dict[str, str] = {
         "https://doi.org/10.1029/2023JD038745."
     ),
     "nature": (
-        "Okonkwo, M. J., Chen, L. W. & Andersson, S. Turbulent mixing in "
+        "Okonkwo, M. J., Zhao, L. W. & Andersson, S. Turbulent mixing in "
         "stratified planetary boundary layers: a spectral approach. J. "
         "Geophys. Res. Atmos. 128, 2451–2470 (2023)."
     ),
     "nlm": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos. "
         "2023 Jul;128(14):2451-70. doi: 10.1029/2023JD038745"
     ),
     "royal-society": (
-        "Okonkwo MJ, Chen LW, Andersson S. 2023 Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. 2023 Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J. Geophys. Res. "
         "Atmos. 128, 2451–2470. (doi:10.1029/2023JD038745)"
     ),
     "rsc": (
-        "M. J. Okonkwo, L. W. Chen and S. Andersson, J. Geophys. Res. Atmos., "
+        "M. J. Okonkwo, L. W. Zhao and S. Andersson, J. Geophys. Res. Atmos., "
         "2023, 128, 2451–2470."
     ),
     "science": (
-        "M. J. Okonkwo, L. W. Chen, S. Andersson, Turbulent mixing in "
+        "M. J. Okonkwo, L. W. Zhao, S. Andersson, Turbulent mixing in "
         "stratified planetary boundary layers: A spectral approach. J. "
         "Geophys. Res. Atmos. 128, 2451–2470 (2023)."
     ),
     "turabian": (
-        "Okonkwo, Maria J., Liang Wei Chen, and Sofia Andersson. 2023. "
+        "Okonkwo, Maria J., Liang Wei Zhao, and Sofia Andersson. 2023. "
         "“Turbulent Mixing in Stratified Planetary Boundary Layers: A Spectral "
         "Approach.” Journal of Geophysical Research: Atmospheres 128, no. 14: "
         "2451–70. https://doi.org/10.1029/2023JD038745."
     ),
     "vancouver": (
-        "Okonkwo MJ, Chen LW, Andersson S. Turbulent mixing in stratified "
+        "Okonkwo MJ, Zhao LW, Andersson S. Turbulent mixing in stratified "
         "planetary boundary layers: a spectral approach. J Geophys Res Atmos. "
         "2023;128(14):2451-70. doi: 10.1029/2023JD038745"
     ),

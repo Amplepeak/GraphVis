@@ -168,7 +168,7 @@ else:
 
 # ------------------------------------------------------------------- citations
 print("\n=== citations: finding and formatting, without a network ===")
-text = ("As reported by Chen et al. (doi:10.1016/j.watres.2019.05.001) and "
+text = ("As reported by Zhao et al. (doi:10.1016/j.watres.2019.05.001) and "
         "again in 10.1038/s41586-020-2649-2. See also "
         "https://doi.org/10.1016/j.watres.2019.05.001 for the same work.")
 found = citations.find_dois(text)
@@ -181,21 +181,21 @@ ok("nothing in plain prose", citations.find_dois("no identifiers here") == [])
 record = {
     "doi": "10.1016/j.watres.2019.05.001",
     "title": "Hydrogen production in a microbial electrolysis cell",
-    "authors": [{"family": "Bach", "given": "Wei"},
+    "authors": [{"family": "Zhao", "given": "Wei"},
                 {"family": "Okoye", "given": "Ada"}],
     "year": 2019, "journal": "Water Research", "volume": "158",
     "issue": "3", "pages": "112-121", "publisher": "Elsevier",
     "url": "https://doi.org/10.1016/j.watres.2019.05.001",
 }
 bib = citations.to_bibtex(record)
-ok("BibTeX has a citation key", bib.startswith("@article{chen2019,"), bib[:24])
+ok("BibTeX has a citation key", bib.startswith("@article{zhao2019,"), bib[:24])
 ok("BibTeX braces balance", bib.count("{") == bib.count("}"),
    f"{bib.count('{')} vs {bib.count('}')}")
 ok("BibTeX keeps the title's capitals", "{Hydrogen production" in bib)
 ok("BibTeX carries the DOI", "10.1016/j.watres.2019.05.001" in bib)
 
 apa = citations.to_text(record)
-ok("a prose citation names the authors", "Chen, W." in apa, apa[:38])
+ok("a prose citation names the authors", "Zhao, W." in apa, apa[:38])
 ok("and the year", "(2019)" in apa)
 ok("and resolves to a link", "https://doi.org/" in apa)
 ok("bibtex style returns BibTeX",

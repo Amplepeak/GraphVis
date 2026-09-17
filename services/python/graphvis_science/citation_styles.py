@@ -269,8 +269,8 @@ def authors(record: Mapping[str, Any], style: Style) -> str:
     if not style.conj:
         return style.author_sep.join(names)
     head = style.author_sep.join(names[:-1])
-    # Two authors and no comma: "Okonkwo, M. J. & Chen, L. W.", which is
-    # Nature and IEEE. With one: "Okonkwo, M. J., & Chen, L. W.", which is APA.
+    # Two authors and no comma: "Okonkwo, M. J. & Zhao, L. W.", which is
+    # Nature and IEEE. With one: "Okonkwo, M. J., & Zhao, L. W.", which is APA.
     # The difference is one character and it is the thing people notice.
     wants_comma = (style.comma_with_two if len(names) == 2
                    else style.comma_before_conj)
