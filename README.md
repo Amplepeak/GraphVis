@@ -8,6 +8,15 @@ measurements.
 Qt/QML and C++ over a Rust core, with VTK for the 3-D viewport. It runs offline.
 No account, no telemetry, nothing leaves the machine unless you configure it to.
 
+![Twelve figures drawn by GraphVis: a 3-D surface, a Sankey diagram, a chord
+diagram, a spectrogram, a line-integral-convolution flow texture, a Kaplan-Meier
+survival curve, a Piper diagram, a wind rose, a payload-range diagram, a
+psychrometric chart, an UpSet plot and a calendar heatmap.](docs/gallery.png)
+
+<sub>Twelve of 440. Every one is rendered by the build in this repository, taken
+straight from the gallery the test sweep produces, not drawn for the
+advertisement.</sub>
+
 ---
 
 ## Quick guide
