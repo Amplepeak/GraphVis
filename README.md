@@ -19,6 +19,33 @@ advertisement.</sub>
 
 ---
 
+## What it looks like
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/01-home.png" alt="The GraphVis home screen, offering two routes: turn papers into usable data, or import your own dataset and plot it."></td>
+<td width="50%"><img src="docs/screenshots/02-read-literature.png" alt="A PDF open in Read Literature. Six figures and two tables were found; one figure is selected and its axes are being calibrated so the curve can be read back as numbers."></td>
+</tr>
+<tr>
+<td><b>Home.</b> Two ways in — a paper, or your own data.</td>
+<td><b>Read Literature.</b> Six figures and two tables found in this PDF. Drag a
+box round the axes, calibrate them, and the curve comes back as numbers you can
+plot against your own.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/03-visualize.png" alt="The Visualize workspace. A ranked list of recommended charts for the loaded dataset, each with a match percentage and the axis mapping it would use, beside the drawn figure and the variable mapping panel."></td>
+<td width="50%"><img src="docs/screenshots/04-publish.png" alt="The Publication Studio, showing the Nature single-column profile with its width, resolution, body text size and line weight, above export buttons and a LaTeX snippet builder."></td>
+</tr>
+<tr>
+<td><b>Visualize.</b> Five recommendations for this data, ranked, each naming
+the columns it would put on which axis. The open paper is used as context.</td>
+<td><b>Publish.</b> The journal's own measurements — 89 mm, 300 dpi, 6 pt text
+for Nature single-column — and the figure re-rendered to them, not scaled.</td>
+</tr>
+</table>
+
+---
+
 ## Quick guide
 
 Five minutes, start to finish. Everything below is a button in the application.
